@@ -1,10 +1,8 @@
 # Step 1: Base Environment
-FROM node:20-alpine3.20 AS base
-RUN apk update && apk upgrade --no-cache
+FROM node:20-bookworm-slim AS base
 
 # Step 2: Install Dependencies
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json* ./

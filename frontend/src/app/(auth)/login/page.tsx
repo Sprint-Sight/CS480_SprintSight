@@ -3,9 +3,39 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { Eye } from "lucide-react";
+import { useRouter } from "next/navigation";
+
+const DEMO_CREDENTIALS = {
+  instructor: {
+    email: "instructor@demo.edu",
+    password: "password123",
+  },
+  student: {
+    email: "student@demo.edu",
+    password: "password123",
+  },
+} as const;
 
 export default function LoginPage() {
+  const router = useRouter();
   const [role, setRole] = useState<"instructor" | "student">("instructor");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const expected = DEMO_CREDENTIALS[role];
+    if (email.trim().toLowerCase() !== expected.email || password !== expected.password) {
+      setError("Invalid credentials for the selected role.");
+      return;
+    }
+
+    sessionStorage.setItem("sprintsight-auth-role", role);
+    sessionStorage.setItem("sprintsight-auth-email", expected.email);
+    router.replace("/");
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -46,7 +76,7 @@ export default function LoginPage() {
         </div>
 
         {/* Form */}
-        <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+        <form className="space-y-6" onSubmit={handleSubmit}>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Email Address
@@ -54,6 +84,11 @@ export default function LoginPage() {
             <input
               type="email"
               placeholder="you@university.edu"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (error) setError("");
+              }}
               className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               required
             />
@@ -66,10 +101,21 @@ export default function LoginPage() {
             <input
               type="password"
               placeholder="••••••••"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (error) setError("");
+              }}
               className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               required
             />
           </div>
+
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+          <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
+            Demo credentials: Instructor: instructor@demo.edu / password123, Student: student@demo.edu / password123
+          </p>
 
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
