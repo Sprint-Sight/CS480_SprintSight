@@ -67,6 +67,8 @@ function isActivePath(pathname: string, href: string) {
 export default function DashboardShell({ children }: DashboardShellProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const isProjectsArea = pathname === "/projects" || pathname.startsWith("/projects/");
+  const isProjectsListPage = pathname === "/projects";
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [role, setRole] = useState<"student" | "instructor">("instructor");
@@ -99,6 +101,12 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (isAuthorized && role === "student" && isProjectsArea) {
+      router.replace("/");
+    }
+  }, [isAuthorized, role, isProjectsArea, router]);
+
   const profileLabel = useMemo(() => {
     return role === "student" ? "Student" : "Instructor";
   }, [role]);
@@ -126,6 +134,10 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
             <nav className="flex-1 px-3 py-4 space-y-1">
               {navItems.map((item) => {
+                if (role === "student" && item.href === "/projects") {
+                  return null;
+                }
+
                 const active = isActivePath(pathname, item.href);
                 return (
                   <Link
@@ -238,7 +250,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
               </div>
             </div>
 
-            {role === "instructor" && (
+            {role === "instructor" && !isProjectsListPage && (
               <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
                 <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600">
                   <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
