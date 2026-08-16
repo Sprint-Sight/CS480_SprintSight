@@ -124,9 +124,9 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="grid min-h-screen grid-cols-1 md:grid-cols-[240px_1fr]">
-        <aside className="min-h-screen border-r border-slate-200 bg-white">
-          <div className="flex h-screen flex-col">
+      <div className="grid min-h-screen grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="border-r border-slate-200 bg-white md:sticky md:top-0 md:h-screen">
+          <div className="flex h-full flex-col md:h-screen">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
               <Gauge className="h-5 w-5 text-blue-700" />
               <span className="text-base font-semibold tracking-tight">SprintSight</span>

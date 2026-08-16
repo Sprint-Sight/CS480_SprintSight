@@ -16,11 +16,6 @@
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
-    "/(dashboard)/projects/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/projects/page.js"
-    ],
     "/(auth)/login/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -31,25 +26,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(auth)/layout.js"
     ],
-    "/(dashboard)/sprint-overview/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/sprint-overview/page.js"
-    ],
     "/(dashboard)/assessment-report/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/assessment-report/page.js"
     ],
-    "/(dashboard)/artifact-viewer/page": [
+    "/(dashboard)/progress/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/artifact-viewer/page.js"
-    ],
-    "/(dashboard)/collaboration/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/collaboration/page.js"
+      "static/chunks/app/(dashboard)/progress/page.js"
     ]
   }
 }
