@@ -1,0 +1,164 @@
+from __future__ import annotations
+from schemas.rubrics_dimension_score import RubricDimensionScore
+from schemas.sprint_assessment import SprintAssessment
+from schemas.artifact_bundle import ArtifactBundle
+from schemas.fixtures import high_performing_team, imbalanced_team, struggling_team # Contains various teams
+from openai import AsyncOpenAI
+import os, httpx, logging, instructor, time
+
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
+log = logging.getLogger(__name__)
+
+"""
+services/llm_client.py
+
+One place in the entire codebase that knows how to talk to Ollama.
+Every other file imports the client from here — never create the client
+directly in other files.
+
+How it works:
+    Ollama runs inside Docker Compose at http://ollama:11434
+    It exposes an OpenAI-compatible endpoint at /v1/chat/completions
+    We use the OpenAI Python client pointing at that URL
+    instructor wraps it to return Pydantic models instead of raw JSON
+"""
+
+# Read from .env file (set by Docker Compose environment block)
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, but OpenAI client requires it
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
+OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "300"))  # 5 min default
+
+def create_llm_client():
+    """
+    Creates the instructor-wrapped Ollama client.
+
+    Call this ONCE in your FastAPI lifespan and store it as a module-level
+    variable. Do NOT call this per-request.
+
+    instructor.Mode.JSON tells instructor to use JSON mode rather than
+    OpenAI's tool-calling mode. JSON mode is more reliably supported
+    across all Ollama models.
+    """
+    raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+        base_url=OLLAMA_BASE_URL,
+        api_key=OLLAMA_API_KEY,
+        timeout=OLLAMA_TIMEOUT,
+    )
+    
+    client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
+        raw_client,
+        mode=instructor.Mode.JSON,
+    )
+    return client
+
+async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
+    """
+    Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
+    """
+    bundle_data = bundle.model_dump_json(indent=2)
+    
+    prompt = f"""
+    You are an expert software engineering professor. 
+    Evaluate the following student team artifacts strictly on this dimension: {dimension_name}.
+    
+    CRITICAL INSTRUCTIONS:
+    - Return a valid JSON object matching the RubricDimensionScore schema.
+    - Score MUST be an integer between 1 and 10.
+    - Provide justification for the score.
+    - Identify strengths.
+    - Identify areas for improvement.
+    
+    Student Artifacts:
+    {bundle_data}
+    """
+
+    print(f"[{bundle.team_id}] Scoring dimension: {dimension_name}...")
+
+    client = create_llm_client()  # Create a new client for this model
+    # Await the response so the event loop can process other dimensions simultaneously
+    response = await client.chat.completions.create( # Actual call to ollama via OpenAI-compatible API
+        model=model_name, 
+        response_model=RubricDimensionScore, # Returns Pydantic model RubricDimensionScore instead of raw JSON
+        messages=[
+            {"role": "system", "content": "You are a strict but fair grading assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        max_retries=3
+    )
+    
+    return response
+
+async def check_ollama_health(model_name: str) -> dict:
+    """
+    Verifies that Ollama is running and the target model is available.
+    Called from the FastAPI startup health check.
+
+    Returns a dict:
+        {"status": "ok",    "model": "llama3.1:8b", "available": True}
+        {"status": "error", "model": "llama3.1:8b", "error": "..."}
+    """
+    # Ollama's /api/tags lists downloaded models
+    tags_url = OLLAMA_BASE_URL.replace("/v1", "") + "/api/tags"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(tags_url)
+            response.raise_for_status()
+            models = response.json().get("models", [])
+            model_names = [m.get("name", "") for m in models]
+            available = any(model_name in name for name in model_names)
+
+            if not available:
+                log.warning(
+                    "Ollama is running but model '%s' is not downloaded. "
+                    "Run: docker exec <ollama_container> ollama pull %s",
+                    model_name, model_name,
+                )
+
+            return {
+                "status":    "ok",
+                "model":     model_name,
+                "available": available,
+                "all_models": model_names,
+            }
+
+    except httpx.ConnectError:
+        return {
+            "status": "error",
+            "model":  model_name,
+            "error":  f"Cannot connect to Ollama at {tags_url}. Is it running?",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "model":  model_name,
+            "error":  str(e),
+        }
+
+
+async def pull_model_if_missing(model_name: str) -> None:
+    """
+    Triggers an Ollama model pull if the model is not already downloaded.
+    Called once at service startup. This can take several minutes for large
+    models — that is expected and normal.
+    """
+    health = await check_ollama_health(model_name)
+    if health.get("available"):
+        log.info("Model '%s' already available in Ollama.", model_name)
+        return
+
+    pull_url = OLLAMA_BASE_URL.replace("/v1", "") + "/api/pull"
+    log.info("Pulling model '%s' — this may take several minutes...", model_name)
+
+    try:
+        async with httpx.AsyncClient(timeout=1800.0) as client:   # 30 min timeout
+            async with client.stream("POST", pull_url, json={"name": model_name}) as resp:
+                async for line in resp.aiter_lines():
+                    if line:
+                        log.debug("Pull progress: %s", line)
+        log.info("Model '%s' downloaded successfully.", model_name)
+    except Exception as e:
+        log.error("Failed to pull model '%s': %s", model_name, e)
+        raise

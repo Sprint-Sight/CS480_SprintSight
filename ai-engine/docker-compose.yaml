@@ -1,0 +1,76 @@
+services: # Seperate containers to run
+    ollama: # Ollama LLM server
+      image: ollama/ollama
+      ports:
+        - "11434:11434"
+      volumes:
+        - ollama_models:/root/.ollama  # persist downloaded models
+      # For GPU support add:
+      # deploy:
+      #   resources:
+      #     reservations:
+      #       devices:
+      #         - driver: nvidia
+      #           count: all
+      #           capabilities: [gpu]
+
+    sprintsight_ai:
+      build: .
+      ports:
+        - "8001:8001"
+      # IMPROVEMENT: Add restart policy
+      restart: unless-stopped
+      environment:
+        # Fallback to the Docker service name 'ollama' instead of localhost
+        - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+        
+        # Fallback to the Docker service name 'mlflow' instead of localhost
+        - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+        
+        # Add missing model variable (defaults to llama3 if not in .env)
+        - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+        
+        # Moved from the mlflow service to here where the FastAPI client actually uses it
+        - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}
+        
+      depends_on:
+        db:
+          condition: service_healthy
+        ollama:
+          condition: service_started # Change to service_healthy if your ollama service has a healthcheck
+
+    mlflow_service:
+      image: ghcr.io/mlflow/mlflow:latest # Automatically pulls MLflow
+      # --backend-store-uri points to the Postgres container
+      command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql
+      environment: 
+        - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME}
+      ports:
+        - "5000:5000"
+      restart: unless-stopped
+      depends_on:
+        db:
+          condition: service_healthy
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+
+    db: # PostgreSQL database container
+      image: postgres:16
+      environment:
+        POSTGRES_DB: sprintsight
+        POSTGRES_USER: user
+        POSTGRES_PASSWORD: pass
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U user"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+
+volumes: # Named volumes for data persistence (not to be deleted)
+  ollama_models:
+  postgres_data:

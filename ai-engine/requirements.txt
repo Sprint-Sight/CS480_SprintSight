@@ -1,0 +1,56 @@
+asyncio
+
+asyncpg
+
+fastapi[standard]
+
+flask
+
+httpx
+
+# Structured Pydantic outputs from LLMs
+instructor
+
+# Prompt template rendering 
+jinja2
+
+# Load & stress testing
+locust
+
+mlflow # LLMops
+
+numpy
+
+ollama
+
+openai
+
+pandas
+
+# PDF text & table extraction
+pdfplumber
+
+# Schema validation & definition
+pydantic >= 2.0
+
+python-dotenv
+
+# Custom JWT authentication
+python-jose[cryptography]
+
+# Slide text extraction
+python-pptx
+
+# Async unit & Integration tests
+pytest-asyncio
+
+requests
+
+# Structured JSON logging
+structlog
+
+# Async PostgresSQL ORM
+sqlalchemy[asyncio]
+
+# Retry logic with exponential backoff + jitter
+tenacity
