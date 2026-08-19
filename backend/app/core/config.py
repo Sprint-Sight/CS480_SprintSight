@@ -34,6 +34,10 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+    
+    minio_endpoint_url: str = "http://minio:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
 
 
 @lru_cache
