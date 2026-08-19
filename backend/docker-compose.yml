@@ -1,0 +1,15 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sprintsight-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # Postgres is intentionally omitted for now because DB provisioning is owned by another team member.
