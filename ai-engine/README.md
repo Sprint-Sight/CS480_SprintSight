@@ -25,6 +25,21 @@
 7. On the swagger UI, click 'try it out' under the POST endpoint, select team type and model name, then click 'execute'
 8. Monitor your terminal in step 6 and wait for AI to impute results
 
+## LLM Audit Logs
+
+Every Ollama chat-completion attempt is recorded as a separate text file in
+`audit_logs/`. Each file includes the team and sprint, model, dimension, exact
+request payload, raw response body, HTTP status, duration, and any exception
+raised by the client. The directory is mounted into the `sprintsight_ai`
+container, so the records remain on the host after the container restarts.
+
+Open the `audit_logs` folder directly in VS Code or File Explorer. Files use
+names such as `llm_20260819T141500_abc123_code_quality.txt`.
+
+The MLflow UI at `http://localhost:5000` remains useful for experiment-level
+traces and metrics. The JSONL file is the application-owned audit record and
+captures failed attempts and raw HTTP responses explicitly.
+
 ---
 
 ## What This Service Does

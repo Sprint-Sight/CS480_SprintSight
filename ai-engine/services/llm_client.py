@@ -4,7 +4,11 @@ from schemas.sprint_assessment import SprintAssessment
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.fixtures import high_performing_team, imbalanced_team, struggling_team # Contains various teams
 from openai import AsyncOpenAI
+import contextvars
+import json
 import os, httpx, logging, instructor, time
+from uuid import uuid4
+from services.audit_logger import write_audit_record
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
@@ -30,6 +34,35 @@ OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, b
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
 OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "300"))  # 5 min default
 
+_audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "audit_context", default=None
+)
+
+
+async def _capture_request(request: httpx.Request) -> None:
+    if request.url.path.endswith("/chat/completions"):
+        context = _audit_context.get()
+        if context is not None:
+            context["request_started_at"] = time.perf_counter()
+            context["request"] = request.content.decode("utf-8", errors="replace")
+
+
+async def _capture_response(response: httpx.Response) -> None:
+    if response.request.url.path.endswith("/chat/completions"):
+        context = _audit_context.get()
+        if context is not None:
+            body = await response.aread()
+            started_at = context.get("request_started_at", time.perf_counter())
+            write_audit_record(
+                {
+                    **context,
+                    "request": json.loads(context.get("request", "{}")),
+                    "raw_response": body.decode("utf-8", errors="replace"),
+                    "http_status": response.status_code,
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                }
+            )
+
 def create_llm_client():
     """
     Creates the instructor-wrapped Ollama client.
@@ -41,10 +74,17 @@ def create_llm_client():
     OpenAI's tool-calling mode. JSON mode is more reliably supported
     across all Ollama models.
     """
+    transport = httpx.AsyncClient(
+        event_hooks={
+            "request": [_capture_request],
+            "response": [_capture_response],
+        }
+    )
     raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
         base_url=OLLAMA_BASE_URL,
         api_key=OLLAMA_API_KEY,
         timeout=OLLAMA_TIMEOUT,
+        http_client=transport,
     )
     
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
@@ -77,18 +117,34 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
     print(f"[{bundle.team_id}] Scoring dimension: {dimension_name}...")
 
     client = create_llm_client()  # Create a new client for this model
-    # Await the response so the event loop can process other dimensions simultaneously
-    response = await client.chat.completions.create( # Actual call to ollama via OpenAI-compatible API
-        model=model_name, 
-        response_model=RubricDimensionScore, # Returns Pydantic model RubricDimensionScore instead of raw JSON
-        messages=[
-            {"role": "system", "content": "You are a strict but fair grading assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        max_retries=3
+    audit_token = _audit_context.set(
+        {
+            "request_id": str(uuid4()),
+            "team_id": bundle.team_id,
+            "sprint_id": bundle.sprint_id,
+            "dimension": dimension_name,
+            "model": model_name,
+        }
     )
-    
-    return response
+    try:
+        # The transport hooks capture the exact request and raw Ollama response.
+        return await client.chat.completions.create(
+            model=model_name,
+            response_model=RubricDimensionScore,
+            messages=[{"role": "user", "content": prompt}],
+            max_retries=3,
+        )
+    except Exception as error:
+        context = _audit_context.get()
+        write_audit_record(
+            {
+                **(context or {}),
+                "error": str(error),
+            }
+        )
+        raise
+    finally:
+        _audit_context.reset(audit_token)
 
 async def check_ollama_health(model_name: str) -> dict:
     """
