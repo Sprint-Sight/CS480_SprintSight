@@ -25,6 +25,65 @@
 7. On the swagger UI, click 'try it out' under the POST endpoint, select team type and model name, then click 'execute'
 8. Monitor your terminal in step 6 and wait for AI to impute results
 
+## Command Summary
+
+Run these commands from the `ai-engine` directory:
+
+```powershell
+# Start the supporting services
+docker compose up -d db ollama mlflow_service
+
+# Check service status
+docker compose ps
+
+# Copy the model configuration into the Ollama container
+docker compose cp Modelfile ollama:/tmp/Modelfile
+
+# Create or update the custom model
+docker compose exec -T ollama ollama create sprintsight-grader -f /tmp/Modelfile
+
+# Verify the available Ollama models
+docker compose exec ollama ollama list
+
+# Rebuild and force-recreate the FastAPI service after code changes
+docker compose up -d --build --force-recreate sprintsight_ai
+
+# Check service logs if needed
+docker compose logs --tail 100 sprintsight_ai
+docker compose logs --tail 100 mlflow_service
+
+# Check the FastAPI health endpoint
+curl.exe http://localhost:8001/health
+
+# Run a test via FastAPI
+curl.exe -X POST "http://localhost:8001/assess/sprint?key=high_performing_team&modelname=sprintsight-grader"
+
+# Open the generated audit records
+code .\audit_logs
+```
+
+For a completely clean FastAPI rebuild, use:
+
+```powershell
+docker compose build --no-cache sprintsight_ai
+docker compose up -d --force-recreate sprintsight_ai
+```
+
+## LLM Audit Logs
+
+Every Ollama chat-completion attempt is recorded as a separate text file in
+`audit_logs/`. Each file includes the team and sprint, model, dimension, exact
+request payload, raw response body, HTTP status, duration, and any exception
+raised by the client. The directory is mounted into the `sprintsight_ai`
+container, so the records remain on the host after the container restarts.
+
+Open the `audit_logs` folder directly in VS Code or File Explorer. Files use
+names such as `llm_20260819T141500_abc123_code_quality.txt`.
+
+The MLflow UI at `http://localhost:5000` remains useful for experiment-level
+traces and metrics. The text files are the application-owned audit records and
+capture failed attempts and raw HTTP responses explicitly.
+
 ---
 
 ## What This Service Does
