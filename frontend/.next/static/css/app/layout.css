@@ -696,6 +696,9 @@ video {
 .h-px {
   height: 1px;
 }
+.min-h-\[52px\] {
+  min-height: 52px;
+}
 .min-h-screen {
   min-height: 100vh;
 }
@@ -704,6 +707,9 @@ video {
 }
 .w-10 {
   width: 2.5rem;
+}
+.w-11 {
+  width: 2.75rem;
 }
 .w-16 {
   width: 4rem;
@@ -750,6 +756,9 @@ video {
 .min-w-0 {
   min-width: 0px;
 }
+.min-w-16 {
+  min-width: 4rem;
+}
 .min-w-\[280px\] {
   min-width: 280px;
 }
@@ -789,6 +798,22 @@ video {
 }
 .-translate-y-1\/2 {
   --tw-translate-y: -50%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+.translate-x-0\.5 {
+  --tw-translate-x: 0.125rem;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+.translate-x-1 {
+  --tw-translate-x: 0.25rem;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+.translate-x-4 {
+  --tw-translate-x: 1rem;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+.translate-x-6 {
+  --tw-translate-x: 1.5rem;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 .-rotate-90 {
@@ -1108,6 +1133,10 @@ video {
   --tw-bg-opacity: 1;
   background-color: rgb(226 232 240 / var(--tw-bg-opacity, 1));
 }
+.bg-slate-300 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(203 213 225 / var(--tw-bg-opacity, 1));
+}
 .bg-slate-50 {
   --tw-bg-opacity: 1;
   background-color: rgb(248 250 252 / var(--tw-bg-opacity, 1));
@@ -1297,6 +1326,9 @@ video {
 }
 .italic {
   font-style: italic;
+}
+.leading-8 {
+  line-height: 2rem;
 }
 .leading-tight {
   line-height: 1.25;
