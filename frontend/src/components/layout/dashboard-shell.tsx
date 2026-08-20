@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -11,7 +12,6 @@ import {
   Eye,
   FileText,
   FolderOpen,
-  Gauge,
   GitCompare,
   LayoutDashboard,
   Pencil,
@@ -127,9 +127,16 @@ export default function DashboardShell({ children }: DashboardShellProps) {
       <div className="grid min-h-screen grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="border-r border-slate-200 bg-white md:sticky md:top-0 md:h-screen">
           <div className="flex h-full flex-col md:h-screen">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
-              <Gauge className="h-5 w-5 text-blue-700" />
-              <span className="text-base font-semibold tracking-tight">SprintSight</span>
+            {/* Centered Logo Header */}
+            <div className="flex items-center justify-center border-b border-slate-200 px-4 py-3">
+              <Image
+                src="/logo.png"
+                alt="SprintSight Logo"
+                width={160}
+                height={60}
+                priority
+                className="h-14 w-auto max-w-full object-contain"
+              />
             </div>
 
             <nav className="flex-1 px-3 py-4 space-y-1">

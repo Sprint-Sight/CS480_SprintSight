@@ -1,12 +1,5 @@
 {
-  "/(dashboard)/projects/[projectId]/sprints/[sprintId]/assessment/page": "app/(dashboard)/projects/[projectId]/sprints/[sprintId]/assessment/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
   "/(auth)/login/page": "app/(auth)/login/page.js",
-  "/(dashboard)/artifact-viewer/page": "app/(dashboard)/artifact-viewer/page.js",
-  "/(dashboard)/page": "app/(dashboard)/page.js",
-  "/(dashboard)/instructor-review/page": "app/(dashboard)/instructor-review/page.js",
-  "/(dashboard)/sprint-overview/page": "app/(dashboard)/sprint-overview/page.js",
-  "/(dashboard)/projects/page": "app/(dashboard)/projects/page.js",
-  "/(dashboard)/progress/page": "app/(dashboard)/progress/page.js",
-  "/(dashboard)/assessment-report/page": "app/(dashboard)/assessment-report/page.js",
-  "/(dashboard)/collaboration/page": "app/(dashboard)/collaboration/page.js"
+  "/(dashboard)/page": "app/(dashboard)/page.js"
 }

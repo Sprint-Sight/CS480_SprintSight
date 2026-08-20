@@ -46,7 +46,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-slate-500 mt-1">Welcome back, Dr. Chen. Here's your assessment overview.</p>
+        <p className="text-slate-500 mt-1">Welcome back, Dr. Chen. Here&apos;s your assessment overview.</p>
       </div>
 
       {/* Top Metrics Cards */}
