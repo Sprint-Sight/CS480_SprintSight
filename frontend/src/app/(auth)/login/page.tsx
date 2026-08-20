@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Eye } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 const DEMO_CREDENTIALS = {
@@ -41,19 +41,25 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8">
         
-        {/* Logo & Header */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center gap-2 mb-4 text-blue-600">
-            <Eye className="w-8 h-8" />
-            <span className="text-xl font-bold italic tracking-tight text-slate-800">SprintSight</span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">SprintSight</h1>
-          <p className="text-sm text-slate-500">AI-Powered Continuous Sprint Assessment</p>
+        {/* Logo & Subtitle */}
+        <div className="flex flex-col items-center mb-6">
+          <Image
+            src="/logo.png"
+            alt="SprintSight Logo"
+            width={320}
+            height={100}
+            priority
+            className="h-24 w-auto object-contain mb-1"
+          />
+          <p className="text-xs text-slate-400 font-medium tracking-tight">
+            AI-Powered Continuous Sprint Assessment
+          </p>
         </div>
 
         {/* Role Toggle */}
         <div className="flex bg-slate-100 rounded-lg p-1 mb-8">
           <button
+            type="button"
             onClick={() => setRole("instructor")}
             className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
               role === "instructor"
@@ -64,6 +70,7 @@ export default function LoginPage() {
             Instructor
           </button>
           <button
+            type="button"
             onClick={() => setRole("student")}
             className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
               role === "student"
