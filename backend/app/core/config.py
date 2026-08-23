@@ -13,10 +13,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 120
     jwt_algorithm: str = "HS256"
 
-    postgres_server: str = Field(default="localhost", alias="POSTGRES_SERVER")
+    postgres_server: str = Field(default="db", alias="POSTGRES_SERVER")
     postgres_user: str = Field(default="postgres", alias="POSTGRES_USER")
     postgres_password: str = Field(default="postgres", alias="POSTGRES_PASSWORD")
     postgres_db: str = Field(default="sprintsight", alias="POSTGRES_DB")
+    database_url: str = Field(default="", alias="DATABASE_URL")
 
     github_pat_token: str = Field(default="", alias="GITHUB_PAT_TOKEN")
     jira_api_token: str = Field(default="", alias="JIRA_API_TOKEN")
@@ -38,6 +39,17 @@ class Settings(BaseSettings):
     minio_endpoint_url: str = "http://minio:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
+
+    def database_connection_string(self) -> str:
+        if self.database_url:
+            return (
+                self.database_url.replace("postgresql+asyncpg://", "postgresql://")
+                .replace("postgresql+psycopg2://", "postgresql://")
+            )
+        return (
+            f"host={self.postgres_server} port=5432 dbname={self.postgres_db} "
+            f"user={self.postgres_user} password={self.postgres_password}"
+        )
 
 
 @lru_cache

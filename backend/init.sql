@@ -44,23 +44,33 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id   ON refresh_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 
+-- Revoked access tokens remain invalid until their natural expiration.
+CREATE TABLE IF NOT EXISTS revoked_access_tokens (
+    token_id   UUID PRIMARY KEY,
+    user_id    UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    expires_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_revoked_access_tokens_expires_at
+    ON revoked_access_tokens(expires_at);
+
 -- =============================================================
 -- SEED DATA
 -- Default accounts for local development
 -- Password for all accounts: changeme123
--- Hash generated with: bcrypt.hashpw(b"changeme123", bcrypt.gensalt(12))
+-- Hash generated with app.core.security.hash_password("changeme123")
 -- =============================================================
 INSERT INTO users (email, password_hash, full_name, role) VALUES
     ('admin@sprintsight.dev',
-     '$2b$12$eImiTXuWVxfM37uY4JANjQ==',
+        'pbkdf2_sha256$200000$BEoJU9gfy7Rgq_MTo5W9jw==$B6ngQF8EXp93J20Dzydf6RqoTASrX8AHlV5zZ4A7jJw=',
      'System Admin',
      'admin'),
     ('instructor@sprintsight.dev',
-     '$2b$12$eImiTXuWVxfM37uY4JANjQ==',
+        'pbkdf2_sha256$200000$BEoJU9gfy7Rgq_MTo5W9jw==$B6ngQF8EXp93J20Dzydf6RqoTASrX8AHlV5zZ4A7jJw=',
      'Dr. Sample Instructor',
      'instructor'),
     ('student@sprintsight.dev',
-     '$2b$12$eImiTXuWVxfM37uY4JANjQ==',
+        'pbkdf2_sha256$200000$BEoJU9gfy7Rgq_MTo5W9jw==$B6ngQF8EXp93J20Dzydf6RqoTASrX8AHlV5zZ4A7jJw=',
      'Sample Student',
      'student')
 ON CONFLICT (email) DO NOTHING;    -- safe to re-run, won't duplicate rows

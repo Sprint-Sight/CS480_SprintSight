@@ -13,12 +13,19 @@ class UserRecord:
     full_name: str
     role: Role
     hashed_password: str
+    is_active: bool = True
 
 
 class UserRepository(Protocol):
     def get_by_email(self, email: str) -> UserRecord | None: ...
 
     def get_by_id(self, user_id: str) -> UserRecord | None: ...
+
+    def record_login(self, user_id: str) -> None: ...
+
+    def revoke_access_token(self, token_id: str, user_id: str, expires_at: datetime) -> None: ...
+
+    def is_access_token_revoked(self, token_id: str) -> bool: ...
 
 
 class ManualTextRepository(Protocol):

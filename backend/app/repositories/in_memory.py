@@ -17,12 +17,13 @@ from app.schemas.auth import Role
 
 class InMemoryUserRepository(UserRepository):
     def __init__(self) -> None:
+        self._revoked_tokens: set[str] = set()
         self._users = {
             "faculty@sprintsight.edu": UserRecord(
                 id="u-faculty-1",
                 email="faculty@sprintsight.edu",
                 full_name="Faculty User",
-                role=Role.FACULTY,
+                role=Role.INSTRUCTOR,
                 hashed_password=hash_password("password123"),
             ),
             "student@sprintsight.edu": UserRecord(
@@ -42,6 +43,15 @@ class InMemoryUserRepository(UserRepository):
             if user.id == user_id:
                 return user
         return None
+
+    def record_login(self, user_id: str) -> None:
+        return None
+
+    def revoke_access_token(self, token_id: str, user_id: str, expires_at: datetime) -> None:
+        self._revoked_tokens.add(token_id)
+
+    def is_access_token_revoked(self, token_id: str) -> bool:
+        return token_id in self._revoked_tokens
 
 
 class InMemoryManualTextRepository(ManualTextRepository):

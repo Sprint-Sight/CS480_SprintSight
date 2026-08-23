@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -43,7 +44,12 @@ def create_access_token(subject: str, role: str, expires_delta_minutes: int | No
     settings = get_settings()
     expire_minutes = expires_delta_minutes or settings.access_token_expire_minutes
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
-    payload: dict[str, Any] = {"sub": subject, "role": role, "exp": expires_at}
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "role": role,
+        "jti": str(uuid4()),
+        "exp": expires_at,
+    }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
@@ -53,7 +59,8 @@ def decode_access_token(token: str) -> dict[str, Any]:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
         sub = payload.get("sub")
         role = payload.get("role")
-        if not sub or not role:
+        token_id = payload.get("jti")
+        if not sub or not role or not token_id:
             raise TokenPayloadError("Invalid token payload.")
         return payload
     except JWTError as exc:

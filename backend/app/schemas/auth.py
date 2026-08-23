@@ -4,8 +4,9 @@ from pydantic import BaseModel, EmailStr
 
 
 class Role(str, Enum):
-    FACULTY = "faculty"
+    INSTRUCTOR = "instructor"
     STUDENT = "student"
+    ADMIN = "admin"
 
 
 class LoginRequest(BaseModel):
