@@ -1,5 +1,6 @@
 from datetime import datetime
 from uuid import UUID
+from uuid import uuid4
 
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -16,9 +17,9 @@ class PostgresUserRepository(UserRepository):
         with self._pool.connection() as connection:
             row = connection.execute(
                 """
-                SELECT user_id, email, full_name, password_hash, role, is_active
+                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version
                 FROM users
-                WHERE lower(email) = lower(%s) AND is_active = TRUE
+                WHERE lower(email) = lower(%s)
                 """,
                 (email,),
             ).fetchone()
@@ -33,9 +34,9 @@ class PostgresUserRepository(UserRepository):
         with self._pool.connection() as connection:
             row = connection.execute(
                 """
-                SELECT user_id, email, full_name, password_hash, role, is_active
+                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version
                 FROM users
-                WHERE user_id = %s AND is_active = TRUE
+                WHERE user_id = %s
                 """,
                 (parsed_id,),
             ).fetchone()
@@ -71,6 +72,44 @@ class PostgresUserRepository(UserRepository):
             ).fetchone()
         return row is not None
 
+    def list_users(self) -> list[UserRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version FROM users ORDER BY email"
+            ).fetchall()
+        return [self._to_record(row) for row in rows]
+
+    def create_user(self, user: UserRecord) -> UserRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO users (user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                (UUID(user.id), user.email.lower(), user.full_name, user.hashed_password, user.role.value,
+                 user.is_active, user.must_change_password, user.token_version),
+            ).fetchone()
+        return self._to_record(row)
+
+    def update_user(self, user_id: str, email: str, full_name: str, role: Role, is_active: bool) -> UserRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE users SET email = %s, full_name = %s, role = %s, is_active = %s
+                WHERE user_id = %s
+                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                (email.lower(), full_name, role.value, is_active, UUID(user_id)),
+            ).fetchone()
+        return self._to_record(row) if row else None
+
+    def update_password(self, user_id: str, hashed_password: str, must_change_password: bool) -> UserRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE users SET password_hash = %s, must_change_password = %s, token_version = token_version + 1
+                WHERE user_id = %s
+                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                (hashed_password, must_change_password, UUID(user_id)),
+            ).fetchone()
+        return self._to_record(row) if row else None
+
     @staticmethod
     def _to_record(row: tuple | dict) -> UserRecord:
         if not isinstance(row, dict):
@@ -82,6 +121,8 @@ class PostgresUserRepository(UserRepository):
             role=Role(row["role"]),
             hashed_password=row["password_hash"],
             is_active=row["is_active"],
+            must_change_password=row["must_change_password"],
+            token_version=row["token_version"],
         )
 
 

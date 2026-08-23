@@ -21,9 +21,14 @@ CREATE TABLE IF NOT EXISTS users (
     -- Using CHECK instead of ENUM: easier to add roles later without migrations
     role          VARCHAR(20)  NOT NULL CHECK (role IN ('instructor', 'student', 'admin')),
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+    token_version INTEGER NOT NULL DEFAULT 0,
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login    TIMESTAMP
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
 
 -- Fast lookups by email on every login request
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

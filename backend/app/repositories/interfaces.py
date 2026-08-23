@@ -14,6 +14,8 @@ class UserRecord:
     role: Role
     hashed_password: str
     is_active: bool = True
+    must_change_password: bool = False
+    token_version: int = 0
 
 
 class UserRepository(Protocol):
@@ -26,6 +28,14 @@ class UserRepository(Protocol):
     def revoke_access_token(self, token_id: str, user_id: str, expires_at: datetime) -> None: ...
 
     def is_access_token_revoked(self, token_id: str) -> bool: ...
+
+    def list_users(self) -> list[UserRecord]: ...
+
+    def create_user(self, user: UserRecord) -> UserRecord: ...
+
+    def update_user(self, user_id: str, email: str, full_name: str, role: Role, is_active: bool) -> UserRecord | None: ...
+
+    def update_password(self, user_id: str, hashed_password: str, must_change_password: bool) -> UserRecord | None: ...
 
 
 class ManualTextRepository(Protocol):

@@ -40,13 +40,14 @@ def hash_password(password: str) -> str:
     )
 
 
-def create_access_token(subject: str, role: str, expires_delta_minutes: int | None = None) -> str:
+def create_access_token(subject: str, role: str, token_version: int = 0, expires_delta_minutes: int | None = None) -> str:
     settings = get_settings()
     expire_minutes = expires_delta_minutes or settings.access_token_expire_minutes
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
     payload: dict[str, Any] = {
         "sub": subject,
         "role": role,
+        "token_version": token_version,
         "jti": str(uuid4()),
         "exp": expires_at,
     }
@@ -60,7 +61,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
         sub = payload.get("sub")
         role = payload.get("role")
         token_id = payload.get("jti")
-        if not sub or not role or not token_id:
+        if not sub or not role or not token_id or "token_version" not in payload:
             raise TokenPayloadError("Invalid token payload.")
         return payload
     except JWTError as exc:

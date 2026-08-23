@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from app.core.security import hash_password
 from app.repositories.interfaces import (
@@ -24,6 +25,13 @@ class InMemoryUserRepository(UserRepository):
                 email="faculty@sprintsight.edu",
                 full_name="Faculty User",
                 role=Role.INSTRUCTOR,
+                hashed_password=hash_password("password123"),
+            ),
+            "admin@sprintsight.edu": UserRecord(
+                id="u-admin-1",
+                email="admin@sprintsight.edu",
+                full_name="Admin User",
+                role=Role.ADMIN,
                 hashed_password=hash_password("password123"),
             ),
             "student@sprintsight.edu": UserRecord(
@@ -52,6 +60,36 @@ class InMemoryUserRepository(UserRepository):
 
     def is_access_token_revoked(self, token_id: str) -> bool:
         return token_id in self._revoked_tokens
+
+    def list_users(self) -> list[UserRecord]:
+        return list(self._users.values())
+
+    def create_user(self, user: UserRecord) -> UserRecord:
+        self._users[user.email.lower()] = user
+        return user
+
+    def update_user(self, user_id: str, email: str, full_name: str, role: Role, is_active: bool) -> UserRecord | None:
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+        old_email = user.email.lower()
+        user.email = email.lower()
+        user.full_name = full_name
+        user.role = role
+        user.is_active = is_active
+        if old_email != user.email:
+            del self._users[old_email]
+        self._users[user.email] = user
+        return user
+
+    def update_password(self, user_id: str, hashed_password: str, must_change_password: bool) -> UserRecord | None:
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+        user.hashed_password = hashed_password
+        user.must_change_password = must_change_password
+        user.token_version += 1
+        return user
 
 
 class InMemoryManualTextRepository(ManualTextRepository):
