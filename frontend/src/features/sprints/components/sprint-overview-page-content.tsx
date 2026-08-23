@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CalendarDays, CheckCircle2, CircleDotDashed, FileText, GitCommitHorizontal, ListChecks } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { getProjectsForSprintOverview, getSprintOverviewPayload } from "@/features/sprints/data";
 
@@ -18,7 +18,9 @@ function formatDate(dateValue: string) {
 
 export default function SprintOverviewPageContent() {
   const projectOptions = useMemo(() => getProjectsForSprintOverview(), []);
-  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
+  
+  // TODO: Replace this with your global state/context value selected from the Top Navigation Bar.
+  const selectedProjectId = projectOptions[0]?.id ?? "";
 
   const payload = useMemo(() => {
     if (!selectedProjectId) {
@@ -42,23 +44,11 @@ export default function SprintOverviewPageContent() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-blue-950">Sprint Overview</h1>
-          <p className="mt-1 text-base text-slate-500">Track sprint progress and milestones across all projects</p>
+          <p className="mt-1 text-base text-slate-500">
+            Track sprint progress and milestones for <span className="font-semibold text-slate-700">{payload.project.name}</span>
+          </p>
         </div>
-
-        <div className="w-full max-w-sm">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Selected project</label>
-          <select
-            value={selectedProjectId}
-            onChange={(event) => setSelectedProjectId(event.target.value)}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-100 transition focus:border-blue-300 focus:ring-2"
-          >
-            {projectOptions.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* The redundant Selected Project dropdown was removed from here */}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

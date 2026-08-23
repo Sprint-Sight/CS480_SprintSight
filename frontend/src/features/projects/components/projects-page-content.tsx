@@ -8,8 +8,11 @@ import { PROJECTS } from "@/features/projects/data";
 import type { ProjectStatus } from "@/features/projects/types";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
-const sprintOptions = ["All sprints", ...new Set(PROJECTS.flatMap((project) => project.sprints.map((sprint) => sprint.name)))];
-const moduleOptions = ["All modules", ...new Set(PROJECTS.map((project) => project.module))];
+const sprintOptions = [
+  "All sprints",
+  ...Array.from(new Set(PROJECTS.flatMap((project) => project.sprints.map((sprint) => sprint.name)))),
+];
+const moduleOptions = ["All modules", ...Array.from(new Set(PROJECTS.map((project) => project.module)))];
 const sortOptions = [
   { value: "name-asc", label: "Name (A-Z)" },
   { value: "name-desc", label: "Name (Z-A)" },

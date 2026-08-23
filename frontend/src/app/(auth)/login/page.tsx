@@ -2,23 +2,24 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Eye } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
-const DEMO_CREDENTIALS = {
-  instructor: {
+const DEMO_USERS = [
+  {
     email: "instructor@demo.edu",
     password: "password123",
+    role: "instructor" as const,
   },
-  student: {
+  {
     email: "student@demo.edu",
     password: "password123",
+    role: "student" as const,
   },
-} as const;
+];
 
 export default function LoginPage() {
   const router = useRouter();
-  const [role, setRole] = useState<"instructor" | "student">("instructor");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -26,14 +27,20 @@ export default function LoginPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    const expected = DEMO_CREDENTIALS[role];
-    if (email.trim().toLowerCase() !== expected.email || password !== expected.password) {
-      setError("Invalid credentials for the selected role.");
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // Automatically determine role based on submitted credentials
+    const foundUser = DEMO_USERS.find(
+      (user) => user.email === cleanEmail && user.password === password
+    );
+
+    if (!foundUser) {
+      setError("Invalid email or password.");
       return;
     }
 
-    sessionStorage.setItem("sprintsight-auth-role", role);
-    sessionStorage.setItem("sprintsight-auth-email", expected.email);
+    sessionStorage.setItem("sprintsight-auth-role", foundUser.role);
+    sessionStorage.setItem("sprintsight-auth-email", foundUser.email);
     router.replace("/");
   };
 
@@ -41,38 +48,19 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8">
         
-        {/* Logo & Header */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center gap-2 mb-4 text-blue-600">
-            <Eye className="w-8 h-8" />
-            <span className="text-xl font-bold italic tracking-tight text-slate-800">SprintSight</span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">SprintSight</h1>
-          <p className="text-sm text-slate-500">AI-Powered Continuous Sprint Assessment</p>
-        </div>
-
-        {/* Role Toggle */}
-        <div className="flex bg-slate-100 rounded-lg p-1 mb-8">
-          <button
-            onClick={() => setRole("instructor")}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-              role === "instructor"
-                ? "bg-[#0b2046] text-white shadow"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Instructor
-          </button>
-          <button
-            onClick={() => setRole("student")}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-              role === "student"
-                ? "bg-[#0b2046] text-white shadow"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Student
-          </button>
+        {/* Logo & Subtitle */}
+        <div className="flex flex-col items-center mb-6">
+          <Image
+            src="/logo.png"
+            alt="SprintSight Logo"
+            width={320}
+            height={100}
+            priority
+            className="h-24 w-auto object-contain mb-1"
+          />
+          <p className="text-xs text-slate-400 font-medium tracking-tight">
+            AI-Powered Continuous Sprint Assessment
+          </p>
         </div>
 
         {/* Form */}
@@ -89,7 +77,7 @@ export default function LoginPage() {
                 setEmail(e.target.value);
                 if (error) setError("");
               }}
-              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-slate-800"
               required
             />
           </div>
@@ -106,15 +94,17 @@ export default function LoginPage() {
                 setPassword(e.target.value);
                 if (error) setError("");
               }}
-              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-slate-800"
               required
             />
           </div>
 
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
-          <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
-            Demo credentials: Instructor: instructor@demo.edu / password123, Student: student@demo.edu / password123
+          <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3 leading-relaxed">
+            Demo credentials (role detected automatically):<br />
+            • Instructor: <span className="font-medium text-slate-700">instructor@demo.edu</span> / <span className="font-medium text-slate-700">password123</span><br />
+            • Student: <span className="font-medium text-slate-700">student@demo.edu</span> / <span className="font-medium text-slate-700">password123</span>
           </p>
 
           <div className="flex items-center justify-between">
