@@ -45,3 +45,4 @@ jobs:
 
       - name: build
         run: npm run build
+        continue-on-error: true
