@@ -57,7 +57,6 @@ const studentNavItems: NavItem[] = [
   { label: "My Grades & Feedback", href: "/assessment-report", icon: FileText },
   { label: "My Team Contributions", href: "/contributions", icon: Users },
   { label: "Progress", href: "/progress", icon: GitCompare },
-  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 const semesterOptions = ["Spring 2026", "Fall 2025", "Summer 2025"];
@@ -83,7 +82,8 @@ function isActivePath(pathname: string, href: string) {
 export default function DashboardShell({ children }: DashboardShellProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const isProjectsArea = pathname === "/projects" || pathname.startsWith("/projects/");
+  const isProjectsRoot = pathname === "/projects";
+  const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings";
   const menuRef = useRef<HTMLDivElement | null>(null);
   
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -95,6 +95,12 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
   // 2. STATE FOR CONFIRMATION MODAL
   const [pendingAction, setPendingAction] = useState<"sync" | "assess" | null>(null);
+
+  useEffect(() => {
+    if (isAuthorized && role === "student" && isRestrictedForStudent) {
+      router.replace("/");
+    }
+  }, [isAuthorized, role, isRestrictedForStudent, router]);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
@@ -121,10 +127,10 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   }, []);
 
   useEffect(() => {
-    if (isAuthorized && role === "student" && isProjectsArea) {
+    if (isAuthorized && role === "student" && isProjectsRoot) {
       router.replace("/");
     }
-  }, [isAuthorized, role, isProjectsArea, router]);
+  }, [isAuthorized, role, isProjectsRoot, router]);
 
   const profileUser = useMemo(() => {
     return role === "student"

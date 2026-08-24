@@ -1,6 +1,7 @@
 "use client";
 
 import { TrendingDown, TrendingUp } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -40,6 +41,13 @@ function MetricCard({ label, score, delta }: { label: string; score: number; del
 }
 
 export default function ProgressPageContent() {
+  const [role, setRole] = useState<"student" | "instructor" | null>(null);
+
+  useEffect(() => {
+    const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
+    setRole(savedRole ?? "student"); // Default to student to protect sensitive data
+  }, []);
+
   return (
     <div className="space-y-5 p-8">
       <div>
@@ -80,42 +88,47 @@ export default function ProgressPageContent() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-xl font-semibold text-blue-950">Team Comparison Across Sprints</h2>
-        <div className="mt-3 h-[260px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={PROGRESS_DATA.teamComparison}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="team" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <YAxis domain={[50, 100]} axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="sprint3" name="Sprint3" fill="#5C98BD" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="sprint4" name="Sprint4" fill="#3F7C9E" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="sprint5" name="Sprint5" fill="#1F3D6D" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
+      {/* Conditionally render instructor-only views */}
+      {role === "instructor" && (
+        <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-xl font-semibold text-blue-950">Team Comparison Across Sprints</h2>
+            <div className="mt-3 h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={PROGRESS_DATA.teamComparison}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="team" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <YAxis domain={[50, 100]} axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="sprint3" name="Sprint3" fill="#5C98BD" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="sprint4" name="Sprint4" fill="#3F7C9E" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="sprint5" name="Sprint5" fill="#1F3D6D" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-xl font-semibold text-blue-950">Regression Alerts</h2>
-        <div className="mt-3 space-y-2">
-          {PROGRESS_DATA.regressionAlerts.map((alert) => (
-            <article key={alert.id} className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-rose-700">
-                  {alert.team} - {alert.category}
-                </p>
-                <p className="text-sm font-bold text-rose-700">{alert.toScore - alert.fromScore}</p>
-              </div>
-              <p className="text-xs text-rose-600">
-                Score dropped from {alert.fromScore} to {alert.toScore} ({alert.fromSprint} to {alert.toSprint})
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-xl font-semibold text-blue-950">Regression Alerts</h2>
+            <div className="mt-3 space-y-2">
+              {PROGRESS_DATA.regressionAlerts.map((alert) => (
+                <article key={alert.id} className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-rose-700">
+                      {alert.team} - {alert.category}
+                    </p>
+                    <p className="text-sm font-bold text-rose-700">{alert.toScore - alert.fromScore}</p>
+                  </div>
+                  <p className="text-xs text-rose-600">
+                    Score dropped from {alert.fromScore} to {alert.toScore} ({alert.fromSprint} to {alert.toSprint})
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
