@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, UserRound } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -52,8 +52,14 @@ function heatColor(score: number) {
 export default function CollaborationPageContent() {
   const projectOptions = useMemo(() => getCollaborationProjectOptions(), []);
   const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
+  const [role, setRole] = useState<"student" | "instructor" | null>(null);
 
   const dataset = useMemo(() => getCollaborationDataset(selectedProjectId), [selectedProjectId]);
+
+  useEffect(() => {
+    const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
+    setRole(savedRole ?? "student");
+  }, []);
 
   return (
     <div className="space-y-5 p-8">
@@ -154,41 +160,44 @@ export default function CollaborationPageContent() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-blue-950">Collaboration Risk Indicators</h2>
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {dataset.riskIndicators.map((item) => {
-            const tone = getRiskTone(item.risk);
-            return (
-              <article key={item.team} className={`rounded-xl border p-3 ${tone.box}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900">
-                      <UserRound className="h-4 w-4 text-slate-500" />
-                      {item.team}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">{item.summary}</p>
+      {/* Conditionally render this section only if the role is instructor */}
+      {role === "instructor" && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-blue-950">Collaboration Risk Indicators</h2>
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {dataset.riskIndicators.map((item) => {
+              const tone = getRiskTone(item.risk);
+              return (
+                <article key={item.team} className={`rounded-xl border p-3 ${tone.box}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900">
+                        <UserRound className="h-4 w-4 text-slate-500" />
+                        {item.team}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">{item.summary}</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone.badge}`}>
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      {item.risk} Risk
+                    </span>
                   </div>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone.badge}`}>
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {item.risk} Risk
-                  </span>
-                </div>
 
-                <div className="mt-3">
-                  <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
-                    <span>Balance Score</span>
-                    <span>{item.balanceScore}%</span>
+                  <div className="mt-3">
+                    <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
+                      <span>Balance Score</span>
+                      <span>{item.balanceScore}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/80">
+                      <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${item.balanceScore}%` }} />
+                    </div>
                   </div>
-                  <div className="h-1.5 rounded-full bg-white/80">
-                    <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${item.balanceScore}%` }} />
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

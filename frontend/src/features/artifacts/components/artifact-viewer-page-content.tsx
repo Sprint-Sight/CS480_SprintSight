@@ -1,10 +1,17 @@
 "use client";
 
-import { CheckSquare, FileText, FolderGit2, MessageSquare, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { 
+  CheckSquare, 
+  FileText, 
+  FolderGit2, 
+  MessageSquare, 
+  Users,
+  Upload // Added Upload icon
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getArtifactDataset, getArtifactProjectOptions } from "@/features/artifacts/data";
-import type { ArtifactTab } from "@/features/artifacts/types";
+import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "github", label: "GitHub", icon: FolderGit2 },
@@ -15,27 +22,72 @@ const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ 
 ];
 
 function getStatusPill(status?: string) {
-  if (!status) {
-    return "";
-  }
-  if (status === "merged" || status === "Done") {
-    return "bg-emerald-50 text-emerald-700";
-  }
-  if (status === "open" || status === "In Progress") {
-    return "bg-blue-50 text-blue-700";
-  }
-  if (status === "To Do" || status === "closed") {
-    return "bg-slate-100 text-slate-600";
-  }
+  if (!status) return "";
+  if (status === "merged" || status === "Done") return "bg-emerald-50 text-emerald-700";
+  if (status === "open" || status === "In Progress") return "bg-blue-50 text-blue-700";
   return "bg-slate-100 text-slate-600";
+}
+
+function formatBytes(bytes: number, decimals = 1) {
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
 export default function ArtifactViewerPageContent() {
   const projectOptions = useMemo(() => getArtifactProjectOptions(), []);
   const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
+  
+  // Track user role for anonymity features
+  const [role, setRole] = useState<"student" | "instructor" | null>(null);
 
   const dataset = useMemo(() => getArtifactDataset(selectedProjectId), [selectedProjectId]);
+  
+  // Local state for documents to allow instant UI updates upon upload
+  const [localDocuments, setLocalDocuments] = useState<DocumentArtifact[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize role and local documents on mount/dataset change
+  useEffect(() => {
+    const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
+    setRole(savedRole ?? "student"); // Default to student if not found to enforce privacy
+  }, []);
+
+  useEffect(() => {
+    setLocalDocuments(dataset.documents);
+  }, [dataset]);
+
+  // Handle local file upload
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Determine file type badge based on extension
+    const extension = file.name.split('.').pop()?.toUpperCase() || "FILE";
+    const validTypes = ["PDF", "DOCX", "MD"];
+    const fileType = validTypes.includes(extension) ? extension : "FILE";
+
+    const newDoc: DocumentArtifact = {
+      id: `d-local-${Date.now()}`,
+      fileName: file.name,
+      fileType: fileType as any,
+      uploadedBy: role === "student" ? "Alex Rivera" : "Dr. Sarah Chen", // Mocking current user
+      uploadedAt: new Date().toISOString().split("T")[0],
+      size: formatBytes(file.size),
+    };
+
+    // Update state to show the new document immediately
+    setLocalDocuments((prev) => [newDoc, ...prev]);
+    
+    // Reset the input so the same file can be uploaded again if needed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   return (
     <div className="space-y-5 p-8">
@@ -120,8 +172,28 @@ export default function ArtifactViewerPageContent() {
 
         {activeTab === "documents" && (
           <>
-            <h2 className="text-3xl font-semibold text-blue-950">Uploaded Documents</h2>
-            {dataset.documents.map((doc) => (
+            <div className="flex items-center justify-between">
+              <h2 className="text-3xl font-semibold text-blue-950">Uploaded Documents</h2>
+              
+              {/* Hidden file input and Upload Button */}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileUpload}
+                className="hidden" 
+                accept=".pdf,.doc,.docx,.md,.txt"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <Upload className="h-4 w-4" />
+                Upload Document
+              </button>
+            </div>
+
+            {localDocuments.map((doc) => (
               <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -134,6 +206,12 @@ export default function ArtifactViewerPageContent() {
                 </div>
               </article>
             ))}
+            
+            {localDocuments.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
+                <p className="text-sm text-slate-500">No documents uploaded yet. Click the upload button to add evidence.</p>
+              </div>
+            )}
           </>
         )}
 
@@ -157,7 +235,8 @@ export default function ArtifactViewerPageContent() {
               <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-base font-semibold text-slate-900">
-                    {entry.reviewer} reviewed {entry.target}
+                    {/* Conditionally hide the reviewer's name if the user is a student */}
+                    {role === "student" ? "Anonymous teammate" : entry.reviewer} reviewed {entry.target}
                   </p>
                   <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{entry.score}/100</span>
                 </div>

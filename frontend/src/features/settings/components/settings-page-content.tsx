@@ -1,7 +1,8 @@
 "use client";
 
 import { BrainCircuit, Cable, RefreshCw, Save, SlidersHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { INITIAL_SETTINGS } from "@/features/settings/data";
 import type { ApiConnectionSettings, RubricWeight } from "@/features/settings/types";
@@ -11,6 +12,9 @@ function clamp(value: number, min: number, max: number) {
 }
 
 export default function SettingsPageContent() {
+  const router = useRouter();
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
   const [rubric, setRubric] = useState(INITIAL_SETTINGS.rubric);
   const [selectedModelId, setSelectedModelId] = useState(INITIAL_SETTINGS.selectedModelId);
   const [llmParams, setLlmParams] = useState(INITIAL_SETTINGS.llmParams);
@@ -18,6 +22,15 @@ export default function SettingsPageContent() {
   const [saveMessage, setSaveMessage] = useState("");
 
   const totalWeight = useMemo(() => rubric.reduce((sum, item) => sum + item.value, 0), [rubric]);
+
+  useEffect(() => {
+    const role = sessionStorage.getItem("sprintsight-auth-role");
+    if (role === "student") {
+      router.replace("/");
+    } else {
+      setIsAuthorized(true);
+    }
+  }, [router]);
 
   function updateRubricWeight(id: RubricWeight["id"], value: number) {
     setRubric((prev) => prev.map((item) => (item.id === id ? { ...item, value: clamp(value, 0, 100) } : item)));
@@ -38,6 +51,11 @@ export default function SettingsPageContent() {
 
   function handleSave() {
     setSaveMessage(`Settings saved at ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`);
+  }
+
+  // Do not render the page at all until we confirm they are not a student
+  if (!isAuthorized) {
+    return null; 
   }
 
   return (

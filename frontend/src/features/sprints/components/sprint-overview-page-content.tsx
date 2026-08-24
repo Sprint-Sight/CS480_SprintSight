@@ -48,7 +48,6 @@ export default function SprintOverviewPageContent() {
             Track sprint progress and milestones for <span className="font-semibold text-slate-700">{payload.project.name}</span>
           </p>
         </div>
-        {/* The redundant Selected Project dropdown was removed from here */}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -125,8 +124,9 @@ export default function SprintOverviewPageContent() {
                     <CalendarDays className="h-4 w-4" />
                     Score {row.sprint.score}/100 | {row.sprint.completion}% complete
                   </div>
+                  {/* Fixed Link path to direct exactly to the sprint details page */}
                   <Link
-                    href={`/projects/${row.projectId}/sprints/${row.sprint.id}/assessment`}
+                    href={`/projects/${row.projectId}/sprints/${row.sprint.id}`}
                     className="inline-flex items-center rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
                   >
                     Open Assessment Report
