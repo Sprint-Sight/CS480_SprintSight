@@ -5,7 +5,7 @@ from uuid import uuid4
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import UserRecord, UserRepository
+from app.repositories.interfaces import CourseRecord, ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.auth import Role
 
 
@@ -124,6 +124,97 @@ class PostgresUserRepository(UserRepository):
             must_change_password=row["must_change_password"],
             token_version=row["token_version"],
         )
+
+
+class PostgresProjectRepository(ProjectRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def create_course(self, code: str, name: str) -> CourseRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "INSERT INTO courses (code, name) VALUES (%s, %s) RETURNING course_id, code, name, created_at",
+                (code.upper(), name),
+            ).fetchone()
+        return CourseRecord(str(row["course_id"]), row["code"], row["name"], row["created_at"])
+
+    def get_course(self, course_id: str) -> CourseRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT course_id, code, name, created_at FROM courses WHERE course_id = %s", (UUID(course_id),)
+            ).fetchone()
+        return CourseRecord(str(row["course_id"]), row["code"], row["name"], row["created_at"]) if row else None
+
+    def list_courses(self) -> list[CourseRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute("SELECT course_id, code, name, created_at FROM courses ORDER BY code").fetchall()
+        return [CourseRecord(str(row["course_id"]), row["code"], row["name"], row["created_at"]) for row in rows]
+
+    def assign_instructor(self, course_id: str, user_id: str) -> None:
+        with self._pool.connection() as connection:
+            connection.execute("INSERT INTO course_instructors (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (UUID(course_id), UUID(user_id)))
+
+    def is_instructor_assigned(self, course_id: str, user_id: str) -> bool:
+        with self._pool.connection() as connection:
+            row = connection.execute("SELECT 1 FROM course_instructors WHERE course_id = %s AND user_id = %s", (UUID(course_id), UUID(user_id))).fetchone()
+        return row is not None
+
+    def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO projects (project_id, project_name, description, course_id, github_repo_url, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING project_id, project_name, description, course_id, github_repo_url, created_by, created_at""",
+                (UUID(project.id), project.project_name, project.description, UUID(project.course_id), project.github_repo_url, UUID(project.created_by)),
+            ).fetchone()
+            course = connection.execute("SELECT code FROM courses WHERE course_id = %s", (UUID(project.course_id),)).fetchone()
+            row["course_code"] = course["code"]
+            for member_id in dict.fromkeys(member_ids):
+                connection.execute("INSERT INTO project_members (project_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (UUID(project.id), UUID(member_id)))
+        return self._project(row)
+
+    def get_project(self, project_id: str) -> ProjectRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute("""SELECT p.project_id, p.project_name, p.description, p.course_id, c.code AS course_code, p.github_repo_url, p.created_by, p.created_at
+                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.project_id = %s""", (UUID(project_id),)).fetchone()
+        return self._project(row) if row else None
+
+    def list_projects(self, course_id: str) -> list[ProjectRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute("""SELECT p.project_id, p.project_name, p.description, p.course_id, c.code AS course_code, p.github_repo_url, p.created_by, p.created_at
+                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.course_id = %s ORDER BY p.project_name""", (UUID(course_id),)).fetchall()
+        return [self._project(row) for row in rows]
+
+    def update_project(self, project_id: str, project_name: str, description: str | None, github_repo_url: str | None) -> ProjectRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute("""UPDATE projects SET project_name = %s, description = %s, github_repo_url = %s
+                WHERE project_id = %s RETURNING project_id, project_name, description, course_id, github_repo_url, created_by, created_at""", (project_name, description, github_repo_url, UUID(project_id))).fetchone()
+            if row:
+                course = connection.execute("SELECT code FROM courses WHERE course_id = %s", (row["course_id"],)).fetchone()
+                row["course_code"] = course["code"]
+        return self._project(row) if row else None
+
+    def delete_project(self, project_id: str) -> ProjectRecord | None:
+        project = self.get_project(project_id)
+        if project:
+            with self._pool.connection() as connection:
+                connection.execute("DELETE FROM projects WHERE project_id = %s", (UUID(project_id),))
+        return project
+
+    def set_members(self, project_id: str, member_ids: list[str]) -> None:
+        with self._pool.connection() as connection:
+            connection.execute("DELETE FROM project_members WHERE project_id = %s", (UUID(project_id),))
+            for member_id in dict.fromkeys(member_ids):
+                connection.execute("INSERT INTO project_members (project_id, user_id) VALUES (%s, %s)", (UUID(project_id), UUID(member_id)))
+
+    def list_member_ids(self, project_id: str) -> list[str]:
+        with self._pool.connection() as connection:
+            rows = connection.execute("SELECT user_id FROM project_members WHERE project_id = %s", (UUID(project_id),)).fetchall()
+        return [str(row["user_id"]) for row in rows]
+
+    @staticmethod
+    def _project(row: dict) -> ProjectRecord:
+        return ProjectRecord(str(row["project_id"]), row["project_name"], row["description"], str(row["course_id"]), row["course_code"], row["github_repo_url"], str(row["created_by"]), row["created_at"])
 
 
 def create_user_pool(connection_string: str) -> ConnectionPool:

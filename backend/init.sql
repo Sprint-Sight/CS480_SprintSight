@@ -79,3 +79,39 @@ INSERT INTO users (email, password_hash, full_name, role) VALUES
      'Sample Student',
      'student')
 ON CONFLICT (email) DO NOTHING;    -- safe to re-run, won't duplicate rows
+
+-- =============================================================
+-- 2. COURSES, PROJECTS & PROJECT MEMBERS
+-- =============================================================
+CREATE TABLE IF NOT EXISTS courses (
+    course_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(20) UNIQUE NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS course_instructors (
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    PRIMARY KEY (course_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+    project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_name VARCHAR(150) NOT NULL,
+    description TEXT,
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    github_repo_url VARCHAR(255),
+    created_by UUID NOT NULL REFERENCES users(user_id),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_course_instructors_user_id ON course_instructors(user_id);
+CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
+CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);

@@ -11,6 +11,9 @@ from app.repositories.interfaces import (
     OverrideRepository,
     UserRecord,
     UserRepository,
+    CourseRecord,
+    ProjectRecord,
+    ProjectRepository,
 )
 from app.schemas.assessment import AssessmentReport, AuditRecord, ManualTextPayload, OverrideResponse
 from app.schemas.auth import Role
@@ -92,6 +95,61 @@ class InMemoryUserRepository(UserRepository):
         return user
 
 
+class InMemoryProjectRepository(ProjectRepository):
+    def __init__(self) -> None:
+        self._courses: dict[str, CourseRecord] = {}
+        self._projects: dict[str, ProjectRecord] = {}
+        self._instructors: set[tuple[str, str]] = set()
+        self._members: dict[str, list[str]] = {}
+
+    def create_course(self, code: str, name: str) -> CourseRecord:
+        course = CourseRecord(str(uuid4()), code.upper(), name, now_utc())
+        self._courses[course.id] = course
+        return course
+
+    def get_course(self, course_id: str) -> CourseRecord | None:
+        return self._courses.get(course_id)
+
+    def list_courses(self) -> list[CourseRecord]:
+        return list(self._courses.values())
+
+    def assign_instructor(self, course_id: str, user_id: str) -> None:
+        self._instructors.add((course_id, user_id))
+
+    def is_instructor_assigned(self, course_id: str, user_id: str) -> bool:
+        return (course_id, user_id) in self._instructors
+
+    def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord:
+        self._projects[project.id] = project
+        self._members[project.id] = list(dict.fromkeys(member_ids))
+        return project
+
+    def get_project(self, project_id: str) -> ProjectRecord | None:
+        return self._projects.get(project_id)
+
+    def list_projects(self, course_id: str) -> list[ProjectRecord]:
+        return [project for project in self._projects.values() if project.course_id == course_id]
+
+    def update_project(self, project_id: str, project_name: str, description: str | None, github_repo_url: str | None) -> ProjectRecord | None:
+        project = self._projects.get(project_id)
+        if not project:
+            return None
+        project.project_name = project_name
+        project.description = description
+        project.github_repo_url = github_repo_url
+        return project
+
+    def delete_project(self, project_id: str) -> ProjectRecord | None:
+        project = self._projects.pop(project_id, None)
+        self._members.pop(project_id, None)
+        return project
+
+    def set_members(self, project_id: str, member_ids: list[str]) -> None:
+        self._members[project_id] = list(dict.fromkeys(member_ids))
+
+    def list_member_ids(self, project_id: str) -> list[str]:
+        return self._members.get(project_id, [])
+
 class InMemoryManualTextRepository(ManualTextRepository):
     def __init__(self) -> None:
         self._store: dict[tuple[str, str, str], str] = {}
@@ -168,6 +226,7 @@ assessment_repo = InMemoryAssessmentRepository()
 overrides_repo = InMemoryOverrideRepository()
 audit_repo = InMemoryAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
+projects_repo = InMemoryProjectRepository()
 
 
 def now_utc() -> datetime:

@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.interfaces import UserRepository
+from app.repositories.interfaces import ProjectRepository, UserRepository
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
 
@@ -14,6 +14,10 @@ oauth2_scheme = HTTPBearer()
 
 def get_user_repository(request: Request) -> UserRepository:
     return request.app.state.user_repository
+
+
+def get_project_repository(request: Request) -> ProjectRepository:
+    return request.app.state.project_repository
 
 
 def get_current_user(

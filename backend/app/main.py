@@ -7,7 +7,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_middleware
 from app.core.storage import storage
-from app.repositories.postgres import PostgresUserRepository, create_user_pool
+from app.repositories.postgres import PostgresProjectRepository, PostgresUserRepository, create_user_pool
 
 settings = get_settings()
 configure_logging()
@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
     pool = create_user_pool(settings.database_connection_string())
     pool.open(wait=True)
     app.state.user_repository = PostgresUserRepository(pool)
+    app.state.project_repository = PostgresProjectRepository(pool)
 
     # Create MinIO buckets if they don't exist yet
     # Safe to call every restart — skips buckets that already exist
