@@ -1,0 +1,53 @@
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app.core.config import get_settings
+from app.main import app
+
+
+client = TestClient(app)
+
+
+def faculty_token() -> str:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "faculty@sprintsight.edu", "password": "password123"},
+    )
+    return response.json()["access_token"]
+
+
+def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path) -> None:
+    audit_file = tmp_path / "audit.log"
+    monkeypatch.setenv("AUDIT_LOG_PATH", str(audit_file))
+    get_settings.cache_clear()
+
+    token = faculty_token()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assess_response = client.post(
+        "/api/v1/assessments/assess",
+        json={"course_id": "cs480", "project_id": "proj-a", "sprint_id": "sp1"},
+        headers=headers,
+    )
+    assert assess_response.status_code == 200
+
+    report_id = assess_response.json()["report"]["report_id"]
+
+    override_response = client.post(
+        "/api/v1/assessments/override",
+        json={
+            "report_id": report_id,
+            "student_id": "stu-001",
+            "new_score": 91.0,
+            "reason_comment": "Adjusted for strong testing leadership and mentoring.",
+        },
+        headers=headers,
+    )
+    assert override_response.status_code == 200
+    assert audit_file.exists()
+    assert "reason_comment" in audit_file.read_text(encoding="utf-8")
+
+    audit_list_response = client.get("/api/v1/audit/overrides", headers=headers)
+    assert audit_list_response.status_code == 200
+    assert len(audit_list_response.json()) >= 1
