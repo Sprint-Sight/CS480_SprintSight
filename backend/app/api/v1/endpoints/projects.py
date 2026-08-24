@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies.auth import get_project_repository, get_user_repository, require_admin, get_current_user
+from app.dependencies.auth import get_project_repository, get_user_repository, require_admin, require_faculty, get_current_user
 from app.repositories.interfaces import ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.auth import Role, UserResponse
 from app.schemas.projects import CourseCreate, CourseInstructorResponse, CourseResponse, InstructorStudentCreate, ProjectCreate, ProjectResponse, ProjectUpdate
@@ -36,16 +36,22 @@ def _project_response(project: ProjectRecord, project_repository: ProjectReposit
 
 
 @router.post("/courses", response_model=CourseResponse, status_code=status.HTTP_201_CREATED)
-def create_course(payload: CourseCreate, _: Annotated[UserRecord, Depends(require_admin)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> CourseResponse:
-    if any(course.code.lower() == payload.code.lower() for course in repository.list_courses()):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course code is already registered.")
-    course = repository.create_course(payload.code, payload.name)
-    return CourseResponse(id=course.id, code=course.code, name=course.name, created_at=course.created_at)
+def create_course(payload: CourseCreate, current_user: Annotated[UserRecord, Depends(require_faculty)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> CourseResponse:
+    if any(course.code.lower() == payload.code.lower() and course.section.lower() == payload.section.lower()
+           and course.year == payload.year and course.term.lower() == payload.term.lower()
+           for course in repository.list_courses()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
+    course = repository.create_course(payload.code, payload.name, payload.section, payload.year, payload.term, current_user.id)
+    return CourseResponse(id=course.id, code=course.code, name=course.name, section=course.section,
+                          year=course.year, term=course.term, created_by=course.created_by,
+                          created_at=course.created_at)
 
 
 @router.get("/courses", response_model=list[CourseResponse])
 def list_courses(_: Annotated[UserRecord, Depends(require_admin)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> list[CourseResponse]:
-    return [CourseResponse(id=course.id, code=course.code, name=course.name, created_at=course.created_at) for course in repository.list_courses()]
+    return [CourseResponse(id=course.id, code=course.code, name=course.name, section=course.section,
+                           year=course.year, term=course.term, created_by=course.created_by,
+                           created_at=course.created_at) for course in repository.list_courses()]
 
 
 @router.post("/courses/{course_id}/instructors/{user_id}", response_model=CourseInstructorResponse)
@@ -63,6 +69,15 @@ def create_course_student(course_id: str, payload: InstructorStudentCreate, curr
     _course_or_404(repository, course_id)
     if current_user.role != Role.ADMIN and not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+    return user_response(create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password))
+
+
+@router.post("/students", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_student(
+    payload: InstructorStudentCreate,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> UserResponse:
     return user_response(create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password))
 
 

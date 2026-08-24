@@ -43,6 +43,10 @@ class CourseRecord:
     id: str
     code: str
     name: str
+    section: str
+    year: int
+    term: str
+    created_by: str
     created_at: datetime
 
 
@@ -59,7 +63,7 @@ class ProjectRecord:
 
 
 class ProjectRepository(Protocol):
-    def create_course(self, code: str, name: str) -> CourseRecord: ...
+    def create_course(self, code: str, name: str, section: str, year: int, term: str, created_by: str) -> CourseRecord: ...
     def get_course(self, course_id: str) -> CourseRecord | None: ...
     def list_courses(self) -> list[CourseRecord]: ...
     def assign_instructor(self, course_id: str, user_id: str) -> None: ...

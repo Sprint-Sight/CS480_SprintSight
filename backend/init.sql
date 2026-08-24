@@ -85,10 +85,31 @@ ON CONFLICT (email) DO NOTHING;    -- safe to re-run, won't duplicate rows
 -- =============================================================
 CREATE TABLE IF NOT EXISTS courses (
     course_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code VARCHAR(20) UNIQUE NOT NULL,
+    code VARCHAR(20) NOT NULL,
     name VARCHAR(150) NOT NULL,
+    section VARCHAR(20) NOT NULL,
+    year INTEGER NOT NULL CHECK (year BETWEEN 2000 AND 2100),
+    term VARCHAR(20) NOT NULL,
+    created_by UUID NOT NULL REFERENCES users(user_id),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Migrate databases created before course offerings had section/term metadata.
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS section VARCHAR(20) NOT NULL DEFAULT '001';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS year INTEGER NOT NULL DEFAULT 2000;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS term VARCHAR(20) NOT NULL DEFAULT 'unknown';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS created_by UUID;
+UPDATE courses SET created_by = (SELECT user_id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1)
+WHERE created_by IS NULL;
+ALTER TABLE courses ALTER COLUMN created_by SET NOT NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'courses_created_by_fkey') THEN
+        ALTER TABLE courses ADD CONSTRAINT courses_created_by_fkey FOREIGN KEY (created_by) REFERENCES users(user_id);
+    END IF;
+END $$;
+ALTER TABLE courses DROP CONSTRAINT IF EXISTS courses_code_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_courses_offering ON courses(code, section, year, term);
 
 CREATE TABLE IF NOT EXISTS course_instructors (
     course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,

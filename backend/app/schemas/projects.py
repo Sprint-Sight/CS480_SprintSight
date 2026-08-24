@@ -9,12 +9,19 @@ from app.schemas.auth import Role, UserResponse
 class CourseCreate(BaseModel):
     code: str = Field(min_length=1, max_length=20)
     name: str = Field(min_length=1, max_length=150)
+    section: str = Field(min_length=1, max_length=20)
+    year: int = Field(ge=2000, le=2100)
+    term: str = Field(min_length=1, max_length=20)
 
 
 class CourseResponse(BaseModel):
     id: UUID
     code: str
     name: str
+    section: str
+    year: int
+    term: str
+    created_by: str
     created_at: datetime
 
 

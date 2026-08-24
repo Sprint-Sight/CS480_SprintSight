@@ -130,25 +130,30 @@ class PostgresProjectRepository(ProjectRepository):
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
 
-    def create_course(self, code: str, name: str) -> CourseRecord:
+    def create_course(self, code: str, name: str, section: str, year: int, term: str, created_by: str) -> CourseRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
-                "INSERT INTO courses (code, name) VALUES (%s, %s) RETURNING course_id, code, name, created_at",
-                (code.upper(), name),
+                "INSERT INTO courses (code, name, section, year, term, created_by) VALUES (%s, %s, %s, %s, %s, %s) RETURNING course_id, code, name, section, year, term, created_by, created_at",
+                (code.upper(), name, section, year, term, UUID(created_by)),
             ).fetchone()
-        return CourseRecord(str(row["course_id"]), row["code"], row["name"], row["created_at"])
+            connection.execute("INSERT INTO course_instructors (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (row["course_id"], UUID(created_by)))
+        return self._course(row)
 
     def get_course(self, course_id: str) -> CourseRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
-                "SELECT course_id, code, name, created_at FROM courses WHERE course_id = %s", (UUID(course_id),)
+                "SELECT course_id, code, name, section, year, term, created_by, created_at FROM courses WHERE course_id = %s", (UUID(course_id),)
             ).fetchone()
-        return CourseRecord(str(row["course_id"]), row["code"], row["name"], row["created_at"]) if row else None
+        return self._course(row) if row else None
 
     def list_courses(self) -> list[CourseRecord]:
         with self._pool.connection() as connection:
-            rows = connection.execute("SELECT course_id, code, name, created_at FROM courses ORDER BY code").fetchall()
-        return [CourseRecord(str(row["course_id"]), row["code"], row["name"], row["created_at"]) for row in rows]
+            rows = connection.execute("SELECT course_id, code, name, section, year, term, created_by, created_at FROM courses ORDER BY code, year, term, section").fetchall()
+        return [self._course(row) for row in rows]
+
+    @staticmethod
+    def _course(row: dict) -> CourseRecord:
+        return CourseRecord(str(row["course_id"]), row["code"], row["name"], row["section"], row["year"], row["term"], str(row["created_by"]), row["created_at"])
 
     def assign_instructor(self, course_id: str, user_id: str) -> None:
         with self._pool.connection() as connection:

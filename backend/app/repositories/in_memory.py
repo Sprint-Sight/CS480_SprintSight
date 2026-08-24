@@ -102,9 +102,10 @@ class InMemoryProjectRepository(ProjectRepository):
         self._instructors: set[tuple[str, str]] = set()
         self._members: dict[str, list[str]] = {}
 
-    def create_course(self, code: str, name: str) -> CourseRecord:
-        course = CourseRecord(str(uuid4()), code.upper(), name, now_utc())
+    def create_course(self, code: str, name: str, section: str, year: int, term: str, created_by: str) -> CourseRecord:
+        course = CourseRecord(str(uuid4()), code.upper(), name, section, year, term, created_by, now_utc())
         self._courses[course.id] = course
+        self._instructors.add((course.id, created_by))
         return course
 
     def get_course(self, course_id: str) -> CourseRecord | None:
