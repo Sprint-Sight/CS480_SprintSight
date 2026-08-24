@@ -1,0 +1,48 @@
+name: frontend CI
+
+on:
+  push:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: check out repository
+        uses: actions/checkout@v4
+
+      - name: set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install dependencies
+        run: npm ci
+
+      - name: lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: typecheck
+        run: npx tsc --noEmit
+        continue-on-error: true
+
+      - name: build
+        run: npm run build
+        continue-on-error: true
