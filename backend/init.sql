@@ -60,27 +60,6 @@ CREATE INDEX IF NOT EXISTS idx_revoked_access_tokens_expires_at
     ON revoked_access_tokens(expires_at);
 
 -- =============================================================
--- SEED DATA
--- Default accounts for local development
--- Password for all accounts: changeme123
--- Hash generated with app.core.security.hash_password("changeme123")
--- =============================================================
-INSERT INTO users (email, password_hash, full_name, role) VALUES
-    ('admin@sprintsight.dev',
-        'pbkdf2_sha256$200000$BEoJU9gfy7Rgq_MTo5W9jw==$B6ngQF8EXp93J20Dzydf6RqoTASrX8AHlV5zZ4A7jJw=',
-     'System Admin',
-     'admin'),
-    ('instructor@sprintsight.dev',
-        'pbkdf2_sha256$200000$BEoJU9gfy7Rgq_MTo5W9jw==$B6ngQF8EXp93J20Dzydf6RqoTASrX8AHlV5zZ4A7jJw=',
-     'Dr. Sample Instructor',
-     'instructor'),
-    ('student@sprintsight.dev',
-        'pbkdf2_sha256$200000$BEoJU9gfy7Rgq_MTo5W9jw==$B6ngQF8EXp93J20Dzydf6RqoTASrX8AHlV5zZ4A7jJw=',
-     'Sample Student',
-     'student')
-ON CONFLICT (email) DO NOTHING;    -- safe to re-run, won't duplicate rows
-
--- =============================================================
 -- 2. COURSES, PROJECTS & PROJECT MEMBERS
 -- =============================================================
 CREATE TABLE IF NOT EXISTS courses (
