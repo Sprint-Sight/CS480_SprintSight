@@ -74,3 +74,10 @@ class AuditRecord(BaseModel):
     original_score: float
     new_score: float
     reason_comment: str
+
+
+class AssessRequest(BaseModel):
+    course_id: str
+    project_id: str
+    sprint_id: str
+    model_name: str = Field(default="sprintsight-llama")
