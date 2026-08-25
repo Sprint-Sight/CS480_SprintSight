@@ -52,6 +52,7 @@ export default function LoginPage() {
         const user = await userResponse.json();
         sessionStorage.setItem("sprintsight-auth-role", user.role);
         sessionStorage.setItem("sprintsight-auth-email", user.email);
+        sessionStorage.setItem("sprintsight-auth-name", user.full_name);
       }
 
       router.replace("/");

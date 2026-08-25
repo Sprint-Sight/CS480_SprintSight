@@ -1432,9 +1432,6 @@ video {
 .leading-tight {
   line-height: 1.25;
 }
-.leading-relaxed {
-  line-height: 1.625;
-}
 .tracking-\[0\.2em\] {
   letter-spacing: 0.2em;
 }
@@ -1458,10 +1455,6 @@ video {
 .text-amber-700 {
   --tw-text-opacity: 1;
   color: rgb(180 83 9 / var(--tw-text-opacity, 1));
-}
-.text-amber-800 {
-  --tw-text-opacity: 1;
-  color: rgb(146 64 14 / var(--tw-text-opacity, 1));
 }
 .text-blue-500 {
   --tw-text-opacity: 1;
@@ -1494,10 +1487,6 @@ video {
 .text-emerald-700 {
   --tw-text-opacity: 1;
   color: rgb(4 120 87 / var(--tw-text-opacity, 1));
-}
-.text-emerald-800 {
-  --tw-text-opacity: 1;
-  color: rgb(6 95 70 / var(--tw-text-opacity, 1));
 }
 .text-indigo-500 {
   --tw-text-opacity: 1;

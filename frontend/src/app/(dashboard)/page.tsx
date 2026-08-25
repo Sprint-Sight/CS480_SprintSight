@@ -45,14 +45,6 @@ const instructorAlerts = [
   { team: "Team Theta", msg: "No documentation updates in Sprint 4", critical: false },
 ];
 
-const instructorAssessments = [
-  { team: "Team Alpha", project: "E-Commerce Platform", sprint: "Sprint 5", score: 82, status: "Completed" },
-  { team: "Team Beta", project: "Chat Application", sprint: "Sprint 4", score: 75, status: "Completed" },
-  { team: "Team Gamma", project: "Task Manager", sprint: "Sprint 5", score: 88, status: "Completed" },
-  { team: "Team Delta", project: "Social Network", sprint: "Sprint 3", score: 69, status: "Needs Review" },
-  { team: "Team Epsilon", project: "Weather App", sprint: "Sprint 5", score: 91, status: "Completed" },
-];
-
 // --- Student Mock Data ---
 const studentChartData = [
   { name: "Sprint 1", myScore: 78, teamAvg: 74, target: 85 },
@@ -79,7 +71,7 @@ const studentActionCenter = [
   },
   {
     title: "Instructor Feedback on Artifact #3",
-    due: "Posted yesterday by Dr. Chen",
+    due: "Posted yesterday",
     icon: MessageSquare,
     badge: "New Feedback",
     color: "text-emerald-600 bg-emerald-50 border-emerald-200",
@@ -96,12 +88,18 @@ const studentSprintHistory = [
 
 export default function DashboardPage() {
   const [role, setRole] = useState<"student" | "instructor">("instructor");
+  const [fullName, setFullName] = useState<string>("");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
+    const savedName = sessionStorage.getItem("sprintsight-auth-name");
+
     if (savedRole) {
       setRole(savedRole);
+    }
+    if (savedName) {
+      setFullName(savedName);
     }
     setMounted(true);
   }, []);
@@ -115,7 +113,9 @@ export default function DashboardPage() {
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-slate-900">My Dashboard</h1>
-          <p className="text-slate-500 mt-1">Welcome back, Alex. Here is your project overview for <span className="font-semibold text-slate-700">Team Alpha — E-Commerce Platform</span>.</p>
+          <p className="text-slate-500 mt-1">
+            Welcome back, <span className="font-semibold text-slate-700">{fullName || "Student"}</span>. Here is your project overview for <span className="font-semibold text-slate-700">Team Alpha — E-Commerce Platform</span>.
+          </p>
         </div>
 
         {/* Top Metrics Cards */}
@@ -173,9 +173,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Middle Section: Student Performance Chart & Action Center */}
+        {/* Middle Section: Chart & Action Center */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Performance Comparison Chart */}
           <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
             <h3 className="text-lg font-bold text-slate-900 mb-6">Performance Trend (My Score vs. Team)</h3>
             <div className="h-64 w-full">
@@ -194,7 +193,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Action Center / To-Do List */}
           <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col">
             <h3 className="text-lg font-bold text-slate-900 mb-4">Action Center</h3>
             <div className="flex-1 overflow-y-auto space-y-3">
@@ -214,7 +212,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Bottom Section: My Team's Sprint Breakdown */}
+        {/* Bottom Section */}
         <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
           <h3 className="text-lg font-bold text-slate-900 mb-6">My Sprint Breakdown</h3>
           <div className="overflow-x-auto">
@@ -258,7 +256,9 @@ export default function DashboardPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-slate-500 mt-1">Welcome back, Dr. Chen. Here&apos;s your assessment overview.</p>
+        <p className="text-slate-500 mt-1">
+          Welcome back, <span className="font-semibold text-slate-700">{fullName || "Instructor"}</span>. Here&apos;s your assessment overview.
+        </p>
       </div>
 
       {/* Top Metrics Cards */}
@@ -287,9 +287,8 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Middle Section: Chart & Alerts */}
+      {/* Middle Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Trend Chart */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
           <h3 className="text-lg font-bold text-slate-900 mb-6">Average Scores Over Time</h3>
           <div className="h-64 w-full">
@@ -312,7 +311,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Alerts List */}
         <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col">
           <h3 className="text-lg font-bold text-slate-900 mb-4">Collaboration Alerts</h3>
           <div className="flex-1 overflow-y-auto pr-2 space-y-3">
@@ -320,53 +318,12 @@ export default function DashboardPage() {
               <div key={idx} className="p-3 rounded-lg border border-slate-100 bg-slate-50 flex items-start gap-3">
                 <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${alert.critical ? "bg-rose-500" : "bg-amber-400"}`} />
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">{alert.team}</p>
+                  <p className="text-xs font-semibold text-slate-800">{alert.team}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{alert.msg}</p>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* Bottom Section: Recent Assessments Table */}
-      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-        <h3 className="text-lg font-bold text-slate-900 mb-6">Recent Assessments</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200">
-                <th className="pb-3 text-sm font-semibold text-slate-500">Team</th>
-                <th className="pb-3 text-sm font-semibold text-slate-500">Project</th>
-                <th className="pb-3 text-sm font-semibold text-slate-500">Sprint</th>
-                <th className="pb-3 text-sm font-semibold text-slate-500">Score</th>
-                <th className="pb-3 text-sm font-semibold text-slate-500">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {instructorAssessments.map((row, idx) => (
-                <tr key={idx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
-                  <td className="py-4 text-sm font-medium text-slate-900">{row.team}</td>
-                  <td className="py-4 text-sm text-slate-600">{row.project}</td>
-                  <td className="py-4 text-sm text-slate-600">{row.sprint}</td>
-                  <td className={`py-4 text-sm font-bold ${row.score >= 80 ? "text-emerald-600" : "text-rose-500"}`}>
-                    {row.score}/100
-                  </td>
-                  <td className="py-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        row.status === "Completed"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>

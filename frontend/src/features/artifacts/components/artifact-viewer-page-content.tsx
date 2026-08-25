@@ -42,8 +42,9 @@ export default function ArtifactViewerPageContent() {
   const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
   
-  // Track user role for anonymity and tab access
+  // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
+  const [fullName, setFullName] = useState<string>("");
 
   const dataset = useMemo(() => getArtifactDataset(selectedProjectId), [selectedProjectId]);
   
@@ -51,10 +52,15 @@ export default function ArtifactViewerPageContent() {
   const [localDocuments, setLocalDocuments] = useState<DocumentArtifact[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize role and local documents on mount/dataset change
+  // Initialize role, name, and local documents on mount/dataset change
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
+    const savedName = sessionStorage.getItem("sprintsight-auth-name");
+
     setRole(savedRole ?? "student"); // Default to student if not found to enforce privacy
+    if (savedName) {
+      setFullName(savedName);
+    }
   }, []);
 
   useEffect(() => {
@@ -83,7 +89,7 @@ export default function ArtifactViewerPageContent() {
       id: `d-local-${Date.now()}`,
       fileName: file.name,
       fileType: fileType as any,
-      uploadedBy: role === "student" ? "Alex Rivera" : "Dr. Sarah Chen",
+      uploadedBy: fullName || (role === "student" ? "Student User" : "Instructor User"),
       uploadedAt: new Date().toISOString().split("T")[0],
       size: formatBytes(file.size),
     };

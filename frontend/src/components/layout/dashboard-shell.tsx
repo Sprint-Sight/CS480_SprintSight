@@ -23,7 +23,6 @@ import {
   Sparkles,
 } from "lucide-react";
 
-// 1. IMPORT YOUR NEW MODAL
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 type DashboardShellProps = {
@@ -79,21 +78,29 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function getInitials(name: string): string {
+  if (!name) return "US";
+  const parts = name.trim().split(" ");
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function DashboardShell({ children }: DashboardShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const isProjectsRoot = pathname === "/projects";
   const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings";
   const menuRef = useRef<HTMLDivElement | null>(null);
-  
+
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [role, setRole] = useState<"student" | "instructor">("instructor");
+  const [userName, setUserName] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState("Spring 2026");
   const [selectedSection, setSelectedSection] = useState("SE3402-A — Software Engineering");
   const [selectedTeam, setSelectedTeam] = useState("Team Alpha — E-Commerce");
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
-  // 2. STATE FOR CONFIRMATION MODAL
+  // State for confirmation modal
   const [pendingAction, setPendingAction] = useState<"sync" | "assess" | null>(null);
 
   useEffect(() => {
@@ -105,6 +112,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
     const email = sessionStorage.getItem("sprintsight-auth-email");
+    const savedName = sessionStorage.getItem("sprintsight-auth-name");
 
     if (!savedRole || !email) {
       router.replace("/login");
@@ -112,6 +120,9 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     }
 
     setRole(savedRole);
+    if (savedName) {
+      setUserName(savedName);
+    }
     setIsAuthorized(true);
   }, [router]);
 
@@ -133,27 +144,29 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   }, [isAuthorized, role, isProjectsRoot, router]);
 
   const profileUser = useMemo(() => {
-    return role === "student"
-      ? { name: "Alex Rivera", label: "Student", initials: "AR" }
-      : { name: "Dr. Sarah Chen", label: "Instructor", initials: "SC" };
-  }, [role]);
+    const defaultName = role === "student" ? "Alex Rivera" : "Dr. Sarah Chen";
+    const displayName = userName || defaultName;
+    const label = role === "student" ? "Student" : "Instructor";
+    const initials = getInitials(displayName);
+
+    return { name: displayName, label, initials };
+  }, [role, userName]);
 
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
 
   const handleLogout = () => {
     sessionStorage.removeItem("sprintsight-auth-role");
     sessionStorage.removeItem("sprintsight-auth-email");
+    sessionStorage.removeItem("sprintsight-auth-name");
     setIsProfileMenuOpen(false);
     router.replace("/login");
   };
 
-  // 3. HANDLE THE CONFIRMATION LOGIC
   const executeAction = () => {
     if (pendingAction === "assess") {
       router.push("/instructor-review");
     } else if (pendingAction === "sync") {
-      // TODO: Call your actual sync API/logic here in the future
-      console.log("Syncing data..."); 
+      console.log("Syncing data...");
     }
     setPendingAction(null);
   };
@@ -180,7 +193,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 />
               </div>
 
-              <nav className="flex-1 px-3 py-4 space-y-1">
+              <nav className="flex-1 space-y-1 px-3 py-4">
                 {navItems.map((item) => {
                   const active = isActivePath(pathname, item.href);
                   return (
@@ -189,7 +202,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                       href={item.href}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                         active
-                          ? "bg-blue-50 text-blue-700 font-medium"
+                          ? "bg-blue-50 font-medium text-blue-700"
                           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                       }`}
                     >
@@ -200,7 +213,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 })}
               </nav>
 
-              <div className="mt-auto p-3 border-t border-slate-200">
+              <div className="mt-auto border-t border-slate-200 p-3">
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -348,7 +361,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
                   <div className="ml-auto flex items-center gap-3">
                     <div className="flex items-center gap-2 border-r border-slate-200 pr-3">
-                      {/* 4. UPDATE BUTTON ONCLICKS TO TRIGGER MODAL */}
                       <button
                         type="button"
                         onClick={() => setPendingAction("sync")}
@@ -380,15 +392,14 @@ export default function DashboardShell({ children }: DashboardShellProps) {
         </div>
       </div>
 
-      {/* 5. RENDER THE MODAL COMPONENT */}
       <ConfirmationModal
         isOpen={pendingAction !== null}
         onClose={() => setPendingAction(null)}
         onConfirm={executeAction}
         title={pendingAction === "assess" ? "Run AI Assessment" : "Sync Latest Data"}
         message={
-          pendingAction === "assess" 
-            ? "This will evaluate the latest sprint data for the current team. Are you ready to begin?" 
+          pendingAction === "assess"
+            ? "This will evaluate the latest sprint data for the current team. Are you ready to begin?"
             : "Pulling the latest commits and Jira tickets may take a few moments. Do you want to proceed?"
         }
         confirmText={pendingAction === "assess" ? "Run Assessment" : "Sync"}
