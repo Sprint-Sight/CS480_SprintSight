@@ -9,19 +9,29 @@ class Settings(BaseSettings):
     project_name: str = Field(default="SprintSight API", alias="PROJECT_NAME")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     api_v1_prefix: str = "/api/v1"
-    secret_key: str = Field(default="dev-only-secret-key-change-me", alias="SECRET_KEY")
+    secret_key: str = Field(alias="SECRET_KEY")
     access_token_expire_minutes: int = 120
     jwt_algorithm: str = "HS256"
 
     postgres_server: str = Field(default="db", alias="POSTGRES_SERVER")
     postgres_user: str = Field(default="postgres", alias="POSTGRES_USER")
-    postgres_password: str = Field(default="postgres", alias="POSTGRES_PASSWORD")
+    postgres_password: str = Field(alias="POSTGRES_PASSWORD")
     postgres_db: str = Field(default="sprintsight", alias="POSTGRES_DB")
     database_url: str = Field(default="", alias="DATABASE_URL")
 
     github_pat_token: str = Field(default="", alias="GITHUB_PAT_TOKEN")
     jira_api_token: str = Field(default="", alias="JIRA_API_TOKEN")
     jira_domain: str = Field(default="", alias="JIRA_DOMAIN")
+
+    bootstrap_admin_email: str = Field(default="", alias="BOOTSTRAP_ADMIN_EMAIL")
+    bootstrap_admin_password: str = Field(default="", alias="BOOTSTRAP_ADMIN_PASSWORD")
+    bootstrap_admin_name: str = Field(default="System Admin", alias="BOOTSTRAP_ADMIN_NAME")
+    bootstrap_instructor_email: str = Field(default="", alias="BOOTSTRAP_INSTRUCTOR_EMAIL")
+    bootstrap_instructor_password: str = Field(default="", alias="BOOTSTRAP_INSTRUCTOR_PASSWORD")
+    bootstrap_instructor_name: str = Field(default="Sample Instructor", alias="BOOTSTRAP_INSTRUCTOR_NAME")
+    bootstrap_student_email: str = Field(default="", alias="BOOTSTRAP_STUDENT_EMAIL")
+    bootstrap_student_password: str = Field(default="", alias="BOOTSTRAP_STUDENT_PASSWORD")
+    bootstrap_student_name: str = Field(default="Sample Student", alias="BOOTSTRAP_STUDENT_NAME")
 
     ollama_base_url: str = Field(default="http://ollama:11434", alias="OLLAMA_BASE_URL")
     assessment_mode: str = Field(default="mock", alias="ASSESSMENT_MODE")
@@ -37,8 +47,8 @@ class Settings(BaseSettings):
     )
     
     minio_endpoint_url: str = "http://minio:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
+    minio_access_key: str = Field(alias="MINIO_ACCESS_KEY")
+    minio_secret_key: str = Field(alias="MINIO_SECRET_KEY")
 
     def database_connection_string(self) -> str:
         if self.database_url:

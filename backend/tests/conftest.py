@@ -1,4 +1,10 @@
 import pytest
+import os
+
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key")
+os.environ.setdefault("POSTGRES_PASSWORD", "test-only-database-password")
+os.environ.setdefault("MINIO_ACCESS_KEY", "test-only-minio-access")
+os.environ.setdefault("MINIO_SECRET_KEY", "test-only-minio-secret")
 
 from app.dependencies.auth import get_user_repository
 from app.main import app
