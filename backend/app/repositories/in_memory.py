@@ -100,6 +100,7 @@ class InMemoryProjectRepository(ProjectRepository):
         self._courses: dict[str, CourseRecord] = {}
         self._projects: dict[str, ProjectRecord] = {}
         self._instructors: set[tuple[str, str]] = set()
+        self._enrollments: set[tuple[str, str]] = set()
         self._members: dict[str, list[str]] = {}
 
     def create_course(self, code: str, name: str, section: str, year: int, term: str, created_by: str) -> CourseRecord:
@@ -119,6 +120,47 @@ class InMemoryProjectRepository(ProjectRepository):
 
     def is_instructor_assigned(self, course_id: str, user_id: str) -> bool:
         return (course_id, user_id) in self._instructors
+
+    def enroll_student(self, course_id: str, user_id: str) -> bool:
+        if (course_id, user_id) in self._enrollments:
+            return False
+        course = self.get_course(course_id)
+        if course and any(self.get_course(existing_course_id).code.lower() == course.code.lower()
+                          for existing_course_id, existing_user_id in self._enrollments
+                          if existing_user_id == user_id and self.get_course(existing_course_id)):
+            return False
+        self._enrollments.add((course_id, user_id))
+        return True
+
+    def is_student_enrolled(self, course_id: str, user_id: str) -> bool:
+        return (course_id, user_id) in self._enrollments
+
+    def unenroll_student(self, course_id: str, user_id: str) -> bool:
+        enrollment = (course_id, user_id)
+        if enrollment not in self._enrollments:
+            return False
+        self._enrollments.remove(enrollment)
+        return True
+
+    def list_enrolled_student_ids(self, course_id: str) -> list[str]:
+        return [user_id for enrolled_course_id, user_id in self._enrollments if enrolled_course_id == course_id]
+
+    def list_student_course_codes(self, user_id: str) -> list[str]:
+        return [self._courses[course_id].code for course_id, enrolled_user_id in self._enrollments
+                if enrolled_user_id == user_id]
+
+    def update_course(self, course_id: str, code: str, name: str, section: str, year: int, term: str) -> CourseRecord | None:
+        course = self._courses.get(course_id)
+        if not course:
+            return None
+        course.code, course.name, course.section, course.year, course.term = code.upper(), name, section, year, term
+        return course
+
+    def delete_course(self, course_id: str) -> CourseRecord | None:
+        course = self._courses.pop(course_id, None)
+        self._instructors = {(cid, uid) for cid, uid in self._instructors if cid != course_id}
+        self._enrollments = {(cid, uid) for cid, uid in self._enrollments if cid != course_id}
+        return course
 
     def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord:
         self._projects[project.id] = project

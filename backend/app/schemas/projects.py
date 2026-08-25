@@ -25,6 +25,14 @@ class CourseResponse(BaseModel):
     created_at: datetime
 
 
+class CourseUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=20)
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    section: str | None = Field(default=None, min_length=1, max_length=20)
+    year: int | None = Field(default=None, ge=2000, le=2100)
+    term: str | None = Field(default=None, min_length=1, max_length=20)
+
+
 class ProjectCreate(BaseModel):
     project_name: str = Field(min_length=1, max_length=150)
     description: str | None = None
