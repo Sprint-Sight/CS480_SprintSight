@@ -1,0 +1,122 @@
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Protocol
+
+from app.schemas.auth import Role
+from app.schemas.assessment import AssessmentReport, AuditRecord, ManualTextPayload, OverrideResponse
+
+
+@dataclass
+class UserRecord:
+    id: str
+    email: str
+    full_name: str
+    role: Role
+    hashed_password: str
+    is_active: bool = True
+    must_change_password: bool = False
+    token_version: int = 0
+
+
+class UserRepository(Protocol):
+    def get_by_email(self, email: str) -> UserRecord | None: ...
+
+    def get_by_id(self, user_id: str) -> UserRecord | None: ...
+
+    def record_login(self, user_id: str) -> None: ...
+
+    def revoke_access_token(self, token_id: str, user_id: str, expires_at: datetime) -> None: ...
+
+    def is_access_token_revoked(self, token_id: str) -> bool: ...
+
+    def list_users(self) -> list[UserRecord]: ...
+
+    def create_user(self, user: UserRecord) -> UserRecord: ...
+
+    def update_user(self, user_id: str, email: str, full_name: str, role: Role, is_active: bool) -> UserRecord | None: ...
+
+    def update_password(self, user_id: str, hashed_password: str, must_change_password: bool) -> UserRecord | None: ...
+
+
+@dataclass
+class CourseRecord:
+    id: str
+    code: str
+    name: str
+    section: str
+    year: int
+    term: str
+    created_by: str
+    created_at: datetime
+
+
+@dataclass
+class ProjectRecord:
+    id: str
+    project_name: str
+    description: str | None
+    course_id: str
+    course_code: str
+    github_repo_url: str | None
+    created_by: str
+    created_at: datetime
+
+
+class ProjectRepository(Protocol):
+    def create_course(self, code: str, name: str, section: str, year: int, term: str, created_by: str) -> CourseRecord: ...
+    def get_course(self, course_id: str) -> CourseRecord | None: ...
+    def list_courses(self) -> list[CourseRecord]: ...
+    def assign_instructor(self, course_id: str, user_id: str) -> None: ...
+    def is_instructor_assigned(self, course_id: str, user_id: str) -> bool: ...
+    def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord: ...
+    def get_project(self, project_id: str) -> ProjectRecord | None: ...
+    def list_projects(self, course_id: str) -> list[ProjectRecord]: ...
+    def update_project(self, project_id: str, project_name: str, description: str | None, github_repo_url: str | None) -> ProjectRecord | None: ...
+    def delete_project(self, project_id: str) -> ProjectRecord | None: ...
+    def set_members(self, project_id: str, member_ids: list[str]) -> None: ...
+    def list_member_ids(self, project_id: str) -> list[str]: ...
+
+
+class ManualTextRepository(Protocol):
+    def upsert(self, payload: ManualTextPayload, updated_by: str) -> None: ...
+
+    def get(self, course_id: str, project_id: str, sprint_id: str) -> str | None: ...
+
+
+class AssessmentRepository(Protocol):
+    def save_report(self, report: AssessmentReport) -> None: ...
+
+    def get_report(self, report_id: str) -> AssessmentReport | None: ...
+
+    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None: ...
+
+
+class OverrideRepository(Protocol):
+    def save_override(self, record: OverrideResponse) -> None: ...
+
+    def list_overrides(self) -> list[OverrideResponse]: ...
+
+
+class AuditRepository(Protocol):
+    def save_audit(self, record: AuditRecord) -> None: ...
+
+    def list_audits(self) -> list[AuditRecord]: ...
+
+
+@dataclass
+class IngestionMetricBundle:
+    course_id: str
+    project_id: str
+    sprint_id: str
+    commit_frequency: float
+    code_churn: int
+    pr_turnaround_hours: float
+    assigned_story_points: int
+    completion_percent: float
+    captured_at: datetime
+
+
+class MetricsRepository(Protocol):
+    def save_metrics(self, metrics: IngestionMetricBundle) -> None: ...
+
+    def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None: ...
