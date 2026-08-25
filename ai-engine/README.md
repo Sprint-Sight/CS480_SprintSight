@@ -15,48 +15,69 @@
 - which then sends each rubric one by one to `services/llm_client.py`, returning `RubricsScoreDimension` one by one
 - `services/evaluator.py` then calculates average score, finally returning `SprintAssessment` object  (CAN MODIFY IF TOO SIMPLE)
 
-## CURRENT STEP BY STEP process 
-1. create and activate .venv
-2. run `cd ai-engine` on terminal (make sure you are in the `ai-engine` directory)
-3. run `pip install -r requirements.txt`
-4. create copy of `.env example`, rename to `.env`, create your own Ollama api key, then run ollama run <name of model you want to use> in a seperate terminal
-5. run `mlflow server` in a seperate terminal, then go to `http://localhost:5000` (mlflow server UI)
-6. run `uvicorn main:app --reload` in a seperate terminal, then go to `http://127.0.0.1:8000/docs#/` (fastapi swagger UI)
-7. On the swagger UI, click 'try it out' under the POST endpoint, select team type and model name, then click 'execute'
-8. Monitor your terminal in step 6 and wait for AI to impute results
+## Current setup process
+
+The following workflow updates the branches, creates a feature branch, starts the
+supporting services, and creates the custom Ollama models used by the AI engine.
+Run the Docker commands from the `ai-engine` directory.
 
 ## Command Summary
 
 Run these commands from the `ai-engine` directory:
 
 ```powershell
-# Start the supporting services
+
+# Move into the AI engine directory
+cd ai-engine
+
+# Start PostgreSQL, Ollama, and MLflow
 docker compose up -d db ollama mlflow_service
 
-# Check service status
+# Check that the supporting services are running
 docker compose ps
 
-# Copy the model configuration into the Ollama container
-docker compose cp Modelfile ollama:/tmp/Modelfile
+# Create the Llama model
+docker compose cp models/Modelfile.llama ollama:/tmp/Modelfile.llama
+docker compose exec -T ollama ollama pull llama3.2
+docker compose exec -T ollama ollama create sprintsight-llama -f /tmp/Modelfile.llama
 
-# Create or update the custom model
-docker compose exec -T ollama ollama create sprintsight-grader -f /tmp/Modelfile
+# Create the Qwen model
+docker compose cp models/Modelfile.qwen ollama:/tmp/Modelfile.qwen
+docker compose exec -T ollama ollama pull qwen3:8b
+docker compose exec -T ollama ollama create sprintsight-qwen -f /tmp/Modelfile.qwen
 
-# Verify the available Ollama models
+# Create the Mistral model
+docker compose cp models/Modelfile.mistral ollama:/tmp/Modelfile.mistral
+docker compose exec -T ollama ollama pull mistral:7b
+docker compose exec -T ollama ollama create sprintsight-mistral -f /tmp/Modelfile.mistral
+
+# Verify that all custom models are available
 docker compose exec ollama ollama list
 
-# Rebuild and force-recreate the FastAPI service after code changes
+# Build and start the FastAPI AI service
 docker compose up -d --build --force-recreate sprintsight_ai
 
-# Check service logs if needed
-docker compose logs --tail 100 sprintsight_ai
-docker compose logs --tail 100 mlflow_service
+# Follow the AI service logs
+docker compose logs -f sprintsight_ai
+```
 
+The AI service is available at `http://localhost:8001`. Open the FastAPI
+Swagger UI at `http://localhost:8001/docs` and MLflow at
+`http://localhost:5000`.
+
+## Verify the AI service
+
+Run these commands from the `ai-engine` directory:
+
+```powershell
 # Check the FastAPI health endpoint
 curl.exe http://localhost:8001/health
 
-# Run a test via FastAPI
-curl.exe -X POST "http://localhost:8001/assess/sprint?key=high_performing_team&modelname=sprintsight-grader"
+# Run a test with the Llama custom model
+curl.exe -X POST "http://localhost:8001/assess/sprint?key=high_performing_team&modelname=sprintsight-llama"
+
+# Run a test with another custom model
+curl.exe -X POST "http://localhost:8001/assess/sprint?key=high_performing_team&modelname=sprintsight-qwen"
 
 # Open the generated audit records
 code .\audit_logs

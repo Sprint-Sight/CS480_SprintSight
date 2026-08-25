@@ -29,7 +29,7 @@ services: # Seperate containers to run
         - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow_service:5000}
         
         # Add missing model variable (defaults to llama3 if not in .env)
-        - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+        - DEFAULT_MODEL_NAME=${DEFAULT_MODEL_NAME:-sprintsight-llama}
         
         # Moved from the mlflow service to here where the FastAPI client actually uses it
         - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}
