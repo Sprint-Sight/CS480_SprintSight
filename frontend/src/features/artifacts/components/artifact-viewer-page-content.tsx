@@ -6,7 +6,7 @@ import {
   FolderGit2, 
   MessageSquare, 
   Users,
-  Upload // Added Upload icon
+  Upload
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -42,7 +42,7 @@ export default function ArtifactViewerPageContent() {
   const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
   
-  // Track user role for anonymity features
+  // Track user role for anonymity and tab access
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
 
   const dataset = useMemo(() => getArtifactDataset(selectedProjectId), [selectedProjectId]);
@@ -61,6 +61,14 @@ export default function ArtifactViewerPageContent() {
     setLocalDocuments(dataset.documents);
   }, [dataset]);
 
+  // Filter tabs dynamically based on user role
+  const visibleTabs = useMemo(() => {
+    if (role === "student") {
+      return tabs.filter((tab) => tab.id !== "peer-evaluation");
+    }
+    return tabs;
+  }, [role]);
+
   // Handle local file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -75,15 +83,13 @@ export default function ArtifactViewerPageContent() {
       id: `d-local-${Date.now()}`,
       fileName: file.name,
       fileType: fileType as any,
-      uploadedBy: role === "student" ? "Alex Rivera" : "Dr. Sarah Chen", // Mocking current user
+      uploadedBy: role === "student" ? "Alex Rivera" : "Dr. Sarah Chen",
       uploadedAt: new Date().toISOString().split("T")[0],
       size: formatBytes(file.size),
     };
 
-    // Update state to show the new document immediately
     setLocalDocuments((prev) => [newDoc, ...prev]);
     
-    // Reset the input so the same file can be uploaded again if needed
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -114,7 +120,7 @@ export default function ArtifactViewerPageContent() {
       </div>
 
       <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -175,7 +181,6 @@ export default function ArtifactViewerPageContent() {
             <div className="flex items-center justify-between">
               <h2 className="text-3xl font-semibold text-blue-950">Uploaded Documents</h2>
               
-              {/* Hidden file input and Upload Button */}
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -228,15 +233,14 @@ export default function ArtifactViewerPageContent() {
           </>
         )}
 
-        {activeTab === "peer-evaluation" && (
+        {activeTab === "peer-evaluation" && role !== "student" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Peer Evaluation Inputs</h2>
             {dataset.peerEvaluation.map((entry) => (
               <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-base font-semibold text-slate-900">
-                    {/* Conditionally hide the reviewer's name if the user is a student */}
-                    {role === "student" ? "Anonymous teammate" : entry.reviewer} reviewed {entry.target}
+                    {entry.reviewer} reviewed {entry.target}
                   </p>
                   <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{entry.score}/100</span>
                 </div>

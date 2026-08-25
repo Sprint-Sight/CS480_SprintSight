@@ -1313,6 +1313,10 @@ video {
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
 }
+.py-12 {
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+}
 .py-2 {
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
@@ -1328,10 +1332,6 @@ video {
 .py-4 {
   padding-top: 1rem;
   padding-bottom: 1rem;
-}
-.py-12 {
-  padding-top: 3rem;
-  padding-bottom: 3rem;
 }
 .pb-3 {
   padding-bottom: 0.75rem;
@@ -1429,11 +1429,11 @@ video {
 .leading-8 {
   line-height: 2rem;
 }
-.leading-relaxed {
-  line-height: 1.625;
-}
 .leading-tight {
   line-height: 1.25;
+}
+.leading-relaxed {
+  line-height: 1.625;
 }
 .tracking-\[0\.2em\] {
   letter-spacing: 0.2em;
@@ -1691,10 +1691,6 @@ video {
   --tw-bg-opacity: 1;
   background-color: rgb(248 250 252 / var(--tw-bg-opacity, 1));
 }
-.hover\:text-blue-700:hover {
-  --tw-text-opacity: 1;
-  color: rgb(29 78 216 / var(--tw-text-opacity, 1));
-}
 .hover\:text-blue-800:hover {
   --tw-text-opacity: 1;
   color: rgb(30 64 175 / var(--tw-text-opacity, 1));
@@ -1715,9 +1711,6 @@ video {
 .focus\:border-blue-300:focus {
   --tw-border-opacity: 1;
   border-color: rgb(147 197 253 / var(--tw-border-opacity, 1));
-}
-.focus\:border-transparent:focus {
-  border-color: transparent;
 }
 .focus\:outline-none:focus {
   outline: 2px solid transparent;
@@ -1745,6 +1738,13 @@ video {
 }
 .focus\:ring-offset-2:focus {
   --tw-ring-offset-width: 2px;
+}
+.disabled\:bg-slate-100:disabled {
+  --tw-bg-opacity: 1;
+  background-color: rgb(241 245 249 / var(--tw-bg-opacity, 1));
+}
+.disabled\:opacity-50:disabled {
+  opacity: 0.5;
 }
 @media (min-width: 640px) {
 
