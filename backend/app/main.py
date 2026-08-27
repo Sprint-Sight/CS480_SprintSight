@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
@@ -30,7 +31,6 @@ def _bootstrap_user(repository: PostgresUserRepository, email: str, password: st
 
 # ------------------------------------------------------------------
 # Lifespan — runs startup/shutdown logic around the app lifecycle
-# Replaces the deprecated @app.on_event("startup") pattern
 # ------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,13 +46,11 @@ async def lifespan(app: FastAPI):
     _bootstrap_user(user_repository, settings.bootstrap_student_email, settings.bootstrap_student_password, settings.bootstrap_student_name, Role.STUDENT)
 
     # Create MinIO buckets if they don't exist yet
-    # Safe to call every restart — skips buckets that already exist
     storage.init_buckets()
 
     yield  # app runs here
 
     # ---- SHUTDOWN ------------------------------------------------
-    # Add any cleanup here (close DB pool, flush logs, etc.)
     pool.close()
 
 
@@ -62,6 +60,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.project_name,
     lifespan=lifespan,
+)
+
+# Enable CORS for browser frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins for development (e.g., http://localhost:3000)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.middleware("http")(request_id_middleware)
@@ -94,8 +101,4 @@ def root() -> dict[str, str]:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    """
-    Lightweight health endpoint.
-    Docker, load balancers, and monitoring tools can poll this.
-    """
     return {"status": "ok", "service": settings.project_name}
