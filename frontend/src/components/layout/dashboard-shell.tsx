@@ -110,19 +110,21 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   }, [isAuthorized, role, isRestrictedForStudent, router]);
 
   useEffect(() => {
-    const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
+    const savedRole = sessionStorage.getItem("sprintsight-auth-role");
     const email = sessionStorage.getItem("sprintsight-auth-email");
-    const savedName = sessionStorage.getItem("sprintsight-auth-name");
 
     if (!savedRole || !email) {
       router.replace("/login");
       return;
     }
 
-    setRole(savedRole);
-    if (savedName) {
-      setUserName(savedName);
+    // Redirect admin users out of student/instructor sidebar routes
+    if (savedRole === "admin") {
+      router.replace("/admin");
+      return;
     }
+
+    setRole(savedRole as "student" | "instructor");
     setIsAuthorized(true);
   }, [router]);
 

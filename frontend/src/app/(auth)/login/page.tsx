@@ -50,9 +50,17 @@ export default function LoginPage() {
 
       if (userResponse.ok) {
         const user = await userResponse.json();
+        sessionStorage.setItem("sprintsight-access-token", data.access_token);
         sessionStorage.setItem("sprintsight-auth-role", user.role);
         sessionStorage.setItem("sprintsight-auth-email", user.email);
         sessionStorage.setItem("sprintsight-auth-name", user.full_name);
+
+        // Redirect based on role
+        if (user.role === "admin") {
+          router.replace("/admin");
+        } else {
+          router.replace("/");
+        }
       }
 
       router.replace("/");
