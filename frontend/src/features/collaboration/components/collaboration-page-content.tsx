@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, UserRound } from "lucide-react";
+import { AlertTriangle, CheckSquare, GitBranch, UserRound, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -15,7 +16,11 @@ import {
   YAxis,
 } from "recharts";
 
-import { getCollaborationDataset, getCollaborationProjectOptions } from "@/features/collaboration/data";
+import {
+  getCollaborationDataset,
+  getCollaborationProjectOptions,
+  getContributionDataset,
+} from "@/features/collaboration/data";
 import type { TeamRiskIndicator } from "@/features/collaboration/types";
 
 function getRiskTone(risk: TeamRiskIndicator["risk"]) {
@@ -49,12 +54,50 @@ function heatColor(score: number) {
   return "bg-[#1E3A8A] text-white";
 }
 
+function adjustmentBadge(value: number) {
+  if (value > 0) {
+    return {
+      text: `+${value}%`,
+      className: "text-emerald-600",
+    };
+  }
+
+  if (value < 0) {
+    return {
+      text: `${value}%`,
+      className: "text-rose-600",
+    };
+  }
+
+  return {
+    text: "0%",
+    className: "text-slate-500",
+  };
+}
+
+function gradeTone(grade: string) {
+  if (grade.startsWith("A")) return "text-blue-900";
+  if (grade.startsWith("B")) return "text-slate-800";
+  return "text-amber-700";
+}
+
 export default function CollaborationPageContent() {
   const projectOptions = useMemo(() => getCollaborationProjectOptions(), []);
   const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
 
-  const dataset = useMemo(() => getCollaborationDataset(selectedProjectId), [selectedProjectId]);
+  // Load datasets for the selected project
+  const collaborationData = useMemo(() => getCollaborationDataset(selectedProjectId), [selectedProjectId]);
+  const contributionData = useMemo(() => getContributionDataset(selectedProjectId), [selectedProjectId]);
+
+  const comparisonChartData = useMemo(() => {
+    return contributionData.members.map((member) => ({
+      name: member.name.split(" ")[0],
+      GitHub: member.githubScore,
+      Jira: member.jiraScore,
+      Peer: Math.round(member.peerScore * 20),
+    }));
+  }, [contributionData]);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
@@ -62,15 +105,20 @@ export default function CollaborationPageContent() {
   }, []);
 
   return (
-    <div className="space-y-5 p-8">
+    <div className="space-y-6 p-8">
+      {/* Header & Global Controls */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Collaboration Analytics</h1>
-          <p className="mt-1 text-sm text-slate-500">{dataset.subtitle}</p>
+          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Team & Individual Analytics</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {collaborationData.subtitle} • {contributionData.sprintLabel}
+          </p>
         </div>
 
         <div className="w-full max-w-sm">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Project context</label>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Project Context
+          </label>
           <select
             value={selectedProjectId}
             onChange={(event) => setSelectedProjectId(event.target.value)}
@@ -85,12 +133,13 @@ export default function CollaborationPageContent() {
         </div>
       </div>
 
+      {/* Section 1: Macro Team Collaboration Charts */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-blue-950">Commits by Member</h2>
           <div className="mt-3 h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dataset.commitsByMember}>
+              <BarChart data={collaborationData.commitsByMember}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="member" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
@@ -106,8 +155,15 @@ export default function CollaborationPageContent() {
           <div className="mt-3 h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={dataset.workloadDistribution} dataKey="value" nameKey="name" innerRadius={48} outerRadius={84} paddingAngle={2}>
-                  {dataset.workloadDistribution.map((slice) => (
+                <Pie
+                  data={collaborationData.workloadDistribution}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={48}
+                  outerRadius={84}
+                  paddingAngle={2}
+                >
+                  {collaborationData.workloadDistribution.map((slice) => (
                     <Cell key={slice.name} fill={slice.color} />
                   ))}
                 </Pie>
@@ -116,7 +172,7 @@ export default function CollaborationPageContent() {
             </ResponsiveContainer>
           </div>
           <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-            {dataset.workloadDistribution.map((slice) => (
+            {collaborationData.workloadDistribution.map((slice) => (
               <span key={slice.name} className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
                 {slice.name}
@@ -126,6 +182,7 @@ export default function CollaborationPageContent() {
         </section>
       </div>
 
+      {/* Section 2: Team Participation Heatmap */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-blue-950">Team Participation Heatmap</h2>
         <div className="mt-4 overflow-x-auto">
@@ -140,13 +197,29 @@ export default function CollaborationPageContent() {
               </tr>
             </thead>
             <tbody>
-              {dataset.participationHeatmap.map((row) => (
+              {collaborationData.participationHeatmap.map((row) => (
                 <tr key={row.member}>
                   <td className="px-2 py-2 font-medium text-slate-800">{row.member}</td>
-                  <td className="px-1 py-1"><div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week1)}`}>{row.week1}</div></td>
-                  <td className="px-1 py-1"><div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week2)}`}>{row.week2}</div></td>
-                  <td className="px-1 py-1"><div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week3)}`}>{row.week3}</div></td>
-                  <td className="px-1 py-1"><div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week4)}`}>{row.week4}</div></td>
+                  <td className="px-1 py-1">
+                    <div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week1)}`}>
+                      {row.week1}
+                    </div>
+                  </td>
+                  <td className="px-1 py-1">
+                    <div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week2)}`}>
+                      {row.week2}
+                    </div>
+                  </td>
+                  <td className="px-1 py-1">
+                    <div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week3)}`}>
+                      {row.week3}
+                    </div>
+                  </td>
+                  <td className="px-1 py-1">
+                    <div className={`rounded-md py-2 text-center text-xs font-semibold ${heatColor(row.week4)}`}>
+                      {row.week4}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -154,18 +227,110 @@ export default function CollaborationPageContent() {
         </div>
         <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
           <span>Activity Level:</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-sky-100" />Low</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-sky-300" />Medium</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-[#1E3A8A]" />High</span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded bg-sky-100" />
+            Low
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded bg-sky-300" />
+            Medium
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded bg-[#1E3A8A]" />
+            High
+          </span>
         </div>
       </section>
 
-      {/* Conditionally render this section only if the role is instructor */}
+      {/* Section 3: Multi-Source Contribution Comparison */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-xl font-semibold text-blue-950">Contribution Breakdown by Platform</h2>
+        <div className="mt-4 h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={comparisonChartData} barCategoryGap="10%">
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+              <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="GitHub" fill="#1F3D6D" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Jira" fill="#3F7C9E" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Peer" fill="#5C98BD" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      {/* Section 4: Individual Member Cards & AI Assessment */}
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-blue-950">Individual Member Assessments</h2>
+        {contributionData.members.map((member) => {
+          const badge = adjustmentBadge(member.gradeAdjustmentPercent);
+          return (
+            <article key={member.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-blue-700">
+                    {member.initials}
+                  </div>
+                  <div>
+                    <p className="text-xl font-semibold text-blue-950">{member.name}</p>
+                    <p className="text-sm text-slate-500">{member.role}</p>
+                  </div>
+                </div>
+
+                <div className="grid min-w-[280px] grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="inline-flex items-center gap-1 text-slate-500">
+                      <GitBranch className="h-4 w-4" />
+                      GitHub
+                    </p>
+                    <p className="text-2xl font-bold text-blue-900">{member.githubScore}%</p>
+                  </div>
+                  <div>
+                    <p className="inline-flex items-center gap-1 text-slate-500">
+                      <CheckSquare className="h-4 w-4" />
+                      Jira
+                    </p>
+                    <p className="text-2xl font-bold text-blue-900">{member.jiraScore}%</p>
+                  </div>
+                  <div>
+                    <p className="inline-flex items-center gap-1 text-slate-500">
+                      <Users className="h-4 w-4" />
+                      Peer Eval
+                    </p>
+                    <p className="text-2xl font-bold text-blue-900">{member.peerScore.toFixed(1)}/5.0</p>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-sm text-slate-500">Overall</p>
+                  <p className="text-2xl font-bold text-blue-900">{member.overallScore}%</p>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-sm text-slate-500">Recommended</p>
+                  <p className={`text-3xl font-bold ${gradeTone(member.recommendedGrade)}`}>
+                    {member.recommendedGrade}
+                  </p>
+                  <p className={`text-sm font-semibold ${badge.className}`}>{badge.text}</p>
+                </div>
+              </div>
+
+              <p className="pt-3 text-sm text-slate-600">
+                <span className="font-semibold text-slate-800">AI Assessment:</span> {member.aiAssessment}
+              </p>
+            </article>
+          );
+        })}
+      </section>
+
+      {/* Section 5: Risk Indicators (Instructor View Only) */}
       {role === "instructor" && (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-blue-950">Collaboration Risk Indicators</h2>
           <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {dataset.riskIndicators.map((item) => {
+            {collaborationData.riskIndicators.map((item) => {
               const tone = getRiskTone(item.risk);
               return (
                 <article key={item.team} className={`rounded-xl border p-3 ${tone.box}`}>
@@ -177,7 +342,9 @@ export default function CollaborationPageContent() {
                       </p>
                       <p className="mt-1 text-xs text-slate-600">{item.summary}</p>
                     </div>
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone.badge}`}>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone.badge}`}
+                    >
                       <AlertTriangle className="h-3.5 w-3.5" />
                       {item.risk} Risk
                     </span>

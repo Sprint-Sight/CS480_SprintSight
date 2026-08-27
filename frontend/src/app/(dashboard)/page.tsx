@@ -108,8 +108,9 @@ export default function DashboardPage() {
   const [fullName, setFullName] = useState<string>("");
   const [mounted, setMounted] = useState(false);
 
-  // Admin IAM State
-  const [users, setUsers] = useState<UserAccount[]>(INITIAL_USERS);
+// Admin IAM State
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("all");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("all");
@@ -122,10 +123,37 @@ export default function DashboardPage() {
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as Role | null;
     const savedName = sessionStorage.getItem("sprintsight-auth-name");
+    const token = sessionStorage.getItem("sprintsight-access-token");
 
     if (savedRole) setRole(savedRole);
     if (savedName) setFullName(savedName);
-    setMounted(true);
+
+    // Fetch users from FastAPI backend if logged in as Admin
+    if (savedRole === "admin" && token) {
+      fetch("http://localhost:8000/api/v1/admin/users", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          // Map backend response (snake_case) to UI model (camelCase)
+          const mappedUsers: UserAccount[] = data.map((u: any) => ({
+            id: u.id,
+            fullName: u.full_name,
+            email: u.email,
+            role: u.role,
+            scope: u.role === "admin" ? "System Global" : "Assigned Course",
+            status: u.is_active ? "Active" : "Inactive",
+            createdAt: u.created_at || "N/A",
+          }));
+          setUsers(mappedUsers);
+        })
+        .catch((err) => console.error("Error fetching admin user list:", err))
+        .finally(() => setMounted(true));
+    } else {
+      setMounted(true);
+    }
   }, []);
 
   // Filtered Users for Admin Table
@@ -143,30 +171,96 @@ export default function DashboardPage() {
   }, [users, searchQuery, selectedRoleFilter, selectedStatusFilter]);
 
   // Admin Actions
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newUser: UserAccount = {
-      id: `usr_${Math.floor(1000 + Math.random() * 9000)}`,
-      fullName: formData.fullName,
-      email: formData.email,
-      role: formData.role,
-      scope: formData.scope || (formData.role === "student" ? "Unassigned Team" : "CS Course"),
-      status: formData.status,
-      createdAt: new Date().toISOString().split("T")[0],
-    };
-    setUsers([newUser, ...users]);
-    setIsCreateModalOpen(false);
-    setFormData({ fullName: "", email: "", role: "student", scope: "", status: "Active" });
+    const token = sessionStorage.getItem("sprintsight-access-token");
+
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/admin/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          full_name: formData.fullName,
+          role: formData.role,
+          password: "TemporaryPassword123!", // Temp password for new identity
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert(`Error creating user: ${err.detail || "Failed request"}`);
+        return;
+      }
+
+      const newUser = await res.json();
+
+      // Append newly created database user to UI state
+      const createdUserRecord: UserAccount = {
+        id: newUser.id,
+        fullName: newUser.full_name,
+        email: newUser.email,
+        role: newUser.role,
+        scope: formData.scope || (newUser.role === "student" ? "Unassigned Team" : "CS Course"),
+        status: newUser.is_active ? "Active" : "Inactive",
+        createdAt: new Date().toISOString().split("T")[0],
+      };
+
+      setUsers((prev) => [createdUserRecord, ...prev]);
+      setIsCreateModalOpen(false);
+      setFormData({ fullName: "", email: "", role: "student", scope: "", status: "Active" });
+    } catch (err) {
+      console.error("Failed to create user", err);
+    }
   };
 
-  const handleUpdateRole = (user: UserAccount, newRole: Role) => {
-    setUsers(users.map((u) => (u.id === user.id ? { ...u, role: newRole } : u)));
-    setEditingUser(null);
+  const handleUpdateRole = async (user: UserAccount, newRole: Role) => {
+    const token = sessionStorage.getItem("sprintsight-access-token");
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ role: newRole }),
+      });
+
+      if (res.ok) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === user.id ? { ...u, role: newRole } : u))
+        );
+        setEditingUser(null);
+      }
+    } catch (err) {
+      console.error("Failed to update user role", err);
+    }
   };
 
-  const handleDeleteUser = (userId: string) => {
-    if (confirm("Are you sure you want to delete this identity record?")) {
-      setUsers(users.filter((u) => u.id !== userId));
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm("Are you sure you want to delete this identity record?")) return;
+
+    const token = sessionStorage.getItem("sprintsight-access-token");
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/admin/users/${userId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
+      } else {
+        alert("Failed to delete user record from database.");
+      }
+    } catch (err) {
+      console.error("Failed to delete user", err);
     }
   };
 
