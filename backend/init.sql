@@ -96,6 +96,13 @@ CREATE TABLE IF NOT EXISTS course_instructors (
     PRIMARY KEY (course_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS course_students (
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (course_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS projects (
     project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_name VARCHAR(150) NOT NULL,
@@ -113,5 +120,6 @@ CREATE TABLE IF NOT EXISTS project_members (
 );
 
 CREATE INDEX IF NOT EXISTS idx_course_instructors_user_id ON course_instructors(user_id);
+CREATE INDEX IF NOT EXISTS idx_course_students_user_id ON course_students(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);

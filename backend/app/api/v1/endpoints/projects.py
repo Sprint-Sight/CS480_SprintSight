@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies.auth import get_project_repository, get_user_repository, require_admin, require_faculty, get_current_user
 from app.repositories.interfaces import ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.auth import Role, UserResponse
-from app.schemas.projects import CourseCreate, CourseInstructorResponse, CourseResponse, InstructorStudentCreate, ProjectCreate, ProjectResponse, ProjectUpdate
+from app.schemas.projects import CourseCreate, CourseInstructorResponse, CourseResponse, CourseUpdate, InstructorStudentCreate, ProjectCreate, ProjectResponse, ProjectUpdate
 from app.services.authService.service import create_user, user_response
 
 router = APIRouter(tags=["courses", "projects"])
@@ -48,10 +48,71 @@ def create_course(payload: CourseCreate, current_user: Annotated[UserRecord, Dep
 
 
 @router.get("/courses", response_model=list[CourseResponse])
-def list_courses(_: Annotated[UserRecord, Depends(require_admin)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> list[CourseResponse]:
+def list_courses(current_user: Annotated[UserRecord, Depends(get_current_user)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> list[CourseResponse]:
+    courses = repository.list_courses()
+    if current_user.role == Role.INSTRUCTOR:
+        courses = [course for course in courses if repository.is_instructor_assigned(course.id, current_user.id)]
+    elif current_user.role != Role.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or admin role required.")
     return [CourseResponse(id=course.id, code=course.code, name=course.name, section=course.section,
                            year=course.year, term=course.term, created_by=course.created_by,
-                           created_at=course.created_at) for course in repository.list_courses()]
+                           created_at=course.created_at) for course in courses]
+
+
+@router.patch("/courses/{course_id}", response_model=CourseResponse)
+def update_course(course_id: str, payload: CourseUpdate, current_user: Annotated[UserRecord, Depends(get_current_user)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> CourseResponse:
+    course = _course_or_404(repository, course_id)
+    if not _can_manage_course(current_user, course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an assigned instructor can manage this course.")
+    code = payload.code or course.code
+    section = payload.section or course.section
+    year = payload.year or course.year
+    term = payload.term or course.term
+    if any(existing.id != course_id and existing.code.lower() == code.lower() and existing.section.lower() == section.lower()
+           and existing.year == year and existing.term.lower() == term.lower()
+           for existing in repository.list_courses()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
+    updated = repository.update_course(course_id, code, payload.name or course.name, section, year, term)
+    return CourseResponse(id=updated.id, code=updated.code, name=updated.name, section=updated.section, year=updated.year, term=updated.term, created_by=updated.created_by, created_at=updated.created_at)
+
+
+@router.delete("/courses/{course_id}", response_model=CourseResponse)
+def delete_course(course_id: str, current_user: Annotated[UserRecord, Depends(get_current_user)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> CourseResponse:
+    course = _course_or_404(repository, course_id)
+    if not _can_manage_course(current_user, course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an assigned instructor can manage this course.")
+    repository.delete_course(course_id)
+    return CourseResponse(id=course.id, code=course.code, name=course.name, section=course.section, year=course.year, term=course.term, created_by=course.created_by, created_at=course.created_at)
+
+
+@router.get("/courses/{course_id}/students", response_model=list[UserResponse])
+def list_course_students(course_id: str, current_user: Annotated[UserRecord, Depends(get_current_user)], repository: Annotated[ProjectRepository, Depends(get_project_repository)], users: Annotated[UserRepository, Depends(get_user_repository)]) -> list[UserResponse]:
+    _course_or_404(repository, course_id)
+    if not _can_manage_course(current_user, course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can view this roster.")
+    return [user_response(user) for user_id in repository.list_enrolled_student_ids(course_id) if (user := users.get_by_id(user_id))]
+
+
+@router.post("/courses/{course_id}/students/{user_id}", response_model=UserResponse)
+def enroll_course_student(course_id: str, user_id: str, current_user: Annotated[UserRecord, Depends(get_current_user)], repository: Annotated[ProjectRepository, Depends(get_project_repository)], users: Annotated[UserRepository, Depends(get_user_repository)]) -> UserResponse:
+    _course_or_404(repository, course_id)
+    if not _can_manage_course(current_user, course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can enroll students.")
+    user = users.get_by_id(user_id)
+    if not user or user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only student accounts can be enrolled.")
+    if not repository.enroll_student(course_id, user_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in this course code or offering.")
+    return user_response(user)
+
+
+@router.delete("/courses/{course_id}/students/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unenroll_course_student(course_id: str, user_id: str, current_user: Annotated[UserRecord, Depends(get_current_user)], repository: Annotated[ProjectRepository, Depends(get_project_repository)]) -> None:
+    _course_or_404(repository, course_id)
+    if not _can_manage_course(current_user, course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can unenroll students.")
+    if not repository.unenroll_student(course_id, user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not enrolled in this course.")
 
 
 @router.post("/courses/{course_id}/instructors/{user_id}", response_model=CourseInstructorResponse)
@@ -67,9 +128,12 @@ def assign_instructor(course_id: str, user_id: str, _: Annotated[UserRecord, Dep
 @router.post("/courses/{course_id}/students", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_course_student(course_id: str, payload: InstructorStudentCreate, current_user: Annotated[UserRecord, Depends(get_current_user)], repository: Annotated[ProjectRepository, Depends(get_project_repository)], users: Annotated[UserRepository, Depends(get_user_repository)]) -> UserResponse:
     _course_or_404(repository, course_id)
-    if current_user.role != Role.ADMIN and not repository.is_instructor_assigned(course_id, current_user.id):
+    if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
-    return user_response(create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password))
+    student = create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password)
+    if not repository.enroll_student(course_id, student.id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in this course code or offering.")
+    return user_response(student)
 
 
 @router.post("/students", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -79,6 +143,14 @@ def create_student(
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
     return user_response(create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password))
+
+
+@router.get("/students", response_model=list[UserResponse])
+def list_all_students(
+    _: Annotated[UserRecord, Depends(require_faculty)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> list[UserResponse]:
+    return [user_response(user) for user in users.list_users() if user.role == Role.STUDENT and user.is_active]
 
 
 @router.post("/courses/{course_id}/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -91,6 +163,8 @@ def create_project(course_id: str, payload: ProjectCreate, current_user: Annotat
         member = users.get_by_id(member_id)
         if not member or member.role != Role.STUDENT:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project members must be students.")
+        if not repository.is_student_enrolled(course_id, member_id):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Students must be enrolled in the course before joining a project.")
         members.append(member_id)
     project = ProjectRecord(str(uuid4()), payload.project_name, payload.description, course_id, course.code, payload.github_repo_url, current_user.id, datetime.now(timezone.utc))
     repository.create_project(project, members)
@@ -150,6 +224,8 @@ def add_member(project_id: str, user_id: str, current_user: Annotated[UserRecord
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
     if not member or member.role != Role.STUDENT:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project members must be students.")
+    if not repository.is_student_enrolled(project.course_id, user_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student must be enrolled in the course before joining a project.")
     repository.set_members(project_id, repository.list_member_ids(project_id) + [user_id])
     return _project_response(project, repository, users)
 

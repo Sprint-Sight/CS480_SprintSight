@@ -93,6 +93,49 @@ def test_instructor_can_create_student_without_course_id() -> None:
     assert response.json()["must_change_password"] is True
 
 
+def test_instructor_can_view_all_students_and_section_roster() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    course = client.post("/api/v1/courses", json={"code": "CS492", "name": "Roster", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
+    student = client.post(
+        f"/api/v1/courses/{course['id']}/students",
+        json={"email": "roster.student@sprintsight.edu", "full_name": "Roster Student", "password": "temporary123"},
+        headers=instructor_headers,
+    ).json()
+
+    all_students = client.get("/api/v1/students", headers=instructor_headers)
+    section_students = client.get(f"/api/v1/courses/{course['id']}/students", headers=instructor_headers)
+    assert all_students.status_code == 200
+    assert any(user["id"] == student["id"] for user in all_students.json())
+    assert [user["id"] for user in section_students.json()] == [student["id"]]
+
+
+def test_student_cannot_enroll_in_two_sections_of_same_course_code() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    first = client.post("/api/v1/courses", json={"code": "CS493", "name": "Enrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
+    second = client.post("/api/v1/courses", json={"code": "CS493", "name": "Enrollment", "section": "002", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
+    student = client.post("/api/v1/students", json={"email": "one.section@sprintsight.edu", "full_name": "One Section", "password": "temporary123"}, headers=instructor_headers).json()
+    assert client.post(f"/api/v1/courses/{first['id']}/students/{student['id']}", headers=instructor_headers).status_code == 200
+    assert client.post(f"/api/v1/courses/{second['id']}/students/{student['id']}", headers=instructor_headers).status_code == 409
+
+
+def test_unenrolled_student_cannot_join_project() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    course = client.post("/api/v1/courses", json={"code": "CS494", "name": "Project Enrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
+    student = client.post("/api/v1/students", json={"email": "not.enrolled@sprintsight.edu", "full_name": "Not Enrolled", "password": "temporary123"}, headers=instructor_headers).json()
+    project = client.post(f"/api/v1/courses/{course['id']}/projects", json={"project_name": "Needs Enrollment"}, headers=instructor_headers).json()
+    response = client.post(f"/api/v1/projects/{project['id']}/members/{student['id']}", headers=instructor_headers)
+    assert response.status_code == 409
+
+
+def test_instructor_can_unenroll_student() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    course = client.post("/api/v1/courses", json={"code": "CS495", "name": "Unenrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
+    student = client.post("/api/v1/students", json={"email": "unenroll@sprintsight.edu", "full_name": "Unenroll Me", "password": "temporary123"}, headers=instructor_headers).json()
+    assert client.post(f"/api/v1/courses/{course['id']}/students/{student['id']}", headers=instructor_headers).status_code == 200
+    assert client.delete(f"/api/v1/courses/{course['id']}/students/{student['id']}", headers=instructor_headers).status_code == 204
+    assert client.get(f"/api/v1/courses/{course['id']}/students", headers=instructor_headers).json() == []
+
+
 def test_admin_cannot_use_instructor_student_creation_endpoint() -> None:
     response = client.post(
         "/api/v1/students",

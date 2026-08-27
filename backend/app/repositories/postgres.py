@@ -164,6 +164,48 @@ class PostgresProjectRepository(ProjectRepository):
             row = connection.execute("SELECT 1 FROM course_instructors WHERE course_id = %s AND user_id = %s", (UUID(course_id), UUID(user_id))).fetchone()
         return row is not None
 
+    def enroll_student(self, course_id: str, user_id: str) -> bool:
+        with self._pool.connection() as connection:
+            row = connection.execute("""SELECT 1 FROM course_students cs JOIN courses c ON c.course_id = cs.course_id
+                WHERE cs.user_id = %s AND lower(c.code) = lower((SELECT code FROM courses WHERE course_id = %s))""", (UUID(user_id), UUID(course_id))).fetchone()
+            if row:
+                return False
+            inserted = connection.execute("INSERT INTO course_students (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING course_id", (UUID(course_id), UUID(user_id))).fetchone()
+        return inserted is not None
+
+    def is_student_enrolled(self, course_id: str, user_id: str) -> bool:
+        with self._pool.connection() as connection:
+            row = connection.execute("SELECT 1 FROM course_students WHERE course_id = %s AND user_id = %s", (UUID(course_id), UUID(user_id))).fetchone()
+        return row is not None
+
+    def unenroll_student(self, course_id: str, user_id: str) -> bool:
+        with self._pool.connection() as connection:
+            row = connection.execute("DELETE FROM course_students WHERE course_id = %s AND user_id = %s RETURNING course_id", (UUID(course_id), UUID(user_id))).fetchone()
+        return row is not None
+
+    def list_enrolled_student_ids(self, course_id: str) -> list[str]:
+        with self._pool.connection() as connection:
+            rows = connection.execute("SELECT user_id FROM course_students WHERE course_id = %s ORDER BY enrolled_at", (UUID(course_id),)).fetchall()
+        return [str(row["user_id"]) for row in rows]
+
+    def list_student_course_codes(self, user_id: str) -> list[str]:
+        with self._pool.connection() as connection:
+            rows = connection.execute("SELECT c.code FROM course_students cs JOIN courses c ON c.course_id = cs.course_id WHERE cs.user_id = %s", (UUID(user_id),)).fetchall()
+        return [row["code"] for row in rows]
+
+    def update_course(self, course_id: str, code: str, name: str, section: str, year: int, term: str) -> CourseRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute("""UPDATE courses SET code = %s, name = %s, section = %s, year = %s, term = %s
+                WHERE course_id = %s RETURNING course_id, code, name, section, year, term, created_by, created_at""", (code.upper(), name, section, year, term, UUID(course_id))).fetchone()
+        return self._course(row) if row else None
+
+    def delete_course(self, course_id: str) -> CourseRecord | None:
+        course = self.get_course(course_id)
+        if course:
+            with self._pool.connection() as connection:
+                connection.execute("DELETE FROM courses WHERE course_id = %s", (UUID(course_id),))
+        return course
+
     def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
