@@ -18,7 +18,6 @@ import {
   Search,
   Settings,
   User,
-  Users,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -42,7 +41,6 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
-  { label: "Contributions", href: "/contributions", icon: Users },
   { label: "Instructor Review", href: "/instructor-review", icon: Pencil },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -54,7 +52,6 @@ const studentNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "My Grades & Feedback", href: "/assessment-report", icon: FileText },
-  { label: "My Team Contributions", href: "/contributions", icon: Users },
   { label: "Progress", href: "/progress", icon: GitCompare },
 ];
 

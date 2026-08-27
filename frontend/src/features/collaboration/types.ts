@@ -24,6 +24,28 @@ export type TeamRiskIndicator = {
   balanceScore: number;
 };
 
+export type ContributionMember = {
+  id: string;
+  name: string;
+  role: string;
+  initials: string;
+  githubScore: number;
+  jiraScore: number;
+  peerScore: number;
+  overallScore: number;
+  recommendedGrade: string;
+  gradeAdjustmentPercent: number;
+  aiAssessment: string;
+};
+
+export type ContributionDataset = {
+  projectId: string;
+  teamLabel: string;
+  projectLabel: string;
+  sprintLabel: string;
+  members: ContributionMember[];
+};
+
 export type CollaborationDataset = {
   projectId: string;
   projectLabel: string;
@@ -32,4 +54,5 @@ export type CollaborationDataset = {
   workloadDistribution: WorkloadSlice[];
   participationHeatmap: HeatmapRow[];
   riskIndicators: TeamRiskIndicator[];
+  contributionDetails?: ContributionDataset;
 };
