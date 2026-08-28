@@ -18,6 +18,6 @@ def override_user_repository():
     app.dependency_overrides[get_user_repository] = lambda: repository
     from app.dependencies.auth import get_project_repository
     app.dependency_overrides[get_project_repository] = lambda: project_repository
-    yield
+    yield project_repository
     app.dependency_overrides.pop(get_user_repository, None)
     app.dependency_overrides.pop(get_project_repository, None)

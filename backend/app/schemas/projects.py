@@ -37,6 +37,7 @@ class ProjectCreate(BaseModel):
     project_name: str = Field(min_length=1, max_length=150)
     description: str | None = None
     github_repo_url: str | None = Field(default=None, max_length=255)
+    local_repo_path: str | None = Field(default=None, max_length=255)
     member_ids: list[str] = Field(default_factory=list)
 
 
@@ -44,6 +45,7 @@ class ProjectUpdate(BaseModel):
     project_name: str | None = Field(default=None, min_length=1, max_length=150)
     description: str | None = None
     github_repo_url: str | None = Field(default=None, max_length=255)
+    local_repo_path: str | None = Field(default=None, max_length=255)
 
 
 class ProjectResponse(BaseModel):
@@ -52,6 +54,7 @@ class ProjectResponse(BaseModel):
     description: str | None
     course_code: str
     github_repo_url: str | None
+    local_repo_path: str | None
     created_by: str
     created_at: datetime
     members: list[UserResponse]

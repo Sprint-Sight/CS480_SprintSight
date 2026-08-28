@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +9,23 @@ class ManualTextPayload(BaseModel):
     project_id: str
     sprint_id: str
     expectations_text: str = Field(min_length=10, max_length=5000)
+
+
+class FileDiff(BaseModel):
+    filename: str
+    change_type: Literal["added", "modified", "deleted", "renamed"] = "modified"
+    lines_added: int = Field(default=0, ge=0)
+    lines_deleted: int = Field(default=0, ge=0)
+
+
+class CommitInfo(BaseModel):
+    sha: str
+    author: str
+    message: str
+    timestamp: datetime
+    lines_added: int = Field(default=0, ge=0)
+    lines_deleted: int = Field(default=0, ge=0)
+    files_changed: list[FileDiff] = Field(default_factory=list)
 
 
 class IngestionRequest(BaseModel):

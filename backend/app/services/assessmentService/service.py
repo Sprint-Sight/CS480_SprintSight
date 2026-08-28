@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.repositories.in_memory import assessment_repo, metrics_repo, overrides_repo
+from app.repositories.interfaces import MetricsRepository
 from app.schemas.assessment import AssessRequest, AssessmentReport, OverrideRequest, OverrideResponse, StudentScore, TeamScore
 
 
@@ -16,8 +17,8 @@ RUBRIC_WEIGHTS = {
 }
 
 
-def generate_mock_assessment(payload: AssessRequest) -> AssessmentReport:
-    metrics = metrics_repo.get_metrics(payload.course_id, payload.project_id, payload.sprint_id)
+def generate_mock_assessment(payload: AssessRequest, metrics_repository: MetricsRepository | None = None) -> AssessmentReport:
+    metrics = (metrics_repository or metrics_repo).get_metrics(payload.course_id, payload.project_id, payload.sprint_id)
     if not metrics:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -26,9 +27,9 @@ def generate_mock_assessment(payload: AssessRequest) -> AssessmentReport:
 
     base_score = min(
         100.0,
-        (metrics.completion_percent * 0.45)
+        ((metrics.completion_percent or 0.0) * 0.45)
         + (metrics.commit_frequency * 1.2)
-        + ((100.0 - metrics.pr_turnaround_hours) * 0.25),
+        + ((100.0 - (metrics.pr_turnaround_hours or 0.0)) * 0.25),
     )
 
     team_score_value = round(base_score, 2)

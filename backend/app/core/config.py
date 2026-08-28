@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="", alias="DATABASE_URL")
 
     github_pat_token: str = Field(default="", alias="GITHUB_PAT_TOKEN")
+    local_repository_root: Path = Field(default=Path("repo"), alias="LOCAL_REPOSITORY_ROOT")
     jira_api_token: str = Field(default="", alias="JIRA_API_TOKEN")
     jira_domain: str = Field(default="", alias="JIRA_DOMAIN")
 

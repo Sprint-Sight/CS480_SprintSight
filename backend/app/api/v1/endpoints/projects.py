@@ -32,6 +32,7 @@ def _project_response(project: ProjectRecord, project_repository: ProjectReposit
             members.append(user_response(member))
     return ProjectResponse(id=project.id, project_name=project.project_name, description=project.description,
                            course_code=project.course_code, github_repo_url=project.github_repo_url,
+                           local_repo_path=project.local_repo_path,
                            created_by=project.created_by, created_at=project.created_at, members=members)
 
 
@@ -166,7 +167,7 @@ def create_project(course_id: str, payload: ProjectCreate, current_user: Annotat
         if not repository.is_student_enrolled(course_id, member_id):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Students must be enrolled in the course before joining a project.")
         members.append(member_id)
-    project = ProjectRecord(str(uuid4()), payload.project_name, payload.description, course_id, course.code, payload.github_repo_url, current_user.id, datetime.now(timezone.utc))
+    project = ProjectRecord(str(uuid4()), payload.project_name, payload.description, course_id, course.code, payload.github_repo_url, payload.local_repo_path, current_user.id, datetime.now(timezone.utc))
     repository.create_project(project, members)
     return _project_response(project, repository, users)
 
@@ -201,7 +202,7 @@ def update_project(project_id: str, payload: ProjectUpdate, current_user: Annota
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if not _can_manage_course(current_user, project.course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
-    updated = repository.update_project(project_id, payload.project_name or project.project_name, payload.description, payload.github_repo_url)
+    updated = repository.update_project(project_id, payload.project_name or project.project_name, payload.description, payload.github_repo_url or project.github_repo_url, payload.local_repo_path if payload.local_repo_path is not None else project.local_repo_path)
     return _project_response(updated, repository, users)
 
 

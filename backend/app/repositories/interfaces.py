@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.schemas.auth import Role
-from app.schemas.assessment import AssessmentReport, AuditRecord, ManualTextPayload, OverrideResponse
+from app.schemas.assessment import AssessmentReport, AuditRecord, CommitInfo, ManualTextPayload, OverrideResponse
 
 
 @dataclass
@@ -58,6 +58,7 @@ class ProjectRecord:
     course_id: str
     course_code: str
     github_repo_url: str | None
+    local_repo_path: str | None
     created_by: str
     created_at: datetime
 
@@ -71,7 +72,7 @@ class ProjectRepository(Protocol):
     def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord: ...
     def get_project(self, project_id: str) -> ProjectRecord | None: ...
     def list_projects(self, course_id: str) -> list[ProjectRecord]: ...
-    def update_project(self, project_id: str, project_name: str, description: str | None, github_repo_url: str | None) -> ProjectRecord | None: ...
+    def update_project(self, project_id: str, project_name: str, description: str | None, github_repo_url: str | None, local_repo_path: str | None) -> ProjectRecord | None: ...
     def delete_project(self, project_id: str) -> ProjectRecord | None: ...
     def set_members(self, project_id: str, member_ids: list[str]) -> None: ...
     def list_member_ids(self, project_id: str) -> list[str]: ...
@@ -117,9 +118,12 @@ class IngestionMetricBundle:
     sprint_id: str
     commit_frequency: float
     code_churn: int
-    pr_turnaround_hours: float
-    assigned_story_points: int
-    completion_percent: float
+    pr_turnaround_hours: float | None
+    assigned_story_points: int | None
+    completion_percent: float | None
+    commits: list[CommitInfo]
+    local_repo_path: str | None
+    head_sha: str | None
     captured_at: datetime
 
 

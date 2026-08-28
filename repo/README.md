@@ -1,0 +1,1 @@
+Clone the students' project repositories into the repo/ folder. 

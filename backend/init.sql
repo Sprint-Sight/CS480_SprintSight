@@ -109,9 +109,12 @@ CREATE TABLE IF NOT EXISTS projects (
     description TEXT,
     course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
     github_repo_url VARCHAR(255),
+    local_repo_path VARCHAR(255),
     created_by UUID NOT NULL REFERENCES users(user_id),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS local_repo_path VARCHAR(255);
 
 CREATE TABLE IF NOT EXISTS project_members (
     project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -123,3 +126,44 @@ CREATE INDEX IF NOT EXISTS idx_course_instructors_user_id ON course_instructors(
 CREATE INDEX IF NOT EXISTS idx_course_students_user_id ON course_students(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);
+
+-- =============================================================
+-- 3. LOCAL GIT INGESTION EVIDENCE
+-- One run represents one project/sprint ingestion and is replaced
+-- transactionally when the same project/sprint is ingested again.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+    ingestion_run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    sprint_id VARCHAR(100) NOT NULL,
+    local_repo_path VARCHAR(255) NOT NULL,
+    head_sha VARCHAR(64),
+    commit_frequency DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (commit_frequency >= 0),
+    code_churn INTEGER NOT NULL DEFAULT 0 CHECK (code_churn >= 0),
+    pr_turnaround_hours DOUBLE PRECISION,
+    assigned_story_points INTEGER,
+    completion_percent DOUBLE PRECISION,
+    captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (project_id, sprint_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_project_sprint
+    ON ingestion_runs(project_id, sprint_id);
+
+CREATE TABLE IF NOT EXISTS ingestion_commits (
+    ingestion_commit_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ingestion_run_id UUID NOT NULL REFERENCES ingestion_runs(ingestion_run_id) ON DELETE CASCADE,
+    sha VARCHAR(64) NOT NULL,
+    author VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    lines_added INTEGER NOT NULL DEFAULT 0 CHECK (lines_added >= 0),
+    lines_deleted INTEGER NOT NULL DEFAULT 0 CHECK (lines_deleted >= 0),
+    files_changed JSONB NOT NULL DEFAULT '[]'::jsonb,
+    UNIQUE (ingestion_run_id, sha),
+    CHECK (jsonb_typeof(files_changed) = 'array')
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_sha ON ingestion_commits(sha);
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run ON ingestion_commits(ingestion_run_id);
