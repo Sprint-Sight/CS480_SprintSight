@@ -11,8 +11,8 @@ from fastapi import APIRouter, status, Query, HTTPException
 
 from schemas.modelname import ModelName
 from schemas.teamtype import TeamType
-from schemas.assessment import SprintAssessment
-from schemas.fixtures import high_performing_team, imbalanced_team, struggling_team
+from schemas.benchmark import SprintAssessment
+from schemas.fixtures import high_performing_team, struggling_team, high_collab_low_output_team, lone_contributor_poor_outcome_team, imbalanced_high_output_team
 
 from services.evaluator import evaluate_sprint
 
@@ -26,8 +26,10 @@ router = APIRouter( # Create router (defines path group)
 ## AS OF NOW, WE ARE USING FIXTURE DATA FOR TESTING AND DEMONSTRATION PURPOSES.
 team_fixtures = {
     "high_performing_team": high_performing_team,
-    "imbalanced_team": imbalanced_team,
     "struggling_team": struggling_team,
+    "high_collab_low_output_team": high_collab_low_output_team,
+    "lone_contributor_poor_outcome_team": lone_contributor_poor_outcome_team,
+    "imbalanced_high_output_team": imbalanced_high_output_team
 }
 
 @router.post("/sprint", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
@@ -40,7 +42,7 @@ async def assess_sprint_endpoint(
 
     try:
         print("Grading high performing team...")
-        assessment = await evaluate_sprint(teamtype, modelname.value) # Passes bundle and modelname
+        assessment = await evaluate_sprint(teamtype, modelname.value, experiment_name="Sprintsight evaluation") # Passes bundle and modelname
         print("\nSUCCESS! Ollama returned structured Pydantic data:")
         return assessment
 
