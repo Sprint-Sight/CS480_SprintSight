@@ -28,6 +28,7 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         ProjectRecord(
             id="proj-a",
             project_name="CS203 Project",
+            team_name="CS203 Team",
             description=None,
             course_id="cs480",
             course_code="CS480",

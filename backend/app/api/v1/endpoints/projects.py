@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from psycopg.errors import UniqueViolation
 
 from app.dependencies.auth import get_project_repository, get_user_repository, require_admin, require_faculty, get_current_user
 from app.repositories.interfaces import ProjectRecord, ProjectRepository, UserRecord, UserRepository
@@ -31,6 +32,7 @@ def _project_response(project: ProjectRecord, project_repository: ProjectReposit
         if member:
             members.append(user_response(member))
     return ProjectResponse(id=project.id, project_name=project.project_name, description=project.description,
+                           team_name=project.team_name,
                            course_code=project.course_code, github_repo_url=project.github_repo_url,
                            local_repo_path=project.local_repo_path,
                            created_by=project.created_by, created_at=project.created_at, members=members)
@@ -159,6 +161,8 @@ def create_project(course_id: str, payload: ProjectCreate, current_user: Annotat
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+    if any(project.team_name.casefold() == payload.team_name.casefold() for project in repository.list_projects(course_id)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name already exists in this course.")
     members = []
     for member_id in payload.member_ids:
         member = users.get_by_id(member_id)
@@ -167,8 +171,11 @@ def create_project(course_id: str, payload: ProjectCreate, current_user: Annotat
         if not repository.is_student_enrolled(course_id, member_id):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Students must be enrolled in the course before joining a project.")
         members.append(member_id)
-    project = ProjectRecord(str(uuid4()), payload.project_name, payload.description, course_id, course.code, payload.github_repo_url, payload.local_repo_path, current_user.id, datetime.now(timezone.utc))
-    repository.create_project(project, members)
+    project = ProjectRecord(str(uuid4()), payload.project_name, payload.team_name, payload.description, course_id, course.code, payload.github_repo_url, payload.local_repo_path, current_user.id, datetime.now(timezone.utc))
+    try:
+        repository.create_project(project, members)
+    except UniqueViolation as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name already exists in this course.") from exc
     return _project_response(project, repository, users)
 
 
@@ -202,7 +209,13 @@ def update_project(project_id: str, payload: ProjectUpdate, current_user: Annota
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if not _can_manage_course(current_user, project.course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
-    updated = repository.update_project(project_id, payload.project_name or project.project_name, payload.description, payload.github_repo_url or project.github_repo_url, payload.local_repo_path if payload.local_repo_path is not None else project.local_repo_path)
+    team_name = payload.team_name or project.team_name
+    if any(existing.id != project_id and existing.team_name.casefold() == team_name.casefold() for existing in repository.list_projects(project.course_id)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name already exists in this course.")
+    try:
+        updated = repository.update_project(project_id, payload.project_name or project.project_name, team_name, payload.description, payload.github_repo_url if payload.github_repo_url is not None else project.github_repo_url, payload.local_repo_path if payload.local_repo_path is not None else project.local_repo_path)
+    except UniqueViolation as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name already exists in this course.") from exc
     return _project_response(updated, repository, users)
 
 

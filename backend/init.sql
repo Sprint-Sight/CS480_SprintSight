@@ -106,15 +106,19 @@ CREATE TABLE IF NOT EXISTS course_students (
 CREATE TABLE IF NOT EXISTS projects (
     project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_name VARCHAR(150) NOT NULL,
+    team_name VARCHAR(255) NOT NULL,
     description TEXT,
     course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
     github_repo_url VARCHAR(255),
     local_repo_path VARCHAR(255),
     created_by UUID NOT NULL REFERENCES users(user_id),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (length(btrim(team_name)) > 0)
 );
 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS local_repo_path VARCHAR(255);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_course_team_name
+    ON projects(course_id, lower(team_name));
 
 CREATE TABLE IF NOT EXISTS project_members (
     project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -167,3 +171,5 @@ CREATE TABLE IF NOT EXISTS ingestion_commits (
 
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_sha ON ingestion_commits(sha);
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run ON ingestion_commits(ingestion_run_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run_timestamp_sha
+    ON ingestion_commits(ingestion_run_id, timestamp, sha);

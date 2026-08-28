@@ -173,11 +173,12 @@ class InMemoryProjectRepository(ProjectRepository):
     def list_projects(self, course_id: str) -> list[ProjectRecord]:
         return [project for project in self._projects.values() if project.course_id == course_id]
 
-    def update_project(self, project_id: str, project_name: str, description: str | None, github_repo_url: str | None, local_repo_path: str | None) -> ProjectRecord | None:
+    def update_project(self, project_id: str, project_name: str, team_name: str, description: str | None, github_repo_url: str | None, local_repo_path: str | None) -> ProjectRecord | None:
         project = self._projects.get(project_id)
         if not project:
             return None
         project.project_name = project_name
+        project.team_name = team_name
         project.description = description
         project.github_repo_url = github_repo_url
         project.local_repo_path = local_repo_path
@@ -262,6 +263,27 @@ class InMemoryMetricsRepository(MetricsRepository):
 
     def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None:
         return self._metrics.get((course_id, project_id, sprint_id))
+
+    def get_metrics_page(self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int) -> tuple[IngestionMetricBundle | None, int]:
+        metrics = self.get_metrics(course_id, project_id, sprint_id)
+        if not metrics:
+            return None, 0
+        ordered_commits = sorted(metrics.commits, key=lambda commit: (commit.timestamp, commit.sha))
+        page = ordered_commits[offset:offset + limit]
+        return IngestionMetricBundle(
+            course_id=metrics.course_id,
+            project_id=metrics.project_id,
+            sprint_id=metrics.sprint_id,
+            commit_frequency=metrics.commit_frequency,
+            code_churn=metrics.code_churn,
+            pr_turnaround_hours=metrics.pr_turnaround_hours,
+            assigned_story_points=metrics.assigned_story_points,
+            completion_percent=metrics.completion_percent,
+            commits=page,
+            local_repo_path=metrics.local_repo_path,
+            head_sha=metrics.head_sha,
+            captured_at=metrics.captured_at,
+        ), len(ordered_commits)
 
 
 users_repo = InMemoryUserRepository()

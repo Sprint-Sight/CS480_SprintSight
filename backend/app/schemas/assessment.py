@@ -28,6 +28,28 @@ class CommitInfo(BaseModel):
     files_changed: list[FileDiff] = Field(default_factory=list)
 
 
+class PaginationMetadata(BaseModel):
+    limit: int | None
+    offset: int | None
+    total: int
+    has_more: bool
+
+
+class IngestionDataResponse(BaseModel):
+    course_id: str
+    project_id: str
+    sprint_id: str
+    head_sha: str | None
+    captured_at: datetime
+    commit_frequency: float
+    code_churn: int
+    pr_turnaround_hours: float | None
+    assigned_story_points: int | None
+    completion_percent: float | None
+    commits: list[CommitInfo]
+    pagination: PaginationMetadata
+
+
 class IngestionRequest(BaseModel):
     course_id: str
     project_id: str
