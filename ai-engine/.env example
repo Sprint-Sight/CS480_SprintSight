@@ -5,6 +5,7 @@
 # Ollama
 OLLAMA_BASE_URL="http://localhost:11434/v1"
 OLLAMA_API_KEY=<CREATE_YOUR_OWN_OLLAMA_API_KEY>
+OLLAMA_NUM_PARALLEL=2  # Number of parallel requests to the Ollama LLM service. Adjust based on your system's capabilities.
 
 # mlflow
 MLFLOW_TRACKING_URI="http://localhost:5000"
