@@ -74,17 +74,17 @@ def create_llm_client():
     OpenAI's tool-calling mode. JSON mode is more reliably supported
     across all Ollama models.
     """
-    transport = httpx.AsyncClient(
+    transport = httpx.AsyncClient( # Create a custom HTTP transport to capture requests and responses for auditing
         event_hooks={
-            "request": [_capture_request],
-            "response": [_capture_response],
+            "request": [_capture_request],   # Capture the request before sending it to Ollama
+            "response": [_capture_response], # Capture the response after receiving it from Ollama
         }
     )
     raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
         base_url=OLLAMA_BASE_URL,
         api_key=OLLAMA_API_KEY,
         timeout=OLLAMA_TIMEOUT,
-        http_client=transport,
+        http_client=transport, # Use the custom transport to capture requests and responses
     )
     
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
@@ -93,15 +93,15 @@ def create_llm_client():
     )
     return client
 
-async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
-    """
-    Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
-    """
+async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str, dimention_prompt) -> RubricDimensionScore:
+    # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
     bundle_data = bundle.model_dump_json(indent=2)
     
     prompt = f"""
     You are an expert software engineering professor. 
     Evaluate the following student team artifacts strictly on this dimension: {dimension_name}.
+    Here are the rubric criteria for {dimension_name}:
+    {dimention_prompt}
     
     CRITICAL INSTRUCTIONS:
     - Return a valid JSON object matching the RubricDimensionScore schema.
@@ -109,6 +109,14 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
     - Provide justification for the score.
     - Identify strengths.
     - Identify areas for improvement.
+
+    CRITICAL CITATION RULES:
+    1. Every item in evidence_citations MUST be a plain text string.
+    2. Do NOT wrap citations inside objects or key-value pairs.
+        CORRECT:
+        "evidence_citations": ["Jira ticket AUTH-1 is marked as Done.", "Alice added 150 lines of code."]
+        INCORRECT:
+        "evidence_citations": [{{"text": "Jira ticket AUTH-1 is marked as Done."}}]
     
     Student Artifacts:
     {bundle_data}
@@ -117,6 +125,7 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
     print(f"[{bundle.team_id}] Scoring dimension: {dimension_name}...")
 
     client = create_llm_client()  # Create a new client for this model
+    
     audit_token = _audit_context.set(
         {
             "request_id": str(uuid4()),
@@ -126,8 +135,7 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             "model": model_name,
         }
     )
-    try:
-        # The transport hooks capture the exact request and raw Ollama response.
+    try: # The transport hooks capture the exact request and raw Ollama response.
         return await client.chat.completions.create(
             model=model_name,
             response_model=RubricDimensionScore,
