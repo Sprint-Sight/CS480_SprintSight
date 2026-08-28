@@ -1,12 +1,30 @@
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
+from datetime import datetime
 
-class JiraTicket(BaseModel):
+class JiraTicket(BaseModel): # Jira real API returns id & key
     ticket_id: str = Field(description="e.g. SPRINT-101")
     summary: str = Field(description="Title of task")
     assignee: str = Field(description="Student assigned")
-    status: str = Field(description="e.g. Done, In Progress, To Do")
-    story_points: int = Field(default=1, ge=0)
+    status: Literal["To Do", "In Progress", "In Review", "Done", "Blocked"] = Field(
+        description="Match these exactly to your own Jira board's column names once you set it up"
+    )
+    timestamp: datetime = Field(
+        description="When this ticket's current status was last set -- mirrors CommitInfo's timestamp field"
+    )
+    issue_type: Literal["Bug", "Feature", "Story", "Task", "Epic", "Sub-task"] = Field(
+        description="Type of Jira ticket"
+    )
+    story_points: Optional[int] = Field(
+        default=None, ge=0,
+        description="None means not estimated — that's a planning-quality signal, not a value to guess at"
+    )
+    sprint_id: Optional[str] = Field(
+        default=None,
+        description="Sprint this ticket is currently assigned to. None for backlog items not yet pulled into a sprint."
+    )
+
+# Different ticket types (epic vs story vs task)
 
 # # SECTION 3 — JIRA / AGILE METRICS
 
