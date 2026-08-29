@@ -25,8 +25,10 @@ BENCHMARK_EXPERIMENT = "sprintsight-benchmarks"
 3. LLM Benchmarking evaluates LLM performance against known reference data and scoring rubrics (To be implemented via LLM judge in MLflow)
 '''
 
-@mlflow.trace(name="Evaluate_Complete_Sprint")
-def start_mlflow(experiment_name, name, template, commit_message, tags: Optional[dict] = None):
+# @mlflow.trace(name="Evaluate_Complete_Sprint")
+def start_mlflow(experiment_name, name: str | None = None,
+                 template: str | None = None, commit_message: str | None = None,
+                 tags: Optional[dict] = None):
     # Call this once per process
 
     # 1. Setup tracking URI and experiment

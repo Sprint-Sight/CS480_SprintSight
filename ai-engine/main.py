@@ -48,6 +48,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager # Allows us to define startup and shutdown logic for the FastAPI app
 async def lifespan(app: FastAPI): # Initialise things that should exist for the app's entire lifetime
     start_mlflow(
+        experiment_name="Sprintsight evaluation",
         name="sprint_assessment_prompt", 
         template="""\
 You are an expert agile coach evaluating team performance.

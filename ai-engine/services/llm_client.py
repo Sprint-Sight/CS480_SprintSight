@@ -2,7 +2,7 @@ from __future__ import annotations
 from schemas.rubrics_dimension_score import RubricDimensionScore
 from schemas.sprint_assessment import SprintAssessment
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.fixtures import high_performing_team, imbalanced_team, struggling_team # Contains various teams
+from schemas.fixtures import high_performing_team, good_collab_low_output_team, imbalanced_high_output_team, lone_contributor_poor_outcome_team, struggling_team # Contains various teams
 from openai import AsyncOpenAI
 import contextvars
 import json

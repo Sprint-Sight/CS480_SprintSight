@@ -12,7 +12,7 @@ from fastapi import APIRouter, status, Query, HTTPException
 from schemas.modelname import ModelName
 from schemas.teamtype import TeamType
 from schemas.benchmark import SprintAssessment
-from schemas.fixtures import high_performing_team, struggling_team, high_collab_low_output_team, lone_contributor_poor_outcome_team, imbalanced_high_output_team
+from schemas.fixtures import high_performing_team, struggling_team, good_collab_low_output_team, lone_contributor_poor_outcome_team, imbalanced_high_output_team
 
 from services.evaluator import evaluate_sprint
 
@@ -27,7 +27,7 @@ router = APIRouter( # Create router (defines path group)
 team_fixtures = {
     "high_performing_team": high_performing_team,
     "struggling_team": struggling_team,
-    "high_collab_low_output_team": high_collab_low_output_team,
+    "good_collab_low_output_team": good_collab_low_output_team,
     "lone_contributor_poor_outcome_team": lone_contributor_poor_outcome_team,
     "imbalanced_high_output_team": imbalanced_high_output_team
 }

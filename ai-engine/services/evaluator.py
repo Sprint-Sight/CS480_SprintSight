@@ -5,9 +5,6 @@ from schemas.rubrics_score import RubricsScore, DIMENSIONS, DIMENTION_PROMPTS
 from services.llm_client import evaluate_dimension
 from llmops.mlflow_config import start_mlflow
 
-from dotenv import load_dotenv
-load_dotenv()  # Load only OLLAMA_NUM_PARALLEL
-
 '''
 Receives bundle
 call_llm for each dimension concurrently, aggregate results, and return a SprintAssessment. (asyncio.gather)
@@ -27,7 +24,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
 
     # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
     # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
-    semaphore = asyncio.Semaphore(int(os.getenv("OLLAMA_NUM_PARALLEL", 2)))  
+    semaphore = asyncio.Semaphore(5)  
 
     async def _bounded_evaluate(dim):
         async with semaphore:
