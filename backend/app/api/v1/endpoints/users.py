@@ -145,22 +145,23 @@ def reset_managed_user_password(
     return user_response(reset_password(repository, user_id, payload.password, must_change_password=True))
 
 
-@router.post("/{user_id}/change-password", response_model=UserResponse)
+@router.post("/change-password", response_model=UserResponse)
 def change_own_password(
-    user_id: str,
     payload: PasswordChangeRequest,
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
     """
     Self-service password change/reset (forgot-password flow).
-    Sets must_change_password back to False since the user has now
-    chosen their own new password.
+    Identifies the account by email instead of user_id, since a user
+    who forgot their password only knows their email, not their
+    internal user_id. This also matches the future OTP flow, where
+    email is the natural first input (OTP gets sent there).
     """
-    user = repository.get_by_id(user_id)
+    user = repository.get_by_email(payload.email)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
-    updated = repository.update_password(user_id, hash_password(payload.password), False)
+    updated = repository.update_password(user.id, hash_password(payload.password), False)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
@@ -232,15 +233,6 @@ def activate_managed_user(
     _: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
-    """
-    Reactivates a soft-deleted user by setting is_active = True.
-
-    Does NOT restore previous course enrolments, project memberships,
-    or instructor assignments — those were removed by the deactivation
-    cascade and are not tracked anywhere to restore from. The user is
-    reinstated as a "clean" active account; an admin/instructor must
-    manually re-enrol or re-add them to courses/projects if needed.
-    """
     user = repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
