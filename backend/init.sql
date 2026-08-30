@@ -96,21 +96,20 @@ CREATE TABLE IF NOT EXISTS course_instructors (
     PRIMARY KEY (course_id, user_id)
 );
 
--- Ensure (course_id, code, term, year) is uniquely identifiable in courses
+-- This must exist in courses table
 ALTER TABLE courses 
     ADD CONSTRAINT uq_courses_id_offering UNIQUE (course_id, code, term, year);
 
--- Update course_students table schema
+-- course_students FK references that exact constraint
 CREATE TABLE IF NOT EXISTS course_students (
-    course_id UUID NOT NULL,
-    user_id   UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    code      VARCHAR(20) NOT NULL,
-    term      VARCHAR(20) NOT NULL,
-    year      INTEGER NOT NULL,
-    enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    course_id   UUID NOT NULL,
+    user_id     UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    code        VARCHAR(20) NOT NULL,
+    term        VARCHAR(20) NOT NULL,
+    year        INTEGER     NOT NULL,
+    enrolled_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (course_id, user_id),
-    -- Links student enrolment to the specific course offering
-    FOREIGN KEY (course_id, code, term, year) 
+    FOREIGN KEY (course_id, code, term, year)
         REFERENCES courses(course_id, code, term, year) ON DELETE CASCADE
 );
 

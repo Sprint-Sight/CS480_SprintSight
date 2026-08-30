@@ -117,6 +117,9 @@ class InMemoryProjectRepository(ProjectRepository):
 
     def assign_instructor(self, course_id: str, user_id: str) -> None:
         self._instructors.add((course_id, user_id))
+        
+    def unassign_instructor(self, course_id: str, user_id: str) -> None:
+        self._instructors.discard((course_id, user_id))
 
     def is_instructor_assigned(self, course_id: str, user_id: str) -> bool:
         return (course_id, user_id) in self._instructors

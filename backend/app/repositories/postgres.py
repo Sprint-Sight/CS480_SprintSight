@@ -175,6 +175,13 @@ class PostgresProjectRepository(ProjectRepository):
     def assign_instructor(self, course_id: str, user_id: str) -> None:
         with self._pool.connection() as connection:
             connection.execute("INSERT INTO course_instructors (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (UUID(course_id), UUID(user_id)))
+            
+    def unassign_instructor(self, course_id: str, user_id: str) -> None:   # ← add this
+        with self._pool.connection() as connection:
+            connection.execute(
+                "DELETE FROM course_instructors WHERE course_id = %s AND user_id = %s",
+                (UUID(course_id), UUID(user_id)),
+            )
 
     def is_instructor_assigned(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
@@ -183,11 +190,28 @@ class PostgresProjectRepository(ProjectRepository):
 
     def enroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
-            row = connection.execute("""SELECT 1 FROM course_students cs JOIN courses c ON c.course_id = cs.course_id
-                WHERE cs.user_id = %s AND lower(c.code) = lower((SELECT code FROM courses WHERE course_id = %s))""", (UUID(user_id), UUID(course_id))).fetchone()
+            # Check if student is already in any section of the same course code/term/year
+            row = connection.execute("""
+                SELECT 1 FROM course_students cs
+                JOIN courses c ON c.course_id = cs.course_id
+                WHERE cs.user_id = %s
+                AND lower(c.code) = lower((SELECT code FROM courses WHERE course_id = %s))
+                AND c.year = (SELECT year FROM courses WHERE course_id = %s)
+                AND lower(c.term) = lower((SELECT term FROM courses WHERE course_id = %s))
+            """, (UUID(user_id), UUID(course_id), UUID(course_id), UUID(course_id))).fetchone()
+
             if row:
                 return False
-            inserted = connection.execute("INSERT INTO course_students (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING course_id", (UUID(course_id), UUID(user_id))).fetchone()
+
+            inserted = connection.execute("""
+                INSERT INTO course_students (course_id, user_id, code, term, year)
+                SELECT %s, %s, c.code, c.term, c.year
+                FROM courses c
+                WHERE c.course_id = %s
+                ON CONFLICT DO NOTHING
+                RETURNING course_id
+            """, (UUID(course_id), UUID(user_id), UUID(course_id))).fetchone()
+
         return inserted is not None
 
     def is_student_enrolled(self, course_id: str, user_id: str) -> bool:
@@ -226,28 +250,39 @@ class PostgresProjectRepository(ProjectRepository):
     def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
-                """INSERT INTO projects (project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by, jira_email, jira_domain, jira_project_key, jira_api_token_encrypted)
+                """INSERT INTO projects (
+                    project_id, project_name, team_name, description, course_id,
+                    github_repo_url, local_repo_path, created_by,
+                    jira_email, jira_domain, jira_project_key, jira_api_token_encrypted
+                )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by, created_at, jira_email, jira_domain, jira_project_key, jira_api_token_encrypted""",
+                RETURNING project_id, project_name, team_name, description, course_id,
+                        github_repo_url, local_repo_path, created_by, created_at,
+                        jira_email, jira_domain, jira_project_key, jira_api_token_encrypted""",
                 (
-                    UUID(project.id),
-                    project.project_name,
-                    project.team_name,
-                    project.description,
-                    UUID(project.course_id),
-                    project.github_repo_url,
-                    project.local_repo_path,
-                    UUID(project.created_by),
-                    project.jira_email,
-                    project.jira_domain,
-                    project.jira_project_key,
-                    project.jira_api_token_encrypted,
+                    UUID(project.id), project.project_name, project.team_name,
+                    project.description, UUID(project.course_id),
+                    project.github_repo_url, project.local_repo_path,
+                    UUID(project.created_by), project.jira_email, project.jira_domain,
+                    project.jira_project_key, project.jira_api_token_encrypted,
                 ),
             ).fetchone()
-            course = connection.execute("SELECT code FROM courses WHERE course_id = %s", (UUID(project.course_id),)).fetchone()
+
+            course = connection.execute(
+                "SELECT code FROM courses WHERE course_id = %s",
+                (UUID(project.course_id),)
+            ).fetchone()
             row["course_code"] = course["code"]
+
+            # ← FIX: include course_id in the insert
             for member_id in dict.fromkeys(member_ids):
-                connection.execute("INSERT INTO project_members (project_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (UUID(project.id), UUID(member_id)))
+                connection.execute(
+                    """INSERT INTO project_members (project_id, course_id, user_id)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT DO NOTHING""",
+                    (UUID(project.id), UUID(project.course_id), UUID(member_id))
+                )
+
         return self._project(row)
 
     def get_project(self, project_id: str) -> ProjectRecord | None:
@@ -313,9 +348,29 @@ class PostgresProjectRepository(ProjectRepository):
 
     def set_members(self, project_id: str, member_ids: list[str]) -> None:
         with self._pool.connection() as connection:
-            connection.execute("DELETE FROM project_members WHERE project_id = %s", (UUID(project_id),))
+            # Get course_id from the project first
+            project_row = connection.execute(
+                "SELECT course_id FROM projects WHERE project_id = %s",
+                (UUID(project_id),)
+            ).fetchone()
+
+            if not project_row:
+                raise ValueError(f"Project {project_id} not found")
+
+            course_id = project_row["course_id"]
+
+            connection.execute(
+                "DELETE FROM project_members WHERE project_id = %s",
+                (UUID(project_id),)
+            )
+
+            # ← FIX: include course_id in the insert
             for member_id in dict.fromkeys(member_ids):
-                connection.execute("INSERT INTO project_members (project_id, user_id) VALUES (%s, %s)", (UUID(project_id), UUID(member_id)))
+                connection.execute(
+                    """INSERT INTO project_members (project_id, course_id, user_id)
+                    VALUES (%s, %s, %s)""",
+                    (UUID(project_id), course_id, UUID(member_id))
+                )
 
     def list_member_ids(self, project_id: str) -> list[str]:
         with self._pool.connection() as connection:
