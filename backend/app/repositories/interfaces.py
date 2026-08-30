@@ -62,6 +62,10 @@ class ProjectRecord:
     local_repo_path: str | None
     created_by: str
     created_at: datetime
+    jira_email: str | None = None
+    jira_domain: str | None = None
+    jira_project_key: str | None = None
+    jira_api_token_encrypted: str | None = None
 
 
 class ProjectRepository(Protocol):
@@ -73,7 +77,19 @@ class ProjectRepository(Protocol):
     def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord: ...
     def get_project(self, project_id: str) -> ProjectRecord | None: ...
     def list_projects(self, course_id: str) -> list[ProjectRecord]: ...
-    def update_project(self, project_id: str, project_name: str, team_name: str, description: str | None, github_repo_url: str | None, local_repo_path: str | None) -> ProjectRecord | None: ...
+    def update_project(
+        self,
+        project_id: str,
+        project_name: str,
+        team_name: str,
+        description: str | None,
+        github_repo_url: str | None,
+        local_repo_path: str | None,
+        jira_email: str | None,
+        jira_domain: str | None,
+        jira_project_key: str | None,
+        jira_api_token_encrypted: str | None,
+    ) -> ProjectRecord | None: ...
     def delete_project(self, project_id: str) -> ProjectRecord | None: ...
     def set_members(self, project_id: str, member_ids: list[str]) -> None: ...
     def list_member_ids(self, project_id: str) -> list[str]: ...

@@ -10,7 +10,13 @@ from app.core.logging import configure_logging, request_id_middleware
 from app.core.storage import storage
 from app.core.security import hash_password
 from app.repositories.interfaces import UserRecord
-from app.repositories.postgres import PostgresMetricsRepository, PostgresProjectRepository, PostgresUserRepository, create_user_pool
+from app.repositories.postgres import (
+    PostgresMetricsRepository,
+    PostgresProjectRepository,
+    PostgresUserRepository,
+    create_user_pool,
+    ensure_project_credential_schema,
+)
 from app.schemas.auth import Role
 from uuid import uuid4
 
@@ -37,6 +43,7 @@ async def lifespan(app: FastAPI):
     # ---- STARTUP -------------------------------------------------
     pool = create_user_pool(settings.database_connection_string())
     pool.open(wait=True)
+    ensure_project_credential_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)

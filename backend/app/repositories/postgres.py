@@ -9,6 +9,22 @@ from psycopg_pool import ConnectionPool
 from app.repositories.interfaces import CourseRecord, IngestionMetricBundle, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.auth import Role
 
+_PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
+    p.github_repo_url, p.local_repo_path, p.created_by, p.created_at,
+    p.jira_email, p.jira_domain, p.jira_project_key, p.jira_api_token_encrypted"""
+
+
+def ensure_project_credential_schema(pool: ConnectionPool) -> None:
+    statements = (
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255)",
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255)",
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50)",
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_api_token_encrypted TEXT",
+    )
+    with pool.connection() as connection:
+        for statement in statements:
+            connection.execute(statement)
+
 
 class PostgresUserRepository(UserRepository):
     def __init__(self, pool: ConnectionPool) -> None:
@@ -210,10 +226,23 @@ class PostgresProjectRepository(ProjectRepository):
     def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
-                """INSERT INTO projects (project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by, created_at""",
-                (UUID(project.id), project.project_name, project.team_name, project.description, UUID(project.course_id), project.github_repo_url, project.local_repo_path, UUID(project.created_by)),
+                """INSERT INTO projects (project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by, jira_email, jira_domain, jira_project_key, jira_api_token_encrypted)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by, created_at, jira_email, jira_domain, jira_project_key, jira_api_token_encrypted""",
+                (
+                    UUID(project.id),
+                    project.project_name,
+                    project.team_name,
+                    project.description,
+                    UUID(project.course_id),
+                    project.github_repo_url,
+                    project.local_repo_path,
+                    UUID(project.created_by),
+                    project.jira_email,
+                    project.jira_domain,
+                    project.jira_project_key,
+                    project.jira_api_token_encrypted,
+                ),
             ).fetchone()
             course = connection.execute("SELECT code FROM courses WHERE course_id = %s", (UUID(project.course_id),)).fetchone()
             row["course_code"] = course["code"]
@@ -223,20 +252,53 @@ class PostgresProjectRepository(ProjectRepository):
 
     def get_project(self, project_id: str) -> ProjectRecord | None:
         with self._pool.connection() as connection:
-            row = connection.execute("""SELECT p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code, p.github_repo_url, p.local_repo_path, p.created_by, p.created_at
-                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.project_id = %s""", (UUID(project_id),)).fetchone()
+            row = connection.execute(
+                f"""SELECT {_PROJECT_COLUMNS}
+                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.project_id = %s""",
+                (UUID(project_id),),
+            ).fetchone()
         return self._project(row) if row else None
 
     def list_projects(self, course_id: str) -> list[ProjectRecord]:
         with self._pool.connection() as connection:
-            rows = connection.execute("""SELECT p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code, p.github_repo_url, p.local_repo_path, p.created_by, p.created_at
-                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.course_id = %s ORDER BY p.project_name""", (UUID(course_id),)).fetchall()
+            rows = connection.execute(
+                f"""SELECT {_PROJECT_COLUMNS}
+                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.course_id = %s ORDER BY p.project_name""",
+                (UUID(course_id),),
+            ).fetchall()
         return [self._project(row) for row in rows]
 
-    def update_project(self, project_id: str, project_name: str, team_name: str, description: str | None, github_repo_url: str | None, local_repo_path: str | None) -> ProjectRecord | None:
+    def update_project(
+        self,
+        project_id: str,
+        project_name: str,
+        team_name: str,
+        description: str | None,
+        github_repo_url: str | None,
+        local_repo_path: str | None,
+        jira_email: str | None,
+        jira_domain: str | None,
+        jira_project_key: str | None,
+        jira_api_token_encrypted: str | None,
+    ) -> ProjectRecord | None:
         with self._pool.connection() as connection:
-            row = connection.execute("""UPDATE projects SET project_name = %s, team_name = %s, description = %s, github_repo_url = %s, local_repo_path = %s
-                WHERE project_id = %s RETURNING project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by, created_at""", (project_name, team_name, description, github_repo_url, local_repo_path, UUID(project_id))).fetchone()
+            row = connection.execute(
+                """UPDATE projects SET project_name = %s, team_name = %s, description = %s, github_repo_url = %s, local_repo_path = %s,
+                    jira_email = %s, jira_domain = %s, jira_project_key = %s, jira_api_token_encrypted = %s
+                WHERE project_id = %s RETURNING project_id, project_name, team_name, description, course_id, github_repo_url, local_repo_path, created_by, created_at, jira_email, jira_domain, jira_project_key, jira_api_token_encrypted""",
+                (
+                    project_name,
+                    team_name,
+                    description,
+                    github_repo_url,
+                    local_repo_path,
+                    jira_email,
+                    jira_domain,
+                    jira_project_key,
+                    jira_api_token_encrypted,
+                    UUID(project_id),
+                ),
+            ).fetchone()
             if row:
                 course = connection.execute("SELECT code FROM courses WHERE course_id = %s", (row["course_id"],)).fetchone()
                 row["course_code"] = course["code"]
@@ -262,7 +324,22 @@ class PostgresProjectRepository(ProjectRepository):
 
     @staticmethod
     def _project(row: dict) -> ProjectRecord:
-        return ProjectRecord(str(row["project_id"]), row["project_name"], row["team_name"], row["description"], str(row["course_id"]), row["course_code"], row["github_repo_url"], row["local_repo_path"], str(row["created_by"]), row["created_at"])
+        return ProjectRecord(
+            str(row["project_id"]),
+            row["project_name"],
+            row["team_name"],
+            row["description"],
+            str(row["course_id"]),
+            row["course_code"],
+            row["github_repo_url"],
+            row["local_repo_path"],
+            str(row["created_by"]),
+            row["created_at"],
+            row.get("jira_email"),
+            row.get("jira_domain"),
+            row.get("jira_project_key"),
+            row.get("jira_api_token_encrypted"),
+        )
 
 
 class PostgresMetricsRepository(MetricsRepository):

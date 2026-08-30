@@ -173,7 +173,19 @@ class InMemoryProjectRepository(ProjectRepository):
     def list_projects(self, course_id: str) -> list[ProjectRecord]:
         return [project for project in self._projects.values() if project.course_id == course_id]
 
-    def update_project(self, project_id: str, project_name: str, team_name: str, description: str | None, github_repo_url: str | None, local_repo_path: str | None) -> ProjectRecord | None:
+    def update_project(
+        self,
+        project_id: str,
+        project_name: str,
+        team_name: str,
+        description: str | None,
+        github_repo_url: str | None,
+        local_repo_path: str | None,
+        jira_email: str | None,
+        jira_domain: str | None,
+        jira_project_key: str | None,
+        jira_api_token_encrypted: str | None,
+    ) -> ProjectRecord | None:
         project = self._projects.get(project_id)
         if not project:
             return None
@@ -182,6 +194,10 @@ class InMemoryProjectRepository(ProjectRepository):
         project.description = description
         project.github_repo_url = github_repo_url
         project.local_repo_path = local_repo_path
+        project.jira_email = jira_email
+        project.jira_domain = jira_domain
+        project.jira_project_key = jira_project_key
+        project.jira_api_token_encrypted = jira_api_token_encrypted
         return project
 
     def delete_project(self, project_id: str) -> ProjectRecord | None:

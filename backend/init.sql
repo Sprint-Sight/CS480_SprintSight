@@ -96,12 +96,27 @@ CREATE TABLE IF NOT EXISTS course_instructors (
     PRIMARY KEY (course_id, user_id)
 );
 
+-- Ensure (course_id, code, term, year) is uniquely identifiable in courses
+ALTER TABLE courses 
+    ADD CONSTRAINT uq_courses_id_offering UNIQUE (course_id, code, term, year);
+
+-- Update course_students table schema
 CREATE TABLE IF NOT EXISTS course_students (
-    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    course_id UUID NOT NULL,
+    user_id   UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    code      VARCHAR(20) NOT NULL,
+    term      VARCHAR(20) NOT NULL,
+    year      INTEGER NOT NULL,
     enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (course_id, user_id)
+    PRIMARY KEY (course_id, user_id),
+    -- Links student enrolment to the specific course offering
+    FOREIGN KEY (course_id, code, term, year) 
+        REFERENCES courses(course_id, code, term, year) ON DELETE CASCADE
 );
+
+-- UNIQUE CONSTRAINT: Prevents a student from enrolling in multiple sections of the same course offering
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_section_per_course
+    ON course_students(user_id, code, term, year);
 
 CREATE TABLE IF NOT EXISTS projects (
     project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -109,27 +124,65 @@ CREATE TABLE IF NOT EXISTS projects (
     team_name VARCHAR(255) NOT NULL,
     description TEXT,
     course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
-    github_repo_url VARCHAR(255),
+    github_repo_url VARCHAR(255) NOT NULL,
     local_repo_path VARCHAR(255),
+    jira_email VARCHAR(255) NOT NULL,
+    jira_domain VARCHAR(255) NOT NULL,
+    jira_project_key VARCHAR(50) NOT NULL,
+    jira_api_token_encrypted TEXT NOT NULL,
     created_by UUID NOT NULL REFERENCES users(user_id),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (length(btrim(team_name)) > 0)
 );
 
+-- Schema migration/backfill logic
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_repo_url VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS local_repo_path VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_api_token_encrypted TEXT;
+
+ALTER TABLE projects ALTER COLUMN github_repo_url SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN local_repo_path DROP NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_email SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_domain SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_project_key SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_api_token_encrypted SET NOT NULL;
+
+-- Indexing and uniqueness
+CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_course_team_name
     ON projects(course_id, lower(team_name));
 
+-- Ensure (project_id, course_id) is uniquely identifiable in projects
+ALTER TABLE projects 
+    ADD CONSTRAINT uq_projects_id_course UNIQUE (project_id, course_id);
+
+-- Update project_members table schema
 CREATE TABLE IF NOT EXISTS project_members (
-    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    PRIMARY KEY (project_id, user_id)
+    project_id UUID NOT NULL,
+    course_id  UUID NOT NULL,
+    user_id    UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, user_id),
+    -- Verifies project belongs to the expected course
+    FOREIGN KEY (project_id, course_id) 
+        REFERENCES projects(project_id, course_id) ON DELETE CASCADE
 );
+
+-- UNIQUE CONSTRAINT: Prevents a student from joining more than 1 project in the same course
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_project_per_course
+    ON project_members(user_id, course_id);
 
 CREATE INDEX IF NOT EXISTS idx_course_instructors_user_id ON course_instructors(user_id);
 CREATE INDEX IF NOT EXISTS idx_course_students_user_id ON course_students(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_github_repo_url ON projects(github_repo_url);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_email ON projects(jira_email);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_api_token ON projects(jira_api_token_encrypted);
 
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE

@@ -5,12 +5,38 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.dependencies.auth import get_metrics_repository, get_project_repository, require_faculty
 from app.repositories.interfaces import MetricsRepository, ProjectRepository
 from app.repositories.interfaces import UserRecord
-from app.schemas.assessment import IngestionDataResponse, IngestionRequest, PaginationMetadata
+from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraRawSyncRequest, PaginationMetadata
 from app.services.documentsService.service import collect_document_signals
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
-from app.services.jiraService.service import enrich_jira_metrics
+from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
 
 router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
+
+
+@router.post("/jira/raw")
+def sync_raw_jira_data(
+    payload: JiraRawSyncRequest,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+) -> dict[str, object]:
+    project = projects.get_project(payload.project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if project.course_id != payload.course_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course.")
+    if not projects.is_instructor_assigned(payload.course_id, current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+    jira_project_key = payload.jira_project_key or project.jira_project_key
+    if not jira_project_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project key is required.")
+    return fetch_and_store_raw_jira_data(
+        payload.course_id,
+        payload.project_id,
+        payload.sprint_id,
+        jira_project_key,
+        project,
+        payload.jql,
+    )
 
 
 @router.get("/runs/{project_id}/{sprint_id}", response_model=IngestionDataResponse)

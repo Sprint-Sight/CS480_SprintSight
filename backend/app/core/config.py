@@ -21,8 +21,12 @@ class Settings(BaseSettings):
 
     github_pat_token: str = Field(default="", alias="GITHUB_PAT_TOKEN")
     local_repository_root: Path = Field(default=Path("repo"), alias="LOCAL_REPOSITORY_ROOT")
+    credentials_encryption_key: str = Field(default="", alias="CREDENTIALS_ENCRYPTION_KEY")
     jira_api_token: str = Field(default="", alias="JIRA_API_TOKEN")
+    jira_email: str = Field(default="", alias="JIRA_EMAIL")
     jira_domain: str = Field(default="", alias="JIRA_DOMAIN")
+    jira_timeout_seconds: float = Field(default=30, alias="JIRA_TIMEOUT_SECONDS")
+    minio_bucket_raw: str = Field(default="raw-jira-data", alias="MINIO_BUCKET_RAW")
 
     bootstrap_admin_email: str = Field(default="", alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: str = Field(default="", alias="BOOTSTRAP_ADMIN_PASSWORD")
