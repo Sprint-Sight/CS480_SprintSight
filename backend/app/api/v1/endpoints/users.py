@@ -1,7 +1,7 @@
 # app/routers/users.py
 
+from app.core.security import hash_password
 from typing import Annotated
-
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies.auth import (
@@ -18,6 +18,7 @@ from app.schemas.auth import (
     AdminPasswordReset,
     AdminUserCreate,
     AdminUserUpdate,
+    PasswordChangeRequest, #for reset password unsafe
     Role,
     UserResponse,
 )
@@ -141,7 +142,29 @@ def reset_managed_user_password(
     _: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
-    return user_response(reset_password(repository, user_id, payload.password))
+    return user_response(reset_password(repository, user_id, payload.password, must_change_password=True))
+
+
+@router.post("/{user_id}/change-password", response_model=UserResponse)
+def change_own_password(
+    user_id: str,
+    payload: PasswordChangeRequest,
+    repository: Annotated[UserRepository, Depends(get_user_repository)],
+) -> UserResponse:
+    """
+    Self-service password change/reset (forgot-password flow).
+    Sets must_change_password back to False since the user has now
+    chosen their own new password.
+    """
+    user = repository.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    updated = repository.update_password(user_id, hash_password(payload.password), False)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    return user_response(updated)
 
 
 @router.delete("/{user_id}", response_model=UserResponse)
@@ -200,4 +223,39 @@ def deactivate_managed_user(
 
     # Soft-delete + cascade membership cleanup
     updated = deactivate_user_cascade(users, projects, user_id)
+    return user_response(updated)
+
+
+@router.post("/{user_id}/activate", response_model=UserResponse)
+def activate_managed_user(
+    user_id: str,
+    _: Annotated[UserRecord, Depends(require_admin)],
+    repository: Annotated[UserRepository, Depends(get_user_repository)],
+) -> UserResponse:
+    """
+    Reactivates a soft-deleted user by setting is_active = True.
+
+    Does NOT restore previous course enrolments, project memberships,
+    or instructor assignments — those were removed by the deactivation
+    cascade and are not tracked anywhere to restore from. The user is
+    reinstated as a "clean" active account; an admin/instructor must
+    manually re-enrol or re-add them to courses/projects if needed.
+    """
+    user = repository.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    if user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already active.",
+        )
+
+    updated = repository.update_user(
+        user_id,
+        user.email,
+        user.full_name,
+        user.role,
+        True,
+    )
     return user_response(updated)

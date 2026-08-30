@@ -53,8 +53,13 @@ def change_password(repository: UserRepository, user: UserRecord, current_passwo
     return updated
 
 
-def reset_password(repository: UserRepository, user_id: str, password: str) -> UserRecord:
-    updated = repository.update_password(user_id, hash_password(password), True)
+def reset_password(
+    repository: UserRepository,
+    user_id: str,
+    password: str,
+    must_change_password: bool = True,
+) -> UserRecord:
+    updated = repository.update_password(user_id, hash_password(password), must_change_password)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     return updated
