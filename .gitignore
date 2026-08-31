@@ -45,6 +45,8 @@ frontend/yarn-error.log*
 pgdata/
 uploads/
 artifacts_temp/
+ai-engine/audit_logs/*
+!ai-engine/audit_logs/.gitkeep
 
 # ==========================================
 # 5. IDEs, Editors & OS Metadata
