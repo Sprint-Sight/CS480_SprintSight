@@ -14,6 +14,10 @@ services:
     volumes:
       - ./logs:/app/logs
       - .:/app                          # hot reload in development
+      - ../repo:/app/repo:ro            # professor-provided student clones
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      LOCAL_REPOSITORY_ROOT: /app/repo
     depends_on:
       db:
         condition: service_healthy

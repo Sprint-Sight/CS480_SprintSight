@@ -19,10 +19,13 @@ def init_buckets():
     for bucket in [
         os.getenv("MINIO_BUCKET_SPRINTS"),
         os.getenv("MINIO_BUCKET_REPORTS")
+        , os.getenv("MINIO_BUCKET_RAW")
     ]:
         try:
             client.head_bucket(Bucket=bucket)
         except Exception:
+            if not bucket:
+                continue
             client.create_bucket(Bucket=bucket)
             print(f"Created bucket: {bucket}")
 

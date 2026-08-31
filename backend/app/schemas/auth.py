@@ -14,11 +14,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class PasswordChangeRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(min_length=8, max_length=128)
-
-
 class AdminUserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=100)
@@ -34,6 +29,11 @@ class AdminUserUpdate(BaseModel):
 
 
 class AdminPasswordReset(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+class PasswordChangeRequest(BaseModel):
+    email: EmailStr
     password: str = Field(min_length=8, max_length=128)
 
 

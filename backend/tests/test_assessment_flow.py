@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.main import app
+from app.repositories.interfaces import ProjectRecord
+from datetime import datetime, timezone
 
 
 client = TestClient(app)
@@ -17,10 +19,26 @@ def faculty_token() -> str:
     return response.json()["access_token"]
 
 
-def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path) -> None:
+def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_user_repository) -> None:
     audit_file = tmp_path / "audit.log"
     monkeypatch.setenv("AUDIT_LOG_PATH", str(audit_file))
+    monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(Path(__file__).parents[2] / "repo"))
     get_settings.cache_clear()
+    override_user_repository.create_project(
+        ProjectRecord(
+            id="proj-a",
+            project_name="CS203 Project",
+            team_name="CS203 Team",
+            description=None,
+            course_id="cs480",
+            course_code="CS480",
+            github_repo_url=None,
+            local_repo_path="cs-203-project",
+            created_by="u-faculty-1",
+            created_at=datetime.now(timezone.utc),
+        ),
+        [],
+    )
 
     token = faculty_token()
     headers = {"Authorization": f"Bearer {token}"}

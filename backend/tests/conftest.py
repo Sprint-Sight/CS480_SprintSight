@@ -2,6 +2,7 @@ import pytest
 import os
 
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key")
+os.environ.setdefault("CREDENTIALS_ENCRYPTION_KEY", "")
 os.environ.setdefault("POSTGRES_PASSWORD", "test-only-database-password")
 os.environ.setdefault("MINIO_ACCESS_KEY", "test-only-minio-access")
 os.environ.setdefault("MINIO_SECRET_KEY", "test-only-minio-secret")
@@ -18,6 +19,6 @@ def override_user_repository():
     app.dependency_overrides[get_user_repository] = lambda: repository
     from app.dependencies.auth import get_project_repository
     app.dependency_overrides[get_project_repository] = lambda: project_repository
-    yield
+    yield project_repository
     app.dependency_overrides.pop(get_user_repository, None)
     app.dependency_overrides.pop(get_project_repository, None)

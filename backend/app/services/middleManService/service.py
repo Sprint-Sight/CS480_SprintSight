@@ -20,6 +20,7 @@ def build_assessment_payload(
             "assigned_story_points": metrics.assigned_story_points,
             "completion_percent": metrics.completion_percent,
         },
+        "commits": [commit.model_dump(mode="json") for commit in metrics.commits],
         "artifact_metrics": document_signals,
         "instructor_expectations": manual_text or "No instructor guidance provided.",
     }

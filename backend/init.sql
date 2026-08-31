@@ -96,30 +96,132 @@ CREATE TABLE IF NOT EXISTS course_instructors (
     PRIMARY KEY (course_id, user_id)
 );
 
+-- This must exist in courses table
+ALTER TABLE courses 
+    ADD CONSTRAINT uq_courses_id_offering UNIQUE (course_id, code, term, year);
+
+-- course_students FK references that exact constraint
 CREATE TABLE IF NOT EXISTS course_students (
-    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (course_id, user_id)
+    course_id   UUID NOT NULL,
+    user_id     UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    code        VARCHAR(20) NOT NULL,
+    term        VARCHAR(20) NOT NULL,
+    year        INTEGER     NOT NULL,
+    enrolled_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (course_id, user_id),
+    FOREIGN KEY (course_id, code, term, year)
+        REFERENCES courses(course_id, code, term, year) ON DELETE CASCADE
 );
+
+-- UNIQUE CONSTRAINT: Prevents a student from enrolling in multiple sections of the same course offering
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_section_per_course
+    ON course_students(user_id, code, term, year);
 
 CREATE TABLE IF NOT EXISTS projects (
     project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_name VARCHAR(150) NOT NULL,
+    team_name VARCHAR(255) NOT NULL,
     description TEXT,
     course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
-    github_repo_url VARCHAR(255),
+    github_repo_url VARCHAR(255) NOT NULL,
+    local_repo_path VARCHAR(255),
+    jira_email VARCHAR(255) NOT NULL,
+    jira_domain VARCHAR(255) NOT NULL,
+    jira_project_key VARCHAR(50) NOT NULL,
+    jira_api_token_encrypted TEXT NOT NULL,
     created_by UUID NOT NULL REFERENCES users(user_id),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (length(btrim(team_name)) > 0)
 );
 
+-- Schema migration/backfill logic
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_repo_url VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS local_repo_path VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_api_token_encrypted TEXT;
+
+ALTER TABLE projects ALTER COLUMN github_repo_url SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN local_repo_path DROP NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_email SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_domain SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_project_key SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_api_token_encrypted SET NOT NULL;
+
+-- Indexing and uniqueness
+CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_course_team_name
+    ON projects(course_id, lower(team_name));
+
+-- Ensure (project_id, course_id) is uniquely identifiable in projects
+ALTER TABLE projects 
+    ADD CONSTRAINT uq_projects_id_course UNIQUE (project_id, course_id);
+
+-- Update project_members table schema
 CREATE TABLE IF NOT EXISTS project_members (
-    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    PRIMARY KEY (project_id, user_id)
+    project_id UUID NOT NULL,
+    course_id  UUID NOT NULL,
+    user_id    UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, user_id),
+    -- Verifies project belongs to the expected course
+    FOREIGN KEY (project_id, course_id) 
+        REFERENCES projects(project_id, course_id) ON DELETE CASCADE
 );
+
+-- UNIQUE CONSTRAINT: Prevents a student from joining more than 1 project in the same course
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_project_per_course
+    ON project_members(user_id, course_id);
 
 CREATE INDEX IF NOT EXISTS idx_course_instructors_user_id ON course_instructors(user_id);
 CREATE INDEX IF NOT EXISTS idx_course_students_user_id ON course_students(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_github_repo_url ON projects(github_repo_url);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_email ON projects(jira_email);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_api_token ON projects(jira_api_token_encrypted);
+
+-- =============================================================
+-- 3. LOCAL GIT INGESTION EVIDENCE
+-- One run represents one project/sprint ingestion and is replaced
+-- transactionally when the same project/sprint is ingested again.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+    ingestion_run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    sprint_id VARCHAR(100) NOT NULL,
+    local_repo_path VARCHAR(255) NOT NULL,
+    head_sha VARCHAR(64),
+    commit_frequency DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (commit_frequency >= 0),
+    code_churn INTEGER NOT NULL DEFAULT 0 CHECK (code_churn >= 0),
+    pr_turnaround_hours DOUBLE PRECISION,
+    assigned_story_points INTEGER,
+    completion_percent DOUBLE PRECISION,
+    captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (project_id, sprint_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_project_sprint
+    ON ingestion_runs(project_id, sprint_id);
+
+CREATE TABLE IF NOT EXISTS ingestion_commits (
+    ingestion_commit_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ingestion_run_id UUID NOT NULL REFERENCES ingestion_runs(ingestion_run_id) ON DELETE CASCADE,
+    sha VARCHAR(64) NOT NULL,
+    author VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    lines_added INTEGER NOT NULL DEFAULT 0 CHECK (lines_added >= 0),
+    lines_deleted INTEGER NOT NULL DEFAULT 0 CHECK (lines_deleted >= 0),
+    files_changed JSONB NOT NULL DEFAULT '[]'::jsonb,
+    UNIQUE (ingestion_run_id, sha),
+    CHECK (jsonb_typeof(files_changed) = 'array')
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_sha ON ingestion_commits(sha);
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run ON ingestion_commits(ingestion_run_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run_timestamp_sha
+    ON ingestion_commits(ingestion_run_id, timestamp, sha);

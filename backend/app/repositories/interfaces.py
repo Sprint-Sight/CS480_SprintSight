@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.schemas.auth import Role
-from app.schemas.assessment import AssessmentReport, AuditRecord, ManualTextPayload, OverrideResponse
+from app.schemas.assessment import AssessmentReport, AuditRecord, CommitInfo, ManualTextPayload, OverrideResponse
 
 
 @dataclass
@@ -54,12 +54,18 @@ class CourseRecord:
 class ProjectRecord:
     id: str
     project_name: str
+    team_name: str
     description: str | None
     course_id: str
     course_code: str
     github_repo_url: str | None
+    local_repo_path: str | None
     created_by: str
     created_at: datetime
+    jira_email: str | None = None
+    jira_domain: str | None = None
+    jira_project_key: str | None = None
+    jira_api_token_encrypted: str | None = None
 
 
 class ProjectRepository(Protocol):
@@ -69,9 +75,22 @@ class ProjectRepository(Protocol):
     def assign_instructor(self, course_id: str, user_id: str) -> None: ...
     def is_instructor_assigned(self, course_id: str, user_id: str) -> bool: ...
     def create_project(self, project: ProjectRecord, member_ids: list[str]) -> ProjectRecord: ...
+    def unassign_instructor(self, course_id: str, user_id: str) -> None: ...
     def get_project(self, project_id: str) -> ProjectRecord | None: ...
     def list_projects(self, course_id: str) -> list[ProjectRecord]: ...
-    def update_project(self, project_id: str, project_name: str, description: str | None, github_repo_url: str | None) -> ProjectRecord | None: ...
+    def update_project(
+        self,
+        project_id: str,
+        project_name: str,
+        team_name: str,
+        description: str | None,
+        github_repo_url: str | None,
+        local_repo_path: str | None,
+        jira_email: str | None,
+        jira_domain: str | None,
+        jira_project_key: str | None,
+        jira_api_token_encrypted: str | None,
+    ) -> ProjectRecord | None: ...
     def delete_project(self, project_id: str) -> ProjectRecord | None: ...
     def set_members(self, project_id: str, member_ids: list[str]) -> None: ...
     def list_member_ids(self, project_id: str) -> list[str]: ...
@@ -117,9 +136,12 @@ class IngestionMetricBundle:
     sprint_id: str
     commit_frequency: float
     code_churn: int
-    pr_turnaround_hours: float
-    assigned_story_points: int
-    completion_percent: float
+    pr_turnaround_hours: float | None
+    assigned_story_points: int | None
+    completion_percent: float | None
+    commits: list[CommitInfo]
+    local_repo_path: str | None
+    head_sha: str | None
     captured_at: datetime
 
 
@@ -127,3 +149,7 @@ class MetricsRepository(Protocol):
     def save_metrics(self, metrics: IngestionMetricBundle) -> None: ...
 
     def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None: ...
+
+    def get_metrics_page(
+        self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int
+    ) -> tuple[IngestionMetricBundle | None, int]: ...

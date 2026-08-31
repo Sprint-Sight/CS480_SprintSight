@@ -33,7 +33,7 @@ def test_admin_assigns_instructor_and_instructor_creates_student_and_project() -
 
     project = client.post(
         f"/api/v1/courses/{course_id}/projects",
-        json={"project_name": "SprintSight", "description": "Capstone team", "member_ids": [student_id]},
+        json={"project_name": "SprintSight", "team_name": "SprintSight Team", "description": "Capstone team", "member_ids": [student_id]},
         headers=instructor_headers,
     )
     assert project.status_code == 201
@@ -63,7 +63,7 @@ def test_admin_cannot_view_or_manage_projects() -> None:
     assert assigned.status_code == 200
     project = client.post(
         f"/api/v1/courses/{course['id']}/projects",
-        json={"project_name": "Instructor Project"},
+        json={"project_name": "Instructor Project", "team_name": "Instructor Team"},
         headers=instructor_headers,
     ).json()
 
@@ -122,7 +122,7 @@ def test_unenrolled_student_cannot_join_project() -> None:
     instructor_headers = headers(token("faculty@sprintsight.edu"))
     course = client.post("/api/v1/courses", json={"code": "CS494", "name": "Project Enrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
     student = client.post("/api/v1/students", json={"email": "not.enrolled@sprintsight.edu", "full_name": "Not Enrolled", "password": "temporary123"}, headers=instructor_headers).json()
-    project = client.post(f"/api/v1/courses/{course['id']}/projects", json={"project_name": "Needs Enrollment"}, headers=instructor_headers).json()
+    project = client.post(f"/api/v1/courses/{course['id']}/projects", json={"project_name": "Needs Enrollment", "team_name": "Enrollment Team"}, headers=instructor_headers).json()
     response = client.post(f"/api/v1/projects/{project['id']}/members/{student['id']}", headers=instructor_headers)
     assert response.status_code == 409
 
@@ -143,3 +143,37 @@ def test_admin_cannot_use_instructor_student_creation_endpoint() -> None:
         headers=headers(token("admin@sprintsight.edu")),
     )
     assert response.status_code == 403
+
+
+def test_team_name_is_unique_within_course_but_reusable_across_courses() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    first_course = client.post(
+        "/api/v1/courses",
+        json={"code": "CS496", "name": "Teams One", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor_headers,
+    ).json()
+    second_course = client.post(
+        "/api/v1/courses",
+        json={"code": "CS497", "name": "Teams Two", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor_headers,
+    ).json()
+
+    first_project = client.post(
+        f"/api/v1/courses/{first_course['id']}/projects",
+        json={"project_name": "First Project", "team_name": "Team Alpha"},
+        headers=instructor_headers,
+    )
+    duplicate_project = client.post(
+        f"/api/v1/courses/{first_course['id']}/projects",
+        json={"project_name": "Duplicate Project", "team_name": " team alpha "},
+        headers=instructor_headers,
+    )
+    other_course_project = client.post(
+        f"/api/v1/courses/{second_course['id']}/projects",
+        json={"project_name": "Other Project", "team_name": "Team Alpha"},
+        headers=instructor_headers,
+    )
+
+    assert first_project.status_code == 201
+    assert duplicate_project.status_code == 409
+    assert other_course_project.status_code == 201
