@@ -11,9 +11,10 @@ from app.services.gitlabGithub.service import ingest_github_metrics, resolve_loc
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
 
 router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
+jira_ingestion_router = APIRouter(prefix="/jira-ingestion", tags=["jira-ingestion"])
 
 
-@router.post("/jira/raw")
+@jira_ingestion_router.post("/sync/raw")
 def sync_raw_jira_data(
     payload: JiraRawSyncRequest,
     current_user: Annotated[UserRecord, Depends(require_faculty)],

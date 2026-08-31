@@ -48,8 +48,11 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
         captured_client["base_url"] = kwargs.get("base_url")
         original_init(self, *args, **kwargs)
 
+    original_post = httpx.Client.post
+
     def fake_post(self, url, **kwargs):
-        assert url == "/rest/api/3/search/jql"
+        if url != "/rest/api/3/search/jql":
+            return original_post(self, url, **kwargs)
         assert captured_client["auth"] == ("jira.owner@university.edu", "project-jira-token")
         assert captured_client["base_url"] == "https://team.atlassian.net"
         assert kwargs["json"]["jql"] == 'project = "JIRA" ORDER BY updated DESC'
@@ -64,7 +67,7 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(storage, "upload", fake_upload)
     response = client.post(
-        "/api/v1/repo-ingestion/jira/raw",
+        "/api/v1/jira-ingestion/sync/raw",
         json={"course_id": course["id"], "project_id": project["id"], "sprint_id": "sprint-1", "jira_project_key": "JIRA"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -96,7 +99,11 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
         headers={"Authorization": f"Bearer {token}"},
     ).json()
 
+    original_post = httpx.Client.post
+
     def fake_post(self, url, **kwargs):
+        if url != "/rest/api/3/search/jql":
+            return original_post(self, url, **kwargs)
         assert kwargs["json"]["jql"] == 'project = "STORED" ORDER BY updated DESC'
         return httpx.Response(
             200,
@@ -107,7 +114,7 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(storage, "upload", lambda *args, **kwargs: "raw/jira/key.json")
     response = client.post(
-        "/api/v1/repo-ingestion/jira/raw",
+        "/api/v1/jira-ingestion/sync/raw",
         json={"course_id": course["id"], "project_id": project["id"], "sprint_id": "sprint-1"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -124,11 +131,17 @@ def test_jira_raw_sync_requires_project_credentials() -> None:
     ).json()
     project = client.post(
         f"/api/v1/courses/{course['id']}/projects",
-        json={"project_name": "No Creds Project", "team_name": "No Creds Team"},
+        json={
+            "project_name": "No Creds Project",
+            "team_name": "No Creds Team",
+            "jira_email": "jira.owner@university.edu",
+            "jira_domain": "https://team.atlassian.net",
+            "jira_project_key": "JIRA",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     response = client.post(
-        "/api/v1/repo-ingestion/jira/raw",
+        "/api/v1/jira-ingestion/sync/raw",
         json={"course_id": course["id"], "project_id": project["id"], "sprint_id": "sprint-1", "jira_project_key": "JIRA"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -138,7 +151,7 @@ def test_jira_raw_sync_requires_project_credentials() -> None:
 def test_jira_raw_sync_rejects_unassigned_instructor() -> None:
     token = login("faculty@sprintsight.edu")
     response = client.post(
-        "/api/v1/repo-ingestion/jira/raw",
+        "/api/v1/jira-ingestion/sync/raw",
         json={"course_id": "missing-course", "project_id": "missing-project", "sprint_id": "sprint-1", "jira_project_key": "JIRA"},
         headers={"Authorization": f"Bearer {token}"},
     )
