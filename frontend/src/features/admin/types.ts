@@ -23,6 +23,7 @@ export interface UserAccount {
 export interface CreateUserData {
   fullName: string;
   email: string;
+  password?: string;
   role: Role;
   projectId?: string;
   courseCode?: string;
@@ -30,6 +31,9 @@ export interface CreateUserData {
 }
 
 export interface EditUserData {
+  fullName?: string;
+  email?: string;
+  password?: string;
   role: Role;
   projectId?: string;
   courseCode?: string;

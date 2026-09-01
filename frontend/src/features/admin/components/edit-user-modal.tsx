@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Layers, Users, Shield } from "lucide-react";
+import { X, Layers, Users, Shield, User, Mail } from "lucide-react";
 import { Role, UserAccount, ProjectOption, EditUserData } from "../types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
@@ -13,6 +13,8 @@ interface EditUserModalProps {
 }
 
 export function EditUserModal({ user, projects, onClose, onSave }: EditUserModalProps) {
+  const [fullName, setFullName] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
   const [role, setRole] = useState<Role>("student");
   const [projectId, setProjectId] = useState<string>("");
   const [courseCode, setCourseCode] = useState<string>("");
@@ -22,6 +24,8 @@ export function EditUserModal({ user, projects, onClose, onSave }: EditUserModal
 
   useEffect(() => {
     if (user) {
+      setFullName(user.fullName || "");
+      setEmail(user.email || "");
       setRole(user.role);
       setProjectId(user.projectId || "");
       setCourseCode(user.courseCode || "CS480");
@@ -49,6 +53,8 @@ export function EditUserModal({ user, projects, onClose, onSave }: EditUserModal
     setShowConfirm(false);
     setIsSubmitting(true);
     await onSave(user, {
+      fullName,
+      email,
       role,
       projectId: role === "student" ? projectId : undefined,
       courseCode: role !== "admin" ? courseCode : undefined,
@@ -73,10 +79,34 @@ export function EditUserModal({ user, projects, onClose, onSave }: EditUserModal
           </div>
 
           <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-              <p className="text-xs font-medium text-slate-500">Target User</p>
-              <p className="font-semibold text-slate-900 text-sm mt-0.5">{user.fullName}</p>
-              <p className="text-xs text-slate-500">{user.email}</p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-blue-600" />
+                Full Name
+              </label>
+              <input
+                type="text"
+                required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+                placeholder="Full Name"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-blue-600" />
+                Email Address
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+                placeholder="user@sprintsight.dev"
+              />
             </div>
 
             <div>
@@ -169,8 +199,8 @@ export function EditUserModal({ user, projects, onClose, onSave }: EditUserModal
         isOpen={showConfirm}
         onClose={() => setShowConfirm(false)}
         onConfirm={handleConfirmedSave}
-        title="Confirm User Assignment Change"
-        message={`Update role and team assignments for ${user.fullName}?`}
+        title="Confirm User Details Change"
+        message={`Update identity details for ${fullName}?`}
         confirmText="Yes, Update User"
         cancelText="Cancel"
       />

@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Shield,
+  LogOut,
   UserPlus,
   Search,
   Filter,
@@ -16,6 +17,8 @@ import {
   UserCheck,
   FolderGit2,
   BookOpen,
+  KeyRound,
+  RotateCcw,
 } from "lucide-react";
 import { UserAccount, Role, CreateUserData, EditUserData, ProjectOption } from "../types";
 import { CreateUserModal } from "./create-user-modal";
@@ -24,7 +27,6 @@ import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
-// Mock available projects based on backend schema structure
 const initialProjects: ProjectOption[] = [
   { id: "p1", projectName: "Team Alpha — E-Commerce", courseCode: "CS480", section: "001" },
   { id: "p2", projectName: "Team Beta — AI Evaluator", courseCode: "CS480", section: "001" },
@@ -38,18 +40,20 @@ export function AdminPageContent() {
   const [currentEmail, setCurrentEmail] = useState("");
   const [mounted, setMounted] = useState(false);
 
-  // Identity & Project State
+  // Identity & State
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [projects] = useState<ProjectOption[]>(initialProjects);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState("all");
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState("all");
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState("Active");
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [userToDeactivate, setUserToDeactivate] = useState<UserAccount | null>(null);
+  const [userToResetPassword, setUserToResetPassword] = useState<UserAccount | null>(null);
+  const [resetPasswordInput, setResetPasswordInput] = useState("");
 
   // Notifications
   const [notification, setNotification] = useState<{
@@ -62,11 +66,48 @@ export function AdminPageContent() {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  const getAuthToken = () => sessionStorage.getItem("sprintsight-access-token");
+
+  // 1. GET /users - Fetch User Directory
+  const fetchUsers = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    setLoadingUsers(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/users`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch user directory");
+
+      const data = await res.json();
+      const mappedUsers: UserAccount[] = data.map((u: any, idx: number) => {
+        const assignedProj = initialProjects[idx % initialProjects.length];
+        return {
+          id: u.id,
+          fullName: u.full_name,
+          email: u.email,
+          role: u.role,
+          projectId: u.role === "student" ? assignedProj.id : undefined,
+          projectName: u.role === "student" ? assignedProj.projectName : undefined,
+          courseCode: u.role !== "admin" ? assignedProj.courseCode : "Global System",
+          section: u.role !== "admin" ? assignedProj.section : "-",
+          status: u.is_active ? "Active" : "Inactive",
+          createdAt: u.created_at ? u.created_at.split("T")[0] : "N/A",
+        };
+      });
+      setUsers(mappedUsers);
+    } catch (err: any) {
+      showNotification("error", err.message || "Failed to load directory.");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role");
     const savedName = sessionStorage.getItem("sprintsight-auth-name");
     const savedEmail = sessionStorage.getItem("sprintsight-auth-email");
-    const token = sessionStorage.getItem("sprintsight-access-token");
 
     if (savedRole !== "admin") {
       router.replace("/login");
@@ -76,48 +117,13 @@ export function AdminPageContent() {
     if (savedName) setAdminName(savedName);
     if (savedEmail) setCurrentEmail(savedEmail);
 
-    if (token) {
-      setLoadingUsers(true);
-      fetch(`${API_BASE_URL}/users`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to fetch user directory");
-          return res.json();
-        })
-        .then((data) => {
-          const mappedUsers: UserAccount[] = data.map((u: any, idx: number) => {
-            const assignedProj = initialProjects[idx % initialProjects.length];
-            return {
-              id: u.id,
-              fullName: u.full_name,
-              email: u.email,
-              role: u.role,
-              projectId: u.role === "student" ? assignedProj.id : undefined,
-              projectName: u.role === "student" ? assignedProj.projectName : undefined,
-              courseCode: u.role !== "admin" ? assignedProj.courseCode : "Global System",
-              section: u.role !== "admin" ? assignedProj.section : "-",
-              status: u.is_active ? "Active" : "Inactive",
-              createdAt: u.created_at ? u.created_at.split("T")[0] : "N/A",
-            };
-          });
-          setUsers(mappedUsers);
-        })
-        .catch((err) => {
-          console.error("Error fetching users:", err);
-          showNotification("error", "Failed to load directory.");
-        })
-        .finally(() => {
-          setLoadingUsers(false);
-          setMounted(true);
-        });
-    } else {
-      setMounted(true);
-    }
+    fetchUsers();
+    setMounted(true);
   }, [router]);
 
+  // 2. POST /users - Create Managed User
   const handleCreateUser = async (data: CreateUserData) => {
-    const token = sessionStorage.getItem("sprintsight-access-token");
+    const token = getAuthToken();
     try {
       const res = await fetch(`${API_BASE_URL}/users`, {
         method: "POST",
@@ -129,13 +135,13 @@ export function AdminPageContent() {
           email: data.email,
           full_name: data.fullName,
           role: data.role,
-          password: "TemporaryPassword123!",
+          password: data.password,
         }),
       });
 
       if (!res.ok) {
         const err = await res.json();
-        showNotification("error", `Failed: ${err.detail || "Server error"}`);
+        showNotification("error", err.detail || "Failed to create user.");
         return;
       }
 
@@ -152,18 +158,19 @@ export function AdminPageContent() {
         courseCode: data.role !== "admin" ? data.courseCode || "CS480" : "Global System",
         section: data.role !== "admin" ? data.section || "001" : "-",
         status: newUser.is_active ? "Active" : "Inactive",
-        createdAt: new Date().toISOString().split("T")[0],
+        createdAt: newUser.created_at ? newUser.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
       };
 
       setUsers((prev) => [createdRecord, ...prev]);
-      showNotification("success", `User ${newUser.full_name} created successfully.`);
+      showNotification("success", `User ${newUser.full_name} provisioned successfully.`);
     } catch (err) {
       showNotification("error", "Network error while provisioning user.");
     }
   };
 
+  // 3. PATCH /users/{user_id} - Update Managed User
   const handleUpdateUser = async (user: UserAccount, data: EditUserData) => {
-    const token = sessionStorage.getItem("sprintsight-access-token");
+    const token = getAuthToken();
     try {
       const res = await fetch(`${API_BASE_URL}/users/${user.id}`, {
         method: "PATCH",
@@ -171,38 +178,50 @@ export function AdminPageContent() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ role: data.role }),
+        body: JSON.stringify({
+          role: data.role,
+          full_name: data.fullName ?? user.fullName,
+          email: data.email ?? user.email,
+        }),
       });
 
-      if (res.ok) {
-        const assignedProj = projects.find((p) => p.id === data.projectId);
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === user.id
-              ? {
-                  ...u,
-                  role: data.role,
-                  projectId: data.role === "student" ? data.projectId : undefined,
-                  projectName: data.role === "student" ? assignedProj?.projectName : undefined,
-                  courseCode: data.role !== "admin" ? data.courseCode : "Global System",
-                  section: data.role !== "admin" ? data.section : "-",
-                }
-              : u
-          )
-        );
-        showNotification("success", `Updated identity details for ${user.fullName}.`);
-      } else {
+      if (!res.ok) {
         const err = await res.json();
         showNotification("error", err.detail || "Failed to update record.");
+        return;
       }
+
+      const updatedUser = await res.json();
+      const assignedProj = projects.find((p) => p.id === data.projectId);
+
+      // Update state with response from backend
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === user.id
+            ? {
+                ...u,
+                fullName: updatedUser.full_name,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                projectId: data.role === "student" ? data.projectId : undefined,
+                projectName: data.role === "student" ? assignedProj?.projectName : undefined,
+                courseCode: data.role !== "admin" ? data.courseCode : "Global System",
+                section: data.role !== "admin" ? data.section : "-",
+              }
+            : u
+        )
+      );
+
+      showNotification("success", `Updated identity details for ${updatedUser.full_name}.`);
     } catch (err) {
       showNotification("error", "Network error while updating user.");
     }
   };
 
+  // 4. DELETE /users/{user_id} - Soft-delete (Deactivate) User
   const handleDeactivateUser = async () => {
     if (!userToDeactivate) return;
-    const token = sessionStorage.getItem("sprintsight-access-token");
+    const token = getAuthToken();
 
     try {
       const res = await fetch(`${API_BASE_URL}/users/${userToDeactivate.id}`, {
@@ -224,6 +243,65 @@ export function AdminPageContent() {
     } finally {
       setUserToDeactivate(null);
     }
+  };
+
+  // 5. POST /users/{user_id}/activate - Reactivate User Account
+  const handleActivateUser = async (user: UserAccount) => {
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${user.id}/activate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === user.id ? { ...u, status: "Active" } : u))
+        );
+        showNotification("success", `User ${user.fullName} reactivated.`);
+      } else {
+        const err = await res.json();
+        showNotification("error", err.detail || "Failed to activate user.");
+      }
+    } catch (err) {
+      showNotification("error", "Network error while activating user.");
+    }
+  };
+
+  // 6. POST /users/{user_id}/reset-password - Admin Reset Password
+  const handleResetPassword = async () => {
+    if (!userToResetPassword || !resetPasswordInput.trim()) return;
+    const token = getAuthToken();
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${userToResetPassword.id}/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ password: resetPasswordInput }),
+      });
+
+      if (res.ok) {
+        showNotification("success", `Password reset successfully for ${userToResetPassword.fullName}.`);
+      } else {
+        const err = await res.json();
+        showNotification("error", err.detail || "Failed to reset password.");
+      }
+    } catch (err) {
+      showNotification("error", "Network error while resetting password.");
+    } finally {
+      setUserToResetPassword(null);
+      setResetPasswordInput("");
+    }
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem("sprintsight-auth-role");
+    sessionStorage.removeItem("sprintsight-auth-email");
+    sessionStorage.removeItem("sprintsight-auth-name");
+    router.replace("/login");
   };
 
   const filteredUsers = useMemo(() => {
@@ -252,7 +330,7 @@ export function AdminPageContent() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 bg-slate-50 min-h-screen">
-      {/* Notification Toast */}
+      {/* Toast Notification */}
       {notification && (
         <div
           className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg transition-all ${
@@ -281,13 +359,24 @@ export function AdminPageContent() {
             Welcome back, <span className="font-semibold text-slate-700">{adminName || "System Admin"}</span>. Assign users to courses, manage sections, and place students in project teams.
           </p>
         </div>
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-colors self-start md:self-auto"
-        >
-          <UserPlus className="w-4 h-4" />
-          Provision New User
-        </button>
+        
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            Provision New User
+          </button>
+          <button
+            onClick={handleLogout}
+            className="inline-flex items-center gap-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4 text-slate-500" />
+            Sign Out
+          </button>
+        </div>
       </div>
 
       {/* Overview Cards */}
@@ -391,7 +480,7 @@ export function AdminPageContent() {
         </div>
       </div>
 
-      {/* User Directory Table */}
+      {/* Directory Table */}
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -410,7 +499,7 @@ export function AdminPageContent() {
               {filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
-                    {loadingUsers ? "Loading user records..." : "No matching users or projects found."}
+                    {loadingUsers ? "Loading user records..." : "No matching users found."}
                   </td>
                 </tr>
               ) : (
@@ -489,23 +578,43 @@ export function AdminPageContent() {
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => setEditingUser(user)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Edit Role / Project Assignment"
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit Role / User Details"
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
                           <button
-                            disabled={isSelf}
-                            onClick={() => setUserToDeactivate(user)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              isSelf
-                                ? "text-slate-300 cursor-not-allowed"
-                                : "text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                            }`}
-                            title={isSelf ? "Cannot deactivate yourself" : "Deactivate User"}
+                            onClick={() => {
+                              setUserToResetPassword(user);
+                              setResetPasswordInput(""); // <-- ADD THIS
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                            title="Reset Password"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <KeyRound className="w-4 h-4" />
                           </button>
+                          {user.status === "Active" ? (
+                            <button
+                              disabled={isSelf}
+                              onClick={() => setUserToDeactivate(user)}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                isSelf
+                                  ? "text-slate-300 cursor-not-allowed"
+                                  : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                              }`}
+                              title={isSelf ? "Cannot deactivate yourself" : "Deactivate User"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleActivateUser(user)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                              title="Activate User"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -525,22 +634,72 @@ export function AdminPageContent() {
         onCreate={handleCreateUser}
       />
 
-      <EditUserModal
-        user={editingUser}
-        projects={projects}
-        onClose={() => setEditingUser(null)}
-        onSave={handleUpdateUser}
-      />
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          projects={projects}
+          onClose={() => setEditingUser(null)}
+          onSave={(user, data) => handleUpdateUser(user, data)}
+        />
+      )}
 
+      {/* Deactivation Confirmation Modal */}
       <ConfirmationModal
-        isOpen={!!userToDeactivate}
+        isOpen={Boolean(userToDeactivate)}
         onClose={() => setUserToDeactivate(null)}
         onConfirm={handleDeactivateUser}
-        title="Deactivate Account"
-        message={`Deactivate ${userToDeactivate?.fullName}? They will lose access to SprintSight and their assigned project.`}
-        confirmText="Yes, Deactivate"
+        title="Deactivate User Account"
+        message={`Are you sure you want to deactivate ${userToDeactivate?.fullName}? This soft-deletes their account and cleans up active enrollments/memberships.`}
+        confirmText="Deactivate"
         cancelText="Cancel"
       />
+
+      {/* Password Reset Confirmation Modal */}
+      {userToResetPassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Reset User Password</h3>
+              <p className="text-sm text-slate-500 mb-5">
+                Set a new password for <span className="font-semibold text-slate-700">{userToResetPassword.fullName}</span>. They will be required to change it upon their next login.
+              </p>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={resetPasswordInput}
+                  onChange={(e) => setResetPasswordInput(e.target.value)}
+                  placeholder="Enter temporary password..."
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+                  autoFocus
+                />
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setUserToResetPassword(null);
+                  setResetPasswordInput("");
+                }}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetPassword}
+                disabled={!resetPasswordInput.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Reset Password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
