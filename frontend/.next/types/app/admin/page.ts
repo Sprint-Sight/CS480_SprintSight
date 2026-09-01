@@ -1,4 +1,4 @@
-// File: c:\Users\jchuj\sprintsight\CS480_SprintSight\frontend\src\app\admin\page.tsx
+// File: C:\Users\jchuj\sprintsight\CS480_SprintSight\frontend\src\app\admin\page.tsx
 import * as entry from '../../../../src/app/admin/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

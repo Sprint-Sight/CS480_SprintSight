@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Layers, Users, Shield } from "lucide-react";
+import { X, Layers, Users, Shield, Key } from "lucide-react";
 import { Role, CreateUserData, ProjectOption } from "../types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
@@ -16,6 +16,7 @@ export function CreateUserModal({ isOpen, projects, onClose, onCreate }: CreateU
   const [formData, setFormData] = useState<CreateUserData>({
     fullName: "",
     email: "",
+    password: "", // Added password field
     role: "student",
     projectId: "",
     courseCode: "CS480",
@@ -46,9 +47,12 @@ export function CreateUserModal({ isOpen, projects, onClose, onCreate }: CreateU
     setIsSubmitting(true);
     await onCreate(formData);
     setIsSubmitting(false);
+    
+    // Reset form after successful creation
     setFormData({
       fullName: "",
       email: "",
+      password: "",
       role: "student",
       projectId: "",
       courseCode: "CS480",
@@ -98,6 +102,23 @@ export function CreateUserModal({ isOpen, projects, onClose, onCreate }: CreateU
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-blue-600" />
+                Initial Password
+              </label>
+              <input
+                type="text" // Kept as text so the admin can see it and copy it to give to the user
+                required
+                minLength={6}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+                placeholder="TempPassword123!"
+              />
+              <p className="text-[10px] text-slate-500 mt-1.5">You will need to securely share this password with the user.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-blue-600" />
                 Assigned Role
               </label>
@@ -121,7 +142,7 @@ export function CreateUserModal({ isOpen, projects, onClose, onCreate }: CreateU
                   <input
                     type="text"
                     required
-                    value={formData.courseCode}
+                    value={formData.courseCode || ""}
                     onChange={(e) => setFormData({ ...formData, courseCode: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
                     placeholder="CS480"
@@ -132,7 +153,7 @@ export function CreateUserModal({ isOpen, projects, onClose, onCreate }: CreateU
                   <input
                     type="text"
                     required
-                    value={formData.section}
+                    value={formData.section || ""}
                     onChange={(e) => setFormData({ ...formData, section: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
                     placeholder="001"
@@ -148,7 +169,7 @@ export function CreateUserModal({ isOpen, projects, onClose, onCreate }: CreateU
                   Assigned Project / Team
                 </label>
                 <select
-                  value={formData.projectId}
+                  value={formData.projectId || ""}
                   onChange={(e) => handleProjectSelect(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all cursor-pointer"
                 >

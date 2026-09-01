@@ -35,7 +35,7 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.error?.message || "Invalid email or password.");
+        throw new Error(data?.error?.message || data?.detail || "Invalid email or password.");
       }
 
       // Store JWT token and user details in session storage
@@ -50,7 +50,7 @@ export default function LoginPage() {
 
       if (userResponse.ok) {
         const user = await userResponse.json();
-        sessionStorage.setItem("sprintsight-access-token", data.access_token);
+        // Storage is already set above, but safe to do again along with role
         sessionStorage.setItem("sprintsight-auth-role", user.role);
         sessionStorage.setItem("sprintsight-auth-email", user.email);
         sessionStorage.setItem("sprintsight-auth-name", user.full_name);
@@ -61,11 +61,18 @@ export default function LoginPage() {
         } else {
           router.replace("/");
         }
+        return; // <--- IMPORTANT: Stop execution here so we don't hit other redirects
+      } else {
+        // If /me fails for some reason, throw an error to be caught below
+        throw new Error("Failed to fetch user profile data.");
       }
 
-      router.replace("/");
+      // REMOVED the rogue router.replace("/") that was here!
+      
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred. Please try again.");
+      // If login fails midway, clear the token just in case
+      sessionStorage.removeItem("sprintsight-access-token");
     } finally {
       setIsLoading(false);
     }
