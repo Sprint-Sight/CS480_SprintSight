@@ -17,7 +17,7 @@ class LoginRequest(BaseModel):
 class AdminUserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=100)
-    role: Role
+    role: Role = Role.STUDENT
     password: str = Field(min_length=8, max_length=128)
 
 

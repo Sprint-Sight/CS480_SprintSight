@@ -57,7 +57,7 @@ def require_password_changed(current_user=Depends(get_current_user)):
 
 
 def require_faculty(current_user=Depends(require_password_changed)):
-    if current_user.role != Role.INSTRUCTOR:
+    if current_user.role not in (Role.INSTRUCTOR, Role.ADMIN):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Faculty role required.")
     return current_user
 

@@ -14,25 +14,24 @@ router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
 jira_ingestion_router = APIRouter(prefix="/jira-ingestion", tags=["jira-ingestion"])
 
 
-@jira_ingestion_router.post("/sync/raw")
+@jira_ingestion_router.post("/raw/{project_id}")
 def sync_raw_jira_data(
+    project_id: str,
     payload: JiraRawSyncRequest,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> dict[str, object]:
-    project = projects.get_project(payload.project_id)
+    project = projects.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    if project.course_id != payload.course_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course.")
-    if not projects.is_instructor_assigned(payload.course_id, current_user.id):
+    if not projects.is_instructor_assigned(project.course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
     jira_project_key = payload.jira_project_key or project.jira_project_key
     if not jira_project_key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project key is required.")
     return fetch_and_store_raw_jira_data(
-        payload.course_id,
-        payload.project_id,
+        project.course_id,
+        project_id,
         payload.sprint_id,
         jira_project_key,
         project,

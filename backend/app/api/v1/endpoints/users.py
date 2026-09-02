@@ -8,6 +8,7 @@ from app.dependencies.auth import (
     get_project_repository,
     get_user_repository,
     require_admin,
+    require_faculty,
 )
 from app.repositories.interfaces import (
     ProjectRepository,
@@ -53,34 +54,44 @@ def _active_admin_count(repository: UserRepository) -> int:
 
 @router.get("", response_model=list[UserResponse])
 def list_users(
-    _: Annotated[UserRecord, Depends(require_admin)],
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> list[UserResponse]:
-    return [user_response(user) for user in repository.list_users()]
+    users = repository.list_users()
+    if current_user.role == Role.INSTRUCTOR:
+        users = [u for u in users if u.role == Role.STUDENT and u.is_active]
+    return [user_response(user) for user in users]
 
 
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: str,
-    _: Annotated[UserRecord, Depends(require_admin)],
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    if current_user.role == (Role.INSTRUCTOR and user.role != Role.STUDENT or not user.is_active):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors can only view student accounts.")
     return user_response(user)
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_managed_user(
     payload: AdminUserCreate,
-    _: Annotated[UserRecord, Depends(require_admin)],
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
     """
-    Admin creates any account type.
-    AdminUserCreate must include a `role` field (instructor / student / admin).
+    Admin creates any account type (instructor / student / admin).
+    Instructors may only create student accounts.
     """
+    if current_user.role == Role.INSTRUCTOR and payload.role != Role.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructors can only create student accounts.",
+        )
     return user_response(
         create_user(repository, payload.email, payload.full_name, payload.role, payload.password)
     )
@@ -90,16 +101,22 @@ def create_managed_user(
 def update_managed_user(
     user_id: str,
     payload: AdminUserUpdate,
-    current_admin: Annotated[UserRecord, Depends(require_admin)],
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
+    if current_user.role == Role.INSTRUCTOR:
+        if user.role != Role.STUDENT:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors can only manage student accounts.")
+        if payload.role not in (None, Role.STUDENT):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors cannot change a user's role.")
+
     # Prevent admins from locking themselves out or demoting themselves
-    if user_id == current_admin.id and (
-        payload.is_active is False or payload.role not in (None, current_admin.role)
+    if user_id == current_user.id and (
+        payload.is_active is False or payload.role not in (None, current_user.role)
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

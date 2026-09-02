@@ -57,11 +57,9 @@ class IngestionRequest(BaseModel):
 
 
 class JiraRawSyncRequest(BaseModel):
-    course_id: str
-    project_id: str
     sprint_id: str
-    jira_project_key: str | None = Field(default=None, max_length=50)
-    jql: str | None = Field(default=None, max_length=2000)
+    jira_project_key: str | None = None
+    jql: str | None = None
 
 
 class AssessRequest(BaseModel):
