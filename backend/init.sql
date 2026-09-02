@@ -123,12 +123,12 @@ CREATE TABLE IF NOT EXISTS projects (
     team_name VARCHAR(255) NOT NULL,
     description TEXT,
     course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
-    github_repo_url VARCHAR(255) NOT NULL,
+    github_repo_url VARCHAR(255),
     local_repo_path VARCHAR(255),
     jira_email VARCHAR(255) NOT NULL,
-    jira_domain VARCHAR(255) NOT NULL,
-    jira_project_key VARCHAR(50) NOT NULL,
-    jira_api_token_encrypted TEXT NOT NULL,
+    jira_domain VARCHAR(255),
+    jira_project_key VARCHAR(50),
+    jira_api_token_encrypted TEXT,
     created_by UUID NOT NULL REFERENCES users(user_id),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (length(btrim(team_name)) > 0)
@@ -137,17 +137,25 @@ CREATE TABLE IF NOT EXISTS projects (
 -- Schema migration/backfill logic
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_repo_url VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS local_repo_path VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_name VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_api_token_encrypted TEXT;
 
-ALTER TABLE projects ALTER COLUMN github_repo_url SET NOT NULL;
+-- Backfill team names for projects created before team_name was introduced.
+UPDATE projects
+SET team_name = COALESCE(NULLIF(BTRIM(project_name), ''), 'Team')
+    || ' ' || LEFT(project_id::text, 8)
+WHERE team_name IS NULL OR BTRIM(team_name) = '';
+ALTER TABLE projects ALTER COLUMN team_name SET NOT NULL;
+
 ALTER TABLE projects ALTER COLUMN local_repo_path DROP NOT NULL;
 ALTER TABLE projects ALTER COLUMN jira_email SET NOT NULL;
-ALTER TABLE projects ALTER COLUMN jira_domain SET NOT NULL;
-ALTER TABLE projects ALTER COLUMN jira_project_key SET NOT NULL;
-ALTER TABLE projects ALTER COLUMN jira_api_token_encrypted SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN github_repo_url DROP NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_domain DROP NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_project_key DROP NOT NULL;
+ALTER TABLE projects ALTER COLUMN jira_api_token_encrypted DROP NOT NULL;
 
 -- Indexing and uniqueness
 CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);

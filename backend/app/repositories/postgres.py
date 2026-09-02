@@ -16,6 +16,7 @@ _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, 
 
 def ensure_project_credential_schema(pool: ConnectionPool) -> None:
     statements = (
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_name VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50)",
@@ -24,6 +25,19 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
     with pool.connection() as connection:
         for statement in statements:
             connection.execute(statement)
+        connection.execute(
+            """
+            UPDATE projects
+            SET team_name = COALESCE(NULLIF(BTRIM(project_name), ''), 'Team')
+                || ' ' || LEFT(project_id::text, 8)
+            WHERE team_name IS NULL OR BTRIM(team_name) = ''
+            """
+        )
+        connection.execute("ALTER TABLE projects ALTER COLUMN team_name SET NOT NULL")
+        connection.execute("ALTER TABLE projects ALTER COLUMN github_repo_url DROP NOT NULL")
+        connection.execute("ALTER TABLE projects ALTER COLUMN jira_domain DROP NOT NULL")
+        connection.execute("ALTER TABLE projects ALTER COLUMN jira_project_key DROP NOT NULL")
+        connection.execute("ALTER TABLE projects ALTER COLUMN jira_api_token_encrypted DROP NOT NULL")
 
 
 class PostgresUserRepository(UserRepository):
