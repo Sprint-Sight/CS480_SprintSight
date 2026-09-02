@@ -40,6 +40,7 @@ export default function LoginPage() {
 
       // Store JWT token and user details in session storage
       sessionStorage.setItem("sprintsight-access-token", data.access_token);
+      localStorage.setItem("sprintsight-access-token", data.access_token);
 
       // Fetch user profile details to store role
       const userResponse = await fetch(`${API_BASE_URL}/auth/me`, {
@@ -73,6 +74,7 @@ export default function LoginPage() {
       setError(err.message || "An unexpected error occurred. Please try again.");
       // If login fails midway, clear the token just in case
       sessionStorage.removeItem("sprintsight-access-token");
+      localStorage.removeItem("sprintsight-access-token");
     } finally {
       setIsLoading(false);
     }
