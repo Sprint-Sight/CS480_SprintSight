@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
@@ -12,6 +13,7 @@ from app.core.security import hash_password
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresMetricsRepository,
+    PostgresDocumentRepository,
     PostgresProjectRepository,
     PostgresUserRepository,
     create_user_pool,
@@ -47,6 +49,7 @@ async def lifespan(app: FastAPI):
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
+    app.state.document_repository = PostgresDocumentRepository(pool)
 
     user_repository = app.state.user_repository
     _bootstrap_user(user_repository, settings.bootstrap_admin_email, settings.bootstrap_admin_password, settings.bootstrap_admin_name, Role.ADMIN)
@@ -69,6 +72,33 @@ app = FastAPI(
     title=settings.project_name,
     lifespan=lifespan,
 )
+
+app.openapi_version = "3.0.3"
+
+
+def custom_openapi() -> dict:
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version="0.1.0",
+        openapi_version="3.0.3",
+        routes=app.routes,
+    )
+    operation = schema["paths"]["/api/v1/projects/{project_id}/documents"]["post"]
+    request_schema = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    request_component = schema["components"]["schemas"][request_schema["$ref"].split("/")[-1]]
+    request_component["properties"]["files"]["items"] = {
+        "type": "string",
+        "format": "binary",
+    }
+
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
 
 # Enable CORS for browser frontend requests
 app.add_middleware(

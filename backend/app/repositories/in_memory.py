@@ -5,6 +5,8 @@ from app.core.security import hash_password
 from app.repositories.interfaces import (
     AssessmentRepository,
     AuditRepository,
+    DocumentRecord,
+    DocumentRepository,
     IngestionMetricBundle,
     ManualTextRepository,
     MetricsRepository,
@@ -225,6 +227,25 @@ class InMemoryManualTextRepository(ManualTextRepository):
 
     def get(self, course_id: str, project_id: str, sprint_id: str) -> str | None:
         return self._store.get((course_id, project_id, sprint_id))
+
+
+class InMemoryDocumentRepository(DocumentRepository):
+    def __init__(self) -> None:
+        self._documents: dict[str, DocumentRecord] = {}
+
+    def create_document(self, document: DocumentRecord) -> DocumentRecord:
+        self._documents[document.id] = document
+        return document
+
+    def list_documents(self, project_id: str) -> list[DocumentRecord]:
+        return sorted(
+            (document for document in self._documents.values() if document.project_id == project_id),
+            key=lambda document: (document.created_at, document.id),
+        )
+
+    def get_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        document = self._documents.get(document_id)
+        return document if document and document.project_id == project_id else None
 
 
 class InMemoryAssessmentRepository(AssessmentRepository):

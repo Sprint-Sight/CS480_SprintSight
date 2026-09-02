@@ -183,6 +183,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_github_repo_url ON projects(github
 CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_email ON projects(jira_email);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_api_token ON projects(jira_api_token_encrypted);
 
+CREATE TABLE IF NOT EXISTS project_documents (
+    document_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    uploader_id UUID NOT NULL REFERENCES users(user_id),
+    filename VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    byte_size BIGINT NOT NULL CHECK (byte_size > 0),
+    checksum VARCHAR(64) NOT NULL,
+    storage_bucket VARCHAR(255) NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON project_documents(project_id);
+
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE
 -- One run represents one project/sprint ingestion and is replaced

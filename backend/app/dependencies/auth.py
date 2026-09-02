@@ -5,8 +5,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.in_memory import metrics_repo
-from app.repositories.interfaces import MetricsRepository, ProjectRepository, UserRepository
+from app.repositories.in_memory import InMemoryDocumentRepository, metrics_repo
+from app.repositories.interfaces import DocumentRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
 
@@ -23,6 +23,10 @@ def get_project_repository(request: Request) -> ProjectRepository:
 
 def get_metrics_repository(request: Request) -> MetricsRepository:
     return getattr(request.app.state, "metrics_repository", metrics_repo)
+
+
+def get_document_repository(request: Request) -> DocumentRepository:
+    return getattr(request.app.state, "document_repository", InMemoryDocumentRepository())
 
 
 def get_current_user(

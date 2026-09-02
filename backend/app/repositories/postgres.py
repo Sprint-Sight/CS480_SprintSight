@@ -6,7 +6,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import CourseRecord, IngestionMetricBundle, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.auth import Role
 
 _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
@@ -24,6 +24,21 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
     with pool.connection() as connection:
         for statement in statements:
             connection.execute(statement)
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS project_documents (
+                document_id UUID PRIMARY KEY,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                uploader_id UUID NOT NULL REFERENCES users(user_id),
+                filename VARCHAR(255) NOT NULL,
+                mime_type VARCHAR(100) NOT NULL,
+                byte_size BIGINT NOT NULL CHECK (byte_size > 0),
+                checksum VARCHAR(64) NOT NULL,
+                storage_bucket VARCHAR(255) NOT NULL,
+                storage_key TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON project_documents(project_id)")
 
 
 class PostgresUserRepository(UserRepository):
@@ -395,6 +410,62 @@ class PostgresProjectRepository(ProjectRepository):
             row.get("jira_project_key"),
             row.get("jira_api_token_encrypted"),
         )
+
+
+class PostgresDocumentRepository(DocumentRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _document(row: dict) -> DocumentRecord:
+        return DocumentRecord(
+            id=str(row["document_id"]),
+            project_id=str(row["project_id"]),
+            filename=row["filename"],
+            mime_type=row["mime_type"],
+            byte_size=row["byte_size"],
+            checksum=row["checksum"],
+            storage_bucket=row["storage_bucket"],
+            storage_key=row["storage_key"],
+            uploaded_by=str(row["uploader_id"]),
+            created_at=row["created_at"],
+        )
+
+    def create_document(self, document: DocumentRecord) -> DocumentRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO project_documents
+                (document_id, project_id, uploader_id, filename, mime_type, byte_size,
+                 checksum, storage_bucket, storage_key, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING document_id, project_id, uploader_id, filename, mime_type,
+                          byte_size, checksum, storage_bucket, storage_key, created_at""",
+                (UUID(document.id), UUID(document.project_id), UUID(document.uploaded_by),
+                 document.filename, document.mime_type, document.byte_size, document.checksum,
+                 document.storage_bucket, document.storage_key, document.created_at),
+            ).fetchone()
+        return self._document(row)
+
+    def list_documents(self, project_id: str) -> list[DocumentRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT document_id, project_id, uploader_id, filename, mime_type,
+                          byte_size, checksum, storage_bucket, storage_key, created_at
+                   FROM project_documents WHERE project_id = %s
+                   ORDER BY created_at, document_id""",
+                (UUID(project_id),),
+            ).fetchall()
+        return [self._document(row) for row in rows]
+
+    def get_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT document_id, project_id, uploader_id, filename, mime_type,
+                          byte_size, checksum, storage_bucket, storage_key, created_at
+                   FROM project_documents WHERE project_id = %s AND document_id = %s""",
+                (UUID(project_id), UUID(document_id)),
+            ).fetchone()
+        return self._document(row) if row else None
 
 
 class PostgresMetricsRepository(MetricsRepository):

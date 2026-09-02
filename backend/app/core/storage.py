@@ -19,7 +19,7 @@ def init_buckets():
     for bucket in [
         os.getenv("MINIO_BUCKET_SPRINTS"),
         os.getenv("MINIO_BUCKET_REPORTS")
-        , os.getenv("MINIO_BUCKET_RAW")
+        , os.getenv("MINIO_BUCKET_RAW"), os.getenv("MINIO_BUCKET_DOCUMENTS", "project-documents")
     ]:
         try:
             client.head_bucket(Bucket=bucket)
@@ -38,6 +38,11 @@ def download_object(bucket: str, key: str) -> bytes:
     client = get_minio_client()
     response = client.get_object(Bucket=bucket, Key=key)
     return response["Body"].read()
+
+
+def delete_object(bucket: str, key: str) -> None:
+    client = get_minio_client()
+    client.delete_object(Bucket=bucket, Key=key)
 
 def get_presigned_url(bucket: str, key: str, expires_in: int = 3600) -> str:
     """Generate a temporary download URL — useful for frontend file access."""
@@ -59,6 +64,9 @@ class StorageService:
 
     def download(self, bucket, key):
         return download_object(bucket, key)
+
+    def delete(self, bucket, key):
+        return delete_object(bucket, key)
 
     def presigned_url(self, bucket, key, expires_in=3600):
         return get_presigned_url(bucket, key, expires_in)

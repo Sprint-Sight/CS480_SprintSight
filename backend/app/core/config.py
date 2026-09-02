@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     jira_domain: str = Field(default="", alias="JIRA_DOMAIN")
     jira_timeout_seconds: float = Field(default=30, alias="JIRA_TIMEOUT_SECONDS")
     minio_bucket_raw: str = Field(default="raw-jira-data", alias="MINIO_BUCKET_RAW")
+    minio_bucket_documents: str = Field(default="project-documents", alias="MINIO_BUCKET_DOCUMENTS")
+    document_max_file_size: int = Field(default=25 * 1024 * 1024, alias="DOCUMENT_MAX_FILE_SIZE")
+    document_max_request_size: int = Field(default=100 * 1024 * 1024, alias="DOCUMENT_MAX_REQUEST_SIZE")
 
     bootstrap_admin_email: str = Field(default="", alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: str = Field(default="", alias="BOOTSTRAP_ADMIN_PASSWORD")
