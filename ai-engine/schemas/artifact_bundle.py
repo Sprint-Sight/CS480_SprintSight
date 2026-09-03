@@ -13,6 +13,10 @@ class ArtifactBundle(BaseModel):
     commits: List[CommitInfo] = Field(default_factory=list)
     jira_tickets: List[JiraTicket] = Field(default_factory=list)
     peer_evaluations: List[PeerEvaluation] = Field(default_factory=list)
+    sprint_context: dict = Field(default_factory=dict)
+    collaboration_metrics: dict = Field(default_factory=dict)
+    artifact_metrics: dict = Field(default_factory=dict)
+    instructor_expectations: str = ""
 
 sample_bundle = ArtifactBundle(
     team_id="Team_Alpha",

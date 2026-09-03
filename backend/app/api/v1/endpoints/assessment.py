@@ -1,11 +1,14 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.core.config import get_settings
 from app.dependencies.auth import get_metrics_repository, get_project_repository, require_faculty
 from app.repositories.interfaces import MetricsRepository, ProjectRepository
 from app.schemas.assessment import AssessRequest, OverrideRequest
 from app.services.assessmentService.service import (
+    generate_ai_assessment,
     generate_mock_assessment,
     get_latest_assessment,
     override_student_score,
@@ -21,13 +24,20 @@ router = APIRouter(prefix="/assessments", tags=["assessments"])
 
 
 @router.post("/assess")
-def assess_sprint(
+async def assess_sprint(
     payload: AssessRequest,
     faculty_user: Annotated[object, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
 ) -> dict:
     _ = faculty_user
+    try:
+        UUID(payload.project_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="project_id must be a valid project UUID.",
+        ) from exc
     project = projects.get_project(payload.project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
@@ -45,7 +55,10 @@ def assess_sprint(
     manual_text = get_manual_text(payload.course_id, payload.project_id, payload.sprint_id)
     middle_man_payload = build_assessment_payload(metrics, docs, manual_text)
 
-    report = generate_mock_assessment(payload, metrics_repository)
+    if get_settings().assessment_mode.lower() == "ai":
+        report = await generate_ai_assessment(payload, middle_man_payload)
+    else:
+        report = generate_mock_assessment(payload, metrics_repository)
     return {
         "input_payload": middle_man_payload,
         "report": report,

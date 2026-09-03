@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.repositories.in_memory import assessment_repo, metrics_repo, overrides_repo
 from app.repositories.interfaces import MetricsRepository
 from app.schemas.assessment import AssessRequest, AssessmentReport, OverrideRequest, OverrideResponse, StudentScore, TeamScore
+from app.services.middleManService.service import request_ai_assessment
 
 
 RUBRIC_WEIGHTS = {
@@ -62,6 +63,33 @@ def generate_mock_assessment(payload: AssessRequest, metrics_repository: Metrics
             "Increase peer review turnaround predictability.",
             "Improve documentation coverage for sprint demo artifacts.",
         ],
+    )
+    assessment_repo.save_report(report)
+    return report
+
+
+async def generate_ai_assessment(
+    payload: AssessRequest,
+    ai_payload: dict,
+) -> AssessmentReport:
+    settings = get_settings()
+    ai_result = await request_ai_assessment(ai_payload)
+
+    report = AssessmentReport(
+        report_id=f"rpt-{uuid4().hex[:12]}",
+        model_name=settings.default_model_name,
+        mode="ai",
+        course_id=payload.course_id,
+        project_id=payload.project_id,
+        sprint_id=payload.sprint_id,
+        generated_at=datetime.now(timezone.utc),
+        rubric_weights=RUBRIC_WEIGHTS,
+        team_score=TeamScore(
+            score=round(float(ai_result["overall_score"]) * 10, 2),
+            rationale=ai_result["executive_summary"],
+        ),
+        individual_scores=[],
+        recommendations=ai_result.get("key_recommendations", []),
     )
     assessment_repo.save_report(report)
     return report
