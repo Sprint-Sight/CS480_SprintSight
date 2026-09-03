@@ -3,12 +3,15 @@ import boto3
 from botocore.client import Config
 import os
 
+from app.core.config import get_settings
+
 def get_minio_client():
+    settings = get_settings()
     return boto3.client(
         "s3",
-        endpoint_url=f"http://{os.getenv('MINIO_ENDPOINT')}",
-        aws_access_key_id=os.getenv("MINIO_ACCESS_KEY"),
-        aws_secret_access_key=os.getenv("MINIO_SECRET_KEY"),
+        endpoint_url=settings.minio_endpoint_url,
+        aws_access_key_id=settings.minio_access_key,
+        aws_secret_access_key=settings.minio_secret_key,
         config=Config(signature_version="s3v4"),
         region_name="us-east-1"        # MinIO ignores this but boto3 requires it
     )

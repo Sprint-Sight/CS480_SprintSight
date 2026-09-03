@@ -1,13 +1,20 @@
 from typing import Annotated
 
+import json
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies.auth import get_metrics_repository, get_project_repository, require_faculty
-from app.repositories.interfaces import MetricsRepository, ProjectRepository
+from app.core.config import get_settings
+from app.core.storage import storage
+from app.dependencies.auth import get_jira_ingestion_repository, get_metrics_repository, get_project_repository, require_faculty
+from app.repositories.interfaces import JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository
 from app.repositories.interfaces import UserRecord
-from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraRawSyncRequest, PaginationMetadata
+from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
 from app.services.documentsService.service import collect_document_signals
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
+from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
 
 router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
@@ -20,6 +27,7 @@ def sync_raw_jira_data(
     payload: JiraRawSyncRequest,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
 ) -> dict[str, object]:
     project = projects.get_project(project_id)
     if not project:
@@ -29,7 +37,7 @@ def sync_raw_jira_data(
     jira_project_key = payload.jira_project_key or project.jira_project_key
     if not jira_project_key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project key is required.")
-    return fetch_and_store_raw_jira_data(
+    result = fetch_and_store_raw_jira_data(
         project.course_id,
         project_id,
         payload.sprint_id,
@@ -37,6 +45,108 @@ def sync_raw_jira_data(
         project,
         payload.jql,
     )
+    run = runs.create_run(JiraIngestionRunRecord(
+        id=str(uuid4()), course_id=project.course_id, project_id=project_id,
+        sprint_id=payload.sprint_id, jira_project_key=str(result["jira_project_key"]),
+        jql=str(result["jql"]), raw_bucket=str(result["bucket"]),
+        raw_object_key=str(result["object_key"]), issue_count=int(result["issue_count"]),
+        captured_at=result["captured_at"],
+    ))
+    return _run_response(run).model_dump(mode="json")
+
+
+def _authorized_project(project_id: str, user: UserRecord, projects: ProjectRepository):
+    project = projects.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if not projects.is_instructor_assigned(project.course_id, user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+    return project
+
+
+def _run_response(run: JiraIngestionRunRecord) -> JiraIngestionRun:
+    return JiraIngestionRun(
+        run_id=run.id,
+        course_id=run.course_id,
+        project_id=run.project_id,
+        sprint_id=run.sprint_id,
+        jira_project_key=run.jira_project_key,
+        jql=run.jql,
+        raw_bucket=run.raw_bucket,
+        raw_object_key=run.raw_object_key,
+        issue_count=run.issue_count,
+        captured_at=run.captured_at,
+        processed_at=run.processed_at,
+        processing_status=run.processing_status,
+        normalization_version=run.normalization_version,
+        processing_error=run.processing_error,
+    )
+
+
+@jira_ingestion_router.get("/runs/{project_id}", response_model=list[JiraIngestionRun])
+def list_all_project_jira_runs(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> list[JiraIngestionRun]:
+    project = _authorized_project(project_id, current_user, projects)
+    return [_run_response(run) for run in runs.list_project_runs(project.id)]
+
+
+@jira_ingestion_router.get("/runs/{project_id}/{sprint_id}", response_model=list[JiraIngestionRun])
+def list_jira_runs(
+    project_id: str,
+    sprint_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> list[JiraIngestionRun]:
+    project = _authorized_project(project_id, current_user, projects)
+    return [_run_response(run) for run in runs.list_runs(project.id, sprint_id)]
+
+
+@jira_ingestion_router.post("/runs/{project_id}/{sprint_id}/{run_id}/process", response_model=JiraIngestionRun)
+def process_jira_run(
+    project_id: str,
+    sprint_id: str,
+    run_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> JiraIngestionRun:
+    _authorized_project(project_id, current_user, projects)
+    run = runs.get_run(project_id, sprint_id, run_id)
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found.")
+    try:
+        envelope = json.loads(storage.download(run.raw_bucket, run.raw_object_key))
+        snapshot = normalize_jira_envelope(envelope, story_points_field=get_settings().jira_story_points_field or None)
+    except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
+        runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(timezone.utc), None, str(exc), None)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Jira raw data could not be normalized.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Jira raw data could not be retrieved from storage.") from exc
+    updated = runs.update_processed_run(project_id, sprint_id, run_id, "completed", datetime.now(timezone.utc), snapshot.normalization_version, None, snapshot)
+    return _run_response(updated)
+
+
+@jira_ingestion_router.get("/runs/{project_id}/{sprint_id}/{run_id}/cleaned", response_model=JiraCleanedSnapshot)
+def get_cleaned_jira_run(
+    project_id: str,
+    sprint_id: str,
+    run_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> JiraCleanedSnapshot:
+    _authorized_project(project_id, current_user, projects)
+    run = runs.get_run(project_id, sprint_id, run_id)
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found.")
+    if not run.cleaned_snapshot:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Jira ingestion run has not been processed.")
+    return run.cleaned_snapshot
 
 
 @router.get("/runs/{project_id}/{sprint_id}", response_model=IngestionDataResponse)

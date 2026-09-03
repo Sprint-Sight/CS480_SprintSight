@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     jira_email: str = Field(default="", alias="JIRA_EMAIL")
     jira_domain: str = Field(default="", alias="JIRA_DOMAIN")
     jira_timeout_seconds: float = Field(default=30, alias="JIRA_TIMEOUT_SECONDS")
+    jira_story_points_field: str = Field(default="", alias="JIRA_STORY_POINTS_FIELD")
     minio_bucket_raw: str = Field(default="raw-jira-data", alias="MINIO_BUCKET_RAW")
     minio_bucket_documents: str = Field(default="project-documents", alias="MINIO_BUCKET_DOCUMENTS")
     document_max_file_size: int = Field(default=25 * 1024 * 1024, alias="DOCUMENT_MAX_FILE_SIZE")
@@ -54,7 +55,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     
-    minio_endpoint_url: str = "http://minio:9000"
+    minio_endpoint_url: str = Field(default="http://minio:9000", alias="MINIO_ENDPOINT_URL")
     minio_access_key: str = Field(alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(alias="MINIO_SECRET_KEY")
 

@@ -8,6 +8,8 @@ from app.repositories.interfaces import (
     DocumentRecord,
     DocumentRepository,
     IngestionMetricBundle,
+    JiraIngestionRunRecord,
+    JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
     OverrideRepository,
@@ -17,7 +19,7 @@ from app.repositories.interfaces import (
     ProjectRecord,
     ProjectRepository,
 )
-from app.schemas.assessment import AssessmentReport, AuditRecord, ManualTextPayload, OverrideResponse
+from app.schemas.assessment import AssessmentReport, AuditRecord, JiraCleanedSnapshot, ManualTextPayload, OverrideResponse
 from app.schemas.auth import Role
 
 
@@ -293,6 +295,56 @@ class InMemoryAuditRepository(AuditRepository):
         return list(self._audits)
 
 
+class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
+    def __init__(self) -> None:
+        self._runs: dict[str, JiraIngestionRunRecord] = {}
+
+    def create_run(self, run: JiraIngestionRunRecord) -> JiraIngestionRunRecord:
+        self._runs[run.id] = run
+        return run
+
+    def get_run(self, project_id: str, sprint_id: str, run_id: str) -> JiraIngestionRunRecord | None:
+        run = self._runs.get(run_id)
+        if not run or run.project_id != project_id or run.sprint_id != sprint_id:
+            return None
+        return run
+
+    def list_project_runs(self, project_id: str) -> list[JiraIngestionRunRecord]:
+        return sorted(
+            (run for run in self._runs.values() if run.project_id == project_id),
+            key=lambda run: (run.captured_at, run.id),
+            reverse=True,
+        )
+
+    def list_runs(self, project_id: str, sprint_id: str) -> list[JiraIngestionRunRecord]:
+        return sorted(
+            (run for run in self._runs.values() if run.project_id == project_id and run.sprint_id == sprint_id),
+            key=lambda run: (run.captured_at, run.id),
+            reverse=True,
+        )
+
+    def update_processed_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        status: str,
+        processed_at: datetime | None,
+        normalization_version: str | None,
+        processing_error: str | None,
+        cleaned_snapshot: JiraCleanedSnapshot | None,
+    ) -> JiraIngestionRunRecord | None:
+        run = self.get_run(project_id, sprint_id, run_id)
+        if not run:
+            return None
+        run.processing_status = status
+        run.processed_at = processed_at
+        run.normalization_version = normalization_version
+        run.processing_error = processing_error
+        run.cleaned_snapshot = cleaned_snapshot
+        return run
+
+
 class InMemoryMetricsRepository(MetricsRepository):
     def __init__(self) -> None:
         self._metrics: dict[tuple[str, str, str], IngestionMetricBundle] = {}
@@ -333,6 +385,7 @@ overrides_repo = InMemoryOverrideRepository()
 audit_repo = InMemoryAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
 projects_repo = InMemoryProjectRepository()
+jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
 
 
 def now_utc() -> datetime:

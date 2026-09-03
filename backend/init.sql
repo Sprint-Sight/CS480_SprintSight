@@ -198,6 +198,28 @@ CREATE TABLE IF NOT EXISTS project_documents (
 
 CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON project_documents(project_id);
 
+CREATE TABLE IF NOT EXISTS jira_ingestion_runs (
+    run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    sprint_id VARCHAR(100) NOT NULL,
+    jira_project_key VARCHAR(50) NOT NULL,
+    jql TEXT NOT NULL,
+    raw_bucket VARCHAR(255) NOT NULL,
+    raw_object_key TEXT NOT NULL UNIQUE,
+    issue_count INTEGER NOT NULL CHECK (issue_count >= 0),
+    captured_at TIMESTAMPTZ NOT NULL,
+    processed_at TIMESTAMPTZ,
+    processing_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (processing_status IN ('pending', 'completed', 'failed')),
+    normalization_version VARCHAR(50),
+    processing_error TEXT,
+    cleaned_snapshot JSONB CHECK (cleaned_snapshot IS NULL OR jsonb_typeof(cleaned_snapshot) = 'object')
+);
+
+CREATE INDEX IF NOT EXISTS idx_jira_runs_project_sprint_captured
+    ON jira_ingestion_runs(project_id, sprint_id, captured_at DESC);
+
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE
 -- One run represents one project/sprint ingestion and is replaced

@@ -14,6 +14,7 @@ from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresMetricsRepository,
     PostgresDocumentRepository,
+    PostgresJiraIngestionRunRepository,
     PostgresProjectRepository,
     PostgresUserRepository,
     create_user_pool,
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
     app.state.document_repository = PostgresDocumentRepository(pool)
+    app.state.jira_ingestion_repository = PostgresJiraIngestionRunRepository(pool)
 
     user_repository = app.state.user_repository
     _bootstrap_user(user_repository, settings.bootstrap_admin_email, settings.bootstrap_admin_password, settings.bootstrap_admin_name, Role.ADMIN)

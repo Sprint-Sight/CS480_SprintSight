@@ -62,6 +62,44 @@ class JiraRawSyncRequest(BaseModel):
     jql: str | None = None
 
 
+class JiraTicket(BaseModel):
+    ticket_id: str
+    summary: str
+    assignee: str | None = None
+    status: str | None = None
+    issue_type: str | None = None
+    story_points: float | None = Field(default=None, ge=0)
+    sprint_id: str | None = None
+
+
+class JiraCleanedSnapshot(BaseModel):
+    normalization_version: str
+    source: str = "jira"
+    jira_project_key: str
+    course_id: str
+    project_id: str
+    sprint_id: str
+    captured_at: datetime
+    tickets: list[JiraTicket]
+
+
+class JiraIngestionRun(BaseModel):
+    run_id: str
+    course_id: str
+    project_id: str
+    sprint_id: str
+    jira_project_key: str
+    jql: str
+    raw_bucket: str
+    raw_object_key: str
+    issue_count: int = Field(ge=0)
+    captured_at: datetime
+    processed_at: datetime | None = None
+    processing_status: Literal["pending", "completed", "failed"] = "pending"
+    normalization_version: str | None = None
+    processing_error: str | None = None
+
+
 class AssessRequest(BaseModel):
     course_id: str
     project_id: str
