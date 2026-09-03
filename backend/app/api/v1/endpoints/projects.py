@@ -427,22 +427,24 @@ def update_project(
     if not _can_manage_course(current_user, project.course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
 
-    team_name = payload.team_name or project.team_name
-    if any(
-        existing.id != project_id and existing.team_name.casefold() == team_name.casefold()
-        for existing in repository.list_projects(project.course_id)
-    ):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name already exists in this course.")
-
     sent = payload.model_fields_set
 
     def _resolve(field: str, existing):
         return getattr(payload, field) if field in sent else existing
 
+    project_name = _resolve("project_name", project.project_name)
+    team_name = _resolve("team_name", project.team_name)
+
+    if team_name != project.team_name and any(
+        existing.id != project_id and existing.team_name.casefold() == team_name.casefold()
+        for existing in repository.list_projects(project.course_id)
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name already exists in this course.")
+
     description = _resolve("description", project.description)
     github_url = _resolve("github_repo_url", project.github_repo_url)
     local_path = _resolve("local_repo_path", project.local_repo_path)
-    jira_email = str(payload.jira_email) if "jira_email" in sent and payload.jira_email else project.jira_email
+    jira_email = str(payload.jira_email) if "jira_email" in sent and payload.jira_email else _resolve("jira_email", project.jira_email)
     jira_domain = _resolve("jira_domain", project.jira_domain)
     jira_key = _resolve("jira_project_key", project.jira_project_key)
 
@@ -455,7 +457,7 @@ def update_project(
     try:
         updated = repository.update_project(
             project_id,
-            payload.project_name or project.project_name,
+            project_name,
             team_name,
             description,
             github_url,
@@ -469,22 +471,6 @@ def update_project(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project fields conflict with an existing project.") from exc
 
     return _project_response(updated, repository, users)
-
-
-@router.delete("/projects/{project_id}", response_model=ProjectResponse)
-def delete_project(
-    project_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
-    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
-    users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> ProjectResponse:
-    project = repository.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    if not _can_manage_course(current_user, project.course_id, repository):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
-    repository.delete_project(project_id)
-    return _project_response(project, repository, users)
 
 
 @router.post("/projects/{project_id}/members/{user_id}", response_model=ProjectResponse)

@@ -192,17 +192,6 @@ class ProjectUpdate(BaseModel):
             raise ValueError("Jira project key cannot be blank.")
         return value
 
-    @model_validator(mode="after")
-    def validate_jira_credential_group(self) -> "ProjectUpdate":
-        auth_context_changing = (
-            self.jira_domain is not None or self.jira_email is not None
-        )
-        if auth_context_changing and self.jira_api_token is None:
-            raise ValueError(
-                "jira_api_token must be provided when changing jira_domain or jira_email."
-            )
-        return self
-
 
 # ---------------------------------------------------------------------------
 # Project — Response
