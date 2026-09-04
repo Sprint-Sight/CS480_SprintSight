@@ -73,11 +73,11 @@ async def generate_ai_assessment(
     ai_payload: dict,
 ) -> AssessmentReport:
     settings = get_settings()
-    ai_result = await request_ai_assessment(ai_payload)
+    ai_result = await request_ai_assessment(ai_payload, payload.model_name)
 
     report = AssessmentReport(
         report_id=f"rpt-{uuid4().hex[:12]}",
-        model_name=settings.default_model_name,
+        model_name=payload.model_name or settings.default_model_name,
         mode="ai",
         course_id=payload.course_id,
         project_id=payload.project_id,

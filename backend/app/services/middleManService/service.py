@@ -30,13 +30,14 @@ def build_assessment_payload(
     }
 
 
-async def request_ai_assessment(ai_payload: dict) -> dict:
+async def request_ai_assessment(ai_payload: dict, model_name: str | None = None) -> dict:
     settings = get_settings()
+    selected_model = model_name or settings.default_model_name
     try:
         async with httpx.AsyncClient(timeout=settings.ai_engine_timeout_seconds) as client:
             response = await client.post(
                 f"{settings.ai_engine_url.rstrip('/')}/assess/sprint/data",
-                params={"modelname": settings.default_model_name},
+                params={"modelname": selected_model},
                 json=ai_payload,
             )
             response.raise_for_status()

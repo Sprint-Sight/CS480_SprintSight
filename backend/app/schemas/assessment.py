@@ -68,6 +68,13 @@ class AssessRequest(BaseModel):
     course_id: str
     project_id: str
     sprint_id: str
+    model_name: Literal[
+        "sprintsight-llama",
+        "sprintsight-qwen",
+        "sprintsight-mistral",
+        "sprintsight-gemma",
+        "sprintsight-grader",
+    ] | None = None
 
 
 class StudentScore(BaseModel):
