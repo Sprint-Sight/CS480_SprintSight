@@ -21,8 +21,8 @@ def test_admin_and_instructor_share_faculty_routes() -> None:
     instructor_headers = {"Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"}
     admin_headers = {"Authorization": f"Bearer {login('admin@sprintsight.edu', 'password123')}"}
 
-    instructor_response = client.get("/api/v1/students", headers=instructor_headers)
-    admin_response = client.get("/api/v1/students", headers=admin_headers)
+    instructor_response = client.get("/api/v1/users", headers=instructor_headers)
+    admin_response = client.get("/api/v1/users", headers=admin_headers)
 
     assert instructor_response.status_code == 200
     assert admin_response.status_code == 200

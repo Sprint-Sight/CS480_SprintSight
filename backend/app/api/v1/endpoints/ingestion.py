@@ -124,7 +124,7 @@ def process_jira_run(
         snapshot = normalize_jira_envelope(envelope, story_points_field=get_settings().jira_story_points_field or None)
     except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
         runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(timezone.utc), None, str(exc), None)
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Jira raw data could not be normalized.") from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Jira raw data could not be normalized.") from exc
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Jira raw data could not be retrieved from storage.") from exc
     updated = runs.update_processed_run(project_id, sprint_id, run_id, "completed", datetime.now(timezone.utc), snapshot.normalization_version, None, snapshot)
@@ -171,12 +171,12 @@ def get_repo_ingestion_data(
 
     if pagination and (limit is None or offset is None):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="limit and offset are required when pagination is enabled.",
         )
     if not pagination and (limit is not None or offset is not None):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="limit and offset must be omitted when pagination is disabled.",
         )
 

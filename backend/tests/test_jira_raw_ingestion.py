@@ -67,8 +67,8 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(storage, "upload", fake_upload)
     response = client.post(
-        "/api/v1/jira-ingestion/sync/raw",
-        json={"course_id": course["id"], "project_id": project["id"], "sprint_id": "sprint-1", "jira_project_key": "JIRA"},
+        f"/api/v1/jira-ingestion/raw/{project['id']}",
+        json={"sprint_id": "sprint-1", "jira_project_key": "JIRA"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -114,8 +114,8 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(storage, "upload", lambda *args, **kwargs: "raw/jira/key.json")
     response = client.post(
-        "/api/v1/jira-ingestion/sync/raw",
-        json={"course_id": course["id"], "project_id": project["id"], "sprint_id": "sprint-1"},
+        f"/api/v1/jira-ingestion/raw/{project['id']}",
+        json={"sprint_id": "sprint-1"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -141,8 +141,8 @@ def test_jira_raw_sync_requires_project_credentials() -> None:
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     response = client.post(
-        "/api/v1/jira-ingestion/sync/raw",
-        json={"course_id": course["id"], "project_id": project["id"], "sprint_id": "sprint-1", "jira_project_key": "JIRA"},
+        f"/api/v1/jira-ingestion/raw/{project['id']}",
+        json={"sprint_id": "sprint-1", "jira_project_key": "JIRA"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 503
@@ -151,8 +151,8 @@ def test_jira_raw_sync_requires_project_credentials() -> None:
 def test_jira_raw_sync_rejects_unassigned_instructor() -> None:
     token = login("faculty@sprintsight.edu")
     response = client.post(
-        "/api/v1/jira-ingestion/sync/raw",
-        json={"course_id": "missing-course", "project_id": "missing-project", "sprint_id": "sprint-1", "jira_project_key": "JIRA"},
+        "/api/v1/jira-ingestion/raw/missing-project",
+        json={"sprint_id": "sprint-1", "jira_project_key": "JIRA"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 404

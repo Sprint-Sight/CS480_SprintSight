@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 from fastapi.testclient import TestClient
 
@@ -21,8 +22,19 @@ def faculty_token() -> str:
 
 def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_user_repository) -> None:
     audit_file = tmp_path / "audit.log"
+    repository_root = tmp_path / "repos"
+    repository_path = repository_root / "cs-203-project"
+    repository_path.mkdir(parents=True)
+    subprocess.run(["git", "init", str(repository_path)], check=True, capture_output=True)
+    (repository_path / "README.md").write_text("# CS203 project\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repository_path), "add", "README.md"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repository_path), "-c", "user.name=Test User", "-c", "user.email=test@example.com", "commit", "-m", "Initial commit"],
+        check=True,
+        capture_output=True,
+    )
     monkeypatch.setenv("AUDIT_LOG_PATH", str(audit_file))
-    monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(Path(__file__).parents[2] / "repo"))
+    monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(repository_root))
     get_settings.cache_clear()
     override_user_repository.create_project(
         ProjectRecord(
