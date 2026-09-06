@@ -6,8 +6,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
-from app.schemas.assessment import JiraCleanedSnapshot
+from app.repositories.interfaces import CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.schemas.assessment import JiraCleanedSnapshot, ManualTextPayload
 from app.schemas.auth import Role
 
 _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
@@ -63,6 +63,19 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_jira_runs_project_sprint_captured "
             "ON jira_ingestion_runs(project_id, sprint_id, captured_at DESC)"
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS manual_text (
+                manual_text_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                sprint_id VARCHAR(100) NOT NULL,
+                expectations_text TEXT NOT NULL CHECK (length(btrim(expectations_text)) BETWEEN 1 AND 5000),
+                updated_by UUID NOT NULL REFERENCES users(user_id),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (course_id, project_id, sprint_id),
+                FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
+            )"""
         )
 
 
@@ -491,6 +504,34 @@ class PostgresDocumentRepository(DocumentRepository):
                 (UUID(project_id), UUID(document_id)),
             ).fetchone()
         return self._document(row) if row else None
+
+
+class PostgresManualTextRepository(ManualTextRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def upsert(self, payload: ManualTextPayload, updated_by: str) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO manual_text
+                (course_id, project_id, sprint_id, expectations_text, updated_by)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (course_id, project_id, sprint_id)
+                DO UPDATE SET expectations_text = EXCLUDED.expectations_text,
+                              updated_by = EXCLUDED.updated_by,
+                              updated_at = CURRENT_TIMESTAMP""",
+                (UUID(payload.course_id), UUID(payload.project_id), payload.sprint_id,
+                 " ".join(payload.expectations_text.split()), UUID(updated_by)),
+            )
+
+    def get(self, course_id: str, project_id: str, sprint_id: str) -> str | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT expectations_text FROM manual_text
+                WHERE course_id = %s AND project_id = %s AND sprint_id = %s""",
+                (UUID(course_id), UUID(project_id), sprint_id),
+            ).fetchone()
+        return row["expectations_text"] if row else None
 
 
 class PostgresMetricsRepository(MetricsRepository):

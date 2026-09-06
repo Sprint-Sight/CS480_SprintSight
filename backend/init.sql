@@ -213,6 +213,18 @@ CREATE TABLE IF NOT EXISTS jira_ingestion_runs (
 CREATE INDEX IF NOT EXISTS idx_jira_runs_project_sprint_captured
     ON jira_ingestion_runs(project_id, sprint_id, captured_at DESC);
 
+CREATE TABLE IF NOT EXISTS manual_text (
+    manual_text_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    sprint_id VARCHAR(100) NOT NULL,
+    expectations_text TEXT NOT NULL CHECK (length(btrim(expectations_text)) BETWEEN 1 AND 5000),
+    updated_by UUID NOT NULL REFERENCES users(user_id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (course_id, project_id, sprint_id),
+    FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
+);
+
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE
 -- One run represents one project/sprint ingestion and is replaced

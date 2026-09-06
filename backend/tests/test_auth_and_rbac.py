@@ -30,7 +30,7 @@ def test_admin_and_instructor_share_faculty_routes() -> None:
 
 def test_student_forbidden_on_faculty_route() -> None:
     token = login("student@sprintsight.edu", "password123")
-    response = client.put(
+    response = client.post(
         "/api/v1/manual-text",
         json={
             "course_id": "cs480",

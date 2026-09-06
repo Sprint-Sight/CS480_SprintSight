@@ -8,7 +8,7 @@ class ManualTextPayload(BaseModel):
     course_id: str
     project_id: str
     sprint_id: str
-    expectations_text: str = Field(min_length=10, max_length=5000)
+    expectations_text: str = Field(min_length=1, max_length=5000)
 
 
 class FileDiff(BaseModel):

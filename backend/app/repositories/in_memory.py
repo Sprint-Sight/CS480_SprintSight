@@ -225,7 +225,7 @@ class InMemoryManualTextRepository(ManualTextRepository):
     def upsert(self, payload: ManualTextPayload, updated_by: str) -> None:
         key = (payload.course_id, payload.project_id, payload.sprint_id)
         cleaned = " ".join(payload.expectations_text.split())
-        self._store[key] = f"{cleaned}\n\n(Updated by {updated_by})"
+        self._store[key] = cleaned
 
     def get(self, course_id: str, project_id: str, sprint_id: str) -> str | None:
         return self._store.get((course_id, project_id, sprint_id))

@@ -5,8 +5,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.in_memory import InMemoryDocumentRepository, jira_ingestion_repo, metrics_repo
-from app.repositories.interfaces import DocumentRepository, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
+from app.repositories.in_memory import InMemoryDocumentRepository, jira_ingestion_repo, manual_text_repo, metrics_repo
+from app.repositories.interfaces import DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
 
@@ -31,6 +31,10 @@ def get_document_repository(request: Request) -> DocumentRepository:
 
 def get_jira_ingestion_repository(request: Request) -> JiraIngestionRunRepository:
     return getattr(request.app.state, "jira_ingestion_repository", jira_ingestion_repo)
+
+
+def get_manual_text_repository(request: Request) -> ManualTextRepository:
+    return getattr(request.app.state, "manual_text_repository", manual_text_repo)
 
 
 def get_current_user(
@@ -67,6 +71,12 @@ def require_password_changed(current_user=Depends(get_current_user)):
 def require_faculty(current_user=Depends(require_password_changed)):
     if current_user.role not in (Role.INSTRUCTOR, Role.ADMIN):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Faculty role required.")
+    return current_user
+
+
+def require_instructor(current_user=Depends(require_password_changed)):
+    if current_user.role != Role.INSTRUCTOR:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor role required.")
     return current_user
 
 

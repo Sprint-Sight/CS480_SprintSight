@@ -2,8 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies.auth import get_metrics_repository, get_project_repository, require_faculty
-from app.repositories.interfaces import MetricsRepository, ProjectRepository
+from app.dependencies.auth import get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty
+from app.repositories.interfaces import ManualTextRepository, MetricsRepository, ProjectRepository
 from app.schemas.assessment import AssessRequest, OverrideRequest
 from app.services.assessmentService.service import (
     generate_mock_assessment,
@@ -26,6 +26,7 @@ def assess_sprint(
     faculty_user: Annotated[object, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    manual_text_repository: Annotated[ManualTextRepository, Depends(get_manual_text_repository)],
 ) -> dict:
     _ = faculty_user
     project = projects.get_project(payload.project_id)
@@ -42,7 +43,7 @@ def assess_sprint(
     metrics = ingest_github_metrics(payload, repository_path, metrics_repository)
     _ = enrich_jira_metrics(payload)
     docs = collect_document_signals(payload)
-    manual_text = get_manual_text(payload.course_id, payload.project_id, payload.sprint_id)
+    manual_text = get_manual_text(manual_text_repository, payload.course_id, payload.project_id, payload.sprint_id)
     middle_man_payload = build_assessment_payload(metrics, docs, manual_text)
 
     report = generate_mock_assessment(payload, metrics_repository)
