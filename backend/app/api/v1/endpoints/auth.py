@@ -5,7 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.security import create_access_token, decode_access_token
-from app.dependencies.auth import get_user_repository, get_current_user, oauth2_scheme, require_student_or_faculty
+from app.dependencies.auth import (
+    get_current_user,
+    get_user_repository,
+    oauth2_scheme,
+    require_password_changed,
+    require_student_or_faculty,
+)
 from app.repositories.interfaces import UserRecord, UserRepository
 from app.schemas.auth import LoginRequest, PasswordChangeRequest, TokenResponse, UserResponse
 from app.services.authService.service import authenticate_user, change_password, user_response
@@ -51,5 +57,5 @@ def logout(
 
 
 @router.get("/me", response_model=UserResponse)
-def me(current_user: Annotated[object, Depends(get_current_user)]) -> UserResponse:
+def me(current_user: Annotated[object, Depends(require_password_changed)]) -> UserResponse:
     return user_response(current_user)
