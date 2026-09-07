@@ -17,6 +17,7 @@ _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, 
 
 def ensure_project_credential_schema(pool: ConnectionPool) -> None:
     statements = (
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_name VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50)",

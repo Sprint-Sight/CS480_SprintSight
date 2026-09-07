@@ -522,4 +522,4 @@ def remove_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not a member of this project.")
 
     repository.set_members(project_id, [m_id for m_id in current_members if m_id != user_id])
-    return _project_response(project, repository, users)
+    return _project_response(project, repository, users)  

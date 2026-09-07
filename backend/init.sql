@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS projects (
     course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
     github_repo_url VARCHAR(255),
     local_repo_path VARCHAR(255),
-    jira_email VARCHAR(255),
+    jira_email VARCHAR(255) NOT NULL,
     jira_domain VARCHAR(255),
     jira_project_key VARCHAR(50),
     jira_api_token_encrypted TEXT,
@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS projects (
 -- Schema migration/backfill logic
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_repo_url VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS local_repo_path VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_name VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50);

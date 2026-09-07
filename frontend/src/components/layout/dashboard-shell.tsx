@@ -18,9 +18,9 @@ import {
   Search,
   Settings,
   User,
-  Users,
   RefreshCw,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
@@ -35,6 +35,20 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
 };
 
+type ScopeSection = {
+  id: string;
+  name: string;
+  code: string;
+};
+
+type ScopeTeam = {
+  id: string;
+  name: string;
+  status: string;
+  studentCount: number;
+  averageScore: number;
+};
+
 const instructorNavItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Projects", href: "/projects", icon: FolderOpen },
@@ -42,7 +56,6 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
-  { label: "Contributions", href: "/contributions", icon: Users },
   { label: "Instructor Review", href: "/instructor-review", icon: Pencil },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -54,21 +67,7 @@ const studentNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "My Grades & Feedback", href: "/assessment-report", icon: FileText },
-  { label: "My Team Contributions", href: "/contributions", icon: Users },
   { label: "Progress", href: "/progress", icon: GitCompare },
-];
-
-const semesterOptions = ["Spring 2026", "Fall 2025", "Summer 2025"];
-const sectionOptions = [
-  "SE3402-A — Software Engineering",
-  "SE3402-B — Software Engineering",
-  "CS480-A — Capstone",
-];
-const teamOptions = [
-  "Team Alpha — E-Commerce",
-  "Team Beta — Chat App",
-  "Team Gamma — Task Manager",
-  "Team Delta — Social Network",
 ];
 
 function isActivePath(pathname: string, href: string) {
@@ -95,10 +94,18 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [role, setRole] = useState<"student" | "instructor">("instructor");
   const [userName, setUserName] = useState<string>("");
-  const [selectedSemester, setSelectedSemester] = useState("Spring 2026");
-  const [selectedSection, setSelectedSection] = useState("SE3402-A — Software Engineering");
-  const [selectedTeam, setSelectedTeam] = useState("Team Alpha — E-Commerce");
+  const [userEmail, setUserEmail] = useState<string>("");
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
+  // Dynamic scope states fetched from DB / API
+  const [semesterOptions, setSemesterOptions] = useState<string[]>([]);
+  const [sections, setSections] = useState<ScopeSection[]>([]);
+  const [teams, setTeams] = useState<ScopeTeam[]>([]);
+  
+  const [selectedSemester, setSelectedSemester] = useState<string>("");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const [isLoadingScope, setIsLoadingScope] = useState<boolean>(false);
 
   // State for confirmation modal
   const [pendingAction, setPendingAction] = useState<"sync" | "assess" | null>(null);
@@ -112,6 +119,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role");
     const email = sessionStorage.getItem("sprintsight-auth-email");
+    const name = sessionStorage.getItem("sprintsight-auth-name");
 
     if (!savedRole || !email) {
       router.replace("/login");
@@ -125,8 +133,35 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     }
 
     setRole(savedRole as "student" | "instructor");
+    setUserEmail(email);
+    if (name) {
+      setUserName(name);
+    }
     setIsAuthorized(true);
   }, [router]);
+
+  // Fetch Scope options dynamically from DB for instructors
+  useEffect(() => {
+    if (!isAuthorized || role !== "instructor") return;
+
+    async function fetchScopeData() {
+      setIsLoadingScope(true);
+      try {
+        setSemesterOptions([]);
+        setSections([]);
+        setTeams([]);
+        setSelectedSemester("");
+        setSelectedSectionId("");
+        setSelectedTeamId("");
+      } catch (error) {
+        console.error("Failed to load dashboard scope data:", error);
+      } finally {
+        setIsLoadingScope(false);
+      }
+    }
+
+    fetchScopeData();
+  }, [isAuthorized, role]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -146,13 +181,17 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   }, [isAuthorized, role, isProjectsRoot, router]);
 
   const profileUser = useMemo(() => {
-    const defaultName = role === "student" ? "Alex Rivera" : "Dr. Sarah Chen";
-    const displayName = userName || defaultName;
+    const fallbackName = userEmail ? userEmail.split("@")[0] : "User";
+    const displayName = userName || fallbackName;
     const label = role === "student" ? "Student" : "Instructor";
     const initials = getInitials(displayName);
 
     return { name: displayName, label, initials };
-  }, [role, userName]);
+  }, [role, userName, userEmail]);
+
+  const currentTeamStats = useMemo(() => {
+    return teams.find((t) => t.id === selectedTeamId) || null;
+  }, [teams, selectedTeamId]);
 
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
 
@@ -160,6 +199,8 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     sessionStorage.removeItem("sprintsight-auth-role");
     sessionStorage.removeItem("sprintsight-auth-email");
     sessionStorage.removeItem("sprintsight-auth-name");
+    localStorage.removeItem("sprintsight-access-token");
+    sessionStorage.removeItem("sprintsight-access-token");
     setIsProfileMenuOpen(false);
     router.replace("/login");
   };
@@ -168,7 +209,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     if (pendingAction === "assess") {
       router.push("/instructor-review");
     } else if (pendingAction === "sync") {
-      console.log("Syncing data...");
+      console.log("Syncing data for team:", selectedTeamId);
     }
     setPendingAction(null);
   };
@@ -316,50 +357,67 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     Scope
                   </div>
 
-                  <div className="relative">
-                    <select
-                      value={selectedSemester}
-                      onChange={(e) => setSelectedSemester(e.target.value)}
-                      className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    >
-                      {semesterOptions.map((semester) => (
-                        <option key={semester} value={semester}>
-                          {semester}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  </div>
+                  {isLoadingScope ? (
+                    <div className="flex items-center gap-2 px-3 text-xs text-slate-500">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading Scope...
+                    </div>
+                  ) : (
+                    <>
+                      {/* Semester Select */}
+                      {semesterOptions.length > 0 && (
+                        <div className="relative">
+                          <select
+                            value={selectedSemester}
+                            onChange={(e) => setSelectedSemester(e.target.value)}
+                            className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                          >
+                            {semesterOptions.map((semester) => (
+                              <option key={semester} value={semester}>
+                                {semester}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        </div>
+                      )}
 
-                  <div className="relative">
-                    <select
-                      value={selectedSection}
-                      onChange={(e) => setSelectedSection(e.target.value)}
-                      className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    >
-                      {sectionOptions.map((section) => (
-                        <option key={section} value={section}>
-                          {section}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  </div>
+                      {/* Section Select */}
+                      {sections.length > 0 && (
+                        <div className="relative">
+                          <select
+                            value={selectedSectionId}
+                            onChange={(e) => setSelectedSectionId(e.target.value)}
+                            className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                          >
+                            {sections.map((section) => (
+                              <option key={section.id} value={section.id}>
+                                {section.code} — {section.name}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        </div>
+                      )}
 
-                  <div className="relative">
-                    <select
-                      value={selectedTeam}
-                      onChange={(e) => setSelectedTeam(e.target.value)}
-                      className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    >
-                      {teamOptions.map((team) => (
-                        <option key={team} value={team}>
-                          {team}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  </div>
+                      {/* Team Select */}
+                      {teams.length > 0 && (
+                        <div className="relative">
+                          <select
+                            value={selectedTeamId}
+                            onChange={(e) => setSelectedTeamId(e.target.value)}
+                            className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                          >
+                            {teams.map((team) => (
+                              <option key={team.id} value={team.id}>
+                                {team.name}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   <div className="ml-auto flex items-center gap-3">
                     <div className="flex items-center gap-2 border-r border-slate-200 pr-3">
@@ -381,10 +439,12 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                      On Track · 4 students · avg 82
-                    </div>
+                    {currentTeamStats && (
+                      <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                        {currentTeamStats.status} · {currentTeamStats.studentCount} students · avg {currentTeamStats.averageScore}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
