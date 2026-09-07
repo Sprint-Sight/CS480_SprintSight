@@ -6,7 +6,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import CourseRecord, IngestionMetricBundle, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.schemas.assessment import JiraCleanedSnapshot, ManualTextPayload
 from app.schemas.auth import Role
 
 _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
@@ -26,18 +27,57 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
         for statement in statements:
             connection.execute(statement)
         connection.execute(
-            """
-            UPDATE projects
-            SET team_name = COALESCE(NULLIF(BTRIM(project_name), ''), 'Team')
-                || ' ' || LEFT(project_id::text, 8)
-            WHERE team_name IS NULL OR BTRIM(team_name) = ''
-            """
+            """CREATE TABLE IF NOT EXISTS project_documents (
+                document_id UUID PRIMARY KEY,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                uploader_id UUID NOT NULL REFERENCES users(user_id),
+                filename VARCHAR(255) NOT NULL,
+                mime_type VARCHAR(100) NOT NULL,
+                byte_size BIGINT NOT NULL CHECK (byte_size > 0),
+                checksum VARCHAR(64) NOT NULL,
+                storage_bucket VARCHAR(255) NOT NULL,
+                storage_key TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
         )
-        connection.execute("ALTER TABLE projects ALTER COLUMN team_name SET NOT NULL")
-        connection.execute("ALTER TABLE projects ALTER COLUMN github_repo_url DROP NOT NULL")
-        connection.execute("ALTER TABLE projects ALTER COLUMN jira_domain DROP NOT NULL")
-        connection.execute("ALTER TABLE projects ALTER COLUMN jira_project_key DROP NOT NULL")
-        connection.execute("ALTER TABLE projects ALTER COLUMN jira_api_token_encrypted DROP NOT NULL")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON project_documents(project_id)")
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS jira_ingestion_runs (
+                run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                sprint_id VARCHAR(100) NOT NULL,
+                jira_project_key VARCHAR(50) NOT NULL,
+                jql TEXT NOT NULL,
+                raw_bucket VARCHAR(255) NOT NULL,
+                raw_object_key TEXT NOT NULL UNIQUE,
+                issue_count INTEGER NOT NULL CHECK (issue_count >= 0),
+                captured_at TIMESTAMPTZ NOT NULL,
+                processed_at TIMESTAMPTZ,
+                processing_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+                    CHECK (processing_status IN ('pending', 'completed', 'failed')),
+                normalization_version VARCHAR(50),
+                processing_error TEXT,
+                cleaned_snapshot JSONB CHECK (cleaned_snapshot IS NULL OR jsonb_typeof(cleaned_snapshot) = 'object')
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jira_runs_project_sprint_captured "
+            "ON jira_ingestion_runs(project_id, sprint_id, captured_at DESC)"
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS manual_text (
+                manual_text_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                sprint_id VARCHAR(100) NOT NULL,
+                expectations_text TEXT NOT NULL CHECK (length(btrim(expectations_text)) BETWEEN 1 AND 5000),
+                updated_by UUID NOT NULL REFERENCES users(user_id),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (course_id, project_id, sprint_id),
+                FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
+            )"""
+        )
 
 
 class PostgresUserRepository(UserRepository):
@@ -411,6 +451,90 @@ class PostgresProjectRepository(ProjectRepository):
         )
 
 
+class PostgresDocumentRepository(DocumentRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _document(row: dict) -> DocumentRecord:
+        return DocumentRecord(
+            id=str(row["document_id"]),
+            project_id=str(row["project_id"]),
+            filename=row["filename"],
+            mime_type=row["mime_type"],
+            byte_size=row["byte_size"],
+            checksum=row["checksum"],
+            storage_bucket=row["storage_bucket"],
+            storage_key=row["storage_key"],
+            uploaded_by=str(row["uploader_id"]),
+            created_at=row["created_at"],
+        )
+
+    def create_document(self, document: DocumentRecord) -> DocumentRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO project_documents
+                (document_id, project_id, uploader_id, filename, mime_type, byte_size,
+                 checksum, storage_bucket, storage_key, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING document_id, project_id, uploader_id, filename, mime_type,
+                          byte_size, checksum, storage_bucket, storage_key, created_at""",
+                (UUID(document.id), UUID(document.project_id), UUID(document.uploaded_by),
+                 document.filename, document.mime_type, document.byte_size, document.checksum,
+                 document.storage_bucket, document.storage_key, document.created_at),
+            ).fetchone()
+        return self._document(row)
+
+    def list_documents(self, project_id: str) -> list[DocumentRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT document_id, project_id, uploader_id, filename, mime_type,
+                          byte_size, checksum, storage_bucket, storage_key, created_at
+                   FROM project_documents WHERE project_id = %s
+                   ORDER BY created_at, document_id""",
+                (UUID(project_id),),
+            ).fetchall()
+        return [self._document(row) for row in rows]
+
+    def get_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT document_id, project_id, uploader_id, filename, mime_type,
+                          byte_size, checksum, storage_bucket, storage_key, created_at
+                   FROM project_documents WHERE project_id = %s AND document_id = %s""",
+                (UUID(project_id), UUID(document_id)),
+            ).fetchone()
+        return self._document(row) if row else None
+
+
+class PostgresManualTextRepository(ManualTextRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def upsert(self, payload: ManualTextPayload, updated_by: str) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO manual_text
+                (course_id, project_id, sprint_id, expectations_text, updated_by)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (course_id, project_id, sprint_id)
+                DO UPDATE SET expectations_text = EXCLUDED.expectations_text,
+                              updated_by = EXCLUDED.updated_by,
+                              updated_at = CURRENT_TIMESTAMP""",
+                (UUID(payload.course_id), UUID(payload.project_id), payload.sprint_id,
+                 " ".join(payload.expectations_text.split()), UUID(updated_by)),
+            )
+
+    def get(self, course_id: str, project_id: str, sprint_id: str) -> str | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT expectations_text FROM manual_text
+                WHERE course_id = %s AND project_id = %s AND sprint_id = %s""",
+                (UUID(course_id), UUID(project_id), sprint_id),
+            ).fetchone()
+        return row["expectations_text"] if row else None
+
+
 class PostgresMetricsRepository(MetricsRepository):
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
@@ -519,6 +643,84 @@ class PostgresMetricsRepository(MetricsRepository):
             local_repo_path=row["local_repo_path"], head_sha=row["head_sha"],
             captured_at=row["captured_at"],
         ), total
+
+
+class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _run(row: dict) -> JiraIngestionRunRecord:
+        snapshot = row.get("cleaned_snapshot")
+        return JiraIngestionRunRecord(
+            id=str(row["run_id"]),
+            course_id=str(row["course_id"]),
+            project_id=str(row["project_id"]),
+            sprint_id=row["sprint_id"],
+            jira_project_key=row["jira_project_key"],
+            jql=row["jql"],
+            raw_bucket=row["raw_bucket"],
+            raw_object_key=row["raw_object_key"],
+            issue_count=row["issue_count"],
+            captured_at=row["captured_at"],
+            processed_at=row["processed_at"],
+            processing_status=row["processing_status"],
+            normalization_version=row["normalization_version"],
+            processing_error=row["processing_error"],
+            cleaned_snapshot=JiraCleanedSnapshot.model_validate(snapshot) if snapshot else None,
+        )
+
+    def create_run(self, run: JiraIngestionRunRecord) -> JiraIngestionRunRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO jira_ingestion_runs
+                (run_id, course_id, project_id, sprint_id, jira_project_key, jql,
+                 raw_bucket, raw_object_key, issue_count, captured_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *""",
+                (UUID(run.id), UUID(run.course_id), UUID(run.project_id), run.sprint_id,
+                 run.jira_project_key, run.jql, run.raw_bucket, run.raw_object_key,
+                 run.issue_count, run.captured_at),
+            ).fetchone()
+        return self._run(row)
+
+    def get_run(self, project_id: str, sprint_id: str, run_id: str) -> JiraIngestionRunRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM jira_ingestion_runs WHERE project_id = %s AND sprint_id = %s AND run_id = %s",
+                (UUID(project_id), sprint_id, UUID(run_id)),
+            ).fetchone()
+        return self._run(row) if row else None
+
+    def list_project_runs(self, project_id: str) -> list[JiraIngestionRunRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM jira_ingestion_runs WHERE project_id = %s ORDER BY captured_at DESC, run_id DESC",
+                (UUID(project_id),),
+            ).fetchall()
+        return [self._run(row) for row in rows]
+
+    def list_runs(self, project_id: str, sprint_id: str) -> list[JiraIngestionRunRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM jira_ingestion_runs WHERE project_id = %s AND sprint_id = %s ORDER BY captured_at DESC, run_id DESC",
+                (UUID(project_id), sprint_id),
+            ).fetchall()
+        return [self._run(row) for row in rows]
+
+    def update_processed_run(self, project_id: str, sprint_id: str, run_id: str, status: str, processed_at: datetime | None, normalization_version: str | None, processing_error: str | None, cleaned_snapshot: JiraCleanedSnapshot | None) -> JiraIngestionRunRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE jira_ingestion_runs SET processing_status = %s,
+                processed_at = %s, normalization_version = %s, processing_error = %s,
+                cleaned_snapshot = %s
+                WHERE project_id = %s AND sprint_id = %s AND run_id = %s
+                RETURNING *""",
+                (status, processed_at, normalization_version, processing_error,
+                 Json(cleaned_snapshot.model_dump(mode="json")) if cleaned_snapshot else None,
+                 UUID(project_id), sprint_id, UUID(run_id)),
+            ).fetchone()
+        return self._run(row) if row else None
 
 
 def create_user_pool(connection_string: str) -> ConnectionPool:

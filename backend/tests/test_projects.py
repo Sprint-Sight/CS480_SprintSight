@@ -15,6 +15,19 @@ def headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
+def project_payload(project_name: str, team_name: str, **extra: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "project_name": project_name,
+        "team_name": team_name,
+        "jira_email": "jira.owner@university.edu",
+        "jira_domain": "team.atlassian.net",
+        "jira_project_key": "JIRA",
+        "jira_api_token": "project-jira-token",
+    }
+    payload.update(extra)
+    return payload
+
+
 def test_admin_assigns_instructor_and_instructor_creates_student_and_project() -> None:
     admin_headers = headers(token("admin@sprintsight.edu"))
     instructor_headers = headers(token("faculty@sprintsight.edu"))
@@ -33,7 +46,7 @@ def test_admin_assigns_instructor_and_instructor_creates_student_and_project() -
 
     project = client.post(
         f"/api/v1/courses/{course_id}/projects",
-        json={"project_name": "SprintSight", "team_name": "SprintSight Team", "description": "Capstone team", "member_ids": [student_id]},
+        json=project_payload("SprintSight", "SprintSight Team", description="Capstone team", member_ids=[student_id]),
         headers=instructor_headers,
     )
     assert project.status_code == 201
@@ -43,16 +56,16 @@ def test_admin_assigns_instructor_and_instructor_creates_student_and_project() -
 def test_unassigned_instructor_cannot_create_course_student() -> None:
     admin_headers = headers(token("admin@sprintsight.edu"))
     course_response = client.post("/api/v1/courses", json={"code": "CS490", "name": "Other Course", "section": "001", "year": 2026, "term": "Fall"}, headers=admin_headers)
-    assert course_response.status_code == 403
+    assert course_response.status_code == 201
 
     instructor_headers = headers(token("faculty@sprintsight.edu"))
-    course = client.post("/api/v1/courses", json={"code": "CS490", "name": "Other Course", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
+    course = course_response.json()
     response = client.post(
         f"/api/v1/courses/{course['id']}/students",
         json={"email": "blocked@sprintsight.edu", "full_name": "Blocked", "password": "temporary123"},
         headers=instructor_headers,
     )
-    assert response.status_code == 201
+    assert response.status_code == 403
 
 
 def test_admin_cannot_view_or_manage_projects() -> None:
@@ -63,7 +76,7 @@ def test_admin_cannot_view_or_manage_projects() -> None:
     assert assigned.status_code == 200
     project = client.post(
         f"/api/v1/courses/{course['id']}/projects",
-        json={"project_name": "Instructor Project", "team_name": "Instructor Team"},
+        json=project_payload("Instructor Project", "Instructor Team"),
         headers=instructor_headers,
     ).json()
 
@@ -84,7 +97,7 @@ def test_same_course_code_supports_multiple_offerings() -> None:
 
 def test_instructor_can_create_student_without_course_id() -> None:
     response = client.post(
-        "/api/v1/students",
+        "/api/v1/users",
         json={"email": "no.course@sprintsight.edu", "full_name": "No Course Student", "password": "temporary123"},
         headers=headers(token("faculty@sprintsight.edu")),
     )
@@ -102,7 +115,7 @@ def test_instructor_can_view_all_students_and_section_roster() -> None:
         headers=instructor_headers,
     ).json()
 
-    all_students = client.get("/api/v1/students", headers=instructor_headers)
+    all_students = client.get("/api/v1/users", headers=instructor_headers)
     section_students = client.get(f"/api/v1/courses/{course['id']}/students", headers=instructor_headers)
     assert all_students.status_code == 200
     assert any(user["id"] == student["id"] for user in all_students.json())
@@ -113,7 +126,7 @@ def test_student_cannot_enroll_in_two_sections_of_same_course_code() -> None:
     instructor_headers = headers(token("faculty@sprintsight.edu"))
     first = client.post("/api/v1/courses", json={"code": "CS493", "name": "Enrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
     second = client.post("/api/v1/courses", json={"code": "CS493", "name": "Enrollment", "section": "002", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
-    student = client.post("/api/v1/students", json={"email": "one.section@sprintsight.edu", "full_name": "One Section", "password": "temporary123"}, headers=instructor_headers).json()
+    student = client.post("/api/v1/users", json={"email": "one.section@sprintsight.edu", "full_name": "One Section", "password": "temporary123"}, headers=instructor_headers).json()
     assert client.post(f"/api/v1/courses/{first['id']}/students/{student['id']}", headers=instructor_headers).status_code == 200
     assert client.post(f"/api/v1/courses/{second['id']}/students/{student['id']}", headers=instructor_headers).status_code == 409
 
@@ -121,8 +134,8 @@ def test_student_cannot_enroll_in_two_sections_of_same_course_code() -> None:
 def test_unenrolled_student_cannot_join_project() -> None:
     instructor_headers = headers(token("faculty@sprintsight.edu"))
     course = client.post("/api/v1/courses", json={"code": "CS494", "name": "Project Enrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
-    student = client.post("/api/v1/students", json={"email": "not.enrolled@sprintsight.edu", "full_name": "Not Enrolled", "password": "temporary123"}, headers=instructor_headers).json()
-    project = client.post(f"/api/v1/courses/{course['id']}/projects", json={"project_name": "Needs Enrollment", "team_name": "Enrollment Team"}, headers=instructor_headers).json()
+    student = client.post("/api/v1/users", json={"email": "not.enrolled@sprintsight.edu", "full_name": "Not Enrolled", "password": "temporary123"}, headers=instructor_headers).json()
+    project = client.post(f"/api/v1/courses/{course['id']}/projects", json=project_payload("Needs Enrollment", "Enrollment Team"), headers=instructor_headers).json()
     response = client.post(f"/api/v1/projects/{project['id']}/members/{student['id']}", headers=instructor_headers)
     assert response.status_code == 409
 
@@ -130,19 +143,20 @@ def test_unenrolled_student_cannot_join_project() -> None:
 def test_instructor_can_unenroll_student() -> None:
     instructor_headers = headers(token("faculty@sprintsight.edu"))
     course = client.post("/api/v1/courses", json={"code": "CS495", "name": "Unenrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()
-    student = client.post("/api/v1/students", json={"email": "unenroll@sprintsight.edu", "full_name": "Unenroll Me", "password": "temporary123"}, headers=instructor_headers).json()
+    student = client.post("/api/v1/users", json={"email": "unenroll@sprintsight.edu", "full_name": "Unenroll Me", "password": "temporary123"}, headers=instructor_headers).json()
     assert client.post(f"/api/v1/courses/{course['id']}/students/{student['id']}", headers=instructor_headers).status_code == 200
     assert client.delete(f"/api/v1/courses/{course['id']}/students/{student['id']}", headers=instructor_headers).status_code == 204
     assert client.get(f"/api/v1/courses/{course['id']}/students", headers=instructor_headers).json() == []
 
 
-def test_admin_cannot_use_instructor_student_creation_endpoint() -> None:
+def test_admin_can_create_managed_student() -> None:
     response = client.post(
-        "/api/v1/students",
+        "/api/v1/users",
         json={"email": "admin.created@sprintsight.edu", "full_name": "Admin Created", "password": "temporary123"},
         headers=headers(token("admin@sprintsight.edu")),
     )
-    assert response.status_code == 403
+    assert response.status_code == 201
+    assert response.json()["role"] == "student"
 
 
 def test_team_name_is_unique_within_course_but_reusable_across_courses() -> None:
@@ -160,17 +174,17 @@ def test_team_name_is_unique_within_course_but_reusable_across_courses() -> None
 
     first_project = client.post(
         f"/api/v1/courses/{first_course['id']}/projects",
-        json={"project_name": "First Project", "team_name": "Team Alpha"},
+        json=project_payload("First Project", "Team Alpha"),
         headers=instructor_headers,
     )
     duplicate_project = client.post(
         f"/api/v1/courses/{first_course['id']}/projects",
-        json={"project_name": "Duplicate Project", "team_name": " team alpha "},
+        json=project_payload("Duplicate Project", " team alpha "),
         headers=instructor_headers,
     )
     other_course_project = client.post(
         f"/api/v1/courses/{second_course['id']}/projects",
-        json={"project_name": "Other Project", "team_name": "Team Alpha"},
+        json=project_payload("Other Project", "Team Alpha"),
         headers=instructor_headers,
     )
 

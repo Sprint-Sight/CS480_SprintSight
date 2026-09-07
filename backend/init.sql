@@ -143,20 +143,6 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50);
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_api_token_encrypted TEXT;
 
--- Backfill team names for projects created before team_name was introduced.
-UPDATE projects
-SET team_name = COALESCE(NULLIF(BTRIM(project_name), ''), 'Team')
-    || ' ' || LEFT(project_id::text, 8)
-WHERE team_name IS NULL OR BTRIM(team_name) = '';
-ALTER TABLE projects ALTER COLUMN team_name SET NOT NULL;
-
-ALTER TABLE projects ALTER COLUMN local_repo_path DROP NOT NULL;
-ALTER TABLE projects ALTER COLUMN jira_email SET NOT NULL;
-ALTER TABLE projects ALTER COLUMN github_repo_url DROP NOT NULL;
-ALTER TABLE projects ALTER COLUMN jira_domain DROP NOT NULL;
-ALTER TABLE projects ALTER COLUMN jira_project_key DROP NOT NULL;
-ALTER TABLE projects ALTER COLUMN jira_api_token_encrypted DROP NOT NULL;
-
 -- Indexing and uniqueness
 CREATE INDEX IF NOT EXISTS idx_projects_course_id ON projects(course_id);
 
@@ -190,6 +176,55 @@ CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_i
 CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_github_repo_url ON projects(github_repo_url);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_email ON projects(jira_email);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_jira_api_token ON projects(jira_api_token_encrypted);
+
+CREATE TABLE IF NOT EXISTS project_documents (
+    document_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    uploader_id UUID NOT NULL REFERENCES users(user_id),
+    filename VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    byte_size BIGINT NOT NULL CHECK (byte_size > 0),
+    checksum VARCHAR(64) NOT NULL,
+    storage_bucket VARCHAR(255) NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON project_documents(project_id);
+
+CREATE TABLE IF NOT EXISTS jira_ingestion_runs (
+    run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    sprint_id VARCHAR(100) NOT NULL,
+    jira_project_key VARCHAR(50) NOT NULL,
+    jql TEXT NOT NULL,
+    raw_bucket VARCHAR(255) NOT NULL,
+    raw_object_key TEXT NOT NULL UNIQUE,
+    issue_count INTEGER NOT NULL CHECK (issue_count >= 0),
+    captured_at TIMESTAMPTZ NOT NULL,
+    processed_at TIMESTAMPTZ,
+    processing_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (processing_status IN ('pending', 'completed', 'failed')),
+    normalization_version VARCHAR(50),
+    processing_error TEXT,
+    cleaned_snapshot JSONB CHECK (cleaned_snapshot IS NULL OR jsonb_typeof(cleaned_snapshot) = 'object')
+);
+
+CREATE INDEX IF NOT EXISTS idx_jira_runs_project_sprint_captured
+    ON jira_ingestion_runs(project_id, sprint_id, captured_at DESC);
+
+CREATE TABLE IF NOT EXISTS manual_text (
+    manual_text_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    sprint_id VARCHAR(100) NOT NULL,
+    expectations_text TEXT NOT NULL CHECK (length(btrim(expectations_text)) BETWEEN 1 AND 5000),
+    updated_by UUID NOT NULL REFERENCES users(user_id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (course_id, project_id, sprint_id),
+    FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
+);
 
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE

@@ -17,9 +17,20 @@ def test_login_success_faculty() -> None:
     assert token
 
 
+def test_admin_and_instructor_share_faculty_routes() -> None:
+    instructor_headers = {"Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"}
+    admin_headers = {"Authorization": f"Bearer {login('admin@sprintsight.edu', 'password123')}"}
+
+    instructor_response = client.get("/api/v1/users", headers=instructor_headers)
+    admin_response = client.get("/api/v1/users", headers=admin_headers)
+
+    assert instructor_response.status_code == 200
+    assert admin_response.status_code == 200
+
+
 def test_student_forbidden_on_faculty_route() -> None:
     token = login("student@sprintsight.edu", "password123")
-    response = client.put(
+    response = client.post(
         "/api/v1/manual-text",
         json={
             "course_id": "cs480",

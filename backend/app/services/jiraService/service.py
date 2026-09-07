@@ -148,4 +148,5 @@ def fetch_and_store_raw_jira_data(
         "captured_at": captured_at,
         "issue_count": len(issues),
         "jira_project_key": jira_project_key,
+        "jql": query,
     }

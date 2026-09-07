@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.schemas.auth import Role
-from app.schemas.assessment import AssessmentReport, AuditRecord, CommitInfo, ManualTextPayload, OverrideResponse
+from app.schemas.assessment import AssessmentReport, AuditRecord, CommitInfo, JiraCleanedSnapshot, ManualTextPayload, OverrideResponse
 
 
 @dataclass
@@ -103,6 +103,28 @@ class ProjectRepository(Protocol):
     def delete_course(self, course_id: str) -> CourseRecord | None: ...
 
 
+@dataclass
+class DocumentRecord:
+    id: str
+    project_id: str
+    filename: str
+    mime_type: str
+    byte_size: int
+    checksum: str
+    storage_bucket: str
+    storage_key: str
+    uploaded_by: str
+    created_at: datetime
+
+
+class DocumentRepository(Protocol):
+    def create_document(self, document: DocumentRecord) -> DocumentRecord: ...
+
+    def list_documents(self, project_id: str) -> list[DocumentRecord]: ...
+
+    def get_document(self, project_id: str, document_id: str) -> DocumentRecord | None: ...
+
+
 class ManualTextRepository(Protocol):
     def upsert(self, payload: ManualTextPayload, updated_by: str) -> None: ...
 
@@ -153,3 +175,44 @@ class MetricsRepository(Protocol):
     def get_metrics_page(
         self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int
     ) -> tuple[IngestionMetricBundle | None, int]: ...
+
+
+@dataclass
+class JiraIngestionRunRecord:
+    id: str
+    course_id: str
+    project_id: str
+    sprint_id: str
+    jira_project_key: str
+    jql: str
+    raw_bucket: str
+    raw_object_key: str
+    issue_count: int
+    captured_at: datetime
+    processed_at: datetime | None = None
+    processing_status: str = "pending"
+    normalization_version: str | None = None
+    processing_error: str | None = None
+    cleaned_snapshot: JiraCleanedSnapshot | None = None
+
+
+class JiraIngestionRunRepository(Protocol):
+    def create_run(self, run: JiraIngestionRunRecord) -> JiraIngestionRunRecord: ...
+
+    def get_run(self, project_id: str, sprint_id: str, run_id: str) -> JiraIngestionRunRecord | None: ...
+
+    def list_project_runs(self, project_id: str) -> list[JiraIngestionRunRecord]: ...
+
+    def list_runs(self, project_id: str, sprint_id: str) -> list[JiraIngestionRunRecord]: ...
+
+    def update_processed_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        status: str,
+        processed_at: datetime | None,
+        normalization_version: str | None,
+        processing_error: str | None,
+        cleaned_snapshot: JiraCleanedSnapshot | None,
+    ) -> JiraIngestionRunRecord | None: ...

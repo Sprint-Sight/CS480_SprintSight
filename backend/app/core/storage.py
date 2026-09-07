@@ -3,12 +3,15 @@ import boto3
 from botocore.client import Config
 import os
 
+from app.core.config import get_settings
+
 def get_minio_client():
+    settings = get_settings()
     return boto3.client(
         "s3",
-        endpoint_url=f"http://{os.getenv('MINIO_ENDPOINT')}",
-        aws_access_key_id=os.getenv("MINIO_ACCESS_KEY"),
-        aws_secret_access_key=os.getenv("MINIO_SECRET_KEY"),
+        endpoint_url=settings.minio_endpoint_url,
+        aws_access_key_id=settings.minio_access_key,
+        aws_secret_access_key=settings.minio_secret_key,
         config=Config(signature_version="s3v4"),
         region_name="us-east-1"        # MinIO ignores this but boto3 requires it
     )
@@ -19,7 +22,7 @@ def init_buckets():
     for bucket in [
         os.getenv("MINIO_BUCKET_SPRINTS"),
         os.getenv("MINIO_BUCKET_REPORTS")
-        , os.getenv("MINIO_BUCKET_RAW")
+        , os.getenv("MINIO_BUCKET_RAW"), os.getenv("MINIO_BUCKET_DOCUMENTS", "project-documents")
     ]:
         try:
             client.head_bucket(Bucket=bucket)
@@ -38,6 +41,11 @@ def download_object(bucket: str, key: str) -> bytes:
     client = get_minio_client()
     response = client.get_object(Bucket=bucket, Key=key)
     return response["Body"].read()
+
+
+def delete_object(bucket: str, key: str) -> None:
+    client = get_minio_client()
+    client.delete_object(Bucket=bucket, Key=key)
 
 def get_presigned_url(bucket: str, key: str, expires_in: int = 3600) -> str:
     """Generate a temporary download URL — useful for frontend file access."""
@@ -59,6 +67,9 @@ class StorageService:
 
     def download(self, bucket, key):
         return download_object(bucket, key)
+
+    def delete(self, bucket, key):
+        return delete_object(bucket, key)
 
     def presigned_url(self, bucket, key, expires_in=3600):
         return get_presigned_url(bucket, key, expires_in)
