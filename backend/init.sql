@@ -226,6 +226,30 @@ CREATE TABLE IF NOT EXISTS manual_text (
     FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS assessment_override (
+    override_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL,
+    project_id UUID NOT NULL,
+    sprint_id VARCHAR(100) NOT NULL,
+    requirements_score NUMERIC(5, 2) NOT NULL CHECK (requirements_score BETWEEN 0 AND 100),
+    code_quality_score NUMERIC(5, 2) NOT NULL CHECK (code_quality_score BETWEEN 0 AND 100),
+    testing_score NUMERIC(5, 2) NOT NULL CHECK (testing_score BETWEEN 0 AND 100),
+    documentation_score NUMERIC(5, 2) NOT NULL CHECK (documentation_score BETWEEN 0 AND 100),
+    collaboration_score NUMERIC(5, 2) NOT NULL CHECK (collaboration_score BETWEEN 0 AND 100),
+    total_score NUMERIC(5, 2) GENERATED ALWAYS AS (
+        (requirements_score + code_quality_score + testing_score + documentation_score + collaboration_score) / 5.0
+    ) STORED,
+    graded_by UUID NOT NULL REFERENCES users(user_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (course_id, project_id, sprint_id),
+    FOREIGN KEY (project_id, course_id)
+        REFERENCES projects(project_id, course_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_override_project_sprint
+    ON assessment_override(project_id, sprint_id);
+
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE
 -- One run represents one project/sprint ingestion and is replaced

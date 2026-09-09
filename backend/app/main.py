@@ -21,6 +21,7 @@ from app.repositories.postgres import (
     create_user_pool,
     ensure_project_credential_schema,
 )
+from app.repositories.manual_override import PostgresManualOverrideRepository, ensure_manual_scoring_schema
 from app.schemas.auth import Role
 from uuid import uuid4
 
@@ -48,12 +49,14 @@ async def lifespan(app: FastAPI):
     pool = create_user_pool(settings.database_connection_string())
     pool.open(wait=True)
     ensure_project_credential_schema(pool)
+    ensure_manual_scoring_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
     app.state.document_repository = PostgresDocumentRepository(pool)
     app.state.jira_ingestion_repository = PostgresJiraIngestionRunRepository(pool)
     app.state.manual_text_repository = PostgresManualTextRepository(pool)
+    app.state.manual_override_repository = PostgresManualOverrideRepository(pool)
 
     user_repository = app.state.user_repository
     _bootstrap_user(user_repository, settings.bootstrap_admin_email, settings.bootstrap_admin_password, settings.bootstrap_admin_name, Role.ADMIN)
