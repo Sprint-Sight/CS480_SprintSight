@@ -15,7 +15,7 @@ from app.services.documentsService.service import collect_document_signals
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.service import enrich_jira_metrics
 from app.services.manualTextService.service import get_manual_text
-from app.services.middleManService.service import build_assessment_payload
+from app.services.middleManService.service import build_assessment_payload, send_assessment_to_ai_engine
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 
@@ -46,9 +46,15 @@ def assess_sprint(
     manual_text = get_manual_text(manual_text_repository, payload.course_id, payload.project_id, payload.sprint_id)
     middle_man_payload = build_assessment_payload(metrics, docs, manual_text)
 
+    try:
+        ai_result = send_assessment_to_ai_engine(middle_man_payload, payload.model_name)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
     report = generate_mock_assessment(payload, metrics_repository)
     return {
         "input_payload": middle_man_payload,
+        "ai_engine_response": ai_result,
         "report": report,
     }
 

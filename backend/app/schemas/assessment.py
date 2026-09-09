@@ -104,6 +104,7 @@ class AssessRequest(BaseModel):
     course_id: str
     project_id: str
     sprint_id: str
+    model_name: str | None = None
 
 
 class StudentScore(BaseModel):
