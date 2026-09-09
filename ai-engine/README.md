@@ -111,6 +111,40 @@ The default model is `sprintsight-llama`. Override it with
 
 ## API
 
+The AI engine accepts the backend canonical payload route:
+
+```http
+POST /assess/sprint/data?modelname=sprintsight-llama
+Content-Type: application/json
+```
+
+with a JSON body shaped as:
+
+```json
+{
+  "sprint_context": {
+    "course_id": "CS101",
+    "project_id": "<project_id>",
+    "sprint_id": "Sprint-1",
+    "captured_at": "2026-09-10T00:00:00Z"
+  },
+  "collaboration_metrics": {
+    "commit_frequency": 3.5,
+    "code_churn": 42,
+    "pr_turnaround_hours": 12,
+    "assigned_story_points": 10,
+    "completion_percent": 80
+  },
+  "commits": [],
+  "jira_tickets": [],
+  "peer_evaluations": [],
+  "artifact_metrics": {},
+  "instructor_expectations": "No instructor guidance provided."
+}
+```
+
+The backend worker emits the assessment job progress through the backend SSE endpoint `GET /api/v1/assessments/jobs/{job_id}/events`.
+
 ### Health check
 
 ```powershell

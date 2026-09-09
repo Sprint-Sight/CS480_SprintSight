@@ -88,9 +88,6 @@ Analyze the following sprint bundle and output a score:
     yield # The application runs while paused here
     # Code after yield runs on shutdown, clear memory, close connections, etc.
 
-    # 3. Shutdown logic goes here
-    print("Shutting down SprintSight...")
-
 app = FastAPI(
     title="SprintSight",
     description="AI services for SprintSight, including LLM-based sprint assessment.",

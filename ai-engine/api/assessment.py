@@ -57,7 +57,6 @@ class BackendAssessmentPayload(BaseModel):
     instructor_expectations: str = "No instructor guidance provided."
 
 
-## AS OF NOW, WE ARE USING FIXTURE DATA FOR TESTING AND DEMONSTRATION PURPOSES.
 team_fixtures = {
     "high_performing_team": high_performing_team,
     "struggling_team": struggling_team,
@@ -76,15 +75,9 @@ async def assess_sprint_endpoint(
     teamtype = team_fixtures.get(key.value)
 
     try:
-        print("Grading high performing team...")
-        assessment = await evaluate_sprint(teamtype, modelname.value, experiment_name="Sprintsight evaluation")
-        print("\nSUCCESS! Ollama returned structured Pydantic data:")
-        return assessment
-
-    except Exception as e:
-        print("\nERROR: Ollama failed to return structured Pydantic data:")
-        print(e)
-        raise HTTPException(status_code=500, detail=str(e))
+        return await evaluate_sprint(teamtype, modelname.value, experiment_name="Sprintsight evaluation")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)

@@ -122,8 +122,6 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
     {bundle_data}
     """
 
-    print(f"[{bundle.team_id}] Scoring dimension: {dimension_name}...")
-
     client = create_llm_client()  # Create a new client for this model
     
     audit_token = _audit_context.set(

@@ -53,7 +53,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
 
         for dim, result in zip(DIMENSIONS, results):
             if isinstance(result, Exception):
-                print(f"Dimension '{dim}' failed to score: {result}")
+                scores_by_dim.pop(dim, None)
             else:
                 scores_by_dim[dim] = result
 

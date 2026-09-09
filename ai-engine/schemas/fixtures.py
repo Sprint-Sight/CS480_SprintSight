@@ -221,9 +221,4 @@ lone_contributor_poor_outcome_team = ArtifactBundle(
 )
 
 if __name__ == "__main__":
-    print("SUCCESS! Fixtures loaded and validated by Pydantic.")
-    print(f"Team Alpha (Good) Commits: {len(high_performing_team.commits)}")
-    print(f"Team Gamma (Struggling) Commits: {len(struggling_team.commits)}")
-    print(f"Team Delta (Good collab, low output) Commits: {len(good_collab_low_output_team.commits)}")
-    print(f"Team Epsilon (Imbalanced, high output) Commits: {len(imbalanced_high_output_team.commits)}")
-    print(f"Team Theta (Lone contributor, poor outcome) Commits: {len(lone_contributor_poor_outcome_team.commits)}")
+    pass
