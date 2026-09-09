@@ -36,7 +36,9 @@ def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -
     request_url = f"{base_url}/assess/sprint/data?modelname={selected_model}"
 
     try:
-        response = httpx.post(request_url, json=payload, timeout=settings.ai_engine_timeout_seconds)
+        # One-shot transport only. Do not retry and do not impose a fixed
+        # client timeout that can prematurely force the job into failed state.
+        response = httpx.post(request_url, json=payload, timeout=None)
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(f"AI engine rejected the assessment payload: {exc.response.text}") from exc

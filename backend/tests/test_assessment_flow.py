@@ -1,11 +1,13 @@
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.main import app
 from app.repositories.interfaces import ProjectRecord
+from app.services.middleManService.service import send_assessment_to_ai_engine
 from datetime import datetime, timezone
 
 
@@ -18,6 +20,36 @@ def faculty_token() -> str:
         json={"email": "faculty@sprintsight.edu", "password": "password123"},
     )
     return response.json()["access_token"]
+
+
+def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_timeout(monkeypatch) -> None:
+    called = {}
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"status": "ok"}
+
+    def fake_post(url, json=None, timeout=None):
+        called["url"] = url
+        called["json"] = json
+        called["timeout"] = timeout
+        return DummyResponse()
+
+    monkeypatch.setattr("app.services.middleManService.service.httpx.post", fake_post)
+    monkeypatch.setattr(
+        "app.services.middleManService.service.get_settings",
+        lambda: SimpleNamespace(ai_engine_url="http://host.docker.internal:8001/", default_model_name="mock-rubric-v1"),
+    )
+
+    result = send_assessment_to_ai_engine({"sprint_context": {"project_id": "demo"}}, "sprintsight-llama")
+
+    assert result == {"status": "ok"}
+    assert called["url"] == "http://host.docker.internal:8001/assess/sprint/data?modelname=sprintsight-llama"
+    assert called["json"] == {"sprint_context": {"project_id": "demo"}}
+    assert called["timeout"] is None
 
 
 def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_user_repository) -> None:
