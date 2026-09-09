@@ -4,9 +4,14 @@ from uuid import uuid4
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
-from app.repositories.in_memory import assessment_repo, metrics_repo, overrides_repo
-from app.repositories.interfaces import MetricsRepository
+from app.repositories.in_memory import assessment_repo, job_repo, metrics_repo, overrides_repo
+from app.repositories.interfaces import ManualTextRepository, MetricsRepository, ProjectRepository
 from app.schemas.assessment import AssessRequest, AssessmentReport, OverrideRequest, OverrideResponse, StudentScore, TeamScore
+from app.services.documentsService.service import collect_document_signals
+from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
+from app.services.jiraService.service import enrich_jira_metrics
+from app.services.manualTextService.service import get_manual_text
+from app.services.middleManService.service import build_assessment_payload, send_assessment_to_ai_engine
 
 
 RUBRIC_WEIGHTS = {
@@ -65,6 +70,48 @@ def generate_mock_assessment(payload: AssessRequest, metrics_repository: Metrics
     )
     assessment_repo.save_report(report)
     return report
+
+
+def run_assessment_job(job_id: str, payload: AssessRequest, project, metrics_repository: MetricsRepository, manual_text_repository: ManualTextRepository) -> None:
+    """Background worker that collects the same input that the old synchronous endpoint used,
+    sends the canonical payload to the AI engine, and then persists a report without
+    tying up the API request thread.
+    """
+    try:
+        job_repo.update_job(job_id, status="collecting_data", progress=10, current_stage="collecting_data")
+        job_repo.append_event(job_id, "progress", {"status": "collecting_data", "progress": 10, "message": "Collecting sprint data."})
+
+        if not project.local_repo_path:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project has no local repository configured.")
+        try:
+            repository_path = resolve_local_repository_path(project.local_repo_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        job_repo.update_job(job_id, status="collecting_data", progress=30, current_stage="collecting_data")
+        metrics = ingest_github_metrics(payload, repository_path, metrics_repository)
+        _ = enrich_jira_metrics(payload)
+        docs = collect_document_signals(payload)
+        manual_text = get_manual_text(manual_text_repository, payload.course_id, payload.project_id, payload.sprint_id)
+
+        job_repo.update_job(job_id, status="building_payload", progress=50, current_stage="building_payload")
+        job_repo.append_event(job_id, "progress", {"status": "building_payload", "progress": 50, "message": "Building AI payload."})
+        middle_man_payload = build_assessment_payload(metrics, docs, manual_text)
+
+        job_repo.update_job(job_id, status="ai_evaluating", progress=70, current_stage="ai_evaluating")
+        job_repo.append_event(job_id, "progress", {"status": "ai_evaluating", "progress": 70, "message": "AI is evaluating the sprint."})
+        ai_result = send_assessment_to_ai_engine(middle_man_payload, payload.model_name)
+
+        job_repo.update_job(job_id, status="saving_report", progress=90, current_stage="saving_report")
+        job_repo.append_event(job_id, "progress", {"status": "saving_report", "progress": 90, "message": "Saving assessment report."})
+        report = generate_mock_assessment(payload, metrics_repository)
+
+        job_repo.update_job(job_id, status="completed", progress=100, current_stage="completed", report_id=report.report_id)
+        job_repo.append_event(job_id, "completed", {"status": "completed", "progress": 100, "report_id": report.report_id})
+    except Exception as exc:
+        error_message = str(exc)
+        job_repo.update_job(job_id, status="failed", progress=100, current_stage="failed", error_message=error_message)
+        job_repo.append_event(job_id, "failed", {"status": "failed", "message": "The assessment failed.", "error_message": error_message})
 
 
 def get_latest_assessment(course_id: str, project_id: str, sprint_id: str) -> AssessmentReport:
