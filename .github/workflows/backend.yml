@@ -1,0 +1,68 @@
+name: backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        continue-on-error: true
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+        continue-on-error: true
+
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+        continue-on-error: true
+
+      - name: lint
+        run: |
+          ruff check .
+        continue-on-error: true
+
+      - name: type-check
+        run: |
+          pip install mypy
+          mypy app
+        continue-on-error: true
+
+      - name: test with coverage
+        run: |
+          pytest --cov=app --cov-report=term-missing --cov-report=xml -q
+        continue-on-error: true
+
+      - name: security scan
+        run: |
+          pip install bandit
+          bandit -r app
+        continue-on-error: true
+
+      - name: docker build check
+        run: |
+          docker build -t sprintsight-backend-test -f Dockerfile .
+        continue-on-error: true
