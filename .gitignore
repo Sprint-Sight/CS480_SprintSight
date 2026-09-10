@@ -79,6 +79,6 @@ Thumbs.db
 repo/*
 !repo/README.md
 
-.next/
+**/.next/*
 
 frontend/.next/
