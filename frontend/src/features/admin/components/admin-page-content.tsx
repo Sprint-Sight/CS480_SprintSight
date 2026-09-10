@@ -68,6 +68,31 @@ export function AdminPageContent() {
 
   const getAuthToken = () => sessionStorage.getItem("sprintsight-access-token");
 
+  const handleEditUser = async (user: UserAccount) => {
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${user.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        throw new Error(error?.detail || error?.error?.message || "Failed to fetch user details.");
+      }
+
+      const freshUser = await res.json();
+      setEditingUser({
+        ...user,
+        id: freshUser.id,
+        fullName: freshUser.full_name,
+        email: freshUser.email,
+        role: freshUser.role,
+        status: freshUser.is_active ? "Active" : "Inactive",
+      });
+    } catch (error) {
+      showNotification("error", error instanceof Error ? error.message : "Failed to fetch user details.");
+    }
+  };
+
   // 1. GET /users - Fetch User Directory
   const fetchUsers = async () => {
     const token = getAuthToken();
@@ -577,7 +602,7 @@ export function AdminPageContent() {
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => setEditingUser(user)}
+                            onClick={() => handleEditUser(user)}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                             title="Edit Role / User Details"
                           >
