@@ -1,9 +1,21 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, CalendarDays, TrendingUp } from "lucide-react";
 
 import { getProjectById } from "@/features/projects/data";
-import type { ProjectStatus, SprintStatus } from "@/features/projects/types";
+import { apiRequest } from "@/features/projects/components/projects-api";
+import type { ProjectStatus, SprintStatus, StudentProject } from "@/features/projects/types";
+
+type ProjectResponse = {
+  id: string;
+  project_name: string;
+  team_name: string;
+  course_code: string;
+  members: Array<{ id: string; email: string; full_name: string }>;
+};
 
 function getProjectStatusStyles(status: ProjectStatus) {
   if (status === "At Risk") {
@@ -30,11 +42,47 @@ function getSprintStatusStyles(status: SprintStatus) {
 }
 
 export default function ProjectSprintsPage({ params }: { params: { projectId: string } }) {
-  const project = getProjectById(params.projectId);
+  const router = useRouter();
+  const [project, setProject] = useState<StudentProject | null>(null);
+  const [error, setError] = useState("");
 
-  if (!project) {
-    notFound();
+  useEffect(() => {
+    async function loadProject() {
+      try {
+        const response = await apiRequest<ProjectResponse>(`/projects/${params.projectId}`);
+        const mockProject = getProjectById(params.projectId);
+        setProject({
+          id: response.id,
+          name: response.project_name,
+          teamName: response.team_name,
+          module: response.course_code,
+          status: mockProject?.status ?? "Active",
+          score: mockProject?.score ?? 0,
+          completion: mockProject?.completion ?? 0,
+          members: response.members.map((member) => member.full_name),
+          currentSprint: mockProject?.currentSprint ?? "Not available",
+          sprints: mockProject?.sprints ?? [],
+        });
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Failed to load project.");
+      }
+    }
+
+    loadProject();
+  }, [params.projectId]);
+
+  if (error) {
+    return (
+      <div className="space-y-3 p-8">
+        <p className="text-sm text-rose-600">{error}</p>
+        <button type="button" onClick={() => router.push("/projects")} className="text-sm font-medium text-blue-700 hover:text-blue-900">
+          Back to projects
+        </button>
+      </div>
+    );
   }
+
+  if (!project) return <div className="p-8 text-sm text-slate-500">Loading project...</div>;
 
   return (
     <div className="space-y-6 p-8">

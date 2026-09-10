@@ -11,6 +11,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getArtifactDataset, getArtifactProjectOptions } from "@/features/artifacts/data";
+import { API_BASE_URL, apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -37,9 +38,31 @@ function formatBytes(bytes: number, decimals = 1) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
+type BackendDocument = {
+  id: string;
+  filename: string;
+  byte_size: number;
+  uploaded_by: string;
+  created_at: string;
+};
+
+type DocumentUploadResponse = { documents: BackendDocument[] };
+
+function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
+  return {
+    id: document.id,
+    fileName: document.filename,
+    fileType: "PDF",
+    uploadedBy: document.uploaded_by,
+    uploadedAt: new Date(document.created_at).toLocaleDateString(),
+    size: formatBytes(document.byte_size),
+  };
+}
+
 export default function ArtifactViewerPageContent() {
-  const projectOptions = useMemo(() => getArtifactProjectOptions(), []);
-  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
+  const fallbackProjectOptions = useMemo(() => getArtifactProjectOptions(), []);
+  const [projectOptions, setProjectOptions] = useState(fallbackProjectOptions);
+  const [selectedProjectId, setSelectedProjectId] = useState(fallbackProjectOptions[0]?.id ?? "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
   
   // Track user role and full name for anonymity, tab access, and upload attribution
@@ -51,6 +74,9 @@ export default function ArtifactViewerPageContent() {
   // Local state for documents to allow instant UI updates upon upload
   const [localDocuments, setLocalDocuments] = useState<DocumentArtifact[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [documentError, setDocumentError] = useState("");
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Initialize role, name, and local documents on mount/dataset change
   useEffect(() => {
@@ -64,8 +90,52 @@ export default function ArtifactViewerPageContent() {
   }, []);
 
   useEffect(() => {
-    setLocalDocuments(dataset.documents);
-  }, [dataset]);
+    if (role !== "instructor") return;
+
+    async function loadBackendProjects() {
+      try {
+        const courses = await apiRequest<Array<{ id: string }>>("/courses");
+        const projectGroups = await Promise.all(
+          courses.map((course) => apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`))
+        );
+        const options = projectGroups.flat().map((project) => ({
+          id: project.id,
+          label: `${project.team_name} - ${project.project_name}`,
+        }));
+        if (options.length > 0) {
+          setProjectOptions(options);
+          setSelectedProjectId(options[0].id);
+        }
+      } catch (error) {
+        console.error("Failed to load artifact projects:", error);
+      }
+    }
+
+    loadBackendProjects();
+  }, [role]);
+
+  useEffect(() => {
+    async function loadDocuments() {
+      setDocumentError("");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
+        setLocalDocuments(dataset.documents);
+        return;
+      }
+
+      setIsLoadingDocuments(true);
+      try {
+        const documents = await apiRequest<BackendDocument[]>(`/projects/${selectedProjectId}/documents`);
+        setLocalDocuments(documents.map(toDocumentArtifact));
+      } catch (error) {
+        setDocumentError(error instanceof Error ? error.message : "Failed to load documents.");
+        setLocalDocuments([]);
+      } finally {
+        setIsLoadingDocuments(false);
+      }
+    }
+
+    loadDocuments();
+  }, [dataset, selectedProjectId]);
 
   // Filter tabs dynamically based on user role
   const visibleTabs = useMemo(() => {
@@ -75,29 +145,62 @@ export default function ArtifactViewerPageContent() {
     return tabs;
   }, [role]);
 
-  // Handle local file upload
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
 
-    // Determine file type badge based on extension
-    const extension = file.name.split('.').pop()?.toUpperCase() || "FILE";
-    const validTypes = ["PDF", "DOCX", "MD"];
-    const fileType = validTypes.includes(extension) ? extension : "FILE";
+    try {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
+        throw new Error("Select a backend project before uploading documents.");
+      }
+      if (files.some((file) => !file.name.toLowerCase().endsWith(".pdf") || file.type !== "application/pdf")) {
+        throw new Error("Only PDF files with application/pdf MIME type are allowed.");
+      }
+      if (files.some((file) => file.size > 25 * 1024 * 1024)) {
+        throw new Error("Each PDF must be 25 MB or smaller.");
+      }
+      if (files.reduce((total, file) => total + file.size, 0) > 100 * 1024 * 1024) {
+        throw new Error("The total upload size must be 100 MB or smaller.");
+      }
 
-    const newDoc: DocumentArtifact = {
-      id: `d-local-${Date.now()}`,
-      fileName: file.name,
-      fileType: fileType as any,
-      uploadedBy: fullName || (role === "student" ? "Student User" : "Instructor User"),
-      uploadedAt: new Date().toISOString().split("T")[0],
-      size: formatBytes(file.size),
-    };
+      for (const file of files) {
+        const header = new TextDecoder().decode(await file.slice(0, 5).arrayBuffer());
+        if (header !== "%PDF-") throw new Error(`${file.name} is not a valid PDF file.`);
+      }
 
-    setLocalDocuments((prev) => [newDoc, ...prev]);
-    
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+      const formData = new FormData();
+      files.forEach((file) => formData.append("files", file));
+      setIsUploading(true);
+      const response = await apiRequest<DocumentUploadResponse>(`/projects/${selectedProjectId}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      setLocalDocuments((previous) => [...response.documents.map(toDocumentArtifact), ...previous]);
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Failed to upload documents.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownloadDocument = async (documentId: string, fileName: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/projects/${selectedProjectId}/documents/${documentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to download document.");
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      anchor.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Failed to download document.");
     }
   };
 
@@ -192,17 +295,22 @@ export default function ArtifactViewerPageContent() {
                 ref={fileInputRef} 
                 onChange={handleFileUpload}
                 className="hidden" 
-                accept=".pdf,.doc,.docx,.md,.txt"
+                accept="application/pdf,.pdf"
+                multiple
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)}
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 <Upload className="h-4 w-4" />
-                Upload Document
+                {isUploading ? "Uploading..." : "Upload PDF"}
               </button>
             </div>
+
+            {documentError && <p className="text-sm text-rose-600">{documentError}</p>}
+            {isLoadingDocuments && <p className="text-sm text-slate-500">Loading documents...</p>}
 
             {localDocuments.map((doc) => (
               <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -213,7 +321,13 @@ export default function ArtifactViewerPageContent() {
                       {doc.uploadedBy} - {doc.uploadedAt} - {doc.size}
                     </p>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{doc.fileType}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadDocument(doc.id, doc.fileName)}
+                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                  >
+                    Download {doc.fileType}
+                  </button>
                 </div>
               </article>
             ))}
