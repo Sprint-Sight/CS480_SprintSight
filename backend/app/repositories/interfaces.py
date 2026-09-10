@@ -3,7 +3,17 @@ from datetime import datetime
 from typing import Protocol
 
 from app.schemas.auth import Role
-from app.schemas.assessment import AssessmentReport, AuditRecord, CommitInfo, JiraCleanedSnapshot, ManualTextPayload, OverrideResponse
+from app.schemas.assessment import (
+    AssessRequest,
+    AssessmentJobEvent,
+    AssessmentJobRecord,
+    AssessmentReport,
+    AuditRecord,
+    CommitInfo,
+    JiraCleanedSnapshot,
+    ManualTextPayload,
+    OverrideResponse,
+)
 
 
 @dataclass
@@ -137,6 +147,27 @@ class AssessmentRepository(Protocol):
     def get_report(self, report_id: str) -> AssessmentReport | None: ...
 
     def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None: ...
+
+
+class AssessmentJobRepository(Protocol):
+    def create_job(self, payload: AssessRequest) -> AssessmentJobRecord: ...
+
+    def get_job(self, job_id: str) -> AssessmentJobRecord | None: ...
+
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        progress: int | None = None,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None: ...
+
+    def append_event(self, job_id: str, event: str, data: dict) -> None: ...
+
+    def list_events(self, job_id: str) -> list[AssessmentJobEvent]: ...
 
 
 class OverrideRepository(Protocol):

@@ -1,26 +1,28 @@
 from typing import Annotated
+import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.dependencies.auth import get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty
+from app.repositories.in_memory import job_repo
 from app.repositories.interfaces import ManualTextRepository, MetricsRepository, ProjectRepository
 from app.schemas.assessment import AssessRequest, OverrideRequest
 from app.services.assessmentService.service import (
     generate_mock_assessment,
     get_latest_assessment,
     override_student_score,
+    run_assessment_job,
 )
 from app.services.auditLogService.service import append_override_audit
-from app.services.documentsService.service import collect_document_signals
-from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
-from app.services.jiraService.service import enrich_jira_metrics
-from app.services.manualTextService.service import get_manual_text
-from app.services.middleManService.service import build_assessment_payload
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
+_executor = ThreadPoolExecutor(max_workers=4)
 
 
-@router.post("/assess")
+@router.post("/assess", status_code=status.HTTP_202_ACCEPTED)
 def assess_sprint(
     payload: AssessRequest,
     faculty_user: Annotated[object, Depends(require_faculty)],
@@ -36,21 +38,46 @@ def assess_sprint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course.")
     if not project.local_repo_path:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project has no local repository configured.")
-    try:
-        repository_path = resolve_local_repository_path(project.local_repo_path)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    metrics = ingest_github_metrics(payload, repository_path, metrics_repository)
-    _ = enrich_jira_metrics(payload)
-    docs = collect_document_signals(payload)
-    manual_text = get_manual_text(manual_text_repository, payload.course_id, payload.project_id, payload.sprint_id)
-    middle_man_payload = build_assessment_payload(metrics, docs, manual_text)
 
-    report = generate_mock_assessment(payload, metrics_repository)
+    job = job_repo.create_job(payload)
+    job_repo.append_event(job.job_id, "started", {"status": "started", "message": "Assessment has started."})
+
+    # Start the long-polling worker in a background thread so the endpoint
+    # returns immediately with the 202 job contract instead of blocking.
+    _executor.submit(run_assessment_job, job.job_id, payload, project, metrics_repository, manual_text_repository)
+
     return {
-        "input_payload": middle_man_payload,
-        "report": report,
+        "job_id": job.job_id,
+        "status": "queued",
+        "message": "Assessment has started.",
     }
+
+
+@router.get("/jobs/{job_id}/events")
+def assessment_job_events(
+    job_id: str,
+    faculty_user: Annotated[object, Depends(require_faculty)],
+):
+    _ = faculty_user
+    job = job_repo.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment job not found.")
+
+    def event_stream():
+        seen = 0
+        while True:
+            events = job_repo.list_events(job_id)
+            if len(events) > seen:
+                for item in events[seen:]:
+                    yield f"event: {item.event}\n"
+                    yield f"data: {json.dumps(item.data)}\n\n"
+                seen = len(events)
+            state = job_repo.get_job(job_id)
+            if state and state.status in {"completed", "failed"}:
+                break
+            time.sleep(0.25)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/latest")

@@ -38,5 +38,3 @@ sample_bundle = ArtifactBundle(
     ]
 )
 
-print("SUCCESS! ArtifactBundle schema is valid.")
-# print(sample_bundle.model_dump_json(indent=2))

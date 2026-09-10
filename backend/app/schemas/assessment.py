@@ -104,6 +104,27 @@ class AssessRequest(BaseModel):
     course_id: str
     project_id: str
     sprint_id: str
+    model_name: str | None = None
+
+
+class AssessmentJobRecord(BaseModel):
+    job_id: str
+    course_id: str
+    project_id: str
+    sprint_id: str
+    model_name: str | None = None
+    status: str = "queued"
+    progress: int = 0
+    current_stage: str = "queued"
+    report_id: str | None = None
+    error_message: str | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class AssessmentJobEvent(BaseModel):
+    event: str
+    data: dict
 
 
 class StudentScore(BaseModel):

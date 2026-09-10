@@ -19,7 +19,7 @@ from app.repositories.interfaces import (
     ProjectRecord,
     ProjectRepository,
 )
-from app.schemas.assessment import AssessmentReport, AuditRecord, JiraCleanedSnapshot, ManualTextPayload, OverrideResponse
+from app.schemas.assessment import AssessmentJobEvent, AssessmentJobRecord, AssessmentReport, AuditRecord, JiraCleanedSnapshot, ManualTextPayload, OverrideResponse
 from app.schemas.auth import Role
 
 
@@ -273,6 +273,72 @@ class InMemoryAssessmentRepository(AssessmentRepository):
         return sorted(matching, key=lambda report: report.generated_at)[-1]
 
 
+class InMemoryAssessmentJobRepository:
+    def __init__(self) -> None:
+        self._jobs: dict[str, AssessmentJobRecord] = {}
+        self._events: dict[str, list[AssessmentJobEvent]] = {}
+
+    def create_job(self, payload: "AssessRequest") -> AssessmentJobRecord:
+        from app.schemas.assessment import AssessRequest
+
+        job_id = f"job-{uuid4().hex[:12]}"
+        now = now_utc()
+        record = AssessmentJobRecord(
+            job_id=job_id,
+            course_id=payload.course_id,
+            project_id=payload.project_id,
+            sprint_id=payload.sprint_id,
+            model_name=payload.model_name,
+            status="queued",
+            progress=0,
+            current_stage="queued",
+            report_id=None,
+            error_message=None,
+            created_at=now,
+            updated_at=now,
+        )
+        self._jobs[job_id] = record
+        self._events[job_id] = [AssessmentJobEvent(event="started", data={"status": "started", "message": "Assessment has started."})]
+        return record
+
+    def get_job(self, job_id: str) -> AssessmentJobRecord | None:
+        return self._jobs.get(job_id)
+
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        progress: int | None = None,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None:
+        record = self._jobs.get(job_id)
+        if not record:
+            return None
+        if status is not None:
+            record.status = status
+        if progress is not None:
+            record.progress = progress
+        if current_stage is not None:
+            record.current_stage = current_stage
+        if report_id is not None:
+            record.report_id = report_id
+        if error_message is not None:
+            record.error_message = error_message
+        record.updated_at = now_utc()
+        return record
+
+    def append_event(self, job_id: str, event: str, data: dict) -> None:
+        if job_id not in self._events:
+            self._events[job_id] = []
+        self._events[job_id].append(AssessmentJobEvent(event=event, data=data))
+
+    def list_events(self, job_id: str) -> list[AssessmentJobEvent]:
+        return list(self._events.get(job_id, []))
+
+
 class InMemoryOverrideRepository(OverrideRepository):
     def __init__(self) -> None:
         self._overrides: list[OverrideResponse] = []
@@ -386,6 +452,7 @@ audit_repo = InMemoryAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
 projects_repo = InMemoryProjectRepository()
 jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
+job_repo = InMemoryAssessmentJobRepository()
 
 
 def now_utc() -> datetime:

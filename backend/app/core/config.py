@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(default="http://ollama:11434", alias="OLLAMA_BASE_URL")
     assessment_mode: str = Field(default="mock", alias="ASSESSMENT_MODE")
     default_model_name: str = Field(default="mock-rubric-v1", alias="DEFAULT_MODEL_NAME")
+    ai_engine_url: str = Field(default="http://host.docker.internal:8001", alias="AI_ENGINE_URL")
+    ai_engine_timeout_seconds: float = Field(default=600.0, alias="AI_ENGINE_TIMEOUT_SECONDS")
 
     audit_log_path: str = Field(default="logs/audit.log", alias="AUDIT_LOG_PATH")
 

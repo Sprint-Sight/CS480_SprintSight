@@ -1,3 +1,6 @@
+import httpx
+
+from app.core.config import get_settings
 from app.repositories.interfaces import IngestionMetricBundle
 
 
@@ -24,3 +27,25 @@ def build_assessment_payload(
         "artifact_metrics": document_signals,
         "instructor_expectations": manual_text or "No instructor guidance provided.",
     }
+
+
+def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -> dict:
+    settings = get_settings()
+    base_url = settings.ai_engine_url.rstrip("/")
+    selected_model = model_name or settings.default_model_name
+    request_url = f"{base_url}/assess/sprint/data?modelname={selected_model}"
+
+    try:
+        # One-shot transport only. Do not retry and do not impose a fixed
+        # client timeout that can prematurely force the job into failed state.
+        response = httpx.post(request_url, json=payload, timeout=None)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"AI engine rejected the assessment payload: {exc.response.text}") from exc
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"AI engine request failed: {exc}") from exc
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise RuntimeError("AI engine returned a non-JSON assessment response.") from exc
