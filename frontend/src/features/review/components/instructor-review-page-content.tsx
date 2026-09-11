@@ -5,6 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 
 import { INITIAL_AUDIT_HISTORY, INITIAL_REVIEW_CRITERIA } from "@/features/review/data";
 import type { ReviewAuditEvent, ReviewAuditEvent as AuditEvent, ReviewCriterion } from "@/features/review/types";
+import { apiRequest } from "@/features/projects/components/projects-api";
+
+type BackendAuditRecord = {
+  override_id: string;
+  timestamp: string;
+  instructor_id: string;
+  student_id: string;
+  report_id: string;
+  original_score: number;
+  new_score: number;
+  reason_comment: string;
+};
 
 function nowLabel() {
   return new Date().toLocaleString("en-US", {
@@ -35,6 +47,12 @@ export default function InstructorReviewPageContent() {
   const [criterionScoring, setCriterionScoring] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(INITIAL_REVIEW_CRITERIA.map((item) => [item.id, true])),
   );
+  const [overrideReportId, setOverrideReportId] = useState("");
+  const [overrideStudentId, setOverrideStudentId] = useState("");
+  const [overrideScore, setOverrideScore] = useState(0);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideError, setOverrideError] = useState("");
+  const [isSubmittingOverride, setIsSubmittingOverride] = useState(false);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
@@ -42,6 +60,28 @@ export default function InstructorReviewPageContent() {
       setRole(savedRole);
     }
   }, []);
+
+  useEffect(() => {
+    if (role !== "instructor") return;
+
+    async function loadAuditHistory() {
+      try {
+        const records = await apiRequest<BackendAuditRecord[]>("/audit/overrides");
+        setAuditHistory(records.map((record) => ({
+          id: record.override_id,
+          type: "modified",
+          actor: record.instructor_id,
+          title: "Backend Score Override",
+          detail: `${record.student_id}: ${record.original_score} -> ${record.new_score}. ${record.reason_comment}`,
+          timestamp: new Date(record.timestamp).toLocaleString(),
+        })));
+      } catch {
+        // Keep fixture audit history available when no backend review context exists.
+      }
+    }
+
+    loadAuditHistory();
+  }, [role]);
 
   const isInstructor = role === "instructor";
 
@@ -152,6 +192,41 @@ export default function InstructorReviewPageContent() {
       title: "Final Review Approved",
       detail: "Instructor approved the final rubric with overrides and comments.",
     });
+  }
+
+  async function submitBackendOverride() {
+    if (!overrideReportId.trim() || !overrideStudentId.trim() || !overrideReason.trim()) {
+      setOverrideError("Report ID, student ID, score, and reason are required.");
+      return;
+    }
+
+    setOverrideError("");
+    setIsSubmittingOverride(true);
+    try {
+      const response = await apiRequest<{ override: BackendAuditRecord }>("/assessments/override", {
+        method: "POST",
+        body: JSON.stringify({
+          report_id: overrideReportId.trim(),
+          student_id: overrideStudentId.trim(),
+          new_score: overrideScore,
+          reason_comment: overrideReason.trim(),
+        }),
+      });
+      const record = response.override;
+      setAuditHistory((previous) => [{
+        id: record.override_id,
+        type: "modified",
+        actor: record.instructor_id,
+        title: "Backend Score Override",
+        detail: `${record.student_id}: ${record.original_score} -> ${record.new_score}. ${record.reason_comment}`,
+        timestamp: new Date(record.timestamp).toLocaleString(),
+      }, ...previous]);
+      setOverrideReason("");
+    } catch (error) {
+      setOverrideError(error instanceof Error ? error.message : "Failed to submit score override.");
+    } finally {
+      setIsSubmittingOverride(false);
+    }
   }
 
   if (!isInstructor) {
@@ -351,6 +426,22 @@ export default function InstructorReviewPageContent() {
             );
           })}
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-xl font-semibold text-blue-950">Backend Student Score Override</h2>
+        <p className="mt-1 text-sm text-slate-500">Submit a real assessment override with an auditable reason.</p>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <input value={overrideReportId} onChange={(event) => setOverrideReportId(event.target.value)} placeholder="Assessment report ID" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+          <input value={overrideStudentId} onChange={(event) => setOverrideStudentId(event.target.value)} placeholder="Student ID" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+          <input type="number" min={0} max={100} value={overrideScore} onChange={(event) => setOverrideScore(Math.min(100, Math.max(0, Number(event.target.value))))} placeholder="New score" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+          <input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Reason for override" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+        </div>
+        {overrideError && <p className="mt-2 text-sm text-rose-600">{overrideError}</p>}
+        <button type="button" onClick={submitBackendOverride} disabled={isSubmittingOverride} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-blue-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+          {isSubmittingOverride ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+          Submit Override
+        </button>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

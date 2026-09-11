@@ -147,24 +147,6 @@ export default function ProjectsPageContent() {
     }
   }
 
-  async function loadSelectedCourse() {
-    if (!selectedCourseId || !isUuid(selectedCourseId)) return;
-
-    try {
-      const course = await apiRequest<Course>(`/courses/${selectedCourseId}`);
-      setCourses((previous) => previous.map((item) => item.id === selectedCourseId ? {
-        ...item,
-        code: course.code,
-        name: course.name,
-        section: course.section,
-        year: course.year,
-        term: course.term,
-      } : item));
-    } catch (error) {
-      console.error("Failed to load selected course:", error);
-    }
-  }
-
   async function loadProjects() {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
       setProjects([]);
@@ -213,7 +195,6 @@ export default function ProjectsPageContent() {
   }, []);
 
   useEffect(() => {
-    loadSelectedCourse();
     loadCourseStudents();
     loadProjects();
   }, [selectedCourseId]);
