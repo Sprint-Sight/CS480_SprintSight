@@ -6,7 +6,9 @@ import {
   FolderGit2, 
   MessageSquare, 
   Users,
-  Upload
+  Upload,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -48,6 +50,94 @@ type BackendDocument = {
 
 type DocumentUploadResponse = { documents: BackendDocument[] };
 
+type ProjectOption = {
+  id: string;
+  courseId?: string;
+  label: string;
+};
+
+type FileDiff = {
+  filename: string;
+  change_type: "added" | "modified" | "deleted" | "renamed";
+  lines_added: number;
+  lines_deleted: number;
+};
+
+type CommitInfo = {
+  sha: string;
+  author: string;
+  message: string;
+  timestamp: string;
+  lines_added: number;
+  lines_deleted: number;
+  files_changed: FileDiff[];
+};
+
+type RepoIngestionData = {
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  head_sha: string | null;
+  captured_at: string;
+  commit_frequency: number;
+  code_churn: number;
+  pr_turnaround_hours: number | null;
+  assigned_story_points: number | null;
+  completion_percent: number | null;
+  commits: CommitInfo[];
+  pagination: {
+    limit: number | null;
+    offset: number | null;
+    total: number;
+    has_more: boolean;
+  };
+};
+
+type RepoSyncResponse = {
+  github_metrics: RepoIngestionData;
+  jira_metrics: unknown;
+  document_signals: {
+    documentation_quality: number;
+    demo_completeness: number;
+  };
+};
+
+type JiraIngestionRun = {
+  run_id: string;
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  jira_project_key: string;
+  jql: string;
+  issue_count: number;
+  captured_at: string;
+  processed_at: string | null;
+  processing_status: "pending" | "completed" | "failed";
+  normalization_version: string | null;
+  processing_error: string | null;
+};
+
+type JiraTicket = {
+  ticket_id: string;
+  summary: string;
+  assignee: string | null;
+  status: string | null;
+  issue_type: string | null;
+  story_points: number | null;
+  sprint_id: string | null;
+};
+
+type JiraCleanedSnapshot = {
+  normalization_version: string;
+  source: string;
+  jira_project_key: string;
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  captured_at: string;
+  tickets: JiraTicket[];
+};
+
 function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
   return {
     id: document.id,
@@ -61,13 +151,15 @@ function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
 
 export default function ArtifactViewerPageContent() {
   const fallbackProjectOptions = useMemo(() => getArtifactProjectOptions(), []);
-  const [projectOptions, setProjectOptions] = useState(fallbackProjectOptions);
+  const [projectOptions, setProjectOptions] = useState<ProjectOption[]>(fallbackProjectOptions);
   const [selectedProjectId, setSelectedProjectId] = useState(fallbackProjectOptions[0]?.id ?? "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
   
   // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
   const [fullName, setFullName] = useState<string>("");
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [projectLoadError, setProjectLoadError] = useState("");
 
   const dataset = useMemo(() => getArtifactDataset(selectedProjectId), [selectedProjectId]);
   
@@ -77,6 +169,18 @@ export default function ArtifactViewerPageContent() {
   const [documentError, setDocumentError] = useState("");
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [sprintId, setSprintId] = useState("");
+  const [jiraProjectKey, setJiraProjectKey] = useState("");
+  const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
+  const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
+  const [jiraError, setJiraError] = useState("");
+  const [isLoadingJira, setIsLoadingJira] = useState(false);
+  const [isSyncingJira, setIsSyncingJira] = useState(false);
+  const [gitSprintId, setGitSprintId] = useState("");
+  const [gitMetrics, setGitMetrics] = useState<RepoIngestionData | null>(null);
+  const [gitError, setGitError] = useState("");
+  const [isLoadingGit, setIsLoadingGit] = useState(false);
+  const [isSyncingGit, setIsSyncingGit] = useState(false);
 
   // Initialize role, name, and local documents on mount/dataset change
   useEffect(() => {
@@ -93,26 +197,50 @@ export default function ArtifactViewerPageContent() {
     if (role !== "instructor") return;
 
     async function loadBackendProjects() {
+      setIsLoadingProjects(true);
+      setProjectLoadError("");
       try {
         const courses = await apiRequest<Array<{ id: string }>>("/courses");
         const projectGroups = await Promise.all(
-          courses.map((course) => apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`))
+          courses.map(async (course) => ({
+            courseId: course.id,
+            projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`),
+          }))
         );
-        const options = projectGroups.flat().map((project) => ({
+        const options = projectGroups.flatMap(({ courseId, projects }) => projects.map((project) => ({
           id: project.id,
+          courseId,
           label: `${project.team_name} - ${project.project_name}`,
-        }));
+        })));
         if (options.length > 0) {
           setProjectOptions(options);
           setSelectedProjectId(options[0].id);
+        } else {
+          setProjectLoadError("No backend projects are available for this instructor.");
         }
       } catch (error) {
         console.error("Failed to load artifact projects:", error);
+        setProjectLoadError("Could not load backend projects. Check the instructor session and API connection.");
+      } finally {
+        setIsLoadingProjects(false);
       }
     }
 
     loadBackendProjects();
   }, [role]);
+
+  const selectedBackendProject = projectOptions.find(
+    (project) => project.id === selectedProjectId && isUuid(project.id) && Boolean(project.courseId),
+  );
+  const ingestionDisabledReason = role !== "instructor"
+    ? "Git and Jira ingestion requires an instructor account."
+    : isLoadingProjects
+      ? "Loading backend projects..."
+      : projectLoadError
+        ? projectLoadError
+        : !selectedBackendProject
+          ? "Select a real backend project before starting ingestion."
+          : "";
 
   useEffect(() => {
     async function loadDocuments() {
@@ -136,6 +264,157 @@ export default function ArtifactViewerPageContent() {
 
     loadDocuments();
   }, [dataset, selectedProjectId]);
+
+  useEffect(() => {
+    if (!isUuid(selectedProjectId)) {
+      setJiraRuns([]);
+      setJiraSnapshot(null);
+      return;
+    }
+
+    async function loadProjectRuns() {
+      setJiraError("");
+      setIsLoadingJira(true);
+      try {
+        const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`);
+        setJiraRuns(runs);
+        const latestCompleted = runs.find((run) => run.processing_status === "completed");
+        if (latestCompleted) {
+          setSprintId(latestCompleted.sprint_id);
+          await loadCleanedRun(latestCompleted);
+        }
+      } catch (error) {
+        setJiraError(error instanceof Error ? error.message : "Failed to load Jira ingestion runs.");
+      } finally {
+        setIsLoadingJira(false);
+      }
+    }
+
+    loadProjectRuns();
+  }, [selectedProjectId]);
+
+  async function loadGitMetrics() {
+    const sprint = gitSprintId.trim();
+    const project = projectOptions.find((option) => option.id === selectedProjectId);
+    if (!isUuid(selectedProjectId) || !project?.courseId) {
+      setGitError("Select a real backend project with a course before loading Git data.");
+      return;
+    }
+    if (!sprint) {
+      setGitError("Enter a sprint ID before loading Git data.");
+      return;
+    }
+
+    setGitError("");
+    setIsLoadingGit(true);
+    try {
+      const metrics = await apiRequest<RepoIngestionData>(
+        `/repo-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint)}?course_id=${encodeURIComponent(project.courseId)}`
+      );
+      setGitMetrics(metrics);
+    } catch (error) {
+      setGitError(error instanceof Error ? error.message : "Failed to load Git ingestion data.");
+    } finally {
+      setIsLoadingGit(false);
+    }
+  }
+
+  async function loadCleanedRun(run: JiraIngestionRun) {
+    const snapshot = await apiRequest<JiraCleanedSnapshot>(
+      `/jira-ingestion/runs/${run.project_id}/${run.sprint_id}/${run.run_id}/cleaned`
+    );
+    setJiraSnapshot(snapshot);
+  }
+
+  async function loadSprintRuns(sprint: string) {
+    if (!isUuid(selectedProjectId) || !sprint.trim()) return;
+    const runs = await apiRequest<JiraIngestionRun[]>(
+      `/jira-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint.trim())}`
+    );
+    setJiraRuns((previous) => {
+      const otherRuns = previous.filter((run) => run.sprint_id !== sprint.trim());
+      return [...runs, ...otherRuns];
+    });
+  }
+
+  async function syncJira() {
+    const sprint = sprintId.trim();
+    if (!isUuid(selectedProjectId)) {
+      setJiraError("Select a real backend project before syncing Jira.");
+      return;
+    }
+    if (!sprint) {
+      setJiraError("Enter a sprint ID before syncing Jira.");
+      return;
+    }
+
+    setJiraError("");
+    setIsSyncingJira(true);
+    setJiraSnapshot(null);
+    try {
+      const rawRun = await apiRequest<JiraIngestionRun>(`/jira-ingestion/raw/${selectedProjectId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          sprint_id: sprint,
+          jira_project_key: jiraProjectKey.trim() || undefined,
+        }),
+      });
+
+      const processedRun = await apiRequest<JiraIngestionRun>(
+        `/jira-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint)}/${rawRun.run_id}/process`,
+        { method: "POST" }
+      );
+      await loadCleanedRun(processedRun);
+      await loadSprintRuns(sprint);
+    } catch (error) {
+      setJiraError(error instanceof Error ? error.message : "Jira ingestion failed.");
+    } finally {
+      setIsSyncingJira(false);
+    }
+  }
+
+  async function syncGit() {
+    const sprint = gitSprintId.trim();
+    const project = projectOptions.find((option) => option.id === selectedProjectId);
+    if (!isUuid(selectedProjectId) || !project?.courseId) {
+      setGitError("Select a real backend project with a course before syncing Git.");
+      return;
+    }
+    if (!sprint) {
+      setGitError("Enter a sprint ID before syncing Git.");
+      return;
+    }
+
+    setGitError("");
+    setIsSyncingGit(true);
+    try {
+      const response = await apiRequest<RepoSyncResponse>("/repo-ingestion/sync", {
+        method: "POST",
+        body: JSON.stringify({
+          course_id: project.courseId,
+          project_id: selectedProjectId,
+          sprint_id: sprint,
+        }),
+      });
+      setGitMetrics({
+        ...response.github_metrics,
+        pagination: response.github_metrics.pagination ?? {
+          limit: null,
+          offset: null,
+          total: response.github_metrics.commits?.length ?? 0,
+          has_more: false,
+        },
+      });
+    } catch (error) {
+      setGitError(error instanceof Error ? error.message : "Git ingestion failed.");
+    } finally {
+      setIsSyncingGit(false);
+    }
+  }
+
+  function isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
 
   // Filter tabs dynamically based on user role
   const visibleTabs = useMemo(() => {
@@ -247,41 +526,213 @@ export default function ArtifactViewerPageContent() {
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         {activeTab === "github" && (
           <>
-            <h2 className="text-3xl font-semibold text-blue-950">GitHub Activity</h2>
-            {dataset.github.map((entry) => (
-              <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{entry.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {entry.author} - {entry.date} - {entry.ref}
-                    </p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-3xl font-semibold text-blue-950">Git Repository Activity</h2>
+                <p className="mt-1 text-sm text-slate-500">Sync commits and inspect repository metrics for a sprint.</p>
+              </div>
+              <button
+                type="button"
+                onClick={syncGit}
+                disabled={isSyncingGit || !selectedBackendProject}
+                title={ingestionDisabledReason || "Sync the selected Git repository"}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSyncingGit ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {isSyncingGit ? "Syncing Git..." : "Sync Git Repository"}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="min-w-[220px] flex-1 space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint ID</span>
+                <input
+                  value={gitSprintId}
+                  onChange={(event) => setGitSprintId(event.target.value)}
+                  placeholder="e.g. sprint-1"
+                  className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={loadGitMetrics}
+                disabled={isLoadingGit || !gitSprintId.trim() || !selectedBackendProject}
+                title={ingestionDisabledReason || "Load saved Git metrics"}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Refresh Git Data
+              </button>
+            </div>
+
+            {gitError && <p className="text-sm text-rose-600">{gitError}</p>}
+            {ingestionDisabledReason && <p className="text-sm text-amber-700">{ingestionDisabledReason}</p>}
+            {isLoadingGit && <p className="text-sm text-slate-500">Loading Git ingestion data...</p>}
+
+            {gitMetrics ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Commits</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{gitMetrics.pagination.total}</p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${entry.type === "pr" ? "bg-violet-50 text-violet-700" : "bg-blue-50 text-blue-700"}`}>
-                    {entry.type === "pr" ? "PR" : "Commit"}
-                  </span>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Commit frequency</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{gitMetrics.commit_frequency}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Code churn</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{gitMetrics.code_churn}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Captured</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{new Date(gitMetrics.captured_at).toLocaleString()}</p>
+                  </div>
                 </div>
-              </article>
-            ))}
+
+                <p className="text-xs text-slate-500">Head SHA: {gitMetrics.head_sha || "Unavailable"}</p>
+                {gitMetrics.commits.map((commit) => (
+                  <article key={commit.sha} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-lg font-semibold text-slate-900">{commit.message}</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {commit.author} - {new Date(commit.timestamp).toLocaleString()} - {commit.sha.slice(0, 10)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">+{commit.lines_added} / -{commit.lines_deleted} lines</p>
+                  </article>
+                ))}
+              </>
+            ) : (
+              dataset.github.map((entry) => (
+                <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{entry.title}</p>
+                      <p className="mt-1 text-sm text-slate-500">{entry.author} - {entry.date} - {entry.ref}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${entry.type === "pr" ? "bg-violet-50 text-violet-700" : "bg-blue-50 text-blue-700"}`}>
+                      {entry.type === "pr" ? "PR" : "Commit"}
+                    </span>
+                  </div>
+                </article>
+              ))
+            )}
           </>
         )}
 
         {activeTab === "jira" && (
           <>
-            <h2 className="text-3xl font-semibold text-blue-950">Jira Backlog and Tasks</h2>
-            {dataset.jira.map((task) => (
-              <article key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{task.key}: {task.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {task.assignee} - {task.sprint} - {task.points} pts
-                    </p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-3xl font-semibold text-blue-950">Jira Backlog and Tasks</h2>
+                <p className="mt-1 text-sm text-slate-500">Sync, normalize, and inspect Jira data for a sprint.</p>
+              </div>
+              <button
+                type="button"
+                onClick={syncJira}
+                disabled={isSyncingJira || !selectedBackendProject}
+                title={ingestionDisabledReason || "Sync Jira for the selected project"}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSyncingJira ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {isSyncingJira ? "Syncing Jira..." : "Sync Jira"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint ID</span>
+                <input
+                  value={sprintId}
+                  onChange={(event) => setSprintId(event.target.value)}
+                  placeholder="e.g. sprint-1"
+                  className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Jira Project Key (optional)</span>
+                <input
+                  value={jiraProjectKey}
+                  onChange={(event) => setJiraProjectKey(event.target.value)}
+                  placeholder="Uses project configuration by default"
+                  className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => loadSprintRuns(sprintId)}
+                disabled={isLoadingJira || !selectedBackendProject || !sprintId.trim()}
+                title={ingestionDisabledReason || "Refresh Jira runs"}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Refresh runs
+              </button>
+            </div>
+
+            {jiraError && <p className="text-sm text-rose-600">{jiraError}</p>}
+
+            {jiraRuns.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full min-w-[620px] text-left text-sm">
+                  <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Sprint</th>
+                      <th className="px-3 py-2">Issues</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Captured</th>
+                      <th className="px-3 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jiraRuns.map((run) => (
+                      <tr key={run.run_id} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2 font-medium text-slate-800">{run.sprint_id}</td>
+                        <td className="px-3 py-2 text-slate-600">{run.issue_count}</td>
+                        <td className="px-3 py-2">
+                          <span className={`rounded-full px-2 py-1 text-xs font-semibold ${run.processing_status === "completed" ? "bg-emerald-50 text-emerald-700" : run.processing_status === "failed" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>
+                            {run.processing_status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">{new Date(run.captured_at).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right">
+                          {run.processing_status === "completed" && (
+                            <button type="button" onClick={() => loadCleanedRun(run)} className="text-xs font-semibold text-blue-700 hover:text-blue-900">
+                              View cleaned data
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {jiraSnapshot ? (
+              jiraSnapshot.tickets.map((ticket) => (
+                <article key={ticket.ticket_id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{ticket.ticket_id}: {ticket.summary}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {ticket.assignee || "Unassigned"} - {ticket.issue_type || "Issue"} - {ticket.story_points ?? 0} pts
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPill(ticket.status || undefined)}`}>{ticket.status || "Unknown"}</span>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPill(task.status)}`}>{task.status}</span>
-                </div>
-              </article>
-            ))}
+                </article>
+              ))
+            ) : (
+              dataset.jira.map((task) => (
+                <article key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{task.key}: {task.title}</p>
+                      <p className="mt-1 text-sm text-slate-500">{task.assignee} - {task.sprint} - {task.points} pts</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPill(task.status)}`}>{task.status}</span>
+                  </div>
+                </article>
+              ))
+            )}
           </>
         )}
 

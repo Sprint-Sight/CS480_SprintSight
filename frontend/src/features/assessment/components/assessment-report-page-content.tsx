@@ -1,7 +1,7 @@
 "use client";
 
-import { Download, Star, TrendingUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Download, Loader2, Play, Star, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import {
   PolarAngleAxis,
   PolarGrid,
@@ -12,7 +12,36 @@ import {
 } from "recharts";
 
 import { getAssessmentProjectOptions, getAssessmentReport } from "@/features/assessment/data";
+import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
 import type { RubricScore } from "@/features/assessment/types";
+
+type AssessmentProjectOption = {
+  id: string;
+  courseId?: string;
+  label: string;
+};
+
+type BackendAssessmentReport = {
+  report_id: string;
+  model_name: string;
+  mode: string;
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  generated_at: string;
+  rubric_weights: Record<string, number>;
+  team_score: { score: number; rationale: string };
+  individual_scores: Array<{ student_id: string; score: number; rationale: string }>;
+  recommendations: string[];
+};
+
+type AssessmentJobEvent = {
+  status?: string;
+  progress?: number;
+  message?: string;
+  report_id?: string;
+  error_message?: string;
+};
 
 function scoreBarColor(score: number) {
   if (score >= 85) return "bg-[#2F5B85]";
@@ -48,9 +77,133 @@ function CircularScore({ score }: { score: number }) {
 }
 
 export default function AssessmentReportPageContent() {
-  const projectOptions = useMemo(() => getAssessmentProjectOptions(), []);
-  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
-  const report = useMemo(() => getAssessmentReport(selectedProjectId), [selectedProjectId]);
+  const fallbackProjectOptions = useMemo(() => getAssessmentProjectOptions(), []);
+  const [projectOptions, setProjectOptions] = useState<AssessmentProjectOption[]>(fallbackProjectOptions);
+  const [selectedProjectId, setSelectedProjectId] = useState(fallbackProjectOptions[0]?.id ?? "");
+  const [sprintId, setSprintId] = useState("sprint-1");
+  const [report, setReport] = useState(() => getAssessmentReport(fallbackProjectOptions[0]?.id ?? ""));
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [assessmentProgress, setAssessmentProgress] = useState(0);
+  const [assessmentMessage, setAssessmentMessage] = useState("");
+  const [assessmentError, setAssessmentError] = useState("");
+
+  useEffect(() => {
+    async function loadBackendProjects() {
+      try {
+        const courses = await apiRequest<Array<{ id: string }>>("/courses");
+        const groups = await Promise.all(courses.map(async (course) => ({
+          courseId: course.id,
+          projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`),
+        })));
+        const options = groups.flatMap(({ courseId, projects }) => projects.map((project) => ({
+          id: project.id,
+          courseId,
+          label: `${project.team_name} - ${project.project_name}`,
+        })));
+        if (options.length > 0) {
+          setProjectOptions(options);
+          setSelectedProjectId(options[0].id);
+        }
+      } catch {
+        // Demo fixture options remain available when backend projects are unavailable.
+      }
+    }
+
+    loadBackendProjects();
+  }, []);
+
+  async function loadLatestReport(projectId = selectedProjectId, sprint = sprintId) {
+    const project = projectOptions.find((option) => option.id === projectId);
+    if (!isUuid(projectId) || !project?.courseId || !sprint.trim()) {
+      setReport(getAssessmentReport(projectId));
+      return;
+    }
+
+    setIsLoadingReport(true);
+    setAssessmentError("");
+    try {
+      const backendReport = await apiRequest<BackendAssessmentReport>(
+        `/assessments/latest?course_id=${encodeURIComponent(project.courseId)}&project_id=${encodeURIComponent(projectId)}&sprint_id=${encodeURIComponent(sprint.trim())}`
+      );
+      setReport({
+        projectId: backendReport.project_id,
+        sprintId: backendReport.sprint_id,
+        sprintLabel: backendReport.sprint_id,
+        teamLabel: project.label.split(" - ")[0] || "Project team",
+        projectLabel: project.label.split(" - ").slice(1).join(" - ") || project.label,
+        generatedAt: new Date(backendReport.generated_at).toLocaleString(),
+        overallScore: Math.round(backendReport.team_score.score),
+        overallGrade: backendReport.team_score.score >= 85 ? "A" : backendReport.team_score.score >= 75 ? "B" : "C",
+        overallSummary: backendReport.team_score.rationale,
+        rubricScores: Object.entries(backendReport.rubric_weights).map(([category, weight]) => ({
+          category: category as RubricScore["category"],
+          score: Math.round(backendReport.team_score.score),
+          justification: `${Math.round(weight * 100)}% rubric weight.`,
+        })),
+        strengths: [],
+        weaknesses: [],
+        recommendations: backendReport.recommendations,
+        narrativeFeedback: backendReport.individual_scores.map((score) => `${score.student_id}: ${score.rationale}`),
+      });
+    } catch (error) {
+      setAssessmentError(error instanceof Error ? error.message : "Failed to load the latest assessment.");
+    } finally {
+      setIsLoadingReport(false);
+    }
+  }
+
+  async function generateAssessment() {
+    const project = projectOptions.find((option) => option.id === selectedProjectId);
+    if (!isUuid(selectedProjectId) || !project?.courseId || !sprintId.trim()) {
+      setAssessmentError("Select a backend project and enter a sprint ID before generating an assessment.");
+      return;
+    }
+
+    setAssessmentError("");
+    setIsGenerating(true);
+    setAssessmentProgress(0);
+    setAssessmentMessage("Starting assessment...");
+    try {
+      const job = await apiRequest<{ job_id: string }>("/assessments/assess", {
+        method: "POST",
+        body: JSON.stringify({ course_id: project.courseId, project_id: selectedProjectId, sprint_id: sprintId.trim() }),
+      });
+      const token = getAuthToken();
+      if (!token) throw new Error("Your session has expired. Please log in again.");
+
+      const eventsResponse = await fetch(`${API_BASE_URL}/assessments/jobs/${job.job_id}/events`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!eventsResponse.ok || !eventsResponse.body) throw new Error("Could not monitor assessment progress.");
+
+      const reader = eventsResponse.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finished = false;
+      while (!finished) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        for (const event of events) {
+          const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
+          if (!dataLine) continue;
+          const data = JSON.parse(dataLine.slice(6)) as AssessmentJobEvent;
+          setAssessmentProgress(data.progress ?? 0);
+          setAssessmentMessage(data.message || data.status || "Assessment in progress...");
+          if (data.status === "failed") throw new Error(data.error_message || "Assessment failed.");
+          if (data.status === "completed") finished = true;
+        }
+      }
+      await loadLatestReport(selectedProjectId, sprintId);
+    } catch (error) {
+      setAssessmentError(error instanceof Error ? error.message : "Assessment generation failed.");
+    } finally {
+      setIsGenerating(false);
+    }
+  }
 
   const radarData = report.rubricScores.map((item) => ({
     category: item.category,
@@ -67,7 +220,7 @@ export default function AssessmentReportPageContent() {
           </p>
         </div>
 
-        <div className="flex w-full max-w-xl flex-wrap justify-end gap-3">
+        <div className="flex w-full max-w-2xl flex-wrap justify-end gap-3">
           <div className="min-w-[280px] flex-1">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Project context</label>
             <select
@@ -83,6 +236,36 @@ export default function AssessmentReportPageContent() {
             </select>
           </div>
 
+          <label className="min-w-[150px] space-y-1">
+            <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Sprint ID</span>
+            <input
+              value={sprintId}
+              onChange={(event) => setSprintId(event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+              placeholder="sprint-1"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() => loadLatestReport()}
+            disabled={isLoadingReport || isGenerating}
+            className="inline-flex h-11 items-center gap-2 self-end rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            {isLoadingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Load Latest
+          </button>
+
+          <button
+            type="button"
+            onClick={generateAssessment}
+            disabled={isGenerating || isLoadingReport}
+            className="inline-flex h-11 items-center gap-2 self-end rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white transition hover:bg-blue-950 disabled:opacity-50"
+          >
+            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            {isGenerating ? "Generating..." : "Generate Assessment"}
+          </button>
+
           <button
             type="button"
             className="inline-flex h-11 items-center gap-2 self-end rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white transition hover:bg-blue-950"
@@ -92,6 +275,19 @@ export default function AssessmentReportPageContent() {
           </button>
         </div>
       </div>
+
+      {assessmentMessage && (isGenerating || assessmentProgress > 0) && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+          <div className="flex items-center justify-between gap-3">
+            <span>{assessmentMessage}</span>
+            <span className="font-semibold">{assessmentProgress}%</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-blue-100">
+            <div className="h-full rounded-full bg-blue-700 transition-all" style={{ width: `${assessmentProgress}%` }} />
+          </div>
+        </div>
+      )}
+      {assessmentError && <p className="text-sm text-rose-600">{assessmentError}</p>}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

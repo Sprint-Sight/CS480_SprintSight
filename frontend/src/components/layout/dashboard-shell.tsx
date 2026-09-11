@@ -209,7 +209,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     if (pendingAction === "assess") {
       router.push("/instructor-review");
     } else if (pendingAction === "sync") {
-      console.log("Syncing data for team:", selectedTeamId);
+      router.push("/artifact-viewer");
     }
     setPendingAction(null);
   };
