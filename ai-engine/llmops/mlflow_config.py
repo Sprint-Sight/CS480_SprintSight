@@ -49,8 +49,12 @@ def start_mlflow(experiment_name, name: str | None = None,
 
 def register_prompt(name, template, commit_message="Initial commit", tags: Optional[dict] = None):
     return mlflow.genai.register_prompt( # Register prompt version in MLflow Prompt Registry
-        name=name,
-        template=template,
-        commit_message=commit_message,
+        name=name, # Name/unique ID for the prompt
+        template=template, # The actual prompt in itself
+        commit_message=commit_message, # Commit message for this version of the prompt
         tags=tags or {"author": "SprintSight"}
     )
+
+def format_prompt(name):
+    loaded = mlflow.genai.get_prompt(name) # Load the prompt template from MLflow Prompt Registry
+    prompt_filled = loaded.format()

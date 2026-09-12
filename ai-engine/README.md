@@ -266,3 +266,36 @@ For a clean FastAPI image rebuild:
 docker compose build --no-cache sprintsight_ai
 docker compose up -d --force-recreate sprintsight_ai
 ```
+
+## Why MLFLOW?
+1. You can run it in your own laptop
+2. Compatible with any open telemetry
+3. Continuous monitoring of funds actually deployment.
+4. All-in-one unifited platform to perform `tracing`, `tracking`, `evaluation`.
+
+# Prompt Registry
+- Track params & prompts (prompt version)   
+- Test different versions of the prompt (A/B testing)
+- Register prompt by dimensions. Compare within each dimension various prompts and their results
+
+# Tracing
+- See duration of execution
+- Helps you figure out where potential bottlenecks lies in
+- Ability to look at your your LLM is doing at every step while executing its task (ex. talk to DB, executing web search, local tools, etc.)
+
+# Evaluation
+- Can provide human feedback, LLM can take feedback and improve on it for next iterations
+- Comprehensive set of agent dashboards and LLM judge metrics
+
+# Gateway (Unlikely for our project?)
+- Control & audit who is actually doing what LLMs were called and provide agents access
+
+## The Evaluation Challenge (2:14 - 3:08):
+
+Beyond Math: Unlike traditional machine learning models (e.g., linear regression), where outputs can be easily validated with quantitative metrics, generative AI requires a qualitative understanding. It is difficult to mathematically define if a model's long-form response is accurate, concise, or contextually appropriate.
+Complexity of Data: Modern agentic workflows involve intricate metadata, such as tool calls and retrieval steps, which are hard to assess using simple string-matching metrics like ROUGE or F1 score.
+How LLM-as-a-Judge Rescues the Process (3:08 - 6:02):
+
+Interpreting Traces: An LLM-as-a-judge uses a trace—the fundamental unit of logging for an AI's inference call—to inspect inputs, outputs, and specific events like tool calls (3:36).
+Defining Rubrics: By providing the judge LLM with a system prompt, you can define your own evaluation criteria or scoring rubrics (e.g., a 1-to-5 scale), allowing the judge to provide nuanced, qualitative feedback on whether the agent performed as expected (4:02).
+Ground Truth Integration: You can pass in an evaluation set with expected outcomes (the "gold standard"), allowing the judge to compare the agent's behavior against your desired criteria and determine if the model followed the correct course of action (4:37).

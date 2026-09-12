@@ -4,11 +4,10 @@ from schemas.sprint_assessment import SprintAssessment
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.fixtures import high_performing_team, good_collab_low_output_team, imbalanced_high_output_team, lone_contributor_poor_outcome_team, struggling_team # Contains various teams
 from openai import AsyncOpenAI
-import contextvars
-import json
-import os, httpx, logging, instructor, time
 from uuid import uuid4
 from services.audit_logger import write_audit_record
+import contextvars, json, os, httpx, logging, instructor, time, mlflow
+from mlflow.entities import SpanType
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
@@ -33,6 +32,123 @@ How it works:
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, but OpenAI client requires it
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
 OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "300"))  # 5 min default
+
+DIMENSION_PLACEHOLDERS = {
+    "requirements": {
+
+        "first_sentence": '''Evaluate the individual's performance against the Requirements 
+        dimension using the provided Jira/project data.''',
+
+        "assess": '''
+            Number and percentage of assigned Jira tickets marked Done
+            Number of tickets remaining in To Do / In Progress / Blocked
+            Total story points completed
+            Whether any assigned tickets were abandoned or left stuck
+            Overall delivery velocity relative to the assigned workload
+            ''',
+
+        "scoring": '''
+            9–10: All assigned tickets are Done and a high number of story points were completed.
+            6–8: Most tickets are Done, with no abandoned or stuck tickets.
+            3–5: Less than half of tickets are Done and story-point velocity is low.
+            1–2: Little or no progress; zero tickets are marked Done.''',
+
+        "output": '''Provide the score, a concise justification, and the key evidence used. 
+        Do not infer completion without supporting evidence.
+        Provide the score, a concise justification, and the key evidence used. Do not infer completion without supporting evidence.
+        ''',
+    },
+
+    "code_quality": {
+        "first_sentence": '''Evaluate the individual's Code Quality based on the available Git 
+        repository and commit history.''',
+
+        "assess": '''
+            Number and percentage of assigned Jira tickets marked Done
+            Number of tickets remaining in To Do / In Progress / Blocked
+            Total story points completed
+            Whether any assigned tickets were abandoned or left stuck
+            Overall delivery velocity relative to the assigned workload
+            ''',
+
+        "scoring": '''
+            Volume of meaningful code contributions/lines added
+            Number and consistency of code commits
+            Whether commits represent substantive development work rather than trivial changes
+            Clarity, specificity, and professionalism of commit messages
+            Whether the commits demonstrate meaningful progress toward the project's requirements
+            ''',
+
+        "output": '''Provide the score, a concise justification, and the strongest evidence 
+        from the commit history. Distinguish between quantity of code and meaningful contribution.''',
+    },
+
+    "testing": {
+        "first_sentence": '''Evaluate the individual's Testing performance using Jira tickets, 
+        Git commits, test files, and other available testing evidence.''',
+
+        "assess": '''
+            Number of dedicated testing/test-related Jira tickets completed
+            Presence of explicit test-related commits
+            Evidence of unit, integration, system, or other appropriate tests
+            Whether testing appears comprehensive relative to the code contributed
+            Whether testing work is clearly attributable to the individual
+            ''',
+
+        "scoring": '''
+            9–10: Comprehensive testing with clear evidence of unit, integration, and system tests.
+            6–8: Adequate testing with some evidence of test coverage.
+            3–5: Minimal testing with limited evidence of test coverage.
+            1–2: No meaningful testing or test evidence is recorded.''',
+
+        "output": '''Provide the score, a concise justification, and the strongest evidence 
+        from the testing artifacts. Distinguish between quantity of tests and meaningful coverage.''',
+    },
+
+    "documentation": {
+        "first_sentence": '''Evaluate the individual's Documentation performance using Jira tickets, 
+        Git commits, and other available documentation evidence.''',
+
+        "assess": '''
+            Number of dedicated documentation-related Jira tickets completed
+            Presence of explicit documentation-related commits
+            Evidence of clear, concise, and comprehensive documentation
+            Whether documentation appears comprehensive relative to the code contributed
+            Whether documentation work is clearly attributable to the individual
+            ''',
+
+        "scoring": '''
+            9–10: Comprehensive documentation with clear evidence of user guides, API docs, and inline comments.
+            6–8: Adequate documentation with some evidence of coverage.
+            3–5: Minimal documentation with limited evidence of coverage.
+            1–2: No meaningful documentation or evidence is recorded.''',
+
+        "output": '''Provide the score, a concise justification, and the strongest evidence 
+        from the documentation artifacts. Distinguish between quantity of documentation and meaningful coverage.''',
+    },
+
+    "collaboration": {
+        "first_sentence": '''Evaluate the individual's Collaboration performance using Jira tickets,
+        Git commits, peer evaluations, and other available collaboration evidence.''',
+
+        "assess": '''
+            Number of peer evaluations completed and received
+            Quality and constructiveness of peer feedback provided
+            Evidence of active participation in team discussions and decision-making
+            Willingness to assist teammates and contribute to shared goals
+            Overall impact on team cohesion and productivity
+            ''',
+
+        "scoring": '''
+            9–10: Exceptional collaboration with clear evidence of active participation and positive impact on the team.
+            6–8: Good collaboration with some evidence of contribution.
+            3–5: Minimal collaboration with limited evidence of contribution.
+            1–2: No meaningful collaboration or evidence is recorded.''',
+
+        "output": '''Provide the score, a concise justification, and the strongest evidence 
+        from the collaboration artifacts. Distinguish between quantity of collaboration and meaningful impact.''',
+    },
+}
 
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
@@ -93,34 +209,11 @@ def create_llm_client():
     )
     return client
 
-async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str, dimention_prompt) -> RubricDimensionScore:
+# Each child span of the parent span (Evaluate_Complete_Sprint)
+@mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
+async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str, dimension_prompt) -> RubricDimensionScore:
     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
     bundle_data = bundle.model_dump_json(indent=2)
-    
-    prompt = f"""
-    You are an expert software engineering professor. 
-    Evaluate the following student team artifacts strictly on this dimension: {dimension_name}.
-    Here are the rubric criteria for {dimension_name}:
-    {dimention_prompt}
-    
-    CRITICAL INSTRUCTIONS:
-    - Return a valid JSON object matching the RubricDimensionScore schema.
-    - Score MUST be an integer between 1 and 10.
-    - Provide justification for the score.
-    - Identify strengths.
-    - Identify areas for improvement.
-
-    CRITICAL CITATION RULES:
-    1. Every item in evidence_citations MUST be a plain text string.
-    2. Do NOT wrap citations inside objects or key-value pairs.
-        CORRECT:
-        "evidence_citations": ["Jira ticket AUTH-1 is marked as Done.", "Alice added 150 lines of code."]
-        INCORRECT:
-        "evidence_citations": [{{"text": "Jira ticket AUTH-1 is marked as Done."}}]
-    
-    Student Artifacts:
-    {bundle_data}
-    """
 
     client = create_llm_client()  # Create a new client for this model
     
@@ -134,11 +227,30 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
         }
     )
     try: # The transport hooks capture the exact request and raw Ollama response.
-        return await client.chat.completions.create(
+        ## Prompt Registry by dimension
+        prompt = mlflow.genai.register_prompt( # Register prompt in MLflow Prompt Registry for versioning and tracking
+            name=f"Evaluate_{dimension_name}",
+            template=dimension_prompt,
+            commit_message=f"Prompt for dimension '{dimension_name}' evaluation",
+            tags={"dimension": dimension_name, "model": model_name, "team_id": bundle.team_id, 
+                    "sprint_id": bundle.sprint_id, "author": "SprintSight"}
+        )
+        prompt_alias = "production" # Production default for now
+        mlflow.genai.set_prompt_alias(f"Evaluate_{dimension_name}", prompt_alias, prompt.version) # Set alias for the prompt version
+        loaded = mlflow.genai.load_prompt(f"prompts:/Evaluate_{dimension_name}@{prompt_alias}") # Load the prompt template from MLflow Prompt Registry
+        filled_prompt = loaded.format(
+            dimension=dimension_name,
+            assess=DIMENSION_PLACEHOLDERS[dimension_name]["assess"],
+            scoring=DIMENSION_PLACEHOLDERS[dimension_name]["scoring"],
+            output=DIMENSION_PLACEHOLDERS[dimension_name]["output"]
+        )
+
+        print(f"Evaluating dimension '{dimension_name}' for team '{bundle.team_id}' using model '{model_name}'...") # Console message to track progress
+        return await client.chat.completions.create( # This method sends the prompt to Ollama
             model=model_name,
-            response_model=RubricDimensionScore,
-            messages=[{"role": "user", "content": prompt}],
-            max_retries=3,
+            response_model=RubricDimensionScore, # Parses the response into a Pydantic model
+            messages=[{"role": "user", "content": filled_prompt}],
+            max_retries=5,
         )
     except Exception as error:
         context = _audit_context.get()

@@ -1,107 +1,152 @@
 import asyncio, mlflow, time, os
+from mlflow.entities import SpanType
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
-from schemas.rubrics_score import RubricsScore, DIMENSIONS, DIMENTION_PROMPTS
+from schemas.rubrics_score import RubricsScore
+# from schemas.dimension_prompts import DIMENSIONS, DIMENSION_PROMPT_TEMPLATE, DIMENSION_PLACEHOLDERS
 from services.llm_client import evaluate_dimension
-from llmops.mlflow_config import start_mlflow
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
+# Dimension prompts
+DIMENSIONS = ["requirements", "code_quality", "testing", "documentation", "collaboration"]
+
+DIMENSION_PROMPT_TEMPLATE = """
+    You are an expert software engineering professor. 
+    Evaluate the individual's performance against the {{ dimension }} dimension using the provided Jira/project data.
+
+    Assess:
+
+    {{ assess }}
+
+    Assign a score from 1–10 using this rubric:
+
+    {{ scoring}}
+
+    Output: {{ output }}
+
+    CRITICAL INSTRUCTIONS:
+        - Return a valid JSON object matching the RubricDimensionScore schema.
+        - Score MUST be an integer between 1 and 10.
+        - Provide justification for the score.
+        - Identify strengths.
+        - Identify areas for improvement.
+    
+    CRITICAL CITATION RULES:
+    1. Every item in evidence_citations MUST be a plain text string.
+    2. Do NOT wrap citations inside objects or key-value pairs.
+        CORRECT:
+        "evidence_citations": ["Jira ticket AUTH-1 is marked as Done.", "Alice added 150 lines of code."]
+        INCORRECT:
+        "evidence_citations": [{{"text": "Jira ticket AUTH-1 is marked as Done."}}]
+    
+    Student Artifacts:
+    {bundle_data}
+"""
 
 '''
 Receives bundle
 call_llm for each dimension concurrently, aggregate results, and return a SprintAssessment. (asyncio.gather)
 Builds SprtinAssessment object, return it back to assessment.py for caching and logging.
 '''
-
-start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
-
-@mlflow.trace(name="Evaluate_Complete_Sprint") # Trace the entire evaluation process for MLflow
+# Parent span of 5 child spans, wraps entire sprint assesment lifecycle 
+@mlflow.trace(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN)
 async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAssessment:
     """
     Orchestrates the grading process by calling the AI concurrently for each 
     dimension, then aggregates the results into the final SprintAssessment.
     """
 
-    start_time = time.time() # Set start time
-
-    # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
-    # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
-    semaphore = asyncio.Semaphore(5)  
-
-    async def _bounded_evaluate(dim):
-        async with semaphore:
-            return await evaluate_dimension(bundle, dim, model_name, DIMENTION_PROMPTS[dim])
-
-    # 2. Create a list of asynchronous tasks (one for each dimension)
-    tasks = [_bounded_evaluate(dim) for dim in DIMENSIONS] # For running with a semaphore to limit concurrency
-    # tasks = [evaluate_dimension(bundle, dim, model_name) for dim in DIMENSIONS] # For concurrency
+    # Start Mlflow experiment
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+    mlflow.set_experiment("SprintSight Evaluations")
+     
+    # if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
+    #     mlflow.end_run()
     
-    # 3. Execute all tasks concurrently (If one takes 5 seconds, all 5 take 5 seconds total, not 25 seconds
-    # It will only run concurrently if you remove the semaphore portion above. Else it will run 1 by 1 instead
-    # rubric_scores: list[RubricDimensionScore] = []
-    # failed_dimensions: list[str] = []
-    
-    try:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    with mlflow.start_run(run_name=f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}"):
 
-        # for dim, result in zip(dimensions, results):
-        #     if isinstance(result, Exception):
-        #         print(f"Dimension '{dim}' failed to score: {result}")
-        #         failed_dimensions.append(dim)
-        #     else:
-        #         rubric_scores.append(result)
+        start_time = time.time() # Set start time
 
-        scores_by_dim = {}
+        mlflow.openai.autolog() # Logs everything, will create child AsyncCompletions span under LLM span
 
-        for dim, result in zip(DIMENSIONS, results):
-            if isinstance(result, Exception):
-                scores_by_dim.pop(dim, None)
-            else:
-                scores_by_dim[dim] = result
+        # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
+        # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
+        semaphore = asyncio.Semaphore(5)
 
-    except Exception as e:
-        # mlflow.set_tag("error", str(e))
-        raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
-    
-    # 5. Calculate a simple overall average for the executive summary (CAN BE RECTIFIED IF THIS IS TOO SIMPLE)
-    # total_score = sum(score.score for score in rubric_scores)
-    # average_score = total_score / len(rubric_scores)
+        async def _bounded_evaluate(dim):
+            async with semaphore:
+                return await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPT_TEMPLATE)
 
-    rubric_scores = RubricsScore(**scores_by_dim)
-    scored = rubric_scores.scored()
+        # 2. Create a list of asynchronous tasks (one for each dimension)
+        tasks = [_bounded_evaluate(dim) for dim in DIMENSIONS] # For running with a semaphore to limit concurrency
+        # tasks = [evaluate_dimension(bundle, dim, model_name) for dim in DIMENSIONS] # For concurrency
+        
+        # 3. Execute all tasks concurrently (If one takes 5 seconds, all 5 take 5 seconds total, not 25 seconds
+        # It will only run concurrently if you remove the semaphore portion above. Else it will run 1 by 1 instead
+        # rubric_scores: list[RubricDimensionScore] = []
+        # failed_dimensions: list[str] = []
+        
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    if not scored:
-        raise RuntimeError(f"All {len(DIMENSIONS)} rubric dimensions failed to evaluate: {rubric_scores.failed_dimensions}")
+            # for dim, result in zip(dimensions, results):
+            #     if isinstance(result, Exception):
+            #         print(f"Dimension '{dim}' failed to score: {result}")
+            #         failed_dimensions.append(dim)
+            #     else:
+            #         rubric_scores.append(result)
 
-    average_score = sum(s.score for s in scored) / len(scored)
-    
-    # 6. Generate a deterministic summary based on the math
-    if average_score >= 8:
-        summary = f"Excellent work this sprint. The team achieved an average score of {average_score}."
-    elif average_score >= 5:
-        summary = f"Satisfactory progress, but room for improvement. Average score: {average_score}."
-    else:
-        summary = f"The team struggled significantly this sprint. Average score: {average_score}."
+            scores_by_dim = {}
 
-    # CALCULATE FAILED DIMENSIONS AND APPEND TO SUMMARY
-    failed = rubric_scores.failed_dimensions
-    if failed:
-        summary += f''' Note: {len(failed)} dimension(s) could not be scored 
-        ({', '.join(failed)}) and were excluded from this average.'''
+            for dim, result in zip(DIMENSIONS, results):
+                if isinstance(result, Exception):
+                    scores_by_dim.pop(dim, None)
+                else:
+                    scores_by_dim[dim] = result
 
-    # 7. Assemble and return the Final Plate
-    final_assessment = SprintAssessment(
-        team_id=bundle.team_id,
-        sprint_id=bundle.sprint_id,
-        prompt_version="v1.0",
-        rubric_scores=rubric_scores,
-        overall_score=round(average_score),
-        executive_summary=summary,
-        key_recommendations=[summary],
-        # failed_dimensions=failed_dimensions,
-    )
-    
-    # Log the final score to MLflow for easy dashboard filtering
-    mlflow.log_metric("average_team_score", average_score)
+        except Exception as e:
+            # mlflow.set_tag("error", str(e))
+            raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
+        
+        # 5. Calculate a simple overall average for the executive summary (CAN BE RECTIFIED IF THIS IS TOO SIMPLE)
+        # total_score = sum(score.score for score in rubric_scores)
+        # average_score = total_score / len(rubric_scores)
 
-    print(f"Evaluation by model {model_name} completed in {time.time() - start_time:.2f} seconds.")
-    
-    return final_assessment
+        rubric_scores = RubricsScore(**scores_by_dim)
+        scored = rubric_scores.scored()
+
+        if not scored:
+            raise RuntimeError(f"All {len(DIMENSIONS)} rubric dimensions failed to evaluate: {rubric_scores.failed_dimensions}")
+
+        average_score = sum(s.score for s in scored) / len(scored)
+        
+        # 6. Generate a deterministic summary based on the math
+        if average_score >= 8:
+            summary = f"Excellent work this sprint. The team achieved an average score of {average_score}."
+        elif average_score >= 5:
+            summary = f"Satisfactory progress, but room for improvement. Average score: {average_score}."
+        else:
+            summary = f"The team struggled significantly this sprint. Average score: {average_score}."
+
+        # CALCULATE FAILED DIMENSIONS AND APPEND TO SUMMARY
+        failed = rubric_scores.failed_dimensions
+        if failed:
+            summary += f''' Note: {len(failed)} dimension(s) could not be scored 
+            ({', '.join(failed)}) and were excluded from this average.'''
+
+        # 7. Assemble and return the Final Plate
+        final_assessment = SprintAssessment(
+            team_id=bundle.team_id,
+            sprint_id=bundle.sprint_id,
+            prompt_version="v1.0",
+            rubric_scores=rubric_scores,
+            overall_score=round(average_score),
+            executive_summary=summary,
+            key_recommendations=[summary],
+            # failed_dimensions=failed_dimensions,
+        )
+
+        print(f"Evaluation by model {model_name} completed in {time.time() - start_time:.2f} seconds.")
+        
+        return final_assessment

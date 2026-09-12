@@ -14,6 +14,9 @@ class ArtifactBundle(BaseModel):
     jira_tickets: List[JiraTicket] = Field(default_factory=list)
     peer_evaluations: List[PeerEvaluation] = Field(default_factory=list)
 
+    def __str__(self):
+        return f"ArtifactBundle(team_id={self.team_id}\n, sprint_id={self.sprint_id}\n, commits={self.commits}\n, jira_tickets={self.jira_tickets} tickets\n, peer_evaluations={len(self.peer_evaluations)} evaluations)"
+
 sample_bundle = ArtifactBundle(
     team_id="Team_Alpha",
     sprint_id="Sprint_1",
