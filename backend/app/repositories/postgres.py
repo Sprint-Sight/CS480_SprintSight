@@ -656,10 +656,10 @@ class PostgresMetricsRepository(MetricsRepository):
                 for commit in metrics.commits:
                     connection.execute(
                         """INSERT INTO ingestion_commits
-                        (ingestion_run_id, sha, author, message, timestamp,
+                        (ingestion_run_id, sha, author, author_email, student_id, message, timestamp,
                          lines_added, lines_deleted, files_changed)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (run["ingestion_run_id"], commit.sha, commit.author, commit.message,
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (run["ingestion_run_id"], commit.sha, commit.author, commit.author_email, commit.student_id, commit.message,
                          commit.timestamp, commit.lines_added, commit.lines_deleted,
                          Json([file.model_dump() for file in commit.files_changed])),
                     )
@@ -678,7 +678,7 @@ class PostgresMetricsRepository(MetricsRepository):
             if not row:
                 return None
             commit_rows = connection.execute(
-                """SELECT sha, author, message, timestamp, lines_added,
+                """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
                     FROM ingestion_commits WHERE ingestion_run_id = (
                         SELECT ingestion_run_id FROM ingestion_runs
@@ -693,7 +693,16 @@ class PostgresMetricsRepository(MetricsRepository):
             code_churn=row["code_churn"], pr_turnaround_hours=row["pr_turnaround_hours"],
             assigned_story_points=row["assigned_story_points"],
             completion_percent=row["completion_percent"],
-            commits=[CommitInfo(**{**dict(commit), "files_changed": commit["files_changed"]}) for commit in commit_rows],
+            commits=[
+                CommitInfo(
+                    **{
+                        **dict(commit),
+                        "student_id": str(commit["student_id"]) if commit["student_id"] else None,
+                        "files_changed": commit["files_changed"],
+                    }
+                )
+                for commit in commit_rows
+            ],
             local_repo_path=row["local_repo_path"],
             head_sha=row["head_sha"],
             captured_at=row["captured_at"],
@@ -718,7 +727,7 @@ class PostgresMetricsRepository(MetricsRepository):
                 (row["ingestion_run_id"],),
             ).fetchone()["total"]
             commit_rows = connection.execute(
-                """SELECT sha, author, message, timestamp, lines_added,
+                """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
                     FROM ingestion_commits
                     WHERE ingestion_run_id = %s
@@ -733,7 +742,16 @@ class PostgresMetricsRepository(MetricsRepository):
             code_churn=row["code_churn"], pr_turnaround_hours=row["pr_turnaround_hours"],
             assigned_story_points=row["assigned_story_points"],
             completion_percent=row["completion_percent"],
-            commits=[CommitInfo(**{**dict(commit), "files_changed": commit["files_changed"]}) for commit in commit_rows],
+            commits=[
+                CommitInfo(
+                    **{
+                        **dict(commit),
+                        "student_id": str(commit["student_id"]) if commit["student_id"] else None,
+                        "files_changed": commit["files_changed"],
+                    }
+                )
+                for commit in commit_rows
+            ],
             local_repo_path=row["local_repo_path"], head_sha=row["head_sha"],
             captured_at=row["captured_at"],
         ), total

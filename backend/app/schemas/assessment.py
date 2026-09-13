@@ -21,6 +21,8 @@ class FileDiff(BaseModel):
 class CommitInfo(BaseModel):
     sha: str
     author: str
+    author_email: str | None = None
+    student_id: str | None = None
     message: str
     timestamp: datetime
     lines_added: int = Field(default=0, ge=0)

@@ -164,6 +164,38 @@ def list_courses(
     ]
 
 
+@router.get("/courses/{course_id}", response_model=CourseResponse)
+def get_course(
+    course_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+) -> CourseResponse:
+    course = _course_or_404(repository, course_id)
+    if current_user.role == Role.ADMIN:
+        return CourseResponse(
+            id=course.id,
+            code=course.code,
+            name=course.name,
+            section=course.section,
+            year=course.year,
+            term=course.term,
+            created_by=course.created_by,
+            created_at=course.created_at,
+        )
+    if current_user.role == Role.INSTRUCTOR and repository.is_instructor_assigned(course_id, current_user.id):
+        return CourseResponse(
+            id=course.id,
+            code=course.code,
+            name=course.name,
+            section=course.section,
+            year=course.year,
+            term=course.term,
+            created_by=course.created_by,
+            created_at=course.created_at,
+        )
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this course.")
+
+
 @router.patch("/courses/{course_id}", response_model=CourseResponse)
 def update_course(
     course_id: str,

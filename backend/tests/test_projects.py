@@ -53,6 +53,21 @@ def test_admin_assigns_instructor_and_instructor_creates_student_and_project() -
     assert project.json()["members"][0]["id"] == student_id
 
 
+def test_instructor_can_get_single_course() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    course_response = client.post(
+        "/api/v1/courses",
+        json={"code": "CS481", "name": "Single Course", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor_headers,
+    )
+    assert course_response.status_code == 201
+
+    fetched = client.get(f"/api/v1/courses/{course_response.json()['id']}", headers=instructor_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["code"] == "CS481"
+    assert fetched.json()["section"] == "001"
+
+
 def test_unassigned_instructor_cannot_create_course_student() -> None:
     admin_headers = headers(token("admin@sprintsight.edu"))
     course_response = client.post("/api/v1/courses", json={"code": "CS490", "name": "Other Course", "section": "001", "year": 2026, "term": "Fall"}, headers=admin_headers)
