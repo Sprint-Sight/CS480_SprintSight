@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { CalendarDays, CheckCircle2, CircleDotDashed, FileText, GitCommitHorizontal, ListChecks } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { getProjectsForSprintOverview, getSprintOverviewPayload } from "@/features/sprints/data";
+import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
 
 function formatDate(dateValue: string) {
   const formatted = new Date(`${dateValue}T00:00:00`).toLocaleDateString("en-US", {
@@ -18,9 +19,25 @@ function formatDate(dateValue: string) {
 
 export default function SprintOverviewPageContent() {
   const projectOptions = useMemo(() => getProjectsForSprintOverview(), []);
-  
-  // TODO: Replace this with your global state/context value selected from the Top Navigation Bar.
-  const selectedProjectId = projectOptions[0]?.id ?? "";
+  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || projectOptions[0]?.id || "");
+  const [ingestionVersion, setIngestionVersion] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setSelectedProjectId(readIngestionState().selectedProjectId || projectOptions[0]?.id || "");
+    window.addEventListener("sprintsight-ingestion-updated", refresh);
+    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
+  }, [projectOptions]);
+
+  const liveIngestion = useMemo(() => {
+    void ingestionVersion;
+    return getProjectIngestion(selectedProjectId);
+  }, [selectedProjectId, ingestionVersion]);
+
+  useEffect(() => {
+    const refresh = () => setIngestionVersion((version) => version + 1);
+    window.addEventListener("sprintsight-ingestion-updated", refresh);
+    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
+  }, []);
 
   const payload = useMemo(() => {
     if (!selectedProjectId) {
@@ -68,6 +85,17 @@ export default function SprintOverviewPageContent() {
           <p className="mt-1 text-4xl font-bold text-blue-900">{payload.summary.averageScore}</p>
         </div>
       </div>
+
+      {(liveIngestion.git || liveIngestion.jira) && (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
+          <h2 className="text-lg font-semibold text-blue-950">Live Ingestion Summary</h2>
+          <div className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+            <p className="text-slate-700">Git commits: <strong>{liveIngestion.git?.pagination?.total ?? liveIngestion.git?.commits.length ?? 0}</strong></p>
+            <p className="text-slate-700">Git churn: <strong>{liveIngestion.git?.code_churn ?? 0}</strong></p>
+            <p className="text-slate-700">Jira tickets: <strong>{liveIngestion.jira?.tickets.length ?? 0}</strong></p>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <h2 className="text-2xl font-semibold text-blue-950">Sprint Timeline</h2>

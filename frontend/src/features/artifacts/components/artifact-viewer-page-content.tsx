@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getArtifactDataset, getArtifactProjectOptions } from "@/features/artifacts/data";
 import { API_BASE_URL, apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
+import { getProjectIngestion, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -53,6 +54,7 @@ type DocumentUploadResponse = { documents: BackendDocument[] };
 type ProjectOption = {
   id: string;
   courseId?: string;
+  jiraProjectKey?: string | null;
   label: string;
 };
 
@@ -170,7 +172,6 @@ export default function ArtifactViewerPageContent() {
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [sprintId, setSprintId] = useState("");
-  const [jiraProjectKey, setJiraProjectKey] = useState("");
   const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
   const [jiraError, setJiraError] = useState("");
@@ -181,6 +182,19 @@ export default function ArtifactViewerPageContent() {
   const [gitError, setGitError] = useState("");
   const [isLoadingGit, setIsLoadingGit] = useState(false);
   const [isSyncingGit, setIsSyncingGit] = useState(false);
+
+  const sourceRows = useMemo(() => {
+    const sources = [...dataset.sources];
+    const replace = (source: "GitHub" | "Jira" | "Documents", records: number, lastSyncedAt: string, parserStatus: "Healthy" | "Warning") => {
+      const index = sources.findIndex((item) => item.source === source);
+      if (index >= 0) sources[index] = { ...sources[index], records, lastSyncedAt, parserStatus };
+    };
+
+    if (gitMetrics) replace("GitHub", gitMetrics.pagination?.total ?? gitMetrics.commits.length, new Date(gitMetrics.captured_at).toLocaleString(), "Healthy");
+    if (jiraSnapshot) replace("Jira", jiraSnapshot.tickets.length, new Date(jiraSnapshot.captured_at).toLocaleString(), "Healthy");
+    if (isUuid(selectedProjectId)) replace("Documents", localDocuments.length, new Date().toLocaleString(), "Healthy");
+    return sources;
+  }, [dataset.sources, gitMetrics, jiraSnapshot, localDocuments.length, selectedProjectId]);
 
   // Initialize role, name, and local documents on mount/dataset change
   useEffect(() => {
@@ -204,12 +218,13 @@ export default function ArtifactViewerPageContent() {
         const projectGroups = await Promise.all(
           courses.map(async (course) => ({
             courseId: course.id,
-            projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`),
+            projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string; jira_project_key: string | null }>>(`/courses/${course.id}/projects`),
           }))
         );
         const options = projectGroups.flatMap(({ courseId, projects }) => projects.map((project) => ({
           id: project.id,
           courseId,
+          jiraProjectKey: project.jira_project_key,
           label: `${project.team_name} - ${project.project_name}`,
         })));
         if (options.length > 0) {
@@ -243,6 +258,18 @@ export default function ArtifactViewerPageContent() {
           : "";
 
   useEffect(() => {
+    const persisted = getProjectIngestion(selectedProjectId);
+    if (persisted.git) {
+      setGitMetrics(persisted.git);
+      setGitSprintId(persisted.git.sprint_id);
+    }
+    if (persisted.jira) {
+      setJiraSnapshot(persisted.jira);
+      setSprintId(persisted.jira.sprint_id);
+    }
+  }, [selectedProjectId]);
+
+  useEffect(() => {
     async function loadDocuments() {
       setDocumentError("");
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
@@ -254,6 +281,7 @@ export default function ArtifactViewerPageContent() {
       try {
         const documents = await apiRequest<BackendDocument[]>(`/projects/${selectedProjectId}/documents`);
         setLocalDocuments(documents.map(toDocumentArtifact));
+        saveDocumentCount(selectedProjectId, documents.length);
       } catch (error) {
         setDocumentError(error instanceof Error ? error.message : "Failed to load documents.");
         setLocalDocuments([]);
@@ -324,6 +352,7 @@ export default function ArtifactViewerPageContent() {
       `/jira-ingestion/runs/${run.project_id}/${run.sprint_id}/${run.run_id}/cleaned`
     );
     setJiraSnapshot(snapshot);
+    saveJiraSnapshot(snapshot);
   }
 
   async function loadSprintRuns(sprint: string) {
@@ -339,8 +368,13 @@ export default function ArtifactViewerPageContent() {
 
   async function syncJira() {
     const sprint = sprintId.trim();
+    const project = projectOptions.find((option) => option.id === selectedProjectId);
     if (!isUuid(selectedProjectId)) {
       setJiraError("Select a real backend project before syncing Jira.");
+      return;
+    }
+    if (!project?.jiraProjectKey) {
+      setJiraError("The selected project has no saved Jira project key. Configure it in Projects first.");
       return;
     }
     if (!sprint) {
@@ -356,7 +390,6 @@ export default function ArtifactViewerPageContent() {
         method: "POST",
         body: JSON.stringify({
           sprint_id: sprint,
-          jira_project_key: jiraProjectKey.trim() || undefined,
         }),
       });
 
@@ -397,6 +430,15 @@ export default function ArtifactViewerPageContent() {
         }),
       });
       setGitMetrics({
+        ...response.github_metrics,
+        pagination: response.github_metrics.pagination ?? {
+          limit: null,
+          offset: null,
+          total: response.github_metrics.commits?.length ?? 0,
+          has_more: false,
+        },
+      });
+      saveGitMetrics({
         ...response.github_metrics,
         pagination: response.github_metrics.pagination ?? {
           limit: null,
@@ -647,15 +689,6 @@ export default function ArtifactViewerPageContent() {
                   className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
               </label>
-              <label className="space-y-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Jira Project Key (optional)</span>
-                <input
-                  value={jiraProjectKey}
-                  onChange={(event) => setJiraProjectKey(event.target.value)}
-                  placeholder="Uses project configuration by default"
-                  className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
               <button
                 type="button"
                 onClick={() => loadSprintRuns(sprintId)}
@@ -838,7 +871,7 @@ export default function ArtifactViewerPageContent() {
               </tr>
             </thead>
             <tbody>
-              {dataset.sources.map((source) => (
+              {sourceRows.map((source) => (
                 <tr key={source.source} className="border-b border-slate-100 text-sm text-slate-700 last:border-b-0">
                   <td className="py-3 pr-4 font-semibold text-slate-900">{source.source}</td>
                   <td className="py-3 pr-4">{source.records}</td>

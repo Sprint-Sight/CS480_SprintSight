@@ -22,6 +22,7 @@ import {
   getContributionDataset,
 } from "@/features/collaboration/data";
 import type { TeamRiskIndicator } from "@/features/collaboration/types";
+import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
 
 function getRiskTone(risk: TeamRiskIndicator["risk"]) {
   if (risk === "Low") {
@@ -83,8 +84,9 @@ function gradeTone(grade: string) {
 
 export default function CollaborationPageContent() {
   const projectOptions = useMemo(() => getCollaborationProjectOptions(), []);
-  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
+  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || projectOptions[0]?.id || "");
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
+  const [ingestionVersion, setIngestionVersion] = useState(0);
 
   // Load datasets for the selected project
   const collaborationData = useMemo(() => getCollaborationDataset(selectedProjectId), [selectedProjectId]);
@@ -103,6 +105,20 @@ export default function CollaborationPageContent() {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
     setRole(savedRole ?? "student");
   }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      setSelectedProjectId(readIngestionState().selectedProjectId || "");
+      setIngestionVersion((version) => version + 1);
+    };
+    window.addEventListener("sprintsight-ingestion-updated", refresh);
+    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
+  }, []);
+
+  const liveIngestion = useMemo(() => {
+    void ingestionVersion;
+    return getProjectIngestion(selectedProjectId);
+  }, [selectedProjectId, ingestionVersion]);
 
   return (
     <div className="space-y-6 p-8">
@@ -132,6 +148,16 @@ export default function CollaborationPageContent() {
           </select>
         </div>
       </div>
+
+      {(liveIngestion.git || liveIngestion.jira) && (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
+          <h2 className="text-lg font-semibold text-blue-950">Live Project Signals</h2>
+          <p className="mt-1 text-sm text-slate-700">
+            {liveIngestion.git?.pagination?.total ?? liveIngestion.git?.commits.length ?? 0} Git commits, {liveIngestion.jira?.tickets.length ?? 0} Jira tickets, and {liveIngestion.documents} documents are available for this project.
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Member-level collaboration scores remain fixture-based until the backend returns contributor IDs.</p>
+        </section>
+      )}
 
       {/* Section 1: Macro Team Collaboration Charts */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
