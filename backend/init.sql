@@ -250,6 +250,23 @@ CREATE TABLE IF NOT EXISTS assessment_override (
 CREATE INDEX IF NOT EXISTS idx_assessment_override_project_sprint
     ON assessment_override(project_id, sprint_id);
 
+CREATE TABLE IF NOT EXISTS assessment_reports (
+    report_id UUID PRIMARY KEY,
+    model_name VARCHAR(255) NOT NULL,
+    mode VARCHAR(255) NOT NULL,
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    sprint_id VARCHAR(100) NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rubric_weights JSONB NOT NULL,
+    team_score JSONB NOT NULL,
+    individual_scores JSONB NOT NULL DEFAULT '[]'::jsonb,
+    recommendations JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint
+    ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC);
+
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE
 -- One run represents one project/sprint ingestion and is replaced

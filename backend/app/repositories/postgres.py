@@ -6,8 +6,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
-from app.schemas.assessment import JiraCleanedSnapshot, ManualTextPayload
+from app.repositories.interfaces import AssessmentRepository, CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.schemas.assessment import AssessmentReport, JiraCleanedSnapshot, ManualTextPayload
 from app.schemas.auth import Role
 
 _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
@@ -533,6 +533,100 @@ class PostgresManualTextRepository(ManualTextRepository):
                 (UUID(course_id), UUID(project_id), sprint_id),
             ).fetchone()
         return row["expectations_text"] if row else None
+
+
+def ensure_assessment_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS assessment_reports (
+                report_id UUID PRIMARY KEY,
+                model_name VARCHAR(255) NOT NULL,
+                mode VARCHAR(255) NOT NULL,
+                course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                sprint_id VARCHAR(100) NOT NULL,
+                generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                rubric_weights JSONB NOT NULL,
+                team_score JSONB NOT NULL,
+                individual_scores JSONB NOT NULL DEFAULT '[]'::jsonb,
+                recommendations JSONB NOT NULL DEFAULT '[]'::jsonb
+            )"""
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC)")
+
+
+class PostgresAssessmentRepository(AssessmentRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def save_report(self, report: AssessmentReport) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO assessment_reports
+                (report_id, model_name, mode, course_id, project_id,
+                 sprint_id, generated_at, rubric_weights, team_score,
+                 individual_scores, recommendations)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (report_id)
+                DO UPDATE SET model_name = EXCLUDED.model_name,
+                              mode = EXCLUDED.mode,
+                              course_id = EXCLUDED.course_id,
+                              project_id = EXCLUDED.project_id,
+                              sprint_id = EXCLUDED.sprint_id,
+                              generated_at = EXCLUDED.generated_at,
+                              rubric_weights = EXCLUDED.rubric_weights,
+                              team_score = EXCLUDED.team_score,
+                              individual_scores = EXCLUDED.individual_scores,
+                              recommendations = EXCLUDED.recommendations""",
+                (
+                    UUID(report.report_id.replace('rpt-', '')) if report.report_id.startswith('rpt-') else UUID(report.report_id),
+                    report.model_name,
+                    report.mode,
+                    UUID(report.course_id),
+                    UUID(report.project_id),
+                    report.sprint_id,
+                    report.generated_at,
+                    Json(report.rubric_weights),
+                    Json(report.team_score.model_dump(mode='json')),
+                    Json([score.model_dump(mode='json') for score in report.individual_scores]),
+                    Json(report.recommendations),
+                ),
+            )
+
+    def get_report(self, report_id: str) -> AssessmentReport | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM assessment_reports WHERE report_id = %s",
+                (UUID(report_id),),
+            ).fetchone()
+            return self._report(row) if row else None
+
+    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT * FROM assessment_reports
+                WHERE course_id = %s AND project_id = %s AND sprint_id = %s
+                ORDER BY generated_at DESC LIMIT 1""",
+                (UUID(course_id), UUID(project_id), sprint_id),
+            ).fetchone()
+            return self._report(row) if row else None
+
+    @staticmethod
+    def _report(row: dict) -> AssessmentReport:
+        from app.schemas.assessment import TeamScore, StudentScore
+        return AssessmentReport(
+            report_id=str(row["report_id"]),
+            model_name=row["model_name"],
+            mode=row["mode"],
+            course_id=str(row["course_id"]),
+            project_id=str(row["project_id"]),
+            sprint_id=row["sprint_id"],
+            generated_at=row["generated_at"],
+            rubric_weights=row["rubric_weights"],
+            team_score=TeamScore.model_validate(row["team_score"]),
+            individual_scores=[StudentScore.model_validate(x) for x in row["individual_scores"]],
+            recommendations=row["recommendations"],
+        )
 
 
 class PostgresMetricsRepository(MetricsRepository):

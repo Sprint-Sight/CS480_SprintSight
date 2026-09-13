@@ -12,6 +12,7 @@ from app.core.storage import storage
 from app.core.security import hash_password
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
+    PostgresAssessmentRepository,
     PostgresMetricsRepository,
     PostgresDocumentRepository,
     PostgresJiraIngestionRunRepository,
@@ -19,6 +20,7 @@ from app.repositories.postgres import (
     PostgresProjectRepository,
     PostgresUserRepository,
     create_user_pool,
+    ensure_assessment_schema,
     ensure_project_credential_schema,
 )
 from app.repositories.manual_override import PostgresManualOverrideRepository, ensure_manual_scoring_schema
@@ -50,12 +52,14 @@ async def lifespan(app: FastAPI):
     pool.open(wait=True)
     ensure_project_credential_schema(pool)
     ensure_manual_scoring_schema(pool)
+    ensure_assessment_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
     app.state.document_repository = PostgresDocumentRepository(pool)
     app.state.jira_ingestion_repository = PostgresJiraIngestionRunRepository(pool)
     app.state.manual_text_repository = PostgresManualTextRepository(pool)
+    app.state.assessment_repository = PostgresAssessmentRepository(pool)
     app.state.manual_override_repository = PostgresManualOverrideRepository(pool)
 
     user_repository = app.state.user_repository
