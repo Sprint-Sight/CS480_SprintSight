@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 
 from uuid import uuid4
 
-from fastapi import HTTPException, status
+from psycopg.errors import UniqueViolation
 
 from app.core.security import hash_password, verify_password
 from app.repositories.interfaces import UserRecord, UserRepository
@@ -38,10 +38,17 @@ def get_user_by_id(repository: UserRepository, user_id: str) -> UserRecord:
 def create_user(repository: UserRepository, email: str, full_name: str, role: Role, password: str) -> UserRecord:
     if repository.get_by_email(email):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.")
-    return repository.create_user(UserRecord(
-        id=str(uuid4()), email=email.lower(), full_name=full_name, role=role,
-        hashed_password=hash_password(password), must_change_password=True,
-    ))
+
+    try:
+        return repository.create_user(UserRecord(
+            id=str(uuid4()), email=email.lower(), full_name=full_name, role=role,
+            hashed_password=hash_password(password), must_change_password=True,
+        ))
+    except UniqueViolation as exc:
+        existing = repository.get_by_email(email)
+        if existing:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.") from exc
+        raise
 
 
 def change_password(repository: UserRepository, user: UserRecord, current_password: str, new_password: str) -> UserRecord:

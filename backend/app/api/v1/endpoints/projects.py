@@ -10,6 +10,7 @@ from app.dependencies.auth import (
     get_user_repository,
     require_admin,
     require_faculty,
+    require_instructor,
     get_current_user,
 )
 from app.core.credential_crypto import encrypt_secret
@@ -115,7 +116,7 @@ def _validate_student_project_assignment(repository: ProjectRepository, course_i
 @router.post("/courses", response_model=CourseResponse, status_code=status.HTTP_201_CREATED)
 def create_course(
     payload: CourseCreate,
-    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    current_user: Annotated[UserRecord, Depends(require_instructor)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> CourseResponse:
     if any(
@@ -141,14 +142,10 @@ def create_course(
 
 @router.get("/courses", response_model=list[CourseResponse])
 def list_courses(
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_instructor)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> list[CourseResponse]:
-    courses = repository.list_courses()
-    if current_user.role == Role.INSTRUCTOR:
-        courses = [course for course in courses if repository.is_instructor_assigned(course.id, current_user.id)]
-    elif current_user.role != Role.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or admin role required.")
+    courses = [course for course in repository.list_courses() if repository.is_instructor_assigned(course.id, current_user.id)]
     return [
         CourseResponse(
             id=course.id,
@@ -162,6 +159,27 @@ def list_courses(
         )
         for course in courses
     ]
+
+
+@router.get("/courses/{course_id}", response_model=CourseResponse)
+def get_course(
+    course_id: str,
+    current_user: Annotated[UserRecord, Depends(require_instructor)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+) -> CourseResponse:
+    course = _course_or_404(repository, course_id)
+    if not repository.is_instructor_assigned(course_id, current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this course.")
+    return CourseResponse(
+        id=course.id,
+        code=course.code,
+        name=course.name,
+        section=course.section,
+        year=course.year,
+        term=course.term,
+        created_by=course.created_by,
+        created_at=course.created_at,
+    )
 
 
 @router.patch("/courses/{course_id}", response_model=CourseResponse)
@@ -284,12 +302,12 @@ def unenroll_course_student(
 def assign_instructor(
     course_id: str,
     user_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_instructor)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> CourseInstructorResponse:
     _course_or_404(repository, course_id)
-    if current_user.role == Role.INSTRUCTOR and not repository.is_instructor_assigned(course_id, current_user.id):
+    if not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
 
     user = users.get_by_id(user_id)
@@ -310,9 +328,29 @@ def create_course_student(
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
     _course_or_404(repository, course_id)
-    if current_user.role not in (Role.INSTRUCTOR) or not repository.is_instructor_assigned(course_id, current_user.id):
+    if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or TA is not assigned to this course.")
-    student = create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password)
+
+    existing_user = users.get_by_email(payload.email)
+    if existing_user:
+        if existing_user.role != Role.STUDENT:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.")
+        if not existing_user.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot enroll a disabled user account.")
+        student = existing_user
+    else:
+        try:
+            student = create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password)
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_409_CONFLICT:
+                raise
+            existing_user = users.get_by_email(payload.email)
+            if not existing_user or existing_user.role != Role.STUDENT:
+                raise
+            student = existing_user
+
+    if repository.is_student_enrolled(course_id, student.id):
+        return user_response(student)
 
     _validate_student_course_enrollment(repository, course_id, student.id)
 

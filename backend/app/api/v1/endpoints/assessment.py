@@ -6,12 +6,11 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty
+from app.dependencies.auth import get_assessment_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import ManualTextRepository, MetricsRepository, ProjectRepository
+from app.repositories.interfaces import AssessmentRepository, ManualTextRepository, MetricsRepository, ProjectRepository
 from app.schemas.assessment import AssessRequest, OverrideRequest
 from app.services.assessmentService.service import (
-    generate_mock_assessment,
     get_latest_assessment,
     override_student_score,
     run_assessment_job,
@@ -29,6 +28,7 @@ def assess_sprint(
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
     manual_text_repository: Annotated[ManualTextRepository, Depends(get_manual_text_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
 ) -> dict:
     _ = faculty_user
     project = projects.get_project(payload.project_id)
@@ -44,7 +44,7 @@ def assess_sprint(
 
     # Start the long-polling worker in a background thread so the endpoint
     # returns immediately with the 202 job contract instead of blocking.
-    _executor.submit(run_assessment_job, job.job_id, payload, project, metrics_repository, manual_text_repository)
+    _executor.submit(run_assessment_job, job.job_id, payload, project, metrics_repository, manual_text_repository, assessment_repository)
 
     return {
         "job_id": job.job_id,
@@ -86,9 +86,10 @@ def get_latest(
     project_id: str,
     sprint_id: str,
     faculty_user: Annotated[object, Depends(require_faculty)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
 ):
     _ = faculty_user
-    return get_latest_assessment(course_id, project_id, sprint_id)
+    return get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
 
 
 @router.post("/override")

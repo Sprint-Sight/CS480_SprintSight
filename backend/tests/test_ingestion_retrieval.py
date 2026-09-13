@@ -58,6 +58,7 @@ def test_retrieve_stored_commits_and_file_changes(override_user_repository) -> N
                 CommitInfo(
                     sha="abc123",
                     author="Student One",
+                    author_email="student@example.com",
                     message="Add authentication",
                     timestamp=captured_at,
                     lines_added=10,
@@ -106,6 +107,8 @@ def test_retrieve_stored_commits_and_file_changes(override_user_repository) -> N
     assert response.status_code == 200
     body = response.json()
     assert body["head_sha"] == "abc123"
+    assert body["commits"][0]["author_email"] == "student@example.com"
+    assert body["commits"][0]["student_id"] is None
     assert body["commits"][0]["files_changed"] == [
         {
             "filename": "src/auth.py",

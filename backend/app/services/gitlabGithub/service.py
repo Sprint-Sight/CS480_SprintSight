@@ -6,7 +6,8 @@ from pathlib import Path
 from pydriller import Repository
 
 from app.repositories.in_memory import metrics_repo
-from app.repositories.interfaces import IngestionMetricBundle, MetricsRepository
+from app.repositories.interfaces import IngestionMetricBundle, MetricsRepository, ProjectRepository, UserRepository
+from app.schemas.auth import Role
 from app.schemas.assessment import CommitInfo, FileDiff, IngestionRequest
 
 
@@ -37,6 +38,7 @@ def _extract_commits_from_repository(repository_path: Path) -> list[CommitInfo]:
         commits.append(CommitInfo(
             sha=commit.hash,
             author=commit.author.name or commit.author.email,
+            author_email=_normalize_email(commit.author.email),
             message=commit.msg,
             timestamp=_as_utc(commit.author_date),
             lines_added=sum(file.lines_added for file in files_changed),
@@ -44,6 +46,34 @@ def _extract_commits_from_repository(repository_path: Path) -> list[CommitInfo]:
             files_changed=files_changed,
         ))
     return commits
+
+
+def _normalize_email(email: str | None) -> str | None:
+    normalized = email.strip().casefold() if email else ""
+    return normalized or None
+
+
+def _link_commit_authors_to_students(
+    commits: list[CommitInfo],
+    project_id: str,
+    projects: ProjectRepository,
+    users: UserRepository,
+) -> None:
+    member_ids = set(projects.list_member_ids(project_id))
+    resolved_by_email: dict[str, str | None] = {}
+    for commit in commits:
+        normalized_email = _normalize_email(commit.author_email)
+        if not normalized_email:
+            continue
+        commit.author_email = normalized_email
+        if normalized_email not in resolved_by_email:
+            user = users.get_by_email(normalized_email)
+            resolved_by_email[normalized_email] = (
+                user.id
+                if user and user.is_active and user.role == Role.STUDENT and user.id in member_ids
+                else None
+            )
+        commit.student_id = resolved_by_email[normalized_email]
 
 
 def resolve_local_repository_path(local_repo_path: str | None) -> Path | None:
@@ -60,8 +90,16 @@ def resolve_local_repository_path(local_repo_path: str | None) -> Path | None:
     return candidate
 
 
-def ingest_github_metrics(payload: IngestionRequest, repository_path: Path | None = None, metrics_repository: MetricsRepository | None = None) -> IngestionMetricBundle:
+def ingest_github_metrics(
+    payload: IngestionRequest,
+    repository_path: Path | None = None,
+    metrics_repository: MetricsRepository | None = None,
+    projects: ProjectRepository | None = None,
+    users: UserRepository | None = None,
+) -> IngestionMetricBundle:
     commits = extract_local_commits(repository_path) if repository_path else []
+    if projects and users:
+        _link_commit_authors_to_students(commits, payload.project_id, projects, users)
     metrics = IngestionMetricBundle(
         course_id=payload.course_id,
         project_id=payload.project_id,

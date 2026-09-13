@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import TokenPayloadError, decode_access_token
 from app.repositories.in_memory import InMemoryDocumentRepository, jira_ingestion_repo, manual_text_repo, metrics_repo
-from app.repositories.interfaces import DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, UserRepository
+from app.repositories.interfaces import AssessmentRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
 
@@ -35,6 +35,10 @@ def get_jira_ingestion_repository(request: Request) -> JiraIngestionRunRepositor
 
 def get_manual_text_repository(request: Request) -> ManualTextRepository:
     return getattr(request.app.state, "manual_text_repository", manual_text_repo)
+
+
+def get_assessment_repository(request: Request) -> AssessmentRepository:
+    return getattr(request.app.state, "assessment_repository", None)
 
 
 def get_current_user(
