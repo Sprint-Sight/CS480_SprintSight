@@ -279,6 +279,8 @@ CREATE TABLE IF NOT EXISTS ingestion_commits (
     ingestion_run_id UUID NOT NULL REFERENCES ingestion_runs(ingestion_run_id) ON DELETE CASCADE,
     sha VARCHAR(64) NOT NULL,
     author VARCHAR(255) NOT NULL,
+    author_email VARCHAR(255),
+    student_id UUID REFERENCES users(user_id),
     message TEXT NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
     lines_added INTEGER NOT NULL DEFAULT 0 CHECK (lines_added >= 0),
@@ -288,7 +290,15 @@ CREATE TABLE IF NOT EXISTS ingestion_commits (
     CHECK (jsonb_typeof(files_changed) = 'array')
 );
 
+ALTER TABLE ingestion_commits
+    ADD COLUMN IF NOT EXISTS author_email VARCHAR(255);
+
+ALTER TABLE ingestion_commits
+    ADD COLUMN IF NOT EXISTS student_id UUID REFERENCES users(user_id);
+
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_sha ON ingestion_commits(sha);
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run ON ingestion_commits(ingestion_run_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_author_email ON ingestion_commits(author_email);
+CREATE INDEX IF NOT EXISTS idx_ingestion_commits_student_id ON ingestion_commits(student_id);
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run_timestamp_sha
     ON ingestion_commits(ingestion_run_id, timestamp, sha);

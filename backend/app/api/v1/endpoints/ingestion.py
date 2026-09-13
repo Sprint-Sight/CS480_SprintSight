@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.config import get_settings
 from app.core.storage import storage
-from app.dependencies.auth import get_jira_ingestion_repository, get_metrics_repository, get_project_repository, require_faculty
-from app.repositories.interfaces import JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository
+from app.dependencies.auth import get_jira_ingestion_repository, get_metrics_repository, get_project_repository, get_user_repository, require_faculty
+from app.repositories.interfaces import JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
 from app.services.documentsService.service import collect_document_signals
@@ -215,6 +215,7 @@ def sync_repository_ingestion(
     payload: IngestionRequest,
     faculty_user: Annotated[object, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
 ) -> dict:
     _ = faculty_user
@@ -229,7 +230,7 @@ def sync_repository_ingestion(
         repository_path = resolve_local_repository_path(project.local_repo_path)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    github_metrics = ingest_github_metrics(payload, repository_path, metrics_repository)
+    github_metrics = ingest_github_metrics(payload, repository_path, metrics_repository, projects, users)
     jira_metrics = enrich_jira_metrics(payload)
     document_signals = collect_document_signals(payload)
     return {
