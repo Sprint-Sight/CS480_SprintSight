@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckSquare, GitBranch, UserRound, Users } from "lucide-react";
+import { AlertTriangle, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -53,33 +53,6 @@ function heatColor(score: number) {
   if (score <= 7) return "bg-sky-300 text-sky-900";
   if (score <= 10) return "bg-[#2F6690] text-white";
   return "bg-[#1E3A8A] text-white";
-}
-
-function adjustmentBadge(value: number) {
-  if (value > 0) {
-    return {
-      text: `+${value}%`,
-      className: "text-emerald-600",
-    };
-  }
-
-  if (value < 0) {
-    return {
-      text: `${value}%`,
-      className: "text-rose-600",
-    };
-  }
-
-  return {
-    text: "0%",
-    className: "text-slate-500",
-  };
-}
-
-function gradeTone(grade: string) {
-  if (grade.startsWith("A")) return "text-blue-900";
-  if (grade.startsWith("B")) return "text-slate-800";
-  return "text-amber-700";
 }
 
 export default function CollaborationPageContent() {
@@ -285,70 +258,6 @@ export default function CollaborationPageContent() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </section>
-
-      {/* Section 4: Individual Member Cards & AI Assessment */}
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-blue-950">Individual Member Assessments</h2>
-        {contributionData.members.map((member) => {
-          const badge = adjustmentBadge(member.gradeAdjustmentPercent);
-          return (
-            <article key={member.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-blue-700">
-                    {member.initials}
-                  </div>
-                  <div>
-                    <p className="text-xl font-semibold text-blue-950">{member.name}</p>
-                    <p className="text-sm text-slate-500">{member.role}</p>
-                  </div>
-                </div>
-
-                <div className="grid min-w-[280px] grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="inline-flex items-center gap-1 text-slate-500">
-                      <GitBranch className="h-4 w-4" />
-                      GitHub
-                    </p>
-                    <p className="text-2xl font-bold text-blue-900">{member.githubScore}%</p>
-                  </div>
-                  <div>
-                    <p className="inline-flex items-center gap-1 text-slate-500">
-                      <CheckSquare className="h-4 w-4" />
-                      Jira
-                    </p>
-                    <p className="text-2xl font-bold text-blue-900">{member.jiraScore}%</p>
-                  </div>
-                  <div>
-                    <p className="inline-flex items-center gap-1 text-slate-500">
-                      <Users className="h-4 w-4" />
-                      Peer Eval
-                    </p>
-                    <p className="text-2xl font-bold text-blue-900">{member.peerScore.toFixed(1)}/5.0</p>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-sm text-slate-500">Overall</p>
-                  <p className="text-2xl font-bold text-blue-900">{member.overallScore}%</p>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-sm text-slate-500">Recommended</p>
-                  <p className={`text-3xl font-bold ${gradeTone(member.recommendedGrade)}`}>
-                    {member.recommendedGrade}
-                  </p>
-                  <p className={`text-sm font-semibold ${badge.className}`}>{badge.text}</p>
-                </div>
-              </div>
-
-              <p className="pt-3 text-sm text-slate-600">
-                <span className="font-semibold text-slate-800">AI Assessment:</span> {member.aiAssessment}
-              </p>
-            </article>
-          );
-        })}
       </section>
 
       {/* Section 5: Risk Indicators (Instructor View Only) */}

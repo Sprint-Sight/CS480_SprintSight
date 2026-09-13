@@ -260,7 +260,7 @@ export default function ArtifactViewerPageContent() {
   useEffect(() => {
     const persisted = getProjectIngestion(selectedProjectId);
     if (persisted.git) {
-      setGitMetrics(persisted.git);
+      setGitMetrics(persisted.git as RepoIngestionData);
       setGitSprintId(persisted.git.sprint_id);
     }
     if (persisted.jira) {
