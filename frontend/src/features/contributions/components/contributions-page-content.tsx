@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckSquare, GitBranch, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import { getContributionDataset, getContributionProjectOptions } from "@/features/contributions/data";
+import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
 
 function adjustmentBadge(value: number) {
   if (value > 0) {
@@ -44,9 +45,20 @@ function gradeTone(grade: string) {
 
 export default function ContributionsPageContent() {
   const projectOptions = useMemo(() => getContributionProjectOptions(), []);
-  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
+  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || projectOptions[0]?.id || "");
+  const [ingestionVersion, setIngestionVersion] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setIngestionVersion((version) => version + 1);
+    window.addEventListener("sprintsight-ingestion-updated", refresh);
+    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
+  }, []);
 
   const dataset = useMemo(() => getContributionDataset(selectedProjectId), [selectedProjectId]);
+  const liveIngestion = useMemo(() => {
+    void ingestionVersion;
+    return getProjectIngestion(selectedProjectId);
+  }, [selectedProjectId, ingestionVersion]);
 
   const chartData = dataset.members.map((member) => ({
     name: member.name.split(" ")[0],
@@ -80,6 +92,16 @@ export default function ContributionsPageContent() {
           </select>
         </div>
       </div>
+
+      {(liveIngestion.git || liveIngestion.jira) && (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
+          <h2 className="text-lg font-semibold text-blue-950">Live Ingestion Totals</h2>
+          <p className="mt-1 text-sm text-slate-700">
+            {liveIngestion.git?.pagination?.total ?? liveIngestion.git?.commits.length ?? 0} commits, {liveIngestion.jira?.tickets.length ?? 0} Jira tickets, and {liveIngestion.documents} documents loaded for this project.
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Per-student contribution attribution requires backend contributor IDs.</p>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-2xl font-semibold text-blue-950">Contribution Comparison</h2>

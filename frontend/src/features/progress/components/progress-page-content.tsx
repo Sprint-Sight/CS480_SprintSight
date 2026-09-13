@@ -16,6 +16,7 @@ import {
 } from "recharts";
 
 import { PROGRESS_DATA } from "@/features/progress/data";
+import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
 
 const trendLegend = [
   { key: "requirements", label: "Requirements", color: "#1F3D6D" },
@@ -42,11 +43,27 @@ function MetricCard({ label, score, delta }: { label: string; score: number; del
 
 export default function ProgressPageContent() {
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
+  const [ingestionVersion, setIngestionVersion] = useState(0);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
     setRole(savedRole ?? "student"); // Default to student to protect sensitive data
   }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      setSelectedProjectId(readIngestionState().selectedProjectId || "");
+      setIngestionVersion((version) => version + 1);
+    };
+    window.addEventListener("sprintsight-ingestion-updated", refresh);
+    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
+  }, []);
+
+  const liveIngestion = useMemo(() => {
+    void ingestionVersion;
+    return getProjectIngestion(selectedProjectId);
+  }, [selectedProjectId, ingestionVersion]);
 
   return (
     <div className="space-y-5 p-8">
@@ -62,6 +79,17 @@ export default function ProgressPageContent() {
         <MetricCard label="Documentation" score={PROGRESS_DATA.latestScores.documentation} delta={PROGRESS_DATA.scoreDeltas.documentation} />
         <MetricCard label="Collaboration" score={PROGRESS_DATA.latestScores.collaboration} delta={PROGRESS_DATA.scoreDeltas.collaboration} />
       </div>
+
+      {(liveIngestion.git || liveIngestion.jira) && (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
+          <h2 className="text-lg font-semibold text-blue-950">Live Ingestion Signals</h2>
+          <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-700 md:grid-cols-3">
+            <p>Git commits: <strong>{liveIngestion.git?.pagination?.total ?? liveIngestion.git?.commits.length ?? 0}</strong></p>
+            <p>Code churn: <strong>{liveIngestion.git?.code_churn ?? 0}</strong></p>
+            <p>Jira tickets: <strong>{liveIngestion.jira?.tickets.length ?? 0}</strong></p>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-xl font-semibold text-blue-950">Category Trends Over Sprints</h2>
