@@ -55,7 +55,7 @@ def convert_ai_result_to_assessment_report(payload: AssessRequest | dict, ai_res
             )
 
     return AssessmentReport(
-        report_id=f"rpt-{uuid4().hex[:12]}",
+        report_id=f"rpt-{uuid4()}",
         model_name=model_name or get_settings().default_model_name,
         mode=get_settings().assessment_mode,
         course_id=course_id,
