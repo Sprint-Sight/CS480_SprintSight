@@ -134,6 +134,11 @@ def run_assessment_job(
         job_repo.append_event(job_id, "failed", {"status": "failed", "message": "The assessment failed.", "error_message": error_message})
 
 
+def list_assessment_reports(course_id: str, project_id: str, sprint_id: str, assessment_repository: AssessmentRepository | None = None) -> list[AssessmentReport]:
+    repository = assessment_repository or assessment_repo
+    return repository.list_reports(course_id, project_id, sprint_id)
+
+
 def get_latest_assessment(course_id: str, project_id: str, sprint_id: str, assessment_repository: AssessmentRepository | None = None) -> AssessmentReport:
     repository = assessment_repository or assessment_repo
     report = repository.get_latest_report(course_id, project_id, sprint_id)
