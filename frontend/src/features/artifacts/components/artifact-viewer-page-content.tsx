@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getArtifactDataset, getArtifactProjectOptions } from "@/features/artifacts/data";
 import { API_BASE_URL, apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
-import { getProjectIngestion, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
+import { getProjectIngestion, readIngestionState, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -154,7 +154,7 @@ function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
 export default function ArtifactViewerPageContent() {
   const fallbackProjectOptions = useMemo(() => getArtifactProjectOptions(), []);
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>(fallbackProjectOptions);
-  const [selectedProjectId, setSelectedProjectId] = useState(fallbackProjectOptions[0]?.id ?? "");
+  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || fallbackProjectOptions[0]?.id || "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
   
   // Track user role and full name for anonymity, tab access, and upload attribution
@@ -229,7 +229,12 @@ export default function ArtifactViewerPageContent() {
         })));
         if (options.length > 0) {
           setProjectOptions(options);
-          setSelectedProjectId(options[0].id);
+          const persistedProjectId = readIngestionState().selectedProjectId;
+          setSelectedProjectId(
+            persistedProjectId && options.some((option) => option.id === persistedProjectId)
+              ? persistedProjectId
+              : options[0].id,
+          );
         } else {
           setProjectLoadError("No backend projects are available for this instructor.");
         }
@@ -340,6 +345,7 @@ export default function ArtifactViewerPageContent() {
         `/repo-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint)}?course_id=${encodeURIComponent(project.courseId)}`
       );
       setGitMetrics(metrics);
+      saveGitMetrics(metrics);
     } catch (error) {
       setGitError(error instanceof Error ? error.message : "Failed to load Git ingestion data.");
     } finally {

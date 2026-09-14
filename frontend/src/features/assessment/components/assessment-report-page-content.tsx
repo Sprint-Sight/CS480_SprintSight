@@ -43,6 +43,13 @@ type AssessmentJobEvent = {
   error_message?: string;
 };
 
+const assessmentModels = [
+  { id: "sprintsight-llama", label: "SprintSight Llama" },
+  { id: "sprintsight-mistral", label: "SprintSight Mistral" },
+  { id: "sprintsight-qwen", label: "SprintSight Qwen" },
+  { id: "sprintsight-gemma", label: "SprintSight Gemma" },
+] as const;
+
 function scoreBarColor(score: number) {
   if (score >= 85) return "bg-[#2F5B85]";
   if (score >= 75) return "bg-[#4F89B3]";
@@ -81,6 +88,7 @@ export default function AssessmentReportPageContent() {
   const [projectOptions, setProjectOptions] = useState<AssessmentProjectOption[]>(fallbackProjectOptions);
   const [selectedProjectId, setSelectedProjectId] = useState(fallbackProjectOptions[0]?.id ?? "");
   const [sprintId, setSprintId] = useState("sprint-1");
+  const [modelName, setModelName] = useState("sprintsight-llama");
   const [report, setReport] = useState(() => getAssessmentReport(fallbackProjectOptions[0]?.id ?? ""));
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -167,7 +175,12 @@ export default function AssessmentReportPageContent() {
     try {
       const job = await apiRequest<{ job_id: string }>("/assessments/assess", {
         method: "POST",
-        body: JSON.stringify({ course_id: project.courseId, project_id: selectedProjectId, sprint_id: sprintId.trim() }),
+        body: JSON.stringify({
+          course_id: project.courseId,
+          project_id: selectedProjectId,
+          sprint_id: sprintId.trim(),
+          model_name: modelName,
+        }),
       });
       const token = getAuthToken();
       if (!token) throw new Error("Your session has expired. Please log in again.");
@@ -244,6 +257,19 @@ export default function AssessmentReportPageContent() {
               className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
               placeholder="sprint-1"
             />
+          </label>
+
+          <label className="min-w-[180px] space-y-1">
+            <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Assessment Model</span>
+            <select
+              value={modelName}
+              onChange={(event) => setModelName(event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            >
+              {assessmentModels.map((model) => (
+                <option key={model.id} value={model.id}>{model.label}</option>
+              ))}
+            </select>
           </label>
 
           <button
