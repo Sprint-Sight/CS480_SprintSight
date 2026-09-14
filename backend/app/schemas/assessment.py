@@ -157,10 +157,10 @@ class AssessmentReport(BaseModel):
     rubric_weights: dict[str, float]
     team_score: TeamScore
     individual_scores: list[StudentScore]
-    recommendations: list[str]
     rubric_scores: dict[str, RubricDimensionScoreDetail] = Field(default_factory=dict)
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
+    recommendations: list[str]
 
 
 class OverrideRequest(BaseModel):
