@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Loader2, Play, Star, TrendingUp } from "lucide-react";
+import { Download, Loader2, Play, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   PolarAngleAxis,
@@ -152,7 +152,7 @@ export default function AssessmentReportPageContent() {
         strengths: [],
         weaknesses: [],
         recommendations: backendReport.recommendations,
-        narrativeFeedback: backendReport.individual_scores.map((score) => `${score.student_id}: ${score.rationale}`),
+        narrativeFeedback: [],
       });
     } catch (error) {
       setAssessmentError(error instanceof Error ? error.message : "Failed to load the latest assessment.");
@@ -319,11 +319,6 @@ export default function AssessmentReportPageContent() {
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-500">Overall Sprint Score</h2>
           <CircularScore score={report.overallScore} />
-          <div className="mt-1 flex items-center justify-center gap-1 text-sm font-semibold text-amber-500">
-            <Star className="h-4 w-4" />
-            <span>Grade {report.overallGrade}</span>
-          </div>
-          <p className="mt-4 text-center text-sm text-slate-600">{report.overallSummary}</p>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
