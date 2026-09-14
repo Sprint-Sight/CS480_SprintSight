@@ -12,6 +12,7 @@ from app.repositories.interfaces import AssessmentRepository, ManualTextReposito
 from app.schemas.assessment import AssessRequest, OverrideRequest
 from app.services.assessmentService.service import (
     get_latest_assessment,
+    list_assessment_reports,
     override_student_score,
     run_assessment_job,
 )
@@ -78,6 +79,18 @@ def assessment_job_events(
             time.sleep(0.25)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/reports")
+def list_reports(
+    course_id: str,
+    project_id: str,
+    sprint_id: str,
+    faculty_user: Annotated[object, Depends(require_faculty)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+):
+    _ = faculty_user
+    return list_assessment_reports(course_id, project_id, sprint_id, assessment_repository)
 
 
 @router.get("/latest")

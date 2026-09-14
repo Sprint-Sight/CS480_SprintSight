@@ -76,33 +76,24 @@ The services are available at:
 | MLflow | `http://localhost:5000` |
 | Ollama | `http://localhost:11434` |
 
-### Create the custom Ollama models
+### Custom Ollama models are created by a one-shot Compose initializer
 
-The compose file does not pull or create models automatically. Run the
-commands for the models you intend to use:
+The compose file now contains a lightweight `model-init` service that waits for
+Ollama to be reachable and only creates the SprintSight aliases when they are
+missing:
+
+- `sprintsight-llama` from `models/Modelfile.llama`
+- `sprintsight-qwen` from `models/Modelfile.qwen`
+- `sprintsight-mistral` from `models/Modelfile.mistral`
+- `sprintsight-gemma` from `models/Modelfile.gemma`
+
+This means repeated `docker compose up` runs are mostly idempotent because the
+initializer checks `ollama list` for the target model aliases and skips the
+`pull`/`create` work when the aliases already exist.
+
+You can still verify the installed models with:
 
 ```powershell
-# Llama
-docker compose cp models/Modelfile.llama ollama:/tmp/Modelfile.llama
-docker compose exec -T ollama ollama pull llama3.2
-docker compose exec -T ollama ollama create sprintsight-llama -f /tmp/Modelfile.llama
-
-# Qwen
-docker compose cp models/Modelfile.qwen ollama:/tmp/Modelfile.qwen
-docker compose exec -T ollama ollama pull qwen3:8b
-docker compose exec -T ollama ollama create sprintsight-qwen -f /tmp/Modelfile.qwen
-
-# Mistral
-docker compose cp models/Modelfile.mistral ollama:/tmp/Modelfile.mistral
-docker compose exec -T ollama ollama pull mistral:7b
-docker compose exec -T ollama ollama create sprintsight-mistral -f /tmp/Modelfile.mistral
-
-# Gemma
-docker compose cp models/Modelfile.gemma ollama:/tmp/Modelfile.gemma
-docker compose exec -T ollama ollama pull gemma4:12b
-docker compose exec -T ollama ollama create sprintsight-gemma -f /tmp/Modelfile.gemma
-
-# Verify installed models
 docker compose exec ollama ollama list
 ```
 

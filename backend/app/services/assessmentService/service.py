@@ -6,7 +6,15 @@ from fastapi import HTTPException, status
 from app.core.config import get_settings
 from app.repositories.in_memory import assessment_repo, job_repo, metrics_repo, overrides_repo
 from app.repositories.interfaces import AssessmentRepository, ManualTextRepository, MetricsRepository, ProjectRepository
-from app.schemas.assessment import AssessRequest, AssessmentReport, OverrideRequest, OverrideResponse, StudentScore, TeamScore
+from app.schemas.assessment import (
+    AssessRequest,
+    AssessmentReport,
+    OverrideRequest,
+    OverrideResponse,
+    RubricDimensionScoreDetail,
+    StudentScore,
+    TeamScore,
+)
 from app.services.documentsService.service import collect_document_signals
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.service import enrich_jira_metrics
@@ -54,6 +62,66 @@ def convert_ai_result_to_assessment_report(payload: AssessRequest | dict, ai_res
                 )
             )
 
+    rubric_scores = {}
+    strengths = []
+    weaknesses = []
+    raw_scores = ai_result.get("rubric_scores") or {}
+    if isinstance(raw_scores, dict):
+        for dimension, detail in raw_scores.items():
+            if isinstance(detail, dict):
+                dimension_name = str(detail.get("dimension") or dimension)
+                score = detail.get("score")
+                if isinstance(score, int):
+                    normalized_score = float(score)
+                elif isinstance(score, float):
+                    normalized_score = score
+                else:
+                    normalized_score = 0.0
+
+                evidence = detail.get("evidence_citations") or []
+                strength_values = detail.get("strengths") or []
+                weakness_values = detail.get("areas_for_improvement") or detail.get("weaknesses") or []
+
+                rubric_scores[dimension_name] = RubricDimensionScoreDetail(
+                    score=normalized_score,
+                    justification=detail.get("justification") or "AI-generated rubric justification.",
+                    evidence_citations=list(evidence) if isinstance(evidence, list) else [str(evidence)],
+                )
+
+                if isinstance(strength_values, list):
+                    strengths.extend(strength_values)
+                elif strength_values:
+                    strengths.append(str(strength_values))
+
+                if isinstance(weakness_values, list):
+                    weaknesses.extend(weakness_values)
+                elif weakness_values:
+                    weaknesses.append(str(weakness_values))
+
+    recommendations = list(ai_result.get("key_recommendations") or [])
+    if not recommendations:
+        raw_scores = ai_result.get("rubric_scores") or {}
+        if isinstance(raw_scores, dict):
+            for dimension, detail in raw_scores.items():
+                if not isinstance(detail, dict):
+                    continue
+                improvement_values = detail.get("areas_for_improvement") or detail.get("weaknesses") or []
+                if isinstance(improvement_values, list):
+                    recommendations.extend([str(item).strip() for item in improvement_values if str(item).strip()])
+                elif improvement_values:
+                    improvement_text = str(improvement_values).strip()
+                    if improvement_text:
+                        recommendations.append(improvement_text)
+
+    # Remove duplicate recommendations while preserving order.
+    deduped_recommendations = []
+    seen = set()
+    for item in recommendations:
+        normalized = str(item).strip()
+        if normalized and normalized.lower() not in seen:
+            deduped_recommendations.append(normalized)
+            seen.add(normalized.lower())
+
     return AssessmentReport(
         report_id=f"rpt-{uuid4()}",
         model_name=model_name or get_settings().default_model_name,
@@ -68,7 +136,10 @@ def convert_ai_result_to_assessment_report(payload: AssessRequest | dict, ai_res
             rationale=ai_result.get("executive_summary") or "AI assessment result.",
         ),
         individual_scores=individual_scores,
-        recommendations=list(ai_result.get("key_recommendations") or []),
+        recommendations=deduped_recommendations,
+        rubric_scores=rubric_scores,
+        strengths=strengths,
+        weaknesses=weaknesses,
     )
 
 
@@ -132,6 +203,11 @@ def run_assessment_job(
         error_message = str(exc)
         job_repo.update_job(job_id, status="failed", progress=100, current_stage="failed", error_message=error_message)
         job_repo.append_event(job_id, "failed", {"status": "failed", "message": "The assessment failed.", "error_message": error_message})
+
+
+def list_assessment_reports(course_id: str, project_id: str, sprint_id: str, assessment_repository: AssessmentRepository | None = None) -> list[AssessmentReport]:
+    repository = assessment_repository or assessment_repo
+    return repository.list_reports(course_id, project_id, sprint_id)
 
 
 def get_latest_assessment(course_id: str, project_id: str, sprint_id: str, assessment_repository: AssessmentRepository | None = None) -> AssessmentReport:
