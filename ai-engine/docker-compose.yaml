@@ -74,6 +74,8 @@ services: # Seperate containers to run
           condition: service_healthy
         ollama:
           condition: service_started # Change to service_healthy if your ollama service has a healthcheck
+        model-init:
+          condition: service_completed_successfully
         mlflow_service:
           condition: service_started
 
