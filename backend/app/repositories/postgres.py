@@ -549,7 +549,10 @@ def ensure_assessment_schema(pool: ConnectionPool) -> None:
                 rubric_weights JSONB NOT NULL,
                 team_score JSONB NOT NULL,
                 individual_scores JSONB NOT NULL DEFAULT '[]'::jsonb,
-                recommendations JSONB NOT NULL DEFAULT '[]'::jsonb
+                recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+                rubric_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+                strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
+                weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb
             )"""
         )
         connection.execute("CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC)")
@@ -565,8 +568,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
                 """INSERT INTO assessment_reports
                 (report_id, model_name, mode, course_id, project_id,
                  sprint_id, generated_at, rubric_weights, team_score,
-                 individual_scores, recommendations)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 individual_scores, recommendations, rubric_scores,
+                 strengths, weaknesses)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (report_id)
                 DO UPDATE SET model_name = EXCLUDED.model_name,
                               mode = EXCLUDED.mode,
@@ -577,7 +581,10 @@ class PostgresAssessmentRepository(AssessmentRepository):
                               rubric_weights = EXCLUDED.rubric_weights,
                               team_score = EXCLUDED.team_score,
                               individual_scores = EXCLUDED.individual_scores,
-                              recommendations = EXCLUDED.recommendations""",
+                              recommendations = EXCLUDED.recommendations,
+                              rubric_scores = EXCLUDED.rubric_scores,
+                              strengths = EXCLUDED.strengths,
+                              weaknesses = EXCLUDED.weaknesses""",
                 (
                     UUID(report.report_id.replace('rpt-', '')) if report.report_id.startswith('rpt-') else UUID(report.report_id),
                     report.model_name,
@@ -590,6 +597,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
                     Json(report.team_score.model_dump(mode='json')),
                     Json([score.model_dump(mode='json') for score in report.individual_scores]),
                     Json(report.recommendations),
+                    Json({k: v.model_dump(mode='json') for k, v in report.rubric_scores.items()}),
+                    Json(report.strengths),
+                    Json(report.weaknesses),
                 ),
             )
 
@@ -623,7 +633,12 @@ class PostgresAssessmentRepository(AssessmentRepository):
 
     @staticmethod
     def _report(row: dict) -> AssessmentReport:
-        from app.schemas.assessment import TeamScore, StudentScore
+        from app.schemas.assessment import TeamScore, StudentScore, RubricDimensionScoreDetail
+        rubric_scores = {}
+        if row.get("rubric_scores"):
+            for key, value in row["rubric_scores"].items():
+                rubric_scores[key] = RubricDimensionScoreDetail.model_validate(value)
+
         return AssessmentReport(
             report_id=str(row["report_id"]),
             model_name=row["model_name"],
@@ -636,6 +651,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
             team_score=TeamScore.model_validate(row["team_score"]),
             individual_scores=[StudentScore.model_validate(x) for x in row["individual_scores"]],
             recommendations=row["recommendations"],
+            rubric_scores=rubric_scores,
+            strengths=row["strengths"],
+            weaknesses=row["weaknesses"],
         )
 
 

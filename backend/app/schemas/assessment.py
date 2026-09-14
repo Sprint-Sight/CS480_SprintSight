@@ -129,6 +129,12 @@ class AssessmentJobEvent(BaseModel):
     data: dict
 
 
+class RubricDimensionScoreDetail(BaseModel):
+    score: float | int
+    justification: str | None = None
+    evidence_citations: list[str] = Field(default_factory=list)
+
+
 class StudentScore(BaseModel):
     student_id: str
     score: float
@@ -152,6 +158,9 @@ class AssessmentReport(BaseModel):
     team_score: TeamScore
     individual_scores: list[StudentScore]
     recommendations: list[str]
+    rubric_scores: dict[str, RubricDimensionScoreDetail] = Field(default_factory=dict)
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
 
 
 class OverrideRequest(BaseModel):
