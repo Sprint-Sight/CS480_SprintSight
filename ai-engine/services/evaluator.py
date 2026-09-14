@@ -72,14 +72,8 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
         raise RuntimeError(f"All {len(DIMENSIONS)} rubric dimensions failed to evaluate: {rubric_scores.failed_dimensions}")
 
     average_score = sum(s.score for s in scored) / len(scored)
-    
-    # 6. Generate a deterministic summary based on the math
-    if average_score >= 8:
-        summary = f"Excellent work this sprint. The team achieved an average score of {average_score}."
-    elif average_score >= 5:
-        summary = f"Satisfactory progress, but room for improvement. Average score: {average_score}."
-    else:
-        summary = f"The team struggled significantly this sprint. Average score: {average_score}."
+
+    summary = ""
 
     # CALCULATE FAILED DIMENSIONS AND APPEND TO SUMMARY
     failed = rubric_scores.failed_dimensions
@@ -87,7 +81,17 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
         summary += f''' Note: {len(failed)} dimension(s) could not be scored 
         ({', '.join(failed)}) and were excluded from this average.'''
 
-    # 7. Assemble and return the Final Plate
+    # Derive recommendations from the rubric dimensions' own AI-generated
+    # areas_for_improvement values
+    recommendations = []
+    seen = set()
+    for scored_item in scored:
+        for item in scored_item.areas_for_improvement or []:
+            normalized = str(item).strip()
+            if normalized and normalized.lower() not in seen:
+                recommendations.append(normalized)
+                seen.add(normalized.lower())
+
     final_assessment = SprintAssessment(
         team_id=bundle.team_id,
         sprint_id=bundle.sprint_id,
@@ -95,7 +99,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
         rubric_scores=rubric_scores,
         overall_score=round(average_score),
         executive_summary=summary,
-        key_recommendations=[summary],
+        key_recommendations=recommendations,
         # failed_dimensions=failed_dimensions,
     )
     
