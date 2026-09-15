@@ -163,6 +163,7 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_retries=3,
+            extra_body={"options": {"num_ctx": 40960}},
         )
         if result.dimension != dimension_name:
             raise ValueError(
@@ -230,6 +231,7 @@ async def generate_sprint_feedback(
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_retries=3,
+            extra_body={"options": {"num_ctx": 40960}},
         )
     finally:
         _audit_context.reset(audit_token)
