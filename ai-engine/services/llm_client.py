@@ -5,6 +5,7 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_feedback import SprintFeedback
 from openai import AsyncOpenAI
 import contextvars
+import hashlib
 import json
 import os, httpx, logging, instructor, time
 from uuid import uuid4
@@ -96,6 +97,13 @@ def create_llm_client():
 async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str, dimention_prompt) -> RubricDimensionScore:
     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
     bundle_data = bundle.model_dump_json(indent=2)
+    bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()
+
+    approx_tokens = len(bundle_data) // 4
+    log.info(
+        ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
+        dimension_name, len(bundle_data), approx_tokens,
+    )
     
     prompt = f"""
     You are an expert software engineering professor.
@@ -140,6 +148,12 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             "sprint_id": bundle.sprint_id,
             "dimension": dimension_name,
             "model": model_name,
+            "bundle_hash": bundle_hash,
+            "bundle_bytes": len(bundle_data.encode("utf-8")),
+            "commit_count": len(bundle.commits),
+            "jira_ticket_count": len(bundle.jira_tickets),
+            "peer_evaluation_count": len(bundle.peer_evaluations),
+            "artifact_metric_keys": sorted(bundle.artifact_metrics),
         }
     )
     try: # The transport hooks capture the exact request and raw Ollama response.

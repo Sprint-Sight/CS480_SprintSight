@@ -67,6 +67,7 @@ async def assess_backend_data_endpoint(
             commits=payload.commits,
             jira_tickets=payload.jira_tickets,
             peer_evaluations=payload.peer_evaluations,
+            collaboration_metrics=payload.collaboration_metrics.model_dump(),
             artifact_metrics=payload.artifact_metrics,
             instructor_expectations=payload.instructor_expectations,
         )
