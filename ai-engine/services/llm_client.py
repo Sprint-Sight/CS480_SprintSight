@@ -2,6 +2,7 @@ from __future__ import annotations
 from schemas.rubrics_dimension_score import RubricDimensionScore
 from schemas.sprint_assessment import SprintAssessment
 from schemas.artifact_bundle import ArtifactBundle
+from schemas.sprint_feedback import SprintFeedback
 from openai import AsyncOpenAI
 import contextvars
 import json
@@ -97,17 +98,17 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
     bundle_data = bundle.model_dump_json(indent=2)
     
     prompt = f"""
-    You are an expert software engineering professor. 
-    Evaluate the following student team artifacts strictly on this dimension: {dimension_name}.
+    You are an expert software engineering professor.
+    Return exactly one rubric assessment object for the dimension: {dimension_name}.
+    Do not summarize, transform, or repeat the student artifacts.
     Here are the rubric criteria for {dimension_name}:
     {dimention_prompt}
     
     CRITICAL INSTRUCTIONS:
-    - Return a valid JSON object matching the RubricDimensionScore schema.
+    - Return a valid JSON object matching the RubricDimensionScore schema, and nothing else.
+    - The `dimension` field MUST be exactly `{dimension_name}`.
     - Score MUST be an integer between 1 and 10.
     - Provide justification for the score.
-    - Identify strengths.
-    - Identify areas for improvement.
 
     CRITICAL CITATION RULES:
     1. Every item in evidence_citations MUST be a plain text string.
@@ -116,9 +117,18 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
         "evidence_citations": ["Jira ticket AUTH-1 is marked as Done.", "Alice added 150 lines of code."]
         INCORRECT:
         "evidence_citations": [{{"text": "Jira ticket AUTH-1 is marked as Done."}}]
+
+    Evidence rules:
+    - Use only evidence present in Student Artifacts.
+    - Do not invent issue numbers, URLs, names, scores, statuses, or activity.
+    - If evidence is missing, say so and score conservatively; still return the required rubric object.
     
     Student Artifacts:
     {bundle_data}
+
+    Final instruction: return one RubricDimensionScore for `{dimension_name}`.
+    Set `dimension` to exactly `{dimension_name}`. Do not return `collaboration`
+    or any other dimension unless the requested dimension is `collaboration`.
     """
 
     client = create_llm_client()  # Create a new client for this model
@@ -137,6 +147,7 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             model=model_name,
             response_model=RubricDimensionScore,
             messages=[{"role": "user", "content": prompt}],
+            temperature=0,
             max_retries=3,
         )
         if result.dimension != dimension_name:
@@ -153,6 +164,54 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             }
         )
         raise
+    finally:
+        _audit_context.reset(audit_token)
+
+
+async def generate_sprint_feedback(
+    bundle: ArtifactBundle,
+    rubric_scores: dict[str, dict],
+    model_name: str,
+) -> SprintFeedback:
+    """Generate strengths, weaknesses, and recommendations for the whole sprint."""
+    scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
+    prompt = f"""
+    You are an expert software engineering professor reviewing a complete sprint.
+    Produce general project-level feedback, not feedback for individual rubric dimensions.
+
+    Return exactly one JSON object matching the SprintFeedback schema:
+    - strengths: general strengths of the sprint or team
+    - weaknesses: general weaknesses of the sprint or team
+    - recommendations: general actionable recommendations for the next sprint
+
+    Use only the rubric results and evidence below. Do not invent facts, names,
+    URLs, issue numbers, statuses, or activity. Avoid repeating the rubric
+    justifications verbatim. Keep each item concise and specific.
+
+    Sprint context:
+    {bundle.team_id=} {bundle.sprint_id=}
+
+    Rubric results:
+    {scores_data}
+    """
+    audit_token = _audit_context.set(
+        {
+            "request_id": str(uuid4()),
+            "team_id": bundle.team_id,
+            "sprint_id": bundle.sprint_id,
+            "dimension": "sprint_feedback",
+            "model": model_name,
+        }
+    )
+    try:
+        client = create_llm_client()
+        return await client.chat.completions.create(
+            model=model_name,
+            response_model=SprintFeedback,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_retries=3,
+        )
     finally:
         _audit_context.reset(audit_token)
 

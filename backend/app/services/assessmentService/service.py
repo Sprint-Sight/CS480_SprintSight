@@ -63,8 +63,8 @@ def convert_ai_result_to_assessment_report(payload: AssessRequest | dict, ai_res
             )
 
     rubric_scores = {}
-    strengths = []
-    weaknesses = []
+    strengths = list(ai_result.get("strengths") or [])
+    weaknesses = list(ai_result.get("weaknesses") or [])
     raw_scores = ai_result.get("rubric_scores") or {}
     if isinstance(raw_scores, dict):
         for dimension, detail in raw_scores.items():
@@ -79,39 +79,15 @@ def convert_ai_result_to_assessment_report(payload: AssessRequest | dict, ai_res
                     normalized_score = 0.0
 
                 evidence = detail.get("evidence_citations") or []
-                strength_values = detail.get("strengths") or []
-                weakness_values = detail.get("areas_for_improvement") or detail.get("weaknesses") or []
-
                 rubric_scores[dimension_name] = RubricDimensionScoreDetail(
                     score=normalized_score,
                     justification=detail.get("justification") or "AI-generated rubric justification.",
                     evidence_citations=list(evidence) if isinstance(evidence, list) else [str(evidence)],
                 )
 
-                if isinstance(strength_values, list):
-                    strengths.extend(strength_values)
-                elif strength_values:
-                    strengths.append(str(strength_values))
-
-                if isinstance(weakness_values, list):
-                    weaknesses.extend(weakness_values)
-                elif weakness_values:
-                    weaknesses.append(str(weakness_values))
-
     recommendations = list(ai_result.get("key_recommendations") or [])
     if not recommendations:
-        raw_scores = ai_result.get("rubric_scores") or {}
-        if isinstance(raw_scores, dict):
-            for dimension, detail in raw_scores.items():
-                if not isinstance(detail, dict):
-                    continue
-                improvement_values = detail.get("areas_for_improvement") or detail.get("weaknesses") or []
-                if isinstance(improvement_values, list):
-                    recommendations.extend([str(item).strip() for item in improvement_values if str(item).strip()])
-                elif improvement_values:
-                    improvement_text = str(improvement_values).strip()
-                    if improvement_text:
-                        recommendations.append(improvement_text)
+        recommendations = list(ai_result.get("recommendations") or [])
 
     def deduplicate(values: list) -> list[str]:
         deduplicated = []
