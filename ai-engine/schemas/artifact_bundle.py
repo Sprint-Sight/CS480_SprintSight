@@ -1,7 +1,7 @@
 # All attributes are presumed
 
 from pydantic import BaseModel, Field
-from typing import List
+from typing import Any, List
 from datetime import datetime
 from schemas.commit_info import CommitInfo, FileDiff
 from schemas.jira import JiraTicket
@@ -13,6 +13,8 @@ class ArtifactBundle(BaseModel):
     commits: List[CommitInfo] = Field(default_factory=list)
     jira_tickets: List[JiraTicket] = Field(default_factory=list)
     peer_evaluations: List[PeerEvaluation] = Field(default_factory=list)
+    artifact_metrics: dict[str, Any] = Field(default_factory=dict)
+    instructor_expectations: str = "No instructor guidance provided."
 
 sample_bundle = ArtifactBundle(
     team_id="Team_Alpha",

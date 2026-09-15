@@ -133,12 +133,17 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
         }
     )
     try: # The transport hooks capture the exact request and raw Ollama response.
-        return await client.chat.completions.create(
+        result = await client.chat.completions.create(
             model=model_name,
             response_model=RubricDimensionScore,
             messages=[{"role": "user", "content": prompt}],
             max_retries=3,
         )
+        if result.dimension != dimension_name:
+            raise ValueError(
+                f"Model returned dimension '{result.dimension}' while evaluating '{dimension_name}'."
+            )
+        return result
     except Exception as error:
         context = _audit_context.get()
         write_audit_record(

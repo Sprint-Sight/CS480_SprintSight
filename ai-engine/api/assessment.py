@@ -67,6 +67,8 @@ async def assess_backend_data_endpoint(
             commits=payload.commits,
             jira_tickets=payload.jira_tickets,
             peer_evaluations=payload.peer_evaluations,
+            artifact_metrics=payload.artifact_metrics,
+            instructor_expectations=payload.instructor_expectations,
         )
         assessment = await evaluate_sprint(bundle, modelname)
         return assessment

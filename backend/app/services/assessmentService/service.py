@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.repositories.in_memory import assessment_repo, job_repo, metrics_repo, overrides_repo
-from app.repositories.interfaces import AssessmentRepository, ManualTextRepository, MetricsRepository, ProjectRepository
+from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository
 from app.schemas.assessment import (
     AssessRequest,
     AssessmentReport,
@@ -113,14 +113,18 @@ def convert_ai_result_to_assessment_report(payload: AssessRequest | dict, ai_res
                     if improvement_text:
                         recommendations.append(improvement_text)
 
-    # Remove duplicate recommendations while preserving order.
-    deduped_recommendations = []
-    seen = set()
-    for item in recommendations:
-        normalized = str(item).strip()
-        if normalized and normalized.lower() not in seen:
-            deduped_recommendations.append(normalized)
-            seen.add(normalized.lower())
+    def deduplicate(values: list) -> list[str]:
+        deduplicated = []
+        seen = set()
+        for item in values:
+            normalized = str(item).strip()
+            key = " ".join(normalized.casefold().split())
+            if normalized and key not in seen:
+                deduplicated.append(normalized)
+                seen.add(key)
+        return deduplicated
+
+    deduped_recommendations = deduplicate(recommendations)
 
     return AssessmentReport(
         report_id=f"rpt-{uuid4()}",
@@ -138,16 +142,17 @@ def convert_ai_result_to_assessment_report(payload: AssessRequest | dict, ai_res
         individual_scores=individual_scores,
         recommendations=deduped_recommendations,
         rubric_scores=rubric_scores,
-        strengths=strengths,
-        weaknesses=weaknesses,
+        strengths=deduplicate(strengths),
+        weaknesses=deduplicate(weaknesses),
     )
 
 
 RUBRIC_WEIGHTS = {
-    "delivery": 0.35,
-    "collaboration": 0.30,
-    "quality": 0.20,
-    "documentation": 0.15,
+    "requirements": 0.20,
+    "code_quality": 0.20,
+    "testing": 0.20,
+    "documentation": 0.20,
+    "collaboration": 0.20,
 }
 
 
@@ -158,6 +163,7 @@ def run_assessment_job(
     metrics_repository: MetricsRepository,
     manual_text_repository: ManualTextRepository,
     assessment_repository: AssessmentRepository | None = None,
+    jira_ingestion_repository: JiraIngestionRunRepository | None = None,
 ) -> None:
     """Background worker that collects the same input that the old synchronous endpoint used,
     sends the canonical payload to the AI engine, and then persists a report without
@@ -179,10 +185,17 @@ def run_assessment_job(
         _ = enrich_jira_metrics(payload)
         docs = collect_document_signals(payload)
         manual_text = get_manual_text(manual_text_repository, payload.course_id, payload.project_id, payload.sprint_id)
+        jira_tickets = []
+        if jira_ingestion_repository:
+            jira_runs = jira_ingestion_repository.list_runs(payload.project_id, payload.sprint_id)
+            processed_runs = [run for run in jira_runs if run.cleaned_snapshot]
+            if processed_runs:
+                latest_run = max(processed_runs, key=lambda run: run.captured_at)
+                jira_tickets = [ticket.model_dump(mode="json") for ticket in latest_run.cleaned_snapshot.tickets]
 
         job_repo.update_job(job_id, status="building_payload", progress=50, current_stage="building_payload")
         job_repo.append_event(job_id, "progress", {"status": "building_payload", "progress": 50, "message": "Building AI payload."})
-        middle_man_payload = build_assessment_payload(metrics, docs, manual_text)
+        middle_man_payload = build_assessment_payload(metrics, docs, manual_text, jira_tickets)
 
         job_repo.update_job(job_id, status="ai_evaluating", progress=70, current_stage="ai_evaluating")
         job_repo.append_event(job_id, "progress", {"status": "ai_evaluating", "progress": 70, "message": "AI is evaluating the sprint."})
