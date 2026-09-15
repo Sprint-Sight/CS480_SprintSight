@@ -76,6 +76,40 @@ def _resolve_jira_auth(project: ProjectRecord) -> tuple[str, str, str]:
     )
 
 
+def _normalize_jira_sprint_value(sprint_id: str | None) -> str | None:
+    if sprint_id is None:
+        return None
+    value = str(sprint_id).strip()
+    if not value:
+        return None
+    value = value.replace("_", "-")
+    if value.lower().startswith("sprint-"):
+        suffix = value.split("-", 1)[1].strip()
+        if suffix:
+            return f"Sprint {suffix}"
+    if value.lower().startswith("sprint "):
+        return value.title()
+    if value.lower() == "sprint":
+        return "Sprint"
+    if "Sprint " in value:
+        return value
+    return value
+
+
+def _build_jira_search_jql(jira_project_key: str, sprint_id: str | None, jql: str | None) -> str:
+    if jql:
+        return jql
+    query = f'project = "{jira_project_key}"'
+    sprint_field = (get_settings().jira_sprint_field or "customfield_10020").strip() or "customfield_10020"
+    sprint_value = _normalize_jira_sprint_value(sprint_id)
+    if sprint_value:
+        field_expr = sprint_field
+        if sprint_field.startswith("customfield_"):
+            field_expr = f"cf[{sprint_field.removeprefix('customfield_')}]"
+        query = f'{query} AND {field_expr} = "{sprint_value}"'
+    return f'{query} ORDER BY updated DESC'
+
+
 def fetch_and_store_raw_jira_data(
     course_id: str,
     project_id: str,
@@ -87,7 +121,7 @@ def fetch_and_store_raw_jira_data(
     settings = get_settings()
     domain, email, api_token = _resolve_jira_auth(project)
 
-    query = jql or f'project = "{jira_project_key}" ORDER BY updated DESC'
+    query = _build_jira_search_jql(jira_project_key, sprint_id, jql)
     issues: list[dict] = []
     next_page_token: str | None = None
     page_size = 100
