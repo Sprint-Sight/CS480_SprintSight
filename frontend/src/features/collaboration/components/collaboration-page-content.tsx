@@ -1,6 +1,5 @@
 "use client";
 
-import { AlertTriangle, CheckSquare, GitBranch, UserRound, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -21,32 +20,9 @@ import {
   getCollaborationProjectOptions,
   getContributionDataset,
 } from "@/features/collaboration/data";
-import type { TeamRiskIndicator } from "@/features/collaboration/types";
+import type { HeatmapRow, MemberCommitMetric, WorkloadSlice } from "@/features/collaboration/types";
 import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
-
-function getRiskTone(risk: TeamRiskIndicator["risk"]) {
-  if (risk === "Low") {
-    return {
-      box: "border-emerald-200 bg-emerald-50/40",
-      badge: "bg-emerald-100 text-emerald-700",
-      bar: "bg-emerald-500",
-    };
-  }
-
-  if (risk === "Medium") {
-    return {
-      box: "border-amber-200 bg-amber-50/40",
-      badge: "bg-amber-100 text-amber-700",
-      bar: "bg-amber-500",
-    };
-  }
-
-  return {
-    box: "border-rose-200 bg-rose-50/40",
-    badge: "bg-rose-100 text-rose-700",
-    bar: "bg-rose-500",
-  };
-}
+import type { CollaborationDataset, TeamRiskIndicator } from "@/features/collaboration/types";
 
 function heatColor(score: number) {
   if (score <= 3) return "bg-sky-100 text-sky-700";
@@ -55,35 +31,13 @@ function heatColor(score: number) {
   return "bg-[#1E3A8A] text-white";
 }
 
-function adjustmentBadge(value: number) {
-  if (value > 0) {
-    return {
-      text: `+${value}%`,
-      className: "text-emerald-600",
-    };
-  }
-
-  if (value < 0) {
-    return {
-      text: `${value}%`,
-      className: "text-rose-600",
-    };
-  }
-
-  return {
-    text: "0%",
-    className: "text-slate-500",
-  };
-}
-
-function gradeTone(grade: string) {
-  if (grade.startsWith("A")) return "text-blue-900";
-  if (grade.startsWith("B")) return "text-slate-800";
-  return "text-amber-700";
-}
-
 export default function CollaborationPageContent() {
-  const projectOptions = useMemo(() => getCollaborationProjectOptions(), []);
+  const fallbackProjectOptions = useMemo(() => getCollaborationProjectOptions(), []);
+  const projectOptions = useMemo(() => {
+    const persistedProjectId = readIngestionState().selectedProjectId;
+    if (!persistedProjectId || fallbackProjectOptions.some((option) => option.id === persistedProjectId)) return fallbackProjectOptions;
+    return [{ id: persistedProjectId, label: "Live backend project" }, ...fallbackProjectOptions];
+  }, [fallbackProjectOptions]);
   const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || projectOptions[0]?.id || "");
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
   const [ingestionVersion, setIngestionVersion] = useState(0);
@@ -92,14 +46,71 @@ export default function CollaborationPageContent() {
   const collaborationData = useMemo(() => getCollaborationDataset(selectedProjectId), [selectedProjectId]);
   const contributionData = useMemo(() => getContributionDataset(selectedProjectId), [selectedProjectId]);
 
-  const comparisonChartData = useMemo(() => {
-    return contributionData.members.map((member) => ({
-      name: member.name.split(" ")[0],
-      GitHub: member.githubScore,
-      Jira: member.jiraScore,
-      Peer: Math.round(member.peerScore * 20),
+  const liveIngestion = useMemo(() => {
+    void ingestionVersion;
+    return getProjectIngestion(selectedProjectId);
+  }, [selectedProjectId, ingestionVersion]);
+
+  const liveCollaborationData = useMemo(() => {
+    if (!liveIngestion.git && !liveIngestion.jira) return null;
+
+    const commitsByAuthor = new Map<string, number>();
+    for (const commit of liveIngestion.git?.commits || []) {
+      const author = commit.author || "Unknown author";
+      commitsByAuthor.set(author, (commitsByAuthor.get(author) || 0) + 1);
+    }
+    const commitsByMember: MemberCommitMetric[] = Array.from(commitsByAuthor.entries())
+      .map(([member, commits]) => ({ member, commits }))
+      .sort((left, right) => right.commits - left.commits);
+
+    const ticketCounts = new Map<string, number>();
+    for (const ticket of liveIngestion.jira?.tickets || []) {
+      const owner = ticket.assignee || ticket.status || "Unassigned";
+      ticketCounts.set(owner, (ticketCounts.get(owner) || 0) + 1);
+    }
+    const totalTickets = Array.from(ticketCounts.values()).reduce((sum, value) => sum + value, 0) || 1;
+    const palette = ["#1E3A8A", "#2F6690", "#3E87B8", "#7CB9E8", "#A7D8F5"];
+    const workloadDistribution: WorkloadSlice[] = Array.from(ticketCounts.entries()).map(([name, value], index) => ({
+      name,
+      value: Math.round((value / totalTickets) * 100),
+      color: palette[index % palette.length],
     }));
-  }, [contributionData]);
+
+    const timestamps = (liveIngestion.git?.commits || []).map((commit) => new Date(commit.timestamp).getTime()).filter(Number.isFinite);
+    const firstTimestamp = timestamps.length ? Math.min(...timestamps) : Date.now();
+    const heatmapByMember = new Map<string, [number, number, number, number]>();
+    for (const commit of liveIngestion.git?.commits || []) {
+      const author = commit.author || "Unknown author";
+      const week = Math.min(3, Math.max(0, Math.floor((new Date(commit.timestamp).getTime() - firstTimestamp) / (7 * 24 * 60 * 60 * 1000))));
+      const values = heatmapByMember.get(author) || [0, 0, 0, 0];
+      values[week] += 1;
+      heatmapByMember.set(author, values);
+    }
+    const participationHeatmap: HeatmapRow[] = Array.from(heatmapByMember.entries()).map(([member, values]) => ({
+      member,
+      week1: values[0],
+      week2: values[1],
+      week3: values[2],
+      week4: values[3],
+    }));
+
+    const totalCommits = commitsByMember.reduce((sum, item) => sum + item.commits, 0);
+    const balanceScore = commitsByMember.length
+      ? Math.round((1 - (Math.max(...commitsByMember.map((item) => item.commits)) - Math.min(...commitsByMember.map((item) => item.commits))) / Math.max(1, totalCommits)) * 100)
+      : 0;
+    const liveRisk: TeamRiskIndicator = {
+      team: "Current project",
+      risk: balanceScore >= 70 ? "Low" : balanceScore >= 45 ? "Medium" : "High",
+      summary: `${commitsByMember.length} Git authors across ${totalCommits} commits`,
+      balanceScore,
+    };
+
+    return { commitsByMember, workloadDistribution, participationHeatmap, riskIndicators: [liveRisk] } satisfies Pick<CollaborationDataset, "commitsByMember" | "workloadDistribution" | "participationHeatmap" | "riskIndicators">;
+  }, [liveIngestion]);
+
+  const displayedCollaborationData = liveCollaborationData
+    ? { ...collaborationData, ...liveCollaborationData }
+    : collaborationData;
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
@@ -115,17 +126,12 @@ export default function CollaborationPageContent() {
     return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
   }, []);
 
-  const liveIngestion = useMemo(() => {
-    void ingestionVersion;
-    return getProjectIngestion(selectedProjectId);
-  }, [selectedProjectId, ingestionVersion]);
-
   return (
     <div className="space-y-6 p-8">
       {/* Header & Global Controls */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Team & Individual Analytics</h1>
+          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Team Collaboration Analytics</h1>
           <p className="mt-1 text-sm text-slate-500">
             {collaborationData.subtitle} • {contributionData.sprintLabel}
           </p>
@@ -155,7 +161,6 @@ export default function CollaborationPageContent() {
           <p className="mt-1 text-sm text-slate-700">
             {liveIngestion.git?.pagination?.total ?? liveIngestion.git?.commits.length ?? 0} Git commits, {liveIngestion.jira?.tickets.length ?? 0} Jira tickets, and {liveIngestion.documents} documents are available for this project.
           </p>
-          <p className="mt-1 text-xs text-slate-500">Member-level collaboration scores remain fixture-based until the backend returns contributor IDs.</p>
         </section>
       )}
 
@@ -165,7 +170,7 @@ export default function CollaborationPageContent() {
           <h2 className="text-sm font-semibold text-blue-950">Commits by Member</h2>
           <div className="mt-3 h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={collaborationData.commitsByMember}>
+              <BarChart data={displayedCollaborationData.commitsByMember}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="member" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
@@ -182,14 +187,14 @@ export default function CollaborationPageContent() {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={collaborationData.workloadDistribution}
+                  data={displayedCollaborationData.workloadDistribution}
                   dataKey="value"
                   nameKey="name"
                   innerRadius={48}
                   outerRadius={84}
                   paddingAngle={2}
                 >
-                  {collaborationData.workloadDistribution.map((slice) => (
+                  {displayedCollaborationData.workloadDistribution.map((slice) => (
                     <Cell key={slice.name} fill={slice.color} />
                   ))}
                 </Pie>
@@ -198,7 +203,7 @@ export default function CollaborationPageContent() {
             </ResponsiveContainer>
           </div>
           <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-            {collaborationData.workloadDistribution.map((slice) => (
+            {displayedCollaborationData.workloadDistribution.map((slice) => (
               <span key={slice.name} className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
                 {slice.name}
@@ -223,7 +228,7 @@ export default function CollaborationPageContent() {
               </tr>
             </thead>
             <tbody>
-              {collaborationData.participationHeatmap.map((row) => (
+              {displayedCollaborationData.participationHeatmap.map((row) => (
                 <tr key={row.member}>
                   <td className="px-2 py-2 font-medium text-slate-800">{row.member}</td>
                   <td className="px-1 py-1">
@@ -268,129 +273,6 @@ export default function CollaborationPageContent() {
         </div>
       </section>
 
-      {/* Section 3: Multi-Source Contribution Comparison */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-semibold text-blue-950">Contribution Breakdown by Platform</h2>
-        <div className="mt-4 h-[260px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={comparisonChartData} barCategoryGap="10%">
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="GitHub" fill="#1F3D6D" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Jira" fill="#3F7C9E" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Peer" fill="#5C98BD" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
-      {/* Section 4: Individual Member Cards & AI Assessment */}
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-blue-950">Individual Member Assessments</h2>
-        {contributionData.members.map((member) => {
-          const badge = adjustmentBadge(member.gradeAdjustmentPercent);
-          return (
-            <article key={member.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-blue-700">
-                    {member.initials}
-                  </div>
-                  <div>
-                    <p className="text-xl font-semibold text-blue-950">{member.name}</p>
-                    <p className="text-sm text-slate-500">{member.role}</p>
-                  </div>
-                </div>
-
-                <div className="grid min-w-[280px] grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="inline-flex items-center gap-1 text-slate-500">
-                      <GitBranch className="h-4 w-4" />
-                      GitHub
-                    </p>
-                    <p className="text-2xl font-bold text-blue-900">{member.githubScore}%</p>
-                  </div>
-                  <div>
-                    <p className="inline-flex items-center gap-1 text-slate-500">
-                      <CheckSquare className="h-4 w-4" />
-                      Jira
-                    </p>
-                    <p className="text-2xl font-bold text-blue-900">{member.jiraScore}%</p>
-                  </div>
-                  <div>
-                    <p className="inline-flex items-center gap-1 text-slate-500">
-                      <Users className="h-4 w-4" />
-                      Peer Eval
-                    </p>
-                    <p className="text-2xl font-bold text-blue-900">{member.peerScore.toFixed(1)}/5.0</p>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-sm text-slate-500">Overall</p>
-                  <p className="text-2xl font-bold text-blue-900">{member.overallScore}%</p>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-sm text-slate-500">Recommended</p>
-                  <p className={`text-3xl font-bold ${gradeTone(member.recommendedGrade)}`}>
-                    {member.recommendedGrade}
-                  </p>
-                  <p className={`text-sm font-semibold ${badge.className}`}>{badge.text}</p>
-                </div>
-              </div>
-
-              <p className="pt-3 text-sm text-slate-600">
-                <span className="font-semibold text-slate-800">AI Assessment:</span> {member.aiAssessment}
-              </p>
-            </article>
-          );
-        })}
-      </section>
-
-      {/* Section 5: Risk Indicators (Instructor View Only) */}
-      {role === "instructor" && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-blue-950">Collaboration Risk Indicators</h2>
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {collaborationData.riskIndicators.map((item) => {
-              const tone = getRiskTone(item.risk);
-              return (
-                <article key={item.team} className={`rounded-xl border p-3 ${tone.box}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900">
-                        <UserRound className="h-4 w-4 text-slate-500" />
-                        {item.team}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-600">{item.summary}</p>
-                    </div>
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone.badge}`}
-                    >
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                      {item.risk} Risk
-                    </span>
-                  </div>
-
-                  <div className="mt-3">
-                    <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
-                      <span>Balance Score</span>
-                      <span>{item.balanceScore}%</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-white/80">
-                      <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${item.balanceScore}%` }} />
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      )}
     </div>
   );
 }

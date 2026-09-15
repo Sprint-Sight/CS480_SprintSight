@@ -65,6 +65,7 @@ export default function ProjectsPageContent() {
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
+  const [projectForNewMember, setProjectForNewMember] = useState<string | null>(null);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
@@ -394,23 +395,39 @@ export default function ProjectsPageContent() {
       return;
     }
 
-    const trimmedEmail = studentForm.email.trim();
+    const trimmedEmail = studentForm.email.trim().toLowerCase();
     const trimmedName = studentForm.full_name.trim();
-    const password = studentForm.password.trim() || "TempPass123!";
+    const password = studentForm.password;
 
-    if (!trimmedEmail || !trimmedName) {
-      window.alert("Student name and email are required.");
+    if (!trimmedEmail || !trimmedName || !password) {
+      window.alert("Student name, email, and password are required.");
+      return;
+    }
+    if (password.length < 8) {
+      window.alert("The student password must be at least 8 characters.");
+      return;
+    }
+    if (courseStudents.some((student) => student.email.trim().toLowerCase() === trimmedEmail)) {
+      window.alert("This student is already enrolled in the selected course. Their existing password was not changed.");
       return;
     }
 
     try {
-      const student = await apiRequest<{ id: string }>("/students", {
+      const student = await apiRequest<{ id: string; email: string; full_name: string; must_change_password?: boolean }>(`/courses/${selectedCourseId}/students`, {
         method: "POST",
         body: JSON.stringify({ email: trimmedEmail, full_name: trimmedName, password }),
       });
-      await apiRequest(`/courses/${selectedCourseId}/students/${student.id}`, { method: "POST" });
-      window.alert("Student enrolled and created with a password.");
+
+      if (projectForNewMember) {
+        await apiRequest(`/projects/${projectForNewMember}/members/${student.id}`, { method: "POST" });
+        await loadProjects();
+        window.alert(`Student ${student.full_name} created and added to the project. They can log in with ${student.email} and the password entered here, then change it after first login.`);
+      } else {
+        window.alert(`Student ${student.full_name} created and enrolled. They can log in with ${student.email} and the password entered here, then change it after first login.`);
+      }
+
       setStudentForm({ email: "", full_name: "", password: "" });
+      setProjectForNewMember(null);
       await loadCourseStudents();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to enroll student.");
@@ -435,15 +452,13 @@ export default function ProjectsPageContent() {
   async function handleAddProjectMember(projectId: string, event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    const userId = prompt("Enter Student User ID to add to project:");
-    if (!userId) return;
-
-    try {
-      await apiRequest(`/projects/${projectId}/members/${userId}`, { method: "POST" });
-      window.alert("Project member added.");
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to add project member.");
+    if (!selectedCourseId || !isUuid(selectedCourseId)) {
+      window.alert("Please select a valid course before adding a project member.");
+      return;
     }
+    setProjectForNewMember(projectId);
+    setStudentForm({ email: "", full_name: "", password: "" });
+    setIsRosterModalOpen(true);
   }
 
   async function handleRemoveProjectMember(projectId: string, userId: string, event: React.MouseEvent) {
@@ -631,7 +646,10 @@ export default function ProjectsPageContent() {
         isOpen={isRosterModalOpen}
         courseStudents={courseStudents}
         studentForm={studentForm}
-        onClose={() => setIsRosterModalOpen(false)}
+        onClose={() => {
+          setIsRosterModalOpen(false);
+          setProjectForNewMember(null);
+        }}
         onEnroll={handleEnrollStudent}
         onUnenroll={handleUnenrollStudent}
         setStudentForm={setStudentForm}

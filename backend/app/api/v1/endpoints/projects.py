@@ -142,10 +142,15 @@ def create_course(
 
 @router.get("/courses", response_model=list[CourseResponse])
 def list_courses(
-    current_user: Annotated[UserRecord, Depends(require_instructor)],
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> list[CourseResponse]:
-    courses = [course for course in repository.list_courses() if repository.is_instructor_assigned(course.id, current_user.id)]
+    if current_user.role == Role.STUDENT:
+        courses = [course for course in repository.list_courses() if repository.is_student_enrolled(course.id, current_user.id)]
+    elif current_user.role == Role.INSTRUCTOR:
+        courses = [course for course in repository.list_courses() if repository.is_instructor_assigned(course.id, current_user.id)]
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to courses.")
     return [
         CourseResponse(
             id=course.id,
