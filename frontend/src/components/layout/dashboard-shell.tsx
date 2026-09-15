@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { apiRequest } from "@/features/projects/components/projects-api";
+import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -44,6 +46,7 @@ type ScopeSection = {
 type ScopeTeam = {
   id: string;
   name: string;
+  courseId: string;
   status: string;
   studentCount: number;
   averageScore: number;
@@ -66,7 +69,7 @@ const studentNavItems: NavItem[] = [
   { label: "My Sprint", href: "/sprint-overview", icon: Activity },
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
-  { label: "My Grades & Feedback", href: "/assessment-report", icon: FileText },
+  { label: "Results & Feedback", href: "/assessment-report", icon: FileText },
   { label: "Progress", href: "/progress", icon: GitCompare },
 ];
 
@@ -147,12 +150,36 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     async function fetchScopeData() {
       setIsLoadingScope(true);
       try {
-        setSemesterOptions([]);
-        setSections([]);
-        setTeams([]);
-        setSelectedSemester("");
-        setSelectedSectionId("");
-        setSelectedTeamId("");
+        const courses = await apiRequest<Array<{ id: string; code: string; name: string; section: string; term: string; year: number }>>("/courses");
+        const courseSections = courses.map((course) => ({
+          id: course.id,
+          code: course.code,
+          name: `${course.name} - ${course.section}`,
+        }));
+        const projectGroups = await Promise.all(courses.map(async (course) => ({
+          course,
+          projects: await apiRequest<Array<{ id: string; team_name: string; members: unknown[] }>>(`/courses/${course.id}/projects`),
+        })));
+        const scopeTeams = projectGroups.flatMap(({ course, projects }) => projects.map((project) => ({
+          id: project.id,
+          name: project.team_name,
+          status: "Active",
+          studentCount: project.members.length,
+          averageScore: 0,
+          courseId: course.id,
+        })));
+        const persisted = readIngestionState();
+        const selectedTeam = scopeTeams.find((team) => team.id === persisted.selectedProjectId) || scopeTeams[0];
+
+        setSemesterOptions([...new Set(courses.map((course) => `${course.term} ${course.year}`))]);
+        setSections(courseSections);
+        setTeams(scopeTeams);
+        setSelectedSemester(`${courses[0]?.term || ""} ${courses[0]?.year || ""}`.trim());
+        setSelectedSectionId(selectedTeam?.courseId || courseSections[0]?.id || "");
+        setSelectedTeamId(selectedTeam?.id || "");
+        if (selectedTeam) {
+          writeIngestionState({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
+        }
       } catch (error) {
         console.error("Failed to load dashboard scope data:", error);
       } finally {
@@ -192,6 +219,13 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const currentTeamStats = useMemo(() => {
     return teams.find((t) => t.id === selectedTeamId) || null;
   }, [teams, selectedTeamId]);
+
+  useEffect(() => {
+    const selectedTeam = teams.find((team) => team.id === selectedTeamId);
+    if (selectedTeam) {
+      writeIngestionState({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
+    }
+  }, [selectedTeamId, teams]);
 
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
 

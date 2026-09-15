@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Loader2, Play, Star, TrendingUp } from "lucide-react";
+import { Download, Loader2, Play, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   PolarAngleAxis,
@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import { useSearchParams } from "next/navigation";
 
 import { getAssessmentProjectOptions, getAssessmentReport } from "@/features/assessment/data";
 import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
@@ -32,6 +33,13 @@ type BackendAssessmentReport = {
   rubric_weights: Record<string, number>;
   team_score: { score: number; rationale: string };
   individual_scores: Array<{ student_id: string; score: number; rationale: string }>;
+  rubric_scores: Record<string, {
+    score: number;
+    justification?: string | null;
+    evidence_citations?: string[];
+  }>;
+  strengths: string[];
+  weaknesses: string[];
   recommendations: string[];
 };
 
@@ -42,6 +50,27 @@ type AssessmentJobEvent = {
   report_id?: string;
   error_message?: string;
 };
+
+const assessmentModels = [
+  { id: "sprintsight-llama", label: "SprintSight Llama" },
+  { id: "sprintsight-mistral", label: "SprintSight Mistral" },
+  { id: "sprintsight-qwen", label: "SprintSight Qwen" },
+  { id: "sprintsight-gemma", label: "SprintSight Gemma" },
+] as const;
+
+const rubricLabels: Record<string, string> = {
+  requirements: "Requirements",
+  code_quality: "Code Quality",
+  testing: "Testing",
+  documentation: "Documentation",
+  collaboration: "Collaboration",
+  delivery: "Delivery",
+  quality: "Quality",
+};
+
+function formatRubricLabel(key: string) {
+  return rubricLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 function scoreBarColor(score: number) {
   if (score >= 85) return "bg-[#2F5B85]";
@@ -77,16 +106,44 @@ function CircularScore({ score }: { score: number }) {
 }
 
 export default function AssessmentReportPageContent() {
+  const searchParams = useSearchParams();
+  const requestedProjectId = searchParams.get("projectId");
+  const requestedSprintId = searchParams.get("sprintId");
   const fallbackProjectOptions = useMemo(() => getAssessmentProjectOptions(), []);
   const [projectOptions, setProjectOptions] = useState<AssessmentProjectOption[]>(fallbackProjectOptions);
-  const [selectedProjectId, setSelectedProjectId] = useState(fallbackProjectOptions[0]?.id ?? "");
-  const [sprintId, setSprintId] = useState("sprint-1");
+  const [selectedProjectId, setSelectedProjectId] = useState(requestedProjectId || fallbackProjectOptions[0]?.id || "");
+  const [sprintId, setSprintId] = useState(requestedSprintId || "sprint-1");
+  const [modelName, setModelName] = useState("sprintsight-llama");
   const [report, setReport] = useState(() => getAssessmentReport(fallbackProjectOptions[0]?.id ?? ""));
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [assessmentProgress, setAssessmentProgress] = useState(0);
   const [assessmentMessage, setAssessmentMessage] = useState("");
   const [assessmentError, setAssessmentError] = useState("");
+  const [role, setRole] = useState<"student" | "instructor" | "admin" | null>(null);
+
+  function clearLiveReport(projectId: string, sprint: string) {
+    setReport({
+      projectId,
+      sprintId: sprint,
+      sprintLabel: sprint,
+      teamLabel: "Live backend project",
+      projectLabel: "No assessment report",
+      generatedAt: "",
+      overallScore: 0,
+      overallGrade: "",
+      overallSummary: "Generate an assessment to create a report for this project and sprint.",
+      rubricScores: [],
+      strengths: [],
+      weaknesses: [],
+      recommendations: [],
+      narrativeFeedback: [],
+    });
+  }
+
+  useEffect(() => {
+    setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | "admin" | null) || "student");
+  }, []);
 
   useEffect(() => {
     async function loadBackendProjects() {
@@ -102,8 +159,13 @@ export default function AssessmentReportPageContent() {
           label: `${project.team_name} - ${project.project_name}`,
         })));
         if (options.length > 0) {
+          const selectedOption = options.find((option) => option.id === requestedProjectId) || options[0];
+          const selectedSprint = requestedSprintId || sprintId;
           setProjectOptions(options);
-          setSelectedProjectId(options[0].id);
+          setSelectedProjectId(selectedOption.id);
+          setSprintId(selectedSprint);
+          clearLiveReport(selectedOption.id, selectedSprint);
+          await loadLatestReport(selectedOption.id, selectedSprint, selectedOption.courseId);
         }
       } catch {
         // Demo fixture options remain available when backend projects are unavailable.
@@ -113,40 +175,46 @@ export default function AssessmentReportPageContent() {
     loadBackendProjects();
   }, []);
 
-  async function loadLatestReport(projectId = selectedProjectId, sprint = sprintId) {
+  async function loadLatestReport(projectId = selectedProjectId, sprint = sprintId, courseId?: string) {
     const project = projectOptions.find((option) => option.id === projectId);
-    if (!isUuid(projectId) || !project?.courseId || !sprint.trim()) {
+    const resolvedCourseId = courseId || project?.courseId;
+    if (!isUuid(projectId) || !resolvedCourseId || !sprint.trim()) {
       setReport(getAssessmentReport(projectId));
       return;
     }
+    const projectLabel = project?.label || "Project team";
 
     setIsLoadingReport(true);
     setAssessmentError("");
     try {
       const backendReport = await apiRequest<BackendAssessmentReport>(
-        `/assessments/latest?course_id=${encodeURIComponent(project.courseId)}&project_id=${encodeURIComponent(projectId)}&sprint_id=${encodeURIComponent(sprint.trim())}`
+        `/assessments/latest?course_id=${encodeURIComponent(resolvedCourseId)}&project_id=${encodeURIComponent(projectId)}&sprint_id=${encodeURIComponent(sprint.trim())}`
       );
       setReport({
         projectId: backendReport.project_id,
         sprintId: backendReport.sprint_id,
         sprintLabel: backendReport.sprint_id,
-        teamLabel: project.label.split(" - ")[0] || "Project team",
-        projectLabel: project.label.split(" - ").slice(1).join(" - ") || project.label,
+        teamLabel: projectLabel.split(" - ")[0] || "Project team",
+        projectLabel: projectLabel.split(" - ").slice(1).join(" - ") || projectLabel,
         generatedAt: new Date(backendReport.generated_at).toLocaleString(),
         overallScore: Math.round(backendReport.team_score.score),
         overallGrade: backendReport.team_score.score >= 85 ? "A" : backendReport.team_score.score >= 75 ? "B" : "C",
         overallSummary: backendReport.team_score.rationale,
-        rubricScores: Object.entries(backendReport.rubric_weights).map(([category, weight]) => ({
-          category: category as RubricScore["category"],
-          score: Math.round(backendReport.team_score.score),
-          justification: `${Math.round(weight * 100)}% rubric weight.`,
+        rubricScores: Object.entries(backendReport.rubric_scores || {}).map(([category, detail]) => ({
+          category: formatRubricLabel(category) as RubricScore["category"],
+          score: Math.round(detail.score),
+          justification: [
+            detail.justification || "No justification provided.",
+            ...(detail.evidence_citations?.length ? [`Evidence: ${detail.evidence_citations.join("; ")}`] : []),
+          ].join(" "),
         })),
-        strengths: [],
-        weaknesses: [],
-        recommendations: backendReport.recommendations,
-        narrativeFeedback: backendReport.individual_scores.map((score) => `${score.student_id}: ${score.rationale}`),
+        strengths: backendReport.strengths || [],
+        weaknesses: backendReport.weaknesses || [],
+        recommendations: backendReport.recommendations || [],
+        narrativeFeedback: [],
       });
     } catch (error) {
+      if (isUuid(projectId)) clearLiveReport(projectId, sprint);
       setAssessmentError(error instanceof Error ? error.message : "Failed to load the latest assessment.");
     } finally {
       setIsLoadingReport(false);
@@ -167,7 +235,12 @@ export default function AssessmentReportPageContent() {
     try {
       const job = await apiRequest<{ job_id: string }>("/assessments/assess", {
         method: "POST",
-        body: JSON.stringify({ course_id: project.courseId, project_id: selectedProjectId, sprint_id: sprintId.trim() }),
+        body: JSON.stringify({
+          course_id: project.courseId,
+          project_id: selectedProjectId,
+          sprint_id: sprintId.trim(),
+          model_name: modelName,
+        }),
       });
       const token = getAuthToken();
       if (!token) throw new Error("Your session has expired. Please log in again.");
@@ -241,30 +314,56 @@ export default function AssessmentReportPageContent() {
             <input
               value={sprintId}
               onChange={(event) => setSprintId(event.target.value)}
+              onBlur={() => {
+                if (role === "student") void loadLatestReport();
+              }}
+              onKeyDown={(event) => {
+                if (role === "student" && event.key === "Enter") {
+                  event.preventDefault();
+                  void loadLatestReport();
+                }
+              }}
               className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
               placeholder="sprint-1"
             />
           </label>
 
-          <button
-            type="button"
-            onClick={() => loadLatestReport()}
-            disabled={isLoadingReport || isGenerating}
-            className="inline-flex h-11 items-center gap-2 self-end rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-          >
-            {isLoadingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Load Latest
-          </button>
+          {role !== "student" && (
+            <>
+              <label className="min-w-[180px] space-y-1">
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Assessment Model</span>
+                <select
+                  value={modelName}
+                  onChange={(event) => setModelName(event.target.value)}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                >
+                  {assessmentModels.map((model) => (
+                    <option key={model.id} value={model.id}>{model.label}</option>
+                  ))}
+                </select>
+              </label>
 
-          <button
-            type="button"
-            onClick={generateAssessment}
-            disabled={isGenerating || isLoadingReport}
-            className="inline-flex h-11 items-center gap-2 self-end rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white transition hover:bg-blue-950 disabled:opacity-50"
-          >
-            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {isGenerating ? "Generating..." : "Generate Assessment"}
-          </button>
+              <button
+                type="button"
+                onClick={() => loadLatestReport()}
+                disabled={isLoadingReport || isGenerating}
+                className="inline-flex h-11 items-center gap-2 self-end rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                {isLoadingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Load Latest
+              </button>
+
+              <button
+                type="button"
+                onClick={generateAssessment}
+                disabled={isGenerating || isLoadingReport}
+                className="inline-flex h-11 items-center gap-2 self-end rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white transition hover:bg-blue-950 disabled:opacity-50"
+              >
+                {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                {isGenerating ? "Generating..." : "Generate Assessment"}
+              </button>
+            </>
+          )}
 
           <button
             type="button"
@@ -293,11 +392,6 @@ export default function AssessmentReportPageContent() {
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-500">Overall Sprint Score</h2>
           <CircularScore score={report.overallScore} />
-          <div className="mt-1 flex items-center justify-center gap-1 text-sm font-semibold text-amber-500">
-            <Star className="h-4 w-4" />
-            <span>Grade {report.overallGrade}</span>
-          </div>
-          <p className="mt-4 text-center text-sm text-slate-600">{report.overallSummary}</p>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

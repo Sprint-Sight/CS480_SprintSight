@@ -260,7 +260,7 @@ class InMemoryAssessmentRepository(AssessmentRepository):
     def get_report(self, report_id: str) -> AssessmentReport | None:
         return self._reports.get(report_id)
 
-    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+    def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]:
         matching = [
             report
             for report in self._reports.values()
@@ -268,9 +268,13 @@ class InMemoryAssessmentRepository(AssessmentRepository):
             and report.project_id == project_id
             and report.sprint_id == sprint_id
         ]
+        return sorted(matching, key=lambda report: report.generated_at, reverse=True)
+
+    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+        matching = self.list_reports(course_id, project_id, sprint_id)
         if not matching:
             return None
-        return sorted(matching, key=lambda report: report.generated_at)[-1]
+        return matching[0]
 
 
 class InMemoryAssessmentJobRepository:

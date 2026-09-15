@@ -261,7 +261,10 @@ CREATE TABLE IF NOT EXISTS assessment_reports (
     rubric_weights JSONB NOT NULL,
     team_score JSONB NOT NULL,
     individual_scores JSONB NOT NULL DEFAULT '[]'::jsonb,
-    recommendations JSONB NOT NULL DEFAULT '[]'::jsonb
+    recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+    rubric_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+    strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
+    weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 
 CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint

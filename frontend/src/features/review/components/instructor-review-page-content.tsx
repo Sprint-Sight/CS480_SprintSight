@@ -6,16 +6,23 @@ import { useEffect, useMemo, useState } from "react";
 import { INITIAL_AUDIT_HISTORY, INITIAL_REVIEW_CRITERIA } from "@/features/review/data";
 import type { ReviewAuditEvent, ReviewAuditEvent as AuditEvent, ReviewCriterion } from "@/features/review/types";
 import { apiRequest } from "@/features/projects/components/projects-api";
+import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
 
-type BackendAuditRecord = {
+type ManualOverrideRecord = {
   override_id: string;
-  timestamp: string;
-  instructor_id: string;
-  student_id: string;
-  report_id: string;
-  original_score: number;
-  new_score: number;
-  reason_comment: string;
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  team_name: string;
+  requirements_score: number;
+  code_quality_score: number;
+  testing_score: number;
+  documentation_score: number;
+  collaboration_score: number;
+  total_score: number;
+  graded_by: string;
+  created_at: string;
+  updated_at: string;
 };
 
 function nowLabel() {
@@ -47,12 +54,17 @@ export default function InstructorReviewPageContent() {
   const [criterionScoring, setCriterionScoring] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(INITIAL_REVIEW_CRITERIA.map((item) => [item.id, true])),
   );
-  const [overrideReportId, setOverrideReportId] = useState("");
-  const [overrideStudentId, setOverrideStudentId] = useState("");
-  const [overrideScore, setOverrideScore] = useState(0);
-  const [overrideReason, setOverrideReason] = useState("");
   const [overrideError, setOverrideError] = useState("");
   const [isSubmittingOverride, setIsSubmittingOverride] = useState(false);
+  const [projectContext, setProjectContext] = useState(() => {
+    const state = readIngestionState();
+    const ingestion = state.selectedProjectId ? getProjectIngestion(state.selectedProjectId) : { git: undefined, jira: undefined };
+    return {
+      projectId: state.selectedProjectId || "",
+      courseId: state.selectedCourseId || ingestion.git?.course_id || ingestion.jira?.course_id || "",
+      sprintId: ingestion.git?.sprint_id || ingestion.jira?.sprint_id || "sprint-1",
+    };
+  });
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
@@ -66,14 +78,18 @@ export default function InstructorReviewPageContent() {
 
     async function loadAuditHistory() {
       try {
-        const records = await apiRequest<BackendAuditRecord[]>("/audit/overrides");
+        if (!projectContext.projectId) return;
+        const query = new URLSearchParams({ project_id: projectContext.projectId });
+        if (projectContext.courseId) query.set("course_id", projectContext.courseId);
+        if (projectContext.sprintId) query.set("sprint_id", projectContext.sprintId);
+        const records = await apiRequest<ManualOverrideRecord[]>(`/manual-scoring/overrides?${query.toString()}`);
         setAuditHistory(records.map((record) => ({
           id: record.override_id,
           type: "modified",
-          actor: record.instructor_id,
-          title: "Backend Score Override",
-          detail: `${record.student_id}: ${record.original_score} -> ${record.new_score}. ${record.reason_comment}`,
-          timestamp: new Date(record.timestamp).toLocaleString(),
+          actor: record.graded_by,
+          title: "Project Assessment Override",
+          detail: `${record.team_name} total score: ${record.total_score}/100 across the five rubric dimensions.`,
+          timestamp: new Date(record.updated_at).toLocaleString(),
         })));
       } catch {
         // Keep fixture audit history available when no backend review context exists.
@@ -81,7 +97,7 @@ export default function InstructorReviewPageContent() {
     }
 
     loadAuditHistory();
-  }, [role]);
+  }, [role, projectContext]);
 
   const isInstructor = role === "instructor";
 
@@ -194,36 +210,39 @@ export default function InstructorReviewPageContent() {
     });
   }
 
-  async function submitBackendOverride() {
-    if (!overrideReportId.trim() || !overrideStudentId.trim() || !overrideReason.trim()) {
-      setOverrideError("Report ID, student ID, score, and reason are required.");
+  async function submitProjectOverride() {
+    if (!projectContext.courseId || !projectContext.projectId || !projectContext.sprintId) {
+      setOverrideError("Select a project and sprint before saving the project override.");
       return;
     }
 
     setOverrideError("");
     setIsSubmittingOverride(true);
     try {
-      const response = await apiRequest<{ override: BackendAuditRecord }>("/assessments/override", {
+      const response = await apiRequest<ManualOverrideRecord>("/manual-scoring/overrides", {
         method: "POST",
         body: JSON.stringify({
-          report_id: overrideReportId.trim(),
-          student_id: overrideStudentId.trim(),
-          new_score: overrideScore,
-          reason_comment: overrideReason.trim(),
+          course_id: projectContext.courseId,
+          project_id: projectContext.projectId,
+          sprint_id: projectContext.sprintId,
+          requirements_score: criteria.find((item) => item.category === "Requirements")?.score ?? 0,
+          code_quality_score: criteria.find((item) => item.category === "Code Quality")?.score ?? 0,
+          testing_score: criteria.find((item) => item.category === "Testing")?.score ?? 0,
+          documentation_score: criteria.find((item) => item.category === "Documentation")?.score ?? 0,
+          collaboration_score: criteria.find((item) => item.category === "Collaboration")?.score ?? 0,
         }),
       });
-      const record = response.override;
+      const record = response;
       setAuditHistory((previous) => [{
         id: record.override_id,
         type: "modified",
-        actor: record.instructor_id,
-        title: "Backend Score Override",
-        detail: `${record.student_id}: ${record.original_score} -> ${record.new_score}. ${record.reason_comment}`,
-        timestamp: new Date(record.timestamp).toLocaleString(),
+        actor: record.graded_by,
+        title: "Project Assessment Override",
+        detail: `${record.team_name} total score saved at ${record.total_score}/100.`,
+        timestamp: new Date(record.updated_at).toLocaleString(),
       }, ...previous]);
-      setOverrideReason("");
     } catch (error) {
-      setOverrideError(error instanceof Error ? error.message : "Failed to submit score override.");
+      setOverrideError(error instanceof Error ? error.message : "Failed to save project override.");
     } finally {
       setIsSubmittingOverride(false);
     }
@@ -429,18 +448,13 @@ export default function InstructorReviewPageContent() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-xl font-semibold text-blue-950">Backend Student Score Override</h2>
-        <p className="mt-1 text-sm text-slate-500">Submit a real assessment override with an auditable reason.</p>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <input value={overrideReportId} onChange={(event) => setOverrideReportId(event.target.value)} placeholder="Assessment report ID" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
-          <input value={overrideStudentId} onChange={(event) => setOverrideStudentId(event.target.value)} placeholder="Student ID" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
-          <input type="number" min={0} max={100} value={overrideScore} onChange={(event) => setOverrideScore(Math.min(100, Math.max(0, Number(event.target.value))))} placeholder="New score" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
-          <input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Reason for override" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
-        </div>
+        <h2 className="text-xl font-semibold text-blue-950">Project Assessment Override</h2>
+        <p className="mt-1 text-sm text-slate-500">Save the five rubric scores as the instructor&apos;s final project assessment.</p>
+        <p className="mt-2 text-xs text-slate-500">Project: {projectContext.projectId || "Select a project in Artifact Viewer first"} · Sprint: {projectContext.sprintId}</p>
         {overrideError && <p className="mt-2 text-sm text-rose-600">{overrideError}</p>}
-        <button type="button" onClick={submitBackendOverride} disabled={isSubmittingOverride} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-blue-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+        <button type="button" onClick={submitProjectOverride} disabled={isSubmittingOverride || !projectContext.projectId || !projectContext.courseId} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-blue-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
           {isSubmittingOverride ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-          Submit Override
+          Save Project Assessment
         </button>
       </section>
 
