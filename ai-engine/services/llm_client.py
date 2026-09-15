@@ -219,6 +219,11 @@ async def generate_sprint_feedback(
     )
     try:
         client = create_llm_client()
+        full_prompt_chars = len(prompt)
+        log.info(
+            ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
+            "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
+        )
         return await client.chat.completions.create(
             model=model_name,
             response_model=SprintFeedback,
