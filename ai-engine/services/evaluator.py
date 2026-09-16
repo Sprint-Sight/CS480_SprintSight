@@ -39,10 +39,13 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
                 )
                 raise
             log.info(
-                "Completed rubric dimension '%s' with score %s in %.2f seconds.",
+                "Completed rubric dimension '%s' with score %s in %.2f seconds. "
+                "Justification: %s | Evidence: %s",
                 dim,
                 result.score,
                 time.perf_counter() - dimension_start,
+                result.justification,
+                result.evidence_citations,
             )
             return result
 
