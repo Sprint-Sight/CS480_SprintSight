@@ -29,7 +29,7 @@ export function RosterModal({
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Course Roster & Enrollment</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Create student accounts, enroll them in the course, and add them to a project.</p>
+            <p className="mt-0.5 text-sm text-slate-500">Create student accounts and enroll them in this course.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close roster" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
             <X className="h-4 w-4" />
@@ -72,7 +72,7 @@ export function RosterModal({
                 onClick={onEnroll}
                 className="h-10 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:ring-offset-1"
               >
-                Create, Enroll & Add
+                Create and Enroll
               </button>
             </div>
           </div>

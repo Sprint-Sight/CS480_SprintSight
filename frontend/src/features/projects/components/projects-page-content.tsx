@@ -5,8 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
 import { ProjectCard } from "@/features/projects/components/project-card";
+import { ProjectMembersModal } from "@/features/projects/components/project-members-modal";
 import { ProjectModal } from "@/features/projects/components/project-modal";
 import { RosterModal } from "@/features/projects/components/roster-modal";
+import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
 import { PROJECTS } from "@/features/projects/data";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
@@ -54,7 +56,9 @@ export default function ProjectsPageContent() {
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
-  const [projectForNewMember, setProjectForNewMember] = useState<string | null>(null);
+  const [projectForMemberSelection, setProjectForMemberSelection] = useState<Project | null>(null);
+  const [selectedProjectMemberId, setSelectedProjectMemberId] = useState("");
+  const [memberToRemove, setMemberToRemove] = useState<{ projectId: string; userId: string; fullName: string } | null>(null);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
@@ -407,16 +411,9 @@ export default function ProjectsPageContent() {
         body: JSON.stringify({ email: trimmedEmail, full_name: trimmedName, password }),
       });
 
-      if (projectForNewMember) {
-        await apiRequest(`/projects/${projectForNewMember}/members/${student.id}`, { method: "POST" });
-        await loadProjects();
-        window.alert(`Student ${student.full_name} created and added to the project. They can log in with ${student.email} and the password entered here, then change it after first login.`);
-      } else {
-        window.alert(`Student ${student.full_name} created and enrolled. They can log in with ${student.email} and the password entered here, then change it after first login.`);
-      }
+      window.alert(`Student ${student.full_name} created and enrolled. They can log in with ${student.email} and the password entered here, then change it after first login.`);
 
       setStudentForm({ email: "", full_name: "", password: "" });
-      setProjectForNewMember(null);
       await loadCourseStudents();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to enroll student.");
@@ -445,20 +442,45 @@ export default function ProjectsPageContent() {
       window.alert("Please select a valid course before adding a project member.");
       return;
     }
-    setProjectForNewMember(projectId);
-    setStudentForm({ email: "", full_name: "", password: "" });
-    setIsRosterModalOpen(true);
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (!project) return;
+    await loadCourseStudents();
+    setSelectedProjectMemberId("");
+    setProjectForMemberSelection(project);
   }
 
-  async function handleRemoveProjectMember(projectId: string, userId: string, event: React.MouseEvent) {
+  function handleRemoveProjectMember(projectId: string, userId: string, event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
+    const project = projects.find((candidate) => candidate.id === projectId);
+    const member = project?.members.find((candidate) => candidate.id === userId);
+    if (member) setMemberToRemove({ projectId, userId, fullName: member.full_name });
+  }
 
+  async function handleConfirmedRemoveProjectMember() {
+    if (!memberToRemove) return;
     try {
-      await apiRequest(`/projects/${projectId}/members/${userId}`, { method: "DELETE" });
+      await apiRequest(`/projects/${memberToRemove.projectId}/members/${memberToRemove.userId}`, { method: "DELETE" });
+      await loadProjects();
       window.alert("Project member removed.");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to remove project member.");
+    } finally {
+      setMemberToRemove(null);
+    }
+  }
+
+  async function handleConfirmAddProjectMember() {
+    if (!projectForMemberSelection || !selectedProjectMemberId) return;
+
+    try {
+      await apiRequest(`/projects/${projectForMemberSelection.id}/members/${selectedProjectMemberId}`, { method: "POST" });
+      await loadProjects();
+      setProjectForMemberSelection(null);
+      setSelectedProjectMemberId("");
+      window.alert("Student added to the project.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to add project member.");
     }
   }
 
@@ -578,11 +600,30 @@ export default function ProjectsPageContent() {
         studentForm={studentForm}
         onClose={() => {
           setIsRosterModalOpen(false);
-          setProjectForNewMember(null);
         }}
         onEnroll={handleEnrollStudent}
         onUnenroll={handleUnenrollStudent}
         setStudentForm={setStudentForm}
+      />
+
+      <ProjectMembersModal
+        isOpen={Boolean(projectForMemberSelection)}
+        projectName={projectForMemberSelection?.team_name || "this project"}
+        availableStudents={courseStudents.filter((student) => !projects.some((project) => project.members.some((member) => member.id === student.id)))}
+        selectedStudentId={selectedProjectMemberId}
+        onClose={() => { setProjectForMemberSelection(null); setSelectedProjectMemberId(""); }}
+        onSelectStudent={setSelectedProjectMemberId}
+        onAddMember={handleConfirmAddProjectMember}
+      />
+
+      <ConfirmationModal
+        isOpen={Boolean(memberToRemove)}
+        onClose={() => setMemberToRemove(null)}
+        onConfirm={handleConfirmedRemoveProjectMember}
+        title="Remove Project Member"
+        message={`Remove ${memberToRemove?.fullName || "this student"} from the project? They will remain enrolled in the course.`}
+        confirmText="Remove Member"
+        cancelText="Keep Member"
       />
 
       {isFilterModalOpen && (
