@@ -1,6 +1,6 @@
 import { PROJECTS } from "@/features/projects/data";
 
-import type { ArtifactProjectDataset } from "./types";
+import type { ArtifactProjectDataset } from "@/features/artifacts/types";
 
 const DATASETS: ArtifactProjectDataset[] = [
   {

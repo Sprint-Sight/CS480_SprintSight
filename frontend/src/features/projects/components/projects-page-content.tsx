@@ -10,6 +10,7 @@ import { RosterModal } from "@/features/projects/components/roster-modal";
 import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
 import { PROJECTS } from "@/features/projects/data";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
+import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
 const sprintOptions = [
@@ -28,18 +29,6 @@ const sortOptions = [
 ] as const;
 
 type SortValue = (typeof sortOptions)[number]["value"];
-
-type ProjectFilters = {
-  teamName: string;
-  status: "All statuses" | ProjectStatus;
-  sprint: string;
-  module: string;
-  minScore: string;
-  maxScore: string;
-  minCompletion: string;
-  maxCompletion: string;
-  sortBy: SortValue;
-};
 
 const DEFAULT_FILTERS: ProjectFilters = {
   teamName: "",
@@ -477,66 +466,7 @@ export default function ProjectsPageContent() {
     setDraftFilters((current) => ({ ...current, [key]: value }));
   }
 
-  function parseRangeValue(value: string) {
-    if (value.trim() === "") return null;
-    const parsed = Number(value);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-
-  const filteredProjects = useMemo(() => {
-    const minScore = parseRangeValue(appliedFilters.minScore);
-    const maxScore = parseRangeValue(appliedFilters.maxScore);
-    const minCompletion = parseRangeValue(appliedFilters.minCompletion);
-    const maxCompletion = parseRangeValue(appliedFilters.maxCompletion);
-
-    const matches = projects.filter((project) => {
-      const normalizedSearch = searchTerm.trim().toLowerCase();
-      const normalizedTeamName = appliedFilters.teamName.trim().toLowerCase();
-      const searchBlob = [project.project_name, project.team_name, project.module, ...project.sprints.map((sprint) => sprint.name)]
-        .join(" ")
-        .toLowerCase();
-
-      const matchesSearch = normalizedSearch.length === 0 || searchBlob.includes(normalizedSearch);
-      const matchesTeamName = normalizedTeamName.length === 0 || project.team_name.toLowerCase().includes(normalizedTeamName);
-      const matchesStatus = appliedFilters.status === "All statuses" || project.status === appliedFilters.status;
-      const matchesSprint = appliedFilters.sprint === "All sprints" || project.sprints.some((sprint) => sprint.name === appliedFilters.sprint);
-      const matchesModule = appliedFilters.module === "All modules" || project.module === appliedFilters.module;
-      const matchesMinScore = minScore === null || project.score >= minScore;
-      const matchesMaxScore = maxScore === null || project.score <= maxScore;
-      const matchesMinCompletion = minCompletion === null || project.completion >= minCompletion;
-      const matchesMaxCompletion = maxCompletion === null || project.completion <= maxCompletion;
-
-      return (
-        matchesSearch &&
-        matchesTeamName &&
-        matchesStatus &&
-        matchesSprint &&
-        matchesModule &&
-        matchesMinScore &&
-        matchesMaxScore &&
-        matchesMinCompletion &&
-        matchesMaxCompletion
-      );
-    });
-
-    const sorted = [...matches];
-    sorted.sort((left, right) => {
-      if (appliedFilters.sortBy === "name-desc") return right.project_name.localeCompare(left.project_name);
-      if (appliedFilters.sortBy === "score-desc") return right.score - left.score;
-      if (appliedFilters.sortBy === "score-asc") return left.score - right.score;
-      if (appliedFilters.sortBy === "completion-desc") return right.completion - left.completion;
-      if (appliedFilters.sortBy === "completion-asc") return left.completion - right.completion;
-      if (appliedFilters.sortBy === "status-priority") {
-        const rank: Record<ProjectStatus, number> = { "At Risk": 0, Active: 1, Completed: 2 };
-        const statusDiff = rank[left.status] - rank[right.status];
-        if (statusDiff !== 0) return statusDiff;
-        return right.score - left.score;
-      }
-      return left.project_name.localeCompare(right.project_name);
-    });
-
-    return sorted;
-  }, [searchTerm, appliedFilters, projects]);
+  const filteredProjects = useProjectFilters(projects, searchTerm, appliedFilters);
 
   return (
     <div className="space-y-6 p-8">

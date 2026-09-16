@@ -16,6 +16,7 @@ import { getArtifactDataset, getArtifactProjectOptions } from "@/features/artifa
 import { API_BASE_URL, apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
 import { getProjectIngestion, readIngestionState, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
+import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "github", label: "GitHub", icon: FolderGit2 },
@@ -555,21 +556,7 @@ export default function ArtifactViewerPageContent() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition ${
-              activeTab === tab.id ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <ArtifactTabs tabs={tabs} visibleTabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         {activeTab === "github" && (

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Shield,
@@ -20,10 +20,11 @@ import {
   KeyRound,
   RotateCcw,
 } from "lucide-react";
-import { UserAccount, Role, CreateUserData, EditUserData, ProjectOption } from "../types";
-import { CreateUserModal } from "./create-user-modal";
-import { EditUserModal } from "./edit-user-modal";
+import { UserAccount, Role, CreateUserData, EditUserData, ProjectOption } from "@/features/admin/types";
+import { CreateUserModal } from "@/features/admin/components/create-user-modal";
+import { EditUserModal } from "@/features/admin/components/edit-user-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { useAdminDirectory } from "@/features/admin/hooks/use-admin-directory";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
@@ -329,27 +330,7 @@ export function AdminPageContent() {
     router.replace("/login");
   };
 
-  const filteredUsers = useMemo(() => {
-    return users.filter((user) => {
-      const matchesSearch =
-        user.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (user.projectName && user.projectName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (user.courseCode && user.courseCode.toLowerCase().includes(searchQuery.toLowerCase()));
-      const matchesRole = selectedRoleFilter === "all" || user.role === selectedRoleFilter;
-      const matchesStatus = selectedStatusFilter === "all" || user.status === selectedStatusFilter;
-
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  }, [users, searchQuery, selectedRoleFilter, selectedStatusFilter]);
-
-  const stats = useMemo(() => {
-    const total = users.length;
-    const active = users.filter((u) => u.status === "Active").length;
-    const students = users.filter((u) => u.role === "student").length;
-    const instructors = users.filter((u) => u.role === "instructor").length;
-    return { total, active, students, instructors };
-  }, [users]);
+  const { filteredUsers, stats } = useAdminDirectory(users, searchQuery, selectedRoleFilter, selectedStatusFilter);
 
   if (!mounted) return null;
 
