@@ -50,6 +50,7 @@ export type PersistedJiraSnapshot = {
 export type IngestionState = {
   selectedProjectId?: string;
   selectedCourseId?: string;
+  selectedSprintId?: string;
   gitBySprint: Record<string, PersistedGitMetrics>;
   jiraBySprint: Record<string, PersistedJiraSnapshot>;
   documentCounts: Record<string, number>;
@@ -71,6 +72,7 @@ export function readIngestionState(): IngestionState {
       gitBySprint: parsed?.gitBySprint || {},
       jiraBySprint: parsed?.jiraBySprint || {},
       documentCounts: parsed?.documentCounts || {},
+      selectedSprintId: parsed?.selectedSprintId || "sprint-1",
     };
   } catch {
     return emptyState();
