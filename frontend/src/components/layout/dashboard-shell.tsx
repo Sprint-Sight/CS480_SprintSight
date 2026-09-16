@@ -18,12 +18,9 @@ import {
   Search,
   Settings,
   User,
-  RefreshCw,
-  Sparkles,
   Loader2,
 } from "lucide-react";
 
-import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { apiRequest } from "@/features/projects/components/projects-api";
 import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
 
@@ -109,9 +106,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [isLoadingScope, setIsLoadingScope] = useState<boolean>(false);
-
-  // State for confirmation modal
-  const [pendingAction, setPendingAction] = useState<"sync" | "assess" | null>(null);
 
   useEffect(() => {
     if (isAuthorized && role === "student" && isRestrictedForStudent) {
@@ -237,15 +231,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     sessionStorage.removeItem("sprintsight-access-token");
     setIsProfileMenuOpen(false);
     router.replace("/login");
-  };
-
-  const executeAction = () => {
-    if (pendingAction === "assess") {
-      router.push("/instructor-review");
-    } else if (pendingAction === "sync") {
-      router.push("/artifact-viewer");
-    }
-    setPendingAction(null);
   };
 
   if (!isAuthorized) {
@@ -454,25 +439,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                   )}
 
                   <div className="ml-auto flex items-center gap-3">
-                    <div className="flex items-center gap-2 border-r border-slate-200 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => setPendingAction("sync")}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Sync Data
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPendingAction("assess")}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        AI Assess
-                      </button>
-                    </div>
-
                     {currentTeamStats && (
                       <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -488,18 +454,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
         </div>
       </div>
 
-      <ConfirmationModal
-        isOpen={pendingAction !== null}
-        onClose={() => setPendingAction(null)}
-        onConfirm={executeAction}
-        title={pendingAction === "assess" ? "Run AI Assessment" : "Sync Latest Data"}
-        message={
-          pendingAction === "assess"
-            ? "This will evaluate the latest sprint data for the current team. Are you ready to begin?"
-            : "Pulling the latest commits and Jira tickets may take a few moments. Do you want to proceed?"
-        }
-        confirmText={pendingAction === "assess" ? "Run Assessment" : "Sync"}
-      />
     </>
   );
 }

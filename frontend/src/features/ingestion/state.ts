@@ -93,6 +93,12 @@ export function saveGitMetrics(metrics: PersistedGitMetrics) {
   });
 }
 
+export function getProjectGitMetrics(projectId: string): PersistedGitMetrics[] {
+  return Object.values(readIngestionState().gitBySprint)
+    .filter((metrics) => metrics.project_id === projectId)
+    .sort((first, second) => first.sprint_id.localeCompare(second.sprint_id, undefined, { numeric: true }));
+}
+
 export function saveJiraSnapshot(snapshot: PersistedJiraSnapshot) {
   const state = readIngestionState();
   writeIngestionState({

@@ -1,24 +1,20 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Layers, Users, Shield, User, Mail } from "lucide-react";
-import { Role, UserAccount, ProjectOption, EditUserData } from "@/features/admin/types";
+import { X, Shield, User, Mail } from "lucide-react";
+import { Role, UserAccount, EditUserData } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 interface EditUserModalProps {
   user: UserAccount | null;
-  projects: ProjectOption[];
   onClose: () => void;
   onSave: (user: UserAccount, data: EditUserData) => Promise<void>;
 }
 
-export function EditUserModal({ user, projects, onClose, onSave }: EditUserModalProps) {
+export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
   const [fullName, setFullName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [role, setRole] = useState<Role>("student");
-  const [projectId, setProjectId] = useState<string>("");
-  const [courseCode, setCourseCode] = useState<string>("");
-  const [section, setSection] = useState<string>("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -27,22 +23,10 @@ export function EditUserModal({ user, projects, onClose, onSave }: EditUserModal
       setFullName(user.fullName || "");
       setEmail(user.email || "");
       setRole(user.role);
-      setProjectId(user.projectId || "");
-      setCourseCode(user.courseCode || "CS480");
-      setSection(user.section || "001");
     }
   }, [user]);
 
   if (!user) return null;
-
-  const handleProjectSelect = (selectedId: string) => {
-    setProjectId(selectedId);
-    const selected = projects.find((p) => p.id === selectedId);
-    if (selected) {
-      setCourseCode(selected.courseCode);
-      setSection(selected.section);
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,9 +40,6 @@ export function EditUserModal({ user, projects, onClose, onSave }: EditUserModal
       fullName,
       email,
       role,
-      projectId: role === "student" ? projectId : undefined,
-      courseCode: role !== "admin" ? courseCode : undefined,
-      section: role !== "admin" ? section : undefined,
     });
     setIsSubmitting(false);
     onClose();
@@ -125,55 +106,11 @@ export function EditUserModal({ user, projects, onClose, onSave }: EditUserModal
               </select>
             </div>
 
-            {role !== "admin" && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                    <Layers className="w-3.5 h-3.5 text-blue-600" /> Course Code
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={courseCode}
-                    onChange={(e) => setCourseCode(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
-                    placeholder="CS480"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Section</label>
-                  <input
-                    type="text"
-                    required
-                    value={section}
-                    onChange={(e) => setSection(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
-                    placeholder="001"
-                  />
-                </div>
-              </div>
-            )}
-
-            {role === "student" && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-purple-600" />
-                  Assigned Project / Team
-                </label>
-                <select
-                  value={projectId}
-                  onChange={(e) => handleProjectSelect(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all cursor-pointer"
-                >
-                  <option value="">Unassigned (No Team)</option>
-                  {projects.map((proj) => (
-                    <option key={proj.id} value={proj.id}>
-                      {proj.projectName} ({proj.courseCode} - Sec {proj.section})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              {role === "student"
+                ? "Course enrollment and project-team membership are managed from the instructor's course workspace."
+                : "Course and project assignments are N/A for this role."}
+            </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
               <button
