@@ -5,14 +5,9 @@ Shared logic for verifying that LLM-generated evidence citations actually
 trace back to the real, ingested student artifact data — rather than to
 example/fixture text, or to plausible-sounding but fabricated content.
 
-Used in two places:
-  - schemas/rubrics_dimension_score.py: a field_validator that runs DURING
-    generation, with the bundle passed in via instructor's validation_context.
-    When it raises ValueError, instructor automatically re-asks the model to
-    fix ungrounded citations, using the max_retries budget you already pay for.
-  - services/llm_client.py: a hard backstop that runs AFTER generation, in
-    case no validation_context was supplied, or retries were exhausted and
-    the model still didn't self-correct.
+Used by services/llm_client.py as a hard backstop after generation. The
+installed Instructor/OpenAI integration forwards unknown keyword arguments to
+OpenAI, so validation context cannot be passed through the completion call.
 
 Kept in its own module (rather than inside llm_client.py or the schema file)
 specifically to avoid a circular import: llm_client.py imports

@@ -152,13 +152,6 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             temperature=0,
             max_retries=3,
             extra_body=_request_extra_body(model_name),
-            # Makes bundle_data available inside RubricDimensionScore's
-            # citations_must_be_grounded validator (via ValidationInfo.context).
-            # When that validator raises ValueError for an ungrounded citation,
-            # instructor automatically re-asks the model with the error message
-            # and retries — using the max_retries budget above to *correct*
-            # fake evidence, not just re-check JSON shape.
-            validation_context={"bundle_data": bundle_data},
         )
         if result.dimension != dimension_name:
             raise ValueError(
