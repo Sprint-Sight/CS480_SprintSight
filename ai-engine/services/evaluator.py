@@ -22,7 +22,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
     start_time = time.time() # Set start time
 
     # Limit parallel requests to avoid overloading one local Ollama model.
-    semaphore = asyncio.Semaphore(3)
+    semaphore = asyncio.Semaphore(2)
 
     async def _bounded_evaluate(dim):
         async with semaphore:
