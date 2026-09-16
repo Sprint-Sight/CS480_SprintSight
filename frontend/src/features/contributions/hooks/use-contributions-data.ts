@@ -13,10 +13,13 @@ export function useContributionsData() {
   const liveIngestion = useMemo(() => { void ingestionVersion; return getProjectIngestion(selectedProjectId); }, [selectedProjectId, ingestionVersion]);
 
   useEffect(() => {
-    const refresh = () => setIngestionVersion((version) => version + 1);
+    const refresh = () => {
+      setSelectedProjectId(readIngestionState().selectedProjectId || projectOptions[0]?.id || "");
+      setIngestionVersion((version) => version + 1);
+    };
     window.addEventListener("sprintsight-ingestion-updated", refresh);
     return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
-  }, []);
+  }, [projectOptions]);
 
-  return { projectOptions, selectedProjectId, setSelectedProjectId, dataset, liveIngestion };
+  return { dataset, liveIngestion };
 }

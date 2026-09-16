@@ -21,11 +21,6 @@ export default function DashboardPageContent() {
       <DashboardHeader
         role={dashboard.role}
         fullName={dashboard.fullName}
-        projects={dashboard.projects}
-        selectedProjectId={dashboard.selectedProjectId}
-        sprintId={dashboard.sprintId}
-        onProjectChange={dashboard.setSelectedProjectId}
-        onSprintChange={dashboard.setSprintId}
       />
       {dashboard.isLoading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading ingested project data...</div>}
       {dashboard.loadError && <p className="text-sm text-rose-600">{dashboard.loadError}</p>}

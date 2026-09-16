@@ -27,7 +27,7 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
   const [mounted, setMounted] = useState(false);
   const [projects, setProjects] = useState<DashboardProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [sprintId, setSprintId] = useState("sprint-1");
+  const [sprintId, setSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
   const [gitMetrics, setGitMetrics] = useState<GitMetrics | null>(null);
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -94,6 +94,7 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
     const updateScope = () => {
       const state = readIngestionState();
       if (state.selectedProjectId) setSelectedProjectId(state.selectedProjectId);
+      setSprintId(state.selectedSprintId || "sprint-1");
     };
     window.addEventListener("sprintsight-ingestion-updated", updateScope);
     return () => window.removeEventListener("sprintsight-ingestion-updated", updateScope);
