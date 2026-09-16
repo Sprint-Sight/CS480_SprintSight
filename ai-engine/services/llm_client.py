@@ -36,7 +36,7 @@ How it works:
 # Read from .env file (set by Docker Compose environment block)
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, but OpenAI client requires it
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
-OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))  # 5 min default
+OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
