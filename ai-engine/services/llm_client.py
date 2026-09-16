@@ -157,10 +157,9 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             raise ValueError(
                 f"Model returned dimension '{result.dimension}' while evaluating '{dimension_name}'."
             )
-        # Backstop: the schema validator above should already have caught and
-        # forced a retry on this. This only fires if retries were exhausted
-        # and the model still didn't self-correct, so it fails loudly instead
-        # of silently returning fabricated evidence.
+        # Hard backstop: catches fabricated/ungrounded citations after
+        # generation, since the model can't be forced to self-correct via
+        # validation_context on this Instructor/OpenAI integration.
         ensure_grounded_citations(bundle_data, result.evidence_citations or [])
         return result
     except Exception as error:
