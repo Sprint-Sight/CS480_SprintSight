@@ -10,6 +10,9 @@ import json
 import os, httpx, logging, instructor, time
 from uuid import uuid4
 from services.audit_logger import write_audit_record
+from services.grounding import ensure_grounded_citations
+from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
+from schemas.modelname import MODEL_NUM_CTX
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
@@ -40,6 +43,21 @@ _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 )
 
 
+def _request_extra_body(model_name: str) -> dict:
+    # Only override num_ctx for models we have a known Modelfile value for;
+    # otherwise omit it so Ollama falls back to the model's own manifest value
+    # instead of silently applying a single hardcoded number to every model.
+    num_ctx = MODEL_NUM_CTX.get(model_name)
+    if num_ctx is None:
+        log.warning(
+            "No known num_ctx for model '%s' — omitting it so Ollama uses the "
+            "model's own manifest value instead of a guessed default.",
+            model_name,
+        )
+        return {}
+    return {"options": {"num_ctx": num_ctx}}
+
+
 async def _capture_request(request: httpx.Request) -> None:
     if request.url.path.endswith("/chat/completions"):
         context = _audit_context.get()
@@ -64,6 +82,7 @@ async def _capture_response(response: httpx.Response) -> None:
                 }
             )
 
+
 def create_llm_client():
     """
     Creates the instructor-wrapped Ollama client.
@@ -87,12 +106,13 @@ def create_llm_client():
         timeout=OLLAMA_TIMEOUT,
         http_client=transport, # Use the custom transport to capture requests and responses
     )
-    
+
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client,
         mode=instructor.Mode.JSON,
     )
     return client
+
 
 async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str, dimention_prompt) -> RubricDimensionScore:
     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
@@ -104,43 +124,11 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
         ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
         dimension_name, len(bundle_data), approx_tokens,
     )
-    
-    prompt = f"""
-    You are an expert software engineering professor.
-    Return exactly one rubric assessment object for the dimension: {dimension_name}.
-    Do not summarize, transform, or repeat the student artifacts.
-    Here are the rubric criteria for {dimension_name}:
-    {dimention_prompt}
-    
-    CRITICAL INSTRUCTIONS:
-    - Return a valid JSON object matching the RubricDimensionScore schema, and nothing else.
-    - The `dimension` field MUST be exactly `{dimension_name}`.
-    - Score MUST be an integer between 1 and 10.
-    - Provide justification for the score.
 
-    CRITICAL CITATION RULES:
-    1. Every item in evidence_citations MUST be a plain text string.
-    2. Do NOT wrap citations inside objects or key-value pairs.
-        CORRECT:
-        "evidence_citations": ["Jira ticket AUTH-1 is marked as Done.", "Alice added 150 lines of code."]
-        INCORRECT:
-        "evidence_citations": [{{"text": "Jira ticket AUTH-1 is marked as Done."}}]
-
-    Evidence rules:
-    - Use only evidence present in Student Artifacts.
-    - Do not invent issue numbers, URLs, names, scores, statuses, or activity.
-    - If evidence is missing, say so and score conservatively; still return the required rubric object.
-    
-    Student Artifacts:
-    {bundle_data}
-
-    Final instruction: return one RubricDimensionScore for `{dimension_name}`.
-    Set `dimension` to exactly `{dimension_name}`. Do not return `collaboration`
-    or any other dimension unless the requested dimension is `collaboration`.
-    """
+    prompt = render_dimension_prompt(dimension_name, dimention_prompt, bundle_data)
 
     client = create_llm_client()  # Create a new client for this model
-    
+
     audit_token = _audit_context.set(
         {
             "request_id": str(uuid4()),
@@ -163,12 +151,24 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_retries=3,
-            extra_body={"options": {"num_ctx": 40960}},
+            extra_body=_request_extra_body(model_name),
+            # Makes bundle_data available inside RubricDimensionScore's
+            # citations_must_be_grounded validator (via ValidationInfo.context).
+            # When that validator raises ValueError for an ungrounded citation,
+            # instructor automatically re-asks the model with the error message
+            # and retries — using the max_retries budget above to *correct*
+            # fake evidence, not just re-check JSON shape.
+            validation_context={"bundle_data": bundle_data},
         )
         if result.dimension != dimension_name:
             raise ValueError(
                 f"Model returned dimension '{result.dimension}' while evaluating '{dimension_name}'."
             )
+        # Backstop: the schema validator above should already have caught and
+        # forced a retry on this. This only fires if retries were exhausted
+        # and the model still didn't self-correct, so it fails loudly instead
+        # of silently returning fabricated evidence.
+        ensure_grounded_citations(bundle_data, result.evidence_citations or [])
         return result
     except Exception as error:
         context = _audit_context.get()
@@ -190,25 +190,7 @@ async def generate_sprint_feedback(
 ) -> SprintFeedback:
     """Generate strengths, weaknesses, and recommendations for the whole sprint."""
     scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
-    prompt = f"""
-    You are an expert software engineering professor reviewing a complete sprint.
-    Produce general project-level feedback, not feedback for individual rubric dimensions.
-
-    Return exactly one JSON object matching the SprintFeedback schema:
-    - strengths: general strengths of the sprint or team
-    - weaknesses: general weaknesses of the sprint or team
-    - recommendations: general actionable recommendations for the next sprint
-
-    Use only the rubric results and evidence below. Do not invent facts, names,
-    URLs, issue numbers, statuses, or activity. Avoid repeating the rubric
-    justifications verbatim. Keep each item concise and specific.
-
-    Sprint context:
-    {bundle.team_id=} {bundle.sprint_id=}
-
-    Rubric results:
-    {scores_data}
-    """
+    prompt = render_sprint_feedback_prompt(bundle.team_id, bundle.sprint_id, scores_data)
     audit_token = _audit_context.set(
         {
             "request_id": str(uuid4()),
@@ -231,10 +213,11 @@ async def generate_sprint_feedback(
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_retries=3,
-            extra_body={"options": {"num_ctx": 40960}},
+            extra_body=_request_extra_body(model_name),
         )
     finally:
         _audit_context.reset(audit_token)
+
 
 async def check_ollama_health(model_name: str) -> dict:
     """
