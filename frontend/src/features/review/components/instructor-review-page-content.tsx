@@ -7,6 +7,7 @@ import { INITIAL_AUDIT_HISTORY, INITIAL_REVIEW_CRITERIA } from "@/features/revie
 import type { ReviewAuditEvent, ReviewAuditEvent as AuditEvent, ReviewCriterion } from "@/features/review/types";
 import { apiRequest } from "@/features/projects/components/projects-api";
 import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
+import { useReviewScoring } from "@/features/review/hooks/use-review-scoring";
 
 type ManualOverrideRecord = {
   override_id: string;
@@ -101,24 +102,13 @@ export default function InstructorReviewPageContent() {
 
   const isInstructor = role === "instructor";
 
-  const hasUnsavedChanges = useMemo(
-    () => JSON.stringify(criteria) !== JSON.stringify(savedSnapshot),
-    [criteria, savedSnapshot],
-  );
-
   const aiOverallScore = useMemo(() => {
     if (INITIAL_REVIEW_CRITERIA.length === 0) return 0;
     const total = INITIAL_REVIEW_CRITERIA.reduce((sum, item) => sum + item.score, 0);
     return Math.round(total / INITIAL_REVIEW_CRITERIA.length);
   }, []);
 
-  const overallScore = useMemo(() => {
-    if (!scoringEnabled) return aiOverallScore;
-    const scoredCriteria = scoringEnabled ? criteria.filter((item) => criterionScoring[item.id]) : [];
-    if (scoredCriteria.length === 0) return 0;
-    const total = scoredCriteria.reduce((sum, item) => sum + item.score, 0);
-    return Math.round(total / scoredCriteria.length);
-  }, [aiOverallScore, criteria, criterionScoring, scoringEnabled]);
+  const { overallScore, hasUnsavedChanges } = useReviewScoring(criteria, savedSnapshot, scoringEnabled, criterionScoring, aiOverallScore);
 
   function updateCriterion(id: string, patch: Partial<ReviewCriterion>) {
     setCriteria((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));

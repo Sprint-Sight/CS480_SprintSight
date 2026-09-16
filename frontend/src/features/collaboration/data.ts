@@ -1,5 +1,5 @@
 import { PROJECTS } from "@/features/projects/data";
-import type { CollaborationDataset, ContributionDataset } from "./types";
+import type { CollaborationDataset, ContributionDataset } from "@/features/collaboration/types";
 
 const CONTRIBUTION_DATASETS: ContributionDataset[] = [
   {

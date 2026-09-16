@@ -1,7 +1,7 @@
 import { PROJECTS } from "@/features/projects/data";
 import type { ProjectSprint, StudentProject } from "@/features/projects/types";
 
-import type { SprintActivity, SprintOverviewPayload, SprintOverviewRow } from "./types";
+import type { SprintActivity, SprintOverviewPayload, SprintOverviewRow } from "@/features/sprints/types";
 
 const ACTIVITY_BY_PROJECT: Record<string, Record<string, SprintActivity>> = {
   "ecommerce-platform": {

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { X, Layers, Users, Shield, Key } from "lucide-react";
-import { Role, CreateUserData, ProjectOption } from "../types";
+import { Role, CreateUserData, ProjectOption } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 interface CreateUserModalProps {

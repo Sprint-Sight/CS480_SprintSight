@@ -1,0 +1,5 @@
+import type { JiraSnapshot } from "@/features/dashboard/types";
+
+export function JiraWorkList({ jiraSnapshot, isLoading }: { jiraSnapshot: JiraSnapshot | null; isLoading: boolean }) {
+  return <div className="flex flex-col rounded-xl border border-slate-100 bg-white p-6 shadow-sm"><h3 className="mb-4 text-lg font-bold text-slate-900">Jira Work</h3><div className="flex-1 space-y-3 overflow-y-auto pr-2">{(jiraSnapshot?.tickets || []).slice(0, 6).map((ticket) => <div key={ticket.ticket_id} className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"><div className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" /><div><p className="text-xs font-semibold text-slate-800">{ticket.ticket_id} - {ticket.summary}</p><p className="mt-0.5 text-xs text-slate-500">{ticket.status || "Unknown status"}{ticket.assignee ? ` - ${ticket.assignee}` : ""}</p></div></div>)}{!isLoading && !jiraSnapshot?.tickets.length && <p className="text-sm text-slate-500">No processed Jira tickets are available for this sprint.</p>}</div></div>;
+}

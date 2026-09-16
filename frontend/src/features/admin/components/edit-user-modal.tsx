@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, Layers, Users, Shield, User, Mail } from "lucide-react";
-import { Role, UserAccount, ProjectOption, EditUserData } from "../types";
+import { Role, UserAccount, ProjectOption, EditUserData } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 interface EditUserModalProps {

@@ -1,0 +1,2 @@
+type Props = { gitCommits: number; codeChurn: number; jiraTickets: number; };
+export function ProgressLiveSignals({ gitCommits, codeChurn, jiraTickets }: Props) { return <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4"><h2 className="text-lg font-semibold text-blue-950">Live Ingestion Signals</h2><div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-700 md:grid-cols-3"><p>Git commits: <strong>{gitCommits}</strong></p><p>Code churn: <strong>{codeChurn}</strong></p><p>Jira tickets: <strong>{jiraTickets}</strong></p></div></section>; }
