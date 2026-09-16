@@ -43,6 +43,35 @@ _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 )
 
 
+_DIMENSION_ARTIFACT_FIELDS = {
+    "code_quality": ("commits",),
+    "testing": ("commits", "jira_tickets", "artifact_metrics"),
+    "documentation": ("commits", "jira_tickets"),
+    "requirements": ("commits", "jira_tickets", "artifact_metrics"),
+    "collaboration": (
+        "commits",
+        "jira_tickets",
+        "peer_evaluations",
+        "collaboration_metrics",
+    ),
+}
+
+
+def _dimension_bundle_data(bundle: ArtifactBundle, dimension_name: str) -> str:
+    fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name)
+    if fields is None:
+        raise ValueError(f"Unknown rubric dimension: {dimension_name}")
+
+    bundle_data = {
+        "team_id": bundle.team_id,
+        "sprint_id": bundle.sprint_id,
+        "instructor_expectations": bundle.instructor_expectations,
+    }
+    full_bundle = bundle.model_dump(mode="json")
+    bundle_data.update({field: full_bundle[field] for field in fields})
+    return json.dumps(bundle_data, indent=2, ensure_ascii=True)
+
+
 def _request_extra_body(model_name: str) -> dict:
     # Only override num_ctx for models we have a known Modelfile value for;
     # otherwise omit it so Ollama falls back to the model's own manifest value
@@ -116,7 +145,7 @@ def create_llm_client():
 
 async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str, dimention_prompt) -> RubricDimensionScore:
     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
-    bundle_data = bundle.model_dump_json(indent=2)
+    bundle_data = _dimension_bundle_data(bundle, dimension_name)
     bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()
 
     approx_tokens = len(bundle_data) // 4

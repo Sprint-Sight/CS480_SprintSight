@@ -21,9 +21,8 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
 
     start_time = time.time() # Set start time
 
-    # Evaluate dimensions serially. Local Ollama models can otherwise produce
-    # the same dimension for multiple concurrent requests.
-    semaphore = asyncio.Semaphore(1)
+    # Limit parallel requests to avoid overloading one local Ollama model.
+    semaphore = asyncio.Semaphore(3)
 
     async def _bounded_evaluate(dim):
         async with semaphore:

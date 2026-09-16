@@ -3,6 +3,8 @@ services: # Seperate containers to run
       image: ollama/ollama
       ports:
         - "11434:11434"
+      environment:
+        - OLLAMA_NUM_PARALLEL=3
       volumes:
         - ollama_models:/root/.ollama
         - ./:/ai-engine
