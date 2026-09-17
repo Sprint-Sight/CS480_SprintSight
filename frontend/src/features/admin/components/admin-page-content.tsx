@@ -19,15 +19,13 @@ import {
   KeyRound,
   RotateCcw,
 } from "lucide-react";
-import { UserAccount, CreateUserData, EditUserData, ProjectOption } from "@/features/admin/types";
+import { UserAccount, CreateUserData, EditUserData } from "@/features/admin/types";
 import { CreateUserModal } from "@/features/admin/components/create-user-modal";
 import { EditUserModal } from "@/features/admin/components/edit-user-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { useAdminDirectory } from "@/features/admin/hooks/use-admin-directory";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
-
-const projects: ProjectOption[] = [];
 
 export function AdminPageContent() {
   const router = useRouter();
@@ -338,7 +336,7 @@ export function AdminPageContent() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">User & Project Directory</h1>
           <p className="text-slate-500 mt-1">
-            Welcome back, <span className="font-semibold text-slate-700">{adminName || "System Admin"}</span>. Assign users to courses, manage sections, and place students in project teams.
+            Welcome back, <span className="font-semibold text-slate-700">{adminName || "System Admin"}</span>. Provision and manage user accounts.
           </p>
         </div>
         
@@ -581,7 +579,6 @@ export function AdminPageContent() {
       {/* Modals */}
       <CreateUserModal
         isOpen={isCreateModalOpen}
-        projects={projects}
         onClose={() => setIsCreateModalOpen(false)}
         onCreate={handleCreateUser}
       />
