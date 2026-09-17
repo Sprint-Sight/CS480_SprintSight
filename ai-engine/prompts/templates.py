@@ -35,6 +35,13 @@ def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle
     4. Do NOT repeat benchmark, fixture, or example strings from prior prompts.
         Use only the actual Student Artifacts provided below.
     5. If a citation cannot be matched to the current bundle, do not include it.
+    6. Each citation MUST follow the format
+        "<verbatim identifier> | <one short sentence explaining why this is
+        evidence for the score/feedback>". The identifier before the "|" MUST
+        be copied exactly from Student Artifacts (a commit SHA, Jira ticket
+        ID, filename, or metric value) — only the text after the "|" is your
+        own reasoning. Example: "a1b2c3d | Adds unit tests for the login
+        flow, directly supporting the testing score."
 
     Evidence rules:
     - Use only evidence present in Student Artifacts.

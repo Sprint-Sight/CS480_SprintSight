@@ -5,9 +5,13 @@ Shared logic for verifying that LLM-generated evidence citations actually
 trace back to the real, ingested student artifact data — rather than to
 example/fixture text, or to plausible-sounding but fabricated content.
 
-Used by services/llm_client.py as a hard backstop after generation. The
-installed Instructor/OpenAI integration forwards unknown keyword arguments to
-OpenAI, so validation context cannot be passed through the completion call.
+Used by services/llm_client.py as a post-generation filter: rather than
+failing an entire rubric dimension because one citation looks fabricated,
+llm_client.py drops only the ungrounded citations and keeps the (already
+valid) score/justification, so a single bad citation can no longer cause a
+whole dimension to disappear from the assessment. The installed
+Instructor/OpenAI integration forwards unknown keyword arguments to OpenAI,
+so validation context cannot be passed through the completion call.
 
 Kept in its own module (rather than inside llm_client.py or the schema file)
 specifically to avoid a circular import: llm_client.py imports
@@ -85,14 +89,3 @@ def find_ungrounded_citations(bundle_data: str, citations: list[str]) -> list[st
             continue
         ungrounded.append(citation)
     return ungrounded
-
-
-def ensure_grounded_citations(bundle_data: str, citations: list[str]) -> None:
-    """Raises ValueError if any citation isn't traceable to bundle_data."""
-    ungrounded = find_ungrounded_citations(bundle_data, citations)
-    if ungrounded:
-        raise ValueError(
-            "Ungrounded evidence citations detected — these do not appear in "
-            "the student artifact bundle and look fabricated or copied from "
-            f"example text instead of real evidence: {ungrounded!r}"
-        )

@@ -2,6 +2,7 @@ import asyncio, logging, mlflow, time, os
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
 from schemas.rubrics_score import RubricsScore, DIMENSIONS, DIMENTION_PROMPTS
+from schemas.rubrics_dimension_score import RubricDimensionScore
 from services.llm_client import evaluate_dimension, generate_sprint_feedback
 from llmops.mlflow_config import start_mlflow
 
@@ -22,7 +23,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
     start_time = time.time() # Set start time
 
     # Limit parallel requests to avoid overloading one local Ollama model.
-    semaphore = asyncio.Semaphore(2)
+    semaphore = asyncio.Semaphore(1)
 
     async def _bounded_evaluate(dim):
         async with semaphore:
@@ -73,6 +74,19 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
         for dim, result in zip(DIMENSIONS, results):
             if isinstance(result, Exception):
                 failed_dimensions[dim] = str(result)
+                # Guarantee every dimension is present in the response: a
+                # missing dimension is worse than a clearly-flagged failed one.
+                scores_by_dim[dim] = RubricDimensionScore(
+                    dimension=dim,
+                    score=1,
+                    justification=(
+                        "Automated evaluation failed for this dimension after "
+                        f"all retries and could not be scored: {result}. "
+                        "Manual review required."
+                    ),
+                    evidence_citations=[],
+                    evaluation_failed=True,
+                )
             else:
                 scores_by_dim[dim] = result
 

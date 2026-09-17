@@ -4,7 +4,11 @@ services: # Seperate containers to run
       ports:
         - "11434:11434"
       environment:
-        - OLLAMA_NUM_PARALLEL=2
+        - OLLAMA_NUM_PARALLEL=1
+        # Ollama's default 5-minute idle unload means every dimension call
+        # pays a full cold model-load between requests -- keep it resident
+        # for the whole assessment run instead.
+        - OLLAMA_KEEP_ALIVE=30m
       volumes:
         - ollama_models:/root/.ollama
         - ./:/ai-engine

@@ -21,4 +21,7 @@ class RubricsScore(BaseModel):
     # .failed_dimenstions replaces seperately-tracked list field - it can't drift out of sync since it's computed straight from attributed
     @property
     def failed_dimensions(self) -> list[str]:
-        return [dim for dim in DIMENSIONS if getattr(self, dim) is None]
+        return [
+            dim for dim in DIMENSIONS
+            if (score := getattr(self, dim)) is None or score.evaluation_failed
+        ]

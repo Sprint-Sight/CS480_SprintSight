@@ -10,7 +10,7 @@ import json
 import os, httpx, logging, instructor, time
 from uuid import uuid4
 from services.audit_logger import write_audit_record
-from services.grounding import ensure_grounded_citations
+from services.grounding import find_ungrounded_citations
 from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
 from schemas.modelname import MODEL_NUM_CTX
 
@@ -47,9 +47,8 @@ _DIMENSION_ARTIFACT_FIELDS = {
     "code_quality": ("commits",),
     "testing": ("commits", "jira_tickets", "artifact_metrics"),
     "documentation": ("commits", "jira_tickets"),
-    "requirements": ("commits", "jira_tickets", "artifact_metrics"),
+    "requirements": ("jira_tickets", "artifact_metrics"),
     "collaboration": (
-        "commits",
         "jira_tickets",
         "peer_evaluations",
         "collaboration_metrics",
@@ -62,13 +61,31 @@ def _dimension_bundle_data(bundle: ArtifactBundle, dimension_name: str) -> str:
     if fields is None:
         raise ValueError(f"Unknown rubric dimension: {dimension_name}")
 
+    full_bundle = bundle.model_dump(mode="json")
     bundle_data = {
         "team_id": bundle.team_id,
         "sprint_id": bundle.sprint_id,
         "instructor_expectations": bundle.instructor_expectations,
     }
-    full_bundle = bundle.model_dump(mode="json")
-    bundle_data.update({field: full_bundle[field] for field in fields})
+
+    if "commits" in fields:
+        bundle_data["commits"] = [
+            {
+                "sha": commit["sha"],
+                "author": commit["author"],
+                "message": commit["message"],
+                "timestamp": commit["timestamp"],
+                "lines_added": commit["lines_added"],
+                "lines_deleted": commit["lines_deleted"],
+                "files_changed": [file_change["filename"] for file_change in commit["files_changed"]],
+            }
+            for commit in full_bundle["commits"]
+        ]
+
+    for field in fields:
+        if field != "commits":
+            bundle_data[field] = full_bundle[field]
+
     return json.dumps(bundle_data, indent=2, ensure_ascii=True)
 
 
@@ -186,10 +203,26 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             raise ValueError(
                 f"Model returned dimension '{result.dimension}' while evaluating '{dimension_name}'."
             )
-        # Hard backstop: catches fabricated/ungrounded citations after
-        # generation, since the model can't be forced to self-correct via
-        # validation_context on this Instructor/OpenAI integration.
-        ensure_grounded_citations(bundle_data, result.evidence_citations or [])
+        # Drop only the fabricated/ungrounded citations rather than discarding
+        # the whole dimension over a single bad citation, since the model
+        # can't be forced to self-correct via validation_context on this
+        # Instructor/OpenAI integration.
+        ungrounded = find_ungrounded_citations(bundle_data, result.evidence_citations or [])
+        if ungrounded:
+            log.warning(
+                "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the whole dimension: %r",
+                dimension_name, len(ungrounded), ungrounded,
+            )
+            write_audit_record(
+                {
+                    **(_audit_context.get() or {}),
+                    "ungrounded_citations_dropped": ungrounded,
+                }
+            )
+            result.evidence_citations = [
+                citation for citation in (result.evidence_citations or [])
+                if citation not in ungrounded
+            ]
         return result
     except Exception as error:
         context = _audit_context.get()
