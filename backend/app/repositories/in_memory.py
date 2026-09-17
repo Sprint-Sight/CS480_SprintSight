@@ -260,6 +260,14 @@ class InMemoryAssessmentRepository(AssessmentRepository):
     def get_report(self, report_id: str) -> AssessmentReport | None:
         return self._reports.get(report_id)
 
+    def update_manual_assessment(self, report_id: str, patch: dict[str, object]) -> AssessmentReport | None:
+        report = self._reports.get(report_id)
+        if not report:
+            return None
+        updated = report.model_copy(update={"override": True, **patch})
+        self._reports[report_id] = updated
+        return updated
+
     def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]:
         matching = [
             report

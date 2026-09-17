@@ -9,6 +9,7 @@ from app.repositories.interfaces import AssessmentRepository, ManualTextReposito
 from app.schemas.assessment import (
     AssessRequest,
     AssessmentReport,
+    ManualAssessmentPatch,
     OverrideRequest,
     OverrideResponse,
     RubricDimensionScoreDetail,
@@ -216,6 +217,35 @@ def get_latest_assessment(course_id: str, project_id: str, sprint_id: str, asses
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found.")
     return report
+
+
+def update_manual_assessment(
+    report_id: str,
+    payload: ManualAssessmentPatch,
+    instructor_id: str,
+    assessment_repository: AssessmentRepository,
+    projects: ProjectRepository,
+) -> AssessmentReport:
+    report = assessment_repository.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found.")
+
+    project = projects.get_project(report.project_id)
+    if not project or project.course_id != report.course_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found.")
+    if not projects.is_instructor_assigned(report.course_id, instructor_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructor is not assigned to this course.",
+        )
+
+    updated = assessment_repository.update_manual_assessment(
+        report_id,
+        payload.model_dump(),
+    )
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found.")
+    return updated
 
 
 def override_student_score(payload: OverrideRequest, instructor_id: str) -> OverrideResponse:

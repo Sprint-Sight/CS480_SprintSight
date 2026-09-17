@@ -6,16 +6,17 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_assessment_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty, require_student_or_faculty
+from app.dependencies.auth import get_assessment_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty, require_instructor, require_student_or_faculty
 from app.repositories.in_memory import job_repo
 from app.repositories.interfaces import AssessmentRepository, ManualTextRepository, MetricsRepository, ProjectRepository
-from app.schemas.assessment import AssessRequest, OverrideRequest
+from app.schemas.assessment import AssessRequest, AssessmentReport, ManualAssessmentPatch, OverrideRequest
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
     get_latest_assessment,
     list_assessment_reports,
     override_student_score,
     run_assessment_job,
+    update_manual_assessment,
 )
 from app.services.auditLogService.service import append_override_audit
 
@@ -113,6 +114,25 @@ def get_latest(
 ):
     _authorize_report_access(current_user, course_id, project_id, projects)
     return get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
+
+
+@router.patch("/reports/{report_id}")
+def patch_assessment_report(
+    report_id: str,
+    payload: ManualAssessmentPatch,
+    instructor_user: Annotated[object, Depends(require_instructor)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+) -> AssessmentReport:
+    if assessment_repository is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+    return update_manual_assessment(
+        report_id,
+        payload,
+        instructor_user.id,
+        assessment_repository,
+        projects,
+    )
 
 
 @router.post("/override")

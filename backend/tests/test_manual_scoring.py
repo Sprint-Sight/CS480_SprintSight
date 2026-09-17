@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
-from uuid import UUID
 
 from fastapi.testclient import TestClient
 
+from app.dependencies.auth import get_assessment_repository
 from app.main import app
-from app.repositories.interfaces import ProjectRecord
+from app.repositories.in_memory import InMemoryAssessmentRepository
+from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
 
 client = TestClient(app)
 
@@ -20,6 +21,8 @@ def headers(email: str) -> dict[str, str]:
 
 
 def setup_project(repository) -> None:
+    from app.repositories.interfaces import ProjectRecord
+
     repository.create_project(
         ProjectRecord(
             id="manual-project",
@@ -38,81 +41,98 @@ def setup_project(repository) -> None:
     repository.assign_instructor("manual-course", "u-faculty-1")
 
 
+def report() -> AssessmentReport:
+    return AssessmentReport(
+        report_id="rpt-manual-1",
+        model_name="test-model",
+        mode="test",
+        course_id="manual-course",
+        project_id="manual-project",
+        sprint_id="sprint-1",
+        generated_at=datetime.now(UTC),
+        rubric_weights={"quality": 1.0},
+        team_score=TeamScore(score=80, rationale="AI rationale"),
+        individual_scores=[
+            StudentScore(student_id="u-student-1", score=80, rationale="AI rationale")
+        ],
+        recommendations=["Keep testing"],
+    )
+
+
 def payload(**overrides: object) -> dict[str, object]:
     result: dict[str, object] = {
-        "course_id": "manual-course",
-        "project_id": "manual-project",
-        "sprint_id": "sprint-1",
         "requirements_score": 80,
         "code_quality_score": 90,
-        "testing_score": 70,
         "documentation_score": 100,
         "collaboration_score": 60,
+        "requirements_justification": "Requirements were met.",
+        "code_quality_justification": "Code is maintainable.",
+        "documentation_justification": "Documentation is complete.",
+        "collaboration_justification": "The team collaborated effectively.",
     }
     result.update(overrides)
     return result
 
 
-def test_instructor_can_create_and_update_manual_override(override_user_repository) -> None:
+def test_instructor_can_patch_assessment_report(override_user_repository) -> None:
     setup_project(override_user_repository)
-    response = client.post(
-        "/api/v1/manual-scoring/overrides",
+    assessment_repository = InMemoryAssessmentRepository()
+    assessment_repository.save_report(report())
+    app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
+
+    response = client.patch(
+        "/api/v1/assessments/reports/rpt-manual-1",
         json=payload(),
         headers=headers("faculty@sprintsight.edu"),
     )
+
     assert response.status_code == 200
-    first = response.json()
-    assert UUID(first["override_id"])
-    assert first["team_name"] == "Manual Team"
-    assert first["total_score"] == 80
-
-    updated = client.post(
-        "/api/v1/manual-scoring/overrides",
-        json=payload(requirements_score=100, collaboration_score=100),
-        headers=headers("faculty@sprintsight.edu"),
-    )
-    assert updated.status_code == 200
-    second = updated.json()
-    assert second["override_id"] == first["override_id"]
-    assert second["total_score"] == 92
+    result = response.json()
+    assert result["report_id"] == "rpt-manual-1"
+    assert result["override"] is True
+    assert result["requirements_score"] == 80
+    assert result["team_score"]["rationale"] == "AI rationale"
 
 
-def test_project_member_can_view_manual_override(override_user_repository) -> None:
+def test_unassigned_instructor_cannot_patch_assessment_report(override_user_repository) -> None:
     setup_project(override_user_repository)
-    client.post(
-        "/api/v1/manual-scoring/overrides",
+    assessment_repository = InMemoryAssessmentRepository()
+    assessment_repository.save_report(report())
+    app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
+
+    response = client.patch(
+        "/api/v1/assessments/reports/rpt-manual-1",
         json=payload(),
-        headers=headers("faculty@sprintsight.edu"),
+        headers=headers("admin@sprintsight.edu"),
     )
-    response = client.get(
-        "/api/v1/manual-scoring/overrides",
-        params={
-            "course_id": "manual-course",
-            "project_id": "manual-project",
-            "sprint_id": "sprint-1",
-        },
-        headers=headers("student@sprintsight.edu"),
-    )
-    assert response.status_code == 200
-    assert len(response.json()) == 1
-    assert response.json()[0]["project_id"] == "manual-project"
+
+    assert response.status_code == 403
 
 
-def test_mismatched_course_is_rejected(override_user_repository) -> None:
+def test_patch_requires_valid_scores_and_justifications(override_user_repository) -> None:
     setup_project(override_user_repository)
-    response = client.post(
-        "/api/v1/manual-scoring/overrides",
-        json=payload(course_id="different-course"),
+    assessment_repository = InMemoryAssessmentRepository()
+    assessment_repository.save_report(report())
+    app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
+
+    response = client.patch(
+        "/api/v1/assessments/reports/rpt-manual-1",
+        json=payload(requirements_score=101, documentation_justification=""),
         headers=headers("faculty@sprintsight.edu"),
     )
-    assert response.status_code == 400
 
-
-def test_scores_must_be_between_zero_and_hundred(override_user_repository) -> None:
-    setup_project(override_user_repository)
-    response = client.post(
-        "/api/v1/manual-scoring/overrides",
-        json=payload(testing_score=101),
-        headers=headers("faculty@sprintsight.edu"),
-    )
     assert response.status_code == 422
+
+
+def test_missing_assessment_report_returns_not_found(override_user_repository) -> None:
+    setup_project(override_user_repository)
+    assessment_repository = InMemoryAssessmentRepository()
+    app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
+
+    response = client.patch(
+        "/api/v1/assessments/reports/rpt-missing",
+        json=payload(),
+        headers=headers("faculty@sprintsight.edu"),
+    )
+
+    assert response.status_code == 404

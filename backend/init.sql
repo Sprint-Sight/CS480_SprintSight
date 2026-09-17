@@ -226,30 +226,6 @@ CREATE TABLE IF NOT EXISTS manual_text (
     FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS assessment_override (
-    override_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    course_id UUID NOT NULL,
-    project_id UUID NOT NULL,
-    sprint_id VARCHAR(100) NOT NULL,
-    requirements_score NUMERIC(5, 2) NOT NULL CHECK (requirements_score BETWEEN 0 AND 100),
-    code_quality_score NUMERIC(5, 2) NOT NULL CHECK (code_quality_score BETWEEN 0 AND 100),
-    testing_score NUMERIC(5, 2) NOT NULL CHECK (testing_score BETWEEN 0 AND 100),
-    documentation_score NUMERIC(5, 2) NOT NULL CHECK (documentation_score BETWEEN 0 AND 100),
-    collaboration_score NUMERIC(5, 2) NOT NULL CHECK (collaboration_score BETWEEN 0 AND 100),
-    total_score NUMERIC(5, 2) GENERATED ALWAYS AS (
-        (requirements_score + code_quality_score + testing_score + documentation_score + collaboration_score) / 5.0
-    ) STORED,
-    graded_by UUID NOT NULL REFERENCES users(user_id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (course_id, project_id, sprint_id),
-    FOREIGN KEY (project_id, course_id)
-        REFERENCES projects(project_id, course_id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_assessment_override_project_sprint
-    ON assessment_override(project_id, sprint_id);
-
 CREATE TABLE IF NOT EXISTS assessment_reports (
     report_id UUID PRIMARY KEY,
     model_name VARCHAR(255) NOT NULL,
@@ -264,7 +240,28 @@ CREATE TABLE IF NOT EXISTS assessment_reports (
     recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
     rubric_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
     strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
-    weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb
+    weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb,
+    override BOOLEAN NOT NULL DEFAULT FALSE,
+    requirements_score NUMERIC(5, 2) CHECK (requirements_score BETWEEN 0 AND 100),
+    code_quality_score NUMERIC(5, 2) CHECK (code_quality_score BETWEEN 0 AND 100),
+    documentation_score NUMERIC(5, 2) CHECK (documentation_score BETWEEN 0 AND 100),
+    collaboration_score NUMERIC(5, 2) CHECK (collaboration_score BETWEEN 0 AND 100),
+    requirements_justification VARCHAR(500),
+    code_quality_justification VARCHAR(500),
+    documentation_justification VARCHAR(500),
+    collaboration_justification VARCHAR(500),
+    CONSTRAINT assessment_reports_manual_fields_check CHECK (
+        NOT override OR (
+            requirements_score IS NOT NULL AND
+            code_quality_score IS NOT NULL AND
+            documentation_score IS NOT NULL AND
+            collaboration_score IS NOT NULL AND
+            requirements_justification IS NOT NULL AND
+            code_quality_justification IS NOT NULL AND
+            documentation_justification IS NOT NULL AND
+            collaboration_justification IS NOT NULL
+        )
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint
