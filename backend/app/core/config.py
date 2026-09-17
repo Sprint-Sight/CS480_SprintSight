@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     jira_email: str = Field(default="", alias="JIRA_EMAIL")
     jira_domain: str = Field(default="", alias="JIRA_DOMAIN")
     jira_timeout_seconds: float = Field(default=30, alias="JIRA_TIMEOUT_SECONDS")
-    jira_story_points_field: str = Field(default="", alias="JIRA_STORY_POINTS_FIELD")
+    jira_story_points_field: str = Field(default="customfield_10016", alias="JIRA_STORY_POINTS_FIELD")
+    jira_sprint_field: str = Field(default="customfield_10020", alias="JIRA_SPRINT_FIELD")
     minio_bucket_raw: str = Field(default="raw-jira-data", alias="MINIO_BUCKET_RAW")
     minio_bucket_documents: str = Field(default="project-documents", alias="MINIO_BUCKET_DOCUMENTS")
     document_max_file_size: int = Field(default=25 * 1024 * 1024, alias="DOCUMENT_MAX_FILE_SIZE")
@@ -45,6 +46,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(default="http://ollama:11434", alias="OLLAMA_BASE_URL")
     assessment_mode: str = Field(default="mock", alias="ASSESSMENT_MODE")
     default_model_name: str = Field(default="mock-rubric-v1", alias="DEFAULT_MODEL_NAME")
+    ai_engine_url: str = Field(default="http://host.docker.internal:8001", alias="AI_ENGINE_URL")
+    ai_engine_timeout_seconds: float = Field(default=600.0, alias="AI_ENGINE_TIMEOUT_SECONDS")
 
     audit_log_path: str = Field(default="logs/audit.log", alias="AUDIT_LOG_PATH")
 

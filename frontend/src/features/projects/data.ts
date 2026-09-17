@@ -1,4 +1,4 @@
-import type { StudentProject } from "./types";
+import type { StudentProject } from "@/features/projects/types";
 
 export const PROJECTS: StudentProject[] = [
   {

@@ -1,6 +1,6 @@
 import { PROJECTS } from "@/features/projects/data";
 
-import type { SprintAssessmentReport } from "./types";
+import type { SprintAssessmentReport } from "@/features/assessment/types";
 
 const REPORTS: SprintAssessmentReport[] = [
   {

@@ -15,6 +15,7 @@ from __future__ import annotations # Allows forward references in type hints (e.
 import instructor, os, uvicorn, logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager # Allows async context managers for startup/shutdown events
@@ -87,15 +88,22 @@ Analyze the following sprint bundle and output a score:
     yield # The application runs while paused here
     # Code after yield runs on shutdown, clear memory, close connections, etc.
 
-    # 3. Shutdown logic goes here
-    print("Shutting down SprintSight...")
-
 app = FastAPI(
     title="SprintSight",
     description="AI services for SprintSight, including LLM-based sprint assessment.",
     version="1.0.0",
     lifespan=lifespan
 )
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request, exc: RequestValidationError):
+    """Log and shape validation failures so the originating payload mismatch can be traced quickly."""
+    log.error("Validation error on %s: %s", request.url.path, exc)
+    log.error("Validation errors: %s", exc.errors())
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()},
+    )
 
 app.include_router(assessment.router) # Register the assessment router with the FastAPI app
 

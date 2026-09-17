@@ -22,14 +22,16 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     throw new Error("You are not signed in. Please log in again.");
   }
 
+  const requestHeaders = new Headers(options.headers);
+  requestHeaders.set("Authorization", `Bearer ${token}`);
+  if (!(options.body instanceof FormData) && !requestHeaders.has("Content-Type")) {
+    requestHeaders.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     cache: options.method && options.method !== "GET" ? options.cache : "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(options.headers ?? {}),
-    },
+    headers: requestHeaders,
   });
 
   if (response.status === 204) {

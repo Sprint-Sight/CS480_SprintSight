@@ -13,6 +13,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -41,6 +44,12 @@ export default function LoginPage() {
       // Store JWT token and user details in session storage
       sessionStorage.setItem("sprintsight-access-token", data.access_token);
       localStorage.setItem("sprintsight-access-token", data.access_token);
+
+      if (data.must_change_password) {
+        setMustChangePassword(true);
+        setError("Change the temporary password before continuing.");
+        return;
+      }
 
       // Fetch user profile details to store role
       const userResponse = await fetch(`${API_BASE_URL}/auth/me`, {
@@ -80,6 +89,63 @@ export default function LoginPage() {
     }
   };
 
+  const handleFirstPasswordChange = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    if (newPassword.length < 8) {
+      setError("The new password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("The new passwords do not match.");
+      return;
+    }
+
+    const token = sessionStorage.getItem("sprintsight-access-token");
+    if (!token) {
+      setError("Your session has expired. Please log in again.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ current_password: password, new_password: newPassword }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.detail || "Unable to change password.");
+
+      const loginResponse = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password: newPassword }),
+      });
+      const loginResult = await loginResponse.json().catch(() => null);
+      if (!loginResponse.ok || !loginResult?.access_token) {
+        throw new Error(loginResult?.detail || "Password changed, but a new session could not be created.");
+      }
+
+      const refreshedToken = loginResult.access_token;
+      sessionStorage.setItem("sprintsight-access-token", refreshedToken);
+      localStorage.setItem("sprintsight-access-token", refreshedToken);
+      const userResponse = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${refreshedToken}` },
+      });
+      if (!userResponse.ok) throw new Error("Password changed, but the profile could not be loaded.");
+      const user = await userResponse.json();
+      sessionStorage.setItem("sprintsight-auth-role", user.role);
+      sessionStorage.setItem("sprintsight-auth-email", user.email);
+      sessionStorage.setItem("sprintsight-auth-name", user.full_name);
+      router.replace(user.role === "admin" ? "/admin" : "/");
+    } catch (changeError) {
+      setError(changeError instanceof Error ? changeError.message : "Unable to change password.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8">
@@ -97,6 +163,17 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {mustChangePassword ? (
+          <form className="space-y-6" onSubmit={handleFirstPasswordChange}>
+            <p className="text-sm text-slate-600">This account has a temporary password. Set a new password to continue.</p>
+            <input type="password" placeholder="New password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full rounded-lg border border-slate-200 px-4 py-2 text-slate-800" required />
+            <input type="password" placeholder="Confirm new password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-lg border border-slate-200 px-4 py-2 text-slate-800" required />
+            {error && <p className="text-sm text-rose-600">{error}</p>}
+            <button type="submit" disabled={isLoading} className="w-full rounded-lg bg-[#0b2046] py-2.5 font-medium text-white disabled:opacity-50">
+              {isLoading ? "Updating password..." : "Set Password and Continue"}
+            </button>
+          </form>
+        ) : (
         <form className="space-y-6" onSubmit={handleSubmit}>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -144,6 +221,7 @@ export default function LoginPage() {
             {isLoading ? "Signing in..." : "Sign In"}
           </button>
         </form>
+        )}
       </div>
     </div>
   );

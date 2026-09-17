@@ -1,0 +1,7 @@
+"use client";
+
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { ProgressDataset } from "@/features/progress/types";
+
+const trendLegend = [{ key: "requirements", label: "Requirements", color: "#1F3D6D" }, { key: "codeQuality", label: "Code Quality", color: "#2F5B85" }, { key: "testing", label: "Testing", color: "#3F7C9E" }, { key: "documentation", label: "Documentation", color: "#5C98BD" }, { key: "collaboration", label: "Collaboration", color: "#7DB6D9" }] as const;
+export function ProgressTrendChart({ data }: { data: ProgressDataset["categoryTrend"] }) { return <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-xl font-semibold text-blue-950">Category Trends Over Sprints</h2><div className="mt-3 h-[260px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={data}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="sprint" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} /><YAxis domain={[40, 100]} axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} /><Tooltip />{trendLegend.map((line) => <Line key={line.key} type="monotone" dataKey={line.key} name={line.label} stroke={line.color} strokeWidth={2} dot={{ r: 3, fill: "#fff", strokeWidth: 2 }} />)}</LineChart></ResponsiveContainer></div></section>; }

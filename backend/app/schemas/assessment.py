@@ -106,6 +106,33 @@ class AssessRequest(BaseModel):
     course_id: str
     project_id: str
     sprint_id: str
+    model_name: str | None = None
+
+
+class AssessmentJobRecord(BaseModel):
+    job_id: str
+    course_id: str
+    project_id: str
+    sprint_id: str
+    model_name: str | None = None
+    status: str = "queued"
+    progress: int = 0
+    current_stage: str = "queued"
+    report_id: str | None = None
+    error_message: str | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class AssessmentJobEvent(BaseModel):
+    event: str
+    data: dict
+
+
+class RubricDimensionScoreDetail(BaseModel):
+    score: float | int
+    justification: str | None = None
+    evidence_citations: list[str] = Field(default_factory=list)
 
 
 class StudentScore(BaseModel):
@@ -130,6 +157,9 @@ class AssessmentReport(BaseModel):
     rubric_weights: dict[str, float]
     team_score: TeamScore
     individual_scores: list[StudentScore]
+    rubric_scores: dict[str, RubricDimensionScoreDetail] = Field(default_factory=dict)
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
     recommendations: list[str]
 
 

@@ -1,0 +1,3 @@
+import { TrendingDown, TrendingUp } from "lucide-react";
+
+export function ProgressMetricCard({ label, score, delta }: { label: string; score: number; delta: number }) { return <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><p className="text-xs text-slate-500">{label}</p><div className="mt-1 flex items-end justify-between"><p className="text-4xl font-bold text-blue-900">{score}</p><p className={`inline-flex items-center gap-1 text-sm font-semibold ${delta >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{delta >= 0 ? `+${delta}` : delta}</p></div></div>; }
