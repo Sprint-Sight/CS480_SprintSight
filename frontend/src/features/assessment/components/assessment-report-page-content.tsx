@@ -1,16 +1,19 @@
 "use client";
 
-import { Download, Loader2, Play } from "lucide-react";
+import { BrainCircuit, Download, Loader2, Play } from "lucide-react";
+import { useState } from "react";
 import {
   AssessmentFeedbackSections,
   AssessmentScoreVisuals,
 } from "@/features/assessment/components/assessment-report-sections";
 import { useAssessmentReport } from "@/features/assessment/hooks/use-assessment-report";
+import { InstructorAiFeedbackModal } from "@/features/instructor-feedback/components/instructor-ai-feedback-modal";
 
 export default function AssessmentReportPageContent() {
   const assessment = useAssessmentReport();
   const instructor = assessment.role !== "student";
   const scope = assessment.scope;
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
 
   return (
     <div className="space-y-5 p-8">
@@ -24,6 +27,15 @@ export default function AssessmentReportPageContent() {
         <div className="flex flex-wrap justify-end gap-3">
           {instructor && (
             <>
+              <button
+                type="button"
+                onClick={() => setIsFeedbackModalOpen(true)}
+                disabled={!scope || assessment.isLoadingReport || assessment.isGenerating}
+                className="inline-flex h-11 items-center gap-2 self-end rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-900 disabled:opacity-50"
+              >
+                <BrainCircuit className="h-4 w-4" />
+                Instructor AI Feedback
+              </button>
               <button
                 type="button"
                 onClick={assessment.loadLatestReport}
@@ -66,6 +78,7 @@ export default function AssessmentReportPageContent() {
       {assessment.assessmentError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{assessment.assessmentError}</div>}
       <AssessmentScoreVisuals report={assessment.report} />
       <AssessmentFeedbackSections report={assessment.report} />
+      <InstructorAiFeedbackModal isOpen={isFeedbackModalOpen} scope={scope} onClose={() => setIsFeedbackModalOpen(false)} />
     </div>
   );
 }
