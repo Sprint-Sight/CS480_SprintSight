@@ -17,6 +17,7 @@ class ManualOverrideRecord:
     testing_score: float
     documentation_score: float
     collaboration_score: float
+    cicd_score: float
     total_score: float
     graded_by: str
     created_at: datetime
@@ -36,6 +37,7 @@ class ManualOverrideRepository:
         testing_score: float,
         documentation_score: float,
         collaboration_score: float,
+        cicd_score: float,
         total_score: float,
         graded_by: str,
     ) -> ManualOverrideRecord:
@@ -66,6 +68,7 @@ class InMemoryManualOverrideRepository(ManualOverrideRepository):
             testing_score=float(values["testing_score"]),
             documentation_score=float(values["documentation_score"]),
             collaboration_score=float(values["collaboration_score"]),
+            cicd_score=float(values["cicd_score"]),
             total_score=float(values["total_score"]),
             graded_by=str(values["graded_by"]),
             created_at=existing.created_at if existing else now,
@@ -110,11 +113,13 @@ def ensure_manual_scoring_schema(pool: ConnectionPool) -> None:
                     CHECK (documentation_score BETWEEN 0 AND 100),
                 collaboration_score NUMERIC(5, 2) NOT NULL
                     CHECK (collaboration_score BETWEEN 0 AND 100),
+                cicd_score NUMERIC(5, 2) NOT NULL DEFAULT 0
+                    CHECK (cicd_score BETWEEN 0 AND 100),
                 total_score NUMERIC(5, 2) GENERATED ALWAYS AS (
                     (
                         requirements_score + code_quality_score + testing_score
-                        + documentation_score + collaboration_score
-                    ) / 5.0
+                        + documentation_score + collaboration_score + cicd_score
+                    ) / 6.0
                 ) STORED,
                 graded_by UUID NOT NULL REFERENCES users(user_id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -124,6 +129,19 @@ def ensure_manual_scoring_schema(pool: ConnectionPool) -> None:
                     REFERENCES projects(project_id, course_id) ON DELETE CASCADE
             )
             """
+        )
+        connection.execute(
+            """ALTER TABLE assessment_override
+               ADD COLUMN IF NOT EXISTS cicd_score NUMERIC(5, 2) NOT NULL DEFAULT 0
+               CHECK (cicd_score BETWEEN 0 AND 100)"""
+        )
+        connection.execute("ALTER TABLE assessment_override DROP COLUMN IF EXISTS total_score")
+        connection.execute(
+            """ALTER TABLE assessment_override
+               ADD COLUMN total_score NUMERIC(5, 2) GENERATED ALWAYS AS (
+                   (requirements_score + code_quality_score + testing_score
+                    + documentation_score + collaboration_score + cicd_score) / 6.0
+               ) STORED"""
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_assessment_override_project_sprint "
@@ -141,20 +159,21 @@ class PostgresManualOverrideRepository(ManualOverrideRepository):
                 """
                 INSERT INTO assessment_override (
                     course_id, project_id, sprint_id, requirements_score, code_quality_score,
-                    testing_score, documentation_score, collaboration_score, graded_by
+                    testing_score, documentation_score, collaboration_score, cicd_score, graded_by
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (course_id, project_id, sprint_id) DO UPDATE SET
                     requirements_score = EXCLUDED.requirements_score,
                     code_quality_score = EXCLUDED.code_quality_score,
                     testing_score = EXCLUDED.testing_score,
                     documentation_score = EXCLUDED.documentation_score,
                     collaboration_score = EXCLUDED.collaboration_score,
+                    cicd_score = EXCLUDED.cicd_score,
                     graded_by = EXCLUDED.graded_by,
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING override_id, course_id, project_id, sprint_id,
                     requirements_score, code_quality_score, testing_score,
-                    documentation_score, collaboration_score, total_score,
+                    documentation_score, collaboration_score, cicd_score, total_score,
                     graded_by, created_at, updated_at
                 """,
                 (
@@ -166,6 +185,7 @@ class PostgresManualOverrideRepository(ManualOverrideRepository):
                     values["testing_score"],
                     values["documentation_score"],
                     values["collaboration_score"],
+                    values["cicd_score"],
                     UUID(str(values["graded_by"])),
                 ),
             ).fetchone()
@@ -177,7 +197,7 @@ class PostgresManualOverrideRepository(ManualOverrideRepository):
         query = """
             SELECT o.override_id, o.course_id, o.project_id, o.sprint_id,
                 p.team_name, o.requirements_score, o.code_quality_score,
-                o.testing_score, o.documentation_score, o.collaboration_score,
+                o.testing_score, o.documentation_score, o.collaboration_score, o.cicd_score,
                 o.total_score, o.graded_by, o.created_at, o.updated_at
             FROM assessment_override o
             JOIN projects p ON p.project_id = o.project_id AND p.course_id = o.course_id
@@ -205,6 +225,7 @@ class PostgresManualOverrideRepository(ManualOverrideRepository):
             testing_score=float(row["testing_score"]),
             documentation_score=float(row["documentation_score"]),
             collaboration_score=float(row["collaboration_score"]),
+            cicd_score=float(row["cicd_score"]),
             total_score=float(row["total_score"]),
             graded_by=str(row["graded_by"]),
             created_at=row["created_at"],

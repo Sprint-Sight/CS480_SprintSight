@@ -12,6 +12,7 @@ class RubricsScore(BaseModel):
     testing: Optional[RubricDimensionScore] = None
     requirements: Optional[RubricDimensionScore] = None
     collaboration: Optional[RubricDimensionScore] = None
+    cicd: Optional[RubricDimensionScore] = None
 
     # .scored() replaces iterating a list of dimensions and checking for None, returning only the scored dimensions in the order of DIMENSIONS.
     def scored(self) -> list[RubricDimensionScore]:

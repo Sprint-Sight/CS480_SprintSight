@@ -13,6 +13,7 @@ class ManualOverrideCreate(BaseModel):
     testing_score: float = Field(ge=0, le=100)
     documentation_score: float = Field(ge=0, le=100)
     collaboration_score: float = Field(ge=0, le=100)
+    cicd_score: float = Field(default=0, ge=0, le=100)
 
 
 class ManualOverrideResponse(BaseModel):
@@ -26,6 +27,7 @@ class ManualOverrideResponse(BaseModel):
     testing_score: float
     documentation_score: float
     collaboration_score: float
+    cicd_score: float
     total_score: float
     graded_by: str
     created_at: datetime

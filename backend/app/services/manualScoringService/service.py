@@ -34,8 +34,9 @@ class ManualScoringService:
                 payload.testing_score,
                 payload.documentation_score,
                 payload.collaboration_score,
+                payload.cicd_score,
             )
-        ) / 5
+        ) / 6
         return self._repository.upsert(
             course_id=payload.course_id,
             project_id=payload.project_id,
@@ -46,6 +47,7 @@ class ManualScoringService:
             testing_score=payload.testing_score,
             documentation_score=payload.documentation_score,
             collaboration_score=payload.collaboration_score,
+            cicd_score=payload.cicd_score,
             total_score=total_score,
             graded_by=user.id,
         )

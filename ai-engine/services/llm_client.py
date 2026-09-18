@@ -53,6 +53,7 @@ _DIMENSION_ARTIFACT_FIELDS = {
         "peer_evaluations",
         "collaboration_metrics",
     ),
+    "cicd": ("commits", "artifact_metrics"),
 }
 
 
