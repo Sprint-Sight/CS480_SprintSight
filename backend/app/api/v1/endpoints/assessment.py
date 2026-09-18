@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty
+from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_student_or_faculty
 from app.repositories.in_memory import job_repo
 from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
 from app.schemas.assessment import AssessRequest, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
@@ -106,18 +106,6 @@ def assessment_job_events(
 
 @router.get("/reports")
 def list_reports(
-    course_id: str,
-    project_id: str,
-    sprint_id: str,
-    faculty_user: Annotated[object, Depends(require_faculty)],
-    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
-):
-    _ = faculty_user
-    return list_assessment_reports(course_id, project_id, sprint_id, assessment_repository)
-
-
-@router.get("/latest")
-def get_latest(
     course_id: str,
     project_id: str,
     sprint_id: str,
