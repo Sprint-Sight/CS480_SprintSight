@@ -112,7 +112,27 @@ collaboration_prompt = '''
     Output: Provide the score, a concise justification, the peer-rating evidence, and the workload evidence. Do not treat a low ticket count alone as evidence of poor collaboration without considering the individual's assigned workload.
     '''
 
-DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration"]
+cicd_prompt = '''
+    Evaluate the individual's contribution to Continuous Integration and Continuous Deployment (CI/CD) using Git commits, pipeline configurations, deployment logs, and other available project artifacts.
+
+    Assess:
+
+    Frequency and quality of CI/CD pipeline updates
+    Evidence of automated testing and deployment practices
+    Responsiveness to pipeline failures and incidents
+    Consistency between code changes and CI/CD configurations
+
+    Assign a score from 1–10 using this rubric:
+
+    9–10: CI/CD practices are well-established, automated, and consistently followed.
+    6–8: CI/CD practices are present but may have minor gaps or inconsistencies.
+    3–5: CI/CD practices are sporadic or partially implemented.
+    1–2: No significant CI/CD practices are evident.
+
+    Output: Provide the score, a concise justification, and the specific CI/CD evidence supporting the score. Do not award credit for CI/CD practices that cannot be attributed to the individual.
+    '''
+
+DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
 
 DIMENTION_PROMPTS = {
     "code_quality": code_quality_prompt,
@@ -120,4 +140,5 @@ DIMENTION_PROMPTS = {
     "documentation": documentation_prompt,
     "requirements": requirements,
     "collaboration": collaboration_prompt,
+    "cicd": cicd_prompt,
 }

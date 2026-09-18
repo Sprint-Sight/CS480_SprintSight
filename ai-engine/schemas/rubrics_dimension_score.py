@@ -47,12 +47,12 @@ def _normalize_citation(item: object) -> dict:
 
 class RubricDimensionScore(BaseModel):
     dimension: Literal["code_quality", "testing", "documentation",
-                        "requirements", "collaboration"]
+                        "requirements", "collaboration", "cicd"]
     score: int = Field(ge=1, le=10)
     justification: str = Field(min_length=10)
     evidence_citations: list[EvidenceCitation]
     # Set only by evaluator.py's fallback path, never by the model itself:
-    # marks a synthesized placeholder used to guarantee all 5 dimensions are
+    # marks a synthesized placeholder used to guarantee all rubric dimensions are
     # always present, so callers can still distinguish it from a real score.
     evaluation_failed: bool = False
 

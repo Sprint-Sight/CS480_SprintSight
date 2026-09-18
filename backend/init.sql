@@ -236,8 +236,9 @@ CREATE TABLE IF NOT EXISTS assessment_override (
     testing_score NUMERIC(5, 2) NOT NULL CHECK (testing_score BETWEEN 0 AND 100),
     documentation_score NUMERIC(5, 2) NOT NULL CHECK (documentation_score BETWEEN 0 AND 100),
     collaboration_score NUMERIC(5, 2) NOT NULL CHECK (collaboration_score BETWEEN 0 AND 100),
+    cicd_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cicd_score BETWEEN 0 AND 100),
     total_score NUMERIC(5, 2) GENERATED ALWAYS AS (
-        (requirements_score + code_quality_score + testing_score + documentation_score + collaboration_score) / 5.0
+        (requirements_score + code_quality_score + testing_score + documentation_score + collaboration_score + cicd_score) / 6.0
     ) STORED,
     graded_by UUID NOT NULL REFERENCES users(user_id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

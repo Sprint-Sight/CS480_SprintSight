@@ -183,11 +183,12 @@ def convert_ai_result_to_assessment_report(
 
 
 RUBRIC_WEIGHTS = {
-    "requirements": 0.20,
-    "code_quality": 0.20,
-    "testing": 0.20,
-    "documentation": 0.20,
-    "collaboration": 0.20,
+    "requirements": 1 / 6,
+    "code_quality": 1 / 6,
+    "testing": 1 / 6,
+    "documentation": 1 / 6,
+    "collaboration": 1 / 6,
+    "cicd": 1 / 6,
 }
 
 

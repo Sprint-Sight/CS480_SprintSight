@@ -70,7 +70,7 @@ from llmops.mlflow_config import start_mlflow
 
 load_dotenv()  # Load environment variables from .env file
 
-DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration"]
+DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
 
 # Tries factory-function naming (per README) first, then bare-instance naming
 # (per llm_client.py's own import) -- see "STILL UNCONFIRMED" above.
