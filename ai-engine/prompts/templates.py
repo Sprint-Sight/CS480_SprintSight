@@ -20,6 +20,14 @@ def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle
     Here are the rubric criteria for {dimension_name}:
     {dimension_criteria}
 
+    INSTRUCTOR GUIDANCE:
+    Student Artifacts below includes an `instructor_expectations` field written
+    by the course instructor for this sprint. Treat it as authoritative
+    context for how to grade {dimension_name}: if it calls out a specific
+    focus, priority, exception, or deduction relevant to this dimension, weigh
+    that guidance alongside the rubric criteria above. If it says nothing
+    relevant to {dimension_name}, grade using the rubric criteria alone.
+
     CRITICAL INSTRUCTIONS:
     - Return a valid JSON object matching the RubricDimensionScore schema, and nothing else.
     - The `dimension` field MUST be exactly `{dimension_name}`.
@@ -68,7 +76,7 @@ def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle
     """
 
 
-def render_sprint_feedback_prompt(team_id: str, sprint_id: str, scores_data: str) -> str:
+def render_sprint_feedback_prompt(team_id: str, sprint_id: str, scores_data: str, instructor_expectations: str) -> str:
     return f"""
     You are an expert software engineering professor reviewing a complete sprint.
     Produce general project-level feedback, not feedback for individual rubric dimensions.
@@ -81,6 +89,11 @@ def render_sprint_feedback_prompt(team_id: str, sprint_id: str, scores_data: str
     Use only the rubric results and evidence below. Do not invent facts, names,
     URLs, issue numbers, statuses, or activity. Avoid repeating the rubric
     justifications verbatim. Keep each item concise and specific.
+
+    Instructor guidance for this sprint (weigh this alongside the rubric
+    results; if it names a specific priority or concern, reflect that in the
+    strengths/weaknesses/recommendations where relevant):
+    {instructor_expectations}
 
     Sprint context:
     team_id={team_id!r} sprint_id={sprint_id!r}

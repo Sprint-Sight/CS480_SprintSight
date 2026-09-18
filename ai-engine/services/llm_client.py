@@ -248,7 +248,9 @@ async def generate_sprint_feedback(
 ) -> SprintFeedback:
     """Generate strengths, weaknesses, and recommendations for the whole sprint."""
     scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
-    prompt = render_sprint_feedback_prompt(bundle.team_id, bundle.sprint_id, scores_data)
+    prompt = render_sprint_feedback_prompt(
+        bundle.team_id, bundle.sprint_id, scores_data, bundle.instructor_expectations
+    )
     audit_token = _audit_context.set(
         {
             "request_id": str(uuid4()),
