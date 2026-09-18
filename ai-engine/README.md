@@ -14,10 +14,13 @@ sent to a cloud LLM.
 - Five rubric dimensions are scored: `code_quality`, `testing`,
   `documentation`, `requirements`, and `collaboration`.
 - Dimension evaluations run concurrently with a limit of five active calls.
-- A failed dimension is excluded from the average. The request fails only when
-  all five dimensions fail.
-- The evaluator returns an integer `overall_score` rounded from the average of
-  the successfully scored dimensions.
+- A dimension that fails after retries is filled with a conservative
+  placeholder score (`evaluation_failed: true`) instead of being excluded, so
+  all 5 dimensions are always present in the average and in the response.
+- The evaluator returns a float `overall_score` (average of the 5 dimensions,
+  rounded to 2 decimal places) — not rounded to an integer, since the backend
+  multiplies it by 10 for its /100 team score and integer rounding here would
+  collapse that /100 score down to multiples of 10.
 - `member_contributions` is currently returned as its default empty list; the
   evaluator does not generate individual contribution scores yet.
 - Each Ollama request and raw response is written to a text audit record,
@@ -152,7 +155,7 @@ missing, and `503` when Ollama cannot be reached.
 
 The endpoint returns a `SprintAssessment` containing:
 
-- `overall_score`: rounded score from 1 to 10
+- `overall_score`: float average from 0 to 10, rounded to 2 decimal places
 - `rubric_scores`: one `RubricDimensionScore` for each of the 5 dimensions —
   always present; if a dimension's evaluation failed after retries, it is
   filled with a conservative placeholder score and `evaluation_failed: true`

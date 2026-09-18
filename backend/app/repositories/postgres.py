@@ -6,7 +6,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import AssessmentRepository, CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import AssessmentRepository, CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository, UserRecord, UserRepository
 from app.schemas.assessment import AssessmentReport, JiraCleanedSnapshot, ManualTextPayload
 from app.schemas.auth import Role
 
@@ -533,6 +533,58 @@ class PostgresManualTextRepository(ManualTextRepository):
                 (UUID(course_id), UUID(project_id), sprint_id),
             ).fetchone()
         return row["expectations_text"] if row else None
+
+
+def ensure_rubric_weights_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS rubric_weight_configs (
+                course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
+                weights JSONB NOT NULL,
+                updated_by UUID NOT NULL REFERENCES users(user_id),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+
+
+class PostgresRubricWeightsRepository(RubricWeightsRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def get_weights(self, course_id: str) -> RubricWeightsRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT course_id, weights, updated_by, updated_at
+                FROM rubric_weight_configs WHERE course_id = %s""",
+                (UUID(course_id),),
+            ).fetchone()
+        if not row:
+            return None
+        return RubricWeightsRecord(
+            course_id=str(row["course_id"]),
+            weights=row["weights"],
+            updated_by=str(row["updated_by"]),
+            updated_at=row["updated_at"],
+        )
+
+    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO rubric_weight_configs (course_id, weights, updated_by)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (course_id)
+                DO UPDATE SET weights = EXCLUDED.weights,
+                              updated_by = EXCLUDED.updated_by,
+                              updated_at = CURRENT_TIMESTAMP
+                RETURNING course_id, weights, updated_by, updated_at""",
+                (UUID(course_id), Json(weights), UUID(updated_by)),
+            ).fetchone()
+        return RubricWeightsRecord(
+            course_id=str(row["course_id"]),
+            weights=row["weights"],
+            updated_by=str(row["updated_by"]),
+            updated_at=row["updated_at"],
+        )
 
 
 def ensure_assessment_schema(pool: ConnectionPool) -> None:

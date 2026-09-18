@@ -134,7 +134,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
         sprint_id=bundle.sprint_id,
         prompt_version="v1.0",
         rubric_scores=rubric_scores,
-        overall_score=round(average_score),
+        overall_score=round(average_score, 2),
         executive_summary=" ".join(summary_parts),
         strengths=strengths,
         weaknesses=weaknesses,
