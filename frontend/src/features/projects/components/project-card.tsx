@@ -57,23 +57,23 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
         <div className="mt-4 flex items-center justify-between text-slate-500">
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-slate-400" />
-            <div className="flex items-center">
+            <div className="flex flex-wrap items-center gap-1.5">
               {project.members.map((member) => (
-                <span
+                <div
                   key={member.id}
-                  className="group/member relative -ml-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-100 text-xs font-semibold text-blue-700 first:ml-0"
-                  title={member.full_name}
+                  className="inline-flex items-center gap-1 rounded-md border border-blue-100 bg-blue-50 py-1 pl-2 pr-1 text-xs font-medium text-blue-800"
                 >
-                  {member.full_name}
+                  <span className="max-w-24 truncate" title={member.full_name}>{member.full_name}</span>
                   <button
                     type="button"
                     onClick={(event) => onRemoveMember(project.id, member.id, event)}
-                    className="absolute -top-1 -right-1 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-600 text-[9px] text-white group-hover/member:flex"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-rose-600 transition hover:bg-rose-100"
                     title="Remove member"
+                    aria-label={`Remove ${member.full_name} from project`}
                   >
-                    <UserMinus className="h-3 w-3" />
+                    <UserMinus className="h-3.5 w-3.5" />
                   </button>
-                </span>
+                </div>
               ))}
             </div>
           </div>
@@ -81,10 +81,10 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
           <button
             type="button"
             onClick={(event) => onAddMember(project.id, event)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
           >
-            <UserPlus className="h-3.5 w-3.5" />
-            Add
+            <UserPlus className="h-4 w-4" />
+            Add member
           </button>
         </div>
       </div>

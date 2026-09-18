@@ -29,6 +29,38 @@ def _story_points(fields: dict[str, Any], story_points_field: str | None) -> flo
     return points if points >= 0 else None
 
 
+def _matches_requested_sprint(value: Any, sprint_id: str | None) -> bool:
+    if not sprint_id:
+        return True
+    target = str(sprint_id).strip().lower()
+    if not target:
+        return True
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return normalized == target or normalized.replace(" ", "") == target.replace(" ", "")
+    if isinstance(value, dict):
+        for nested in value.values():
+            if _matches_requested_sprint(nested, sprint_id):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(_matches_requested_sprint(item, sprint_id) for item in value)
+    return False
+
+
+def _issue_matches_requested_sprint(issue: dict[str, Any], sprint_id: str | None) -> bool:
+    if not sprint_id:
+        return True
+    fields = issue.get("fields")
+    if not isinstance(fields, dict):
+        return True
+    for field_name in ("sprint", "sprints", "customfield_10020", "customfield_10018"):
+        if field_name in fields and _matches_requested_sprint(fields[field_name], sprint_id):
+            return True
+    return True
+
+
 def normalize_jira_envelope(
     envelope: dict[str, Any],
     *,
@@ -42,10 +74,13 @@ def normalize_jira_envelope(
     if not isinstance(issues, list):
         raise JiraNormalizationError("Jira envelope issues must be an array.")
 
+    requested_sprint = str(envelope["sprint_id"]).strip() or None
     tickets: list[JiraTicket] = []
     for issue in issues:
         if not isinstance(issue, dict) or not issue.get("key"):
             raise JiraNormalizationError("Every Jira issue must contain a key.")
+        if not _issue_matches_requested_sprint(issue, requested_sprint):
+            continue
         fields = issue.get("fields")
         if not isinstance(fields, dict):
             fields = {}

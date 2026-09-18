@@ -1,14 +1,10 @@
-export type RubricCategory =
-  | "Requirements"
-  | "Code Quality"
-  | "Testing"
-  | "Documentation"
-  | "Collaboration";
+export type RubricCategory = string;
 
 export type RubricScore = {
   category: RubricCategory;
   score: number;
   justification: string;
+  evidenceCitations?: string[];
 };
 
 export type SprintAssessmentReport = {

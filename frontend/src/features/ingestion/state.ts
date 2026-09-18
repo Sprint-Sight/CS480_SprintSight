@@ -50,6 +50,7 @@ export type PersistedJiraSnapshot = {
 export type IngestionState = {
   selectedProjectId?: string;
   selectedCourseId?: string;
+  selectedSprintId?: string;
   gitBySprint: Record<string, PersistedGitMetrics>;
   jiraBySprint: Record<string, PersistedJiraSnapshot>;
   documentCounts: Record<string, number>;
@@ -71,6 +72,7 @@ export function readIngestionState(): IngestionState {
       gitBySprint: parsed?.gitBySprint || {},
       jiraBySprint: parsed?.jiraBySprint || {},
       documentCounts: parsed?.documentCounts || {},
+      selectedSprintId: parsed?.selectedSprintId || "sprint-1",
     };
   } catch {
     return emptyState();
@@ -91,6 +93,12 @@ export function saveGitMetrics(metrics: PersistedGitMetrics) {
     selectedCourseId: metrics.course_id,
     gitBySprint: { ...state.gitBySprint, [`${metrics.project_id}:${metrics.sprint_id}`]: metrics },
   });
+}
+
+export function getProjectGitMetrics(projectId: string): PersistedGitMetrics[] {
+  return Object.values(readIngestionState().gitBySprint)
+    .filter((metrics) => metrics.project_id === projectId)
+    .sort((first, second) => first.sprint_id.localeCompare(second.sprint_id, undefined, { numeric: true }));
 }
 
 export function saveJiraSnapshot(snapshot: PersistedJiraSnapshot) {

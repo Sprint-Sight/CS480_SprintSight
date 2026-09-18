@@ -10,6 +10,7 @@ from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_
 from app.repositories.in_memory import job_repo
 from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository
 from app.schemas.assessment import AssessRequest, OverrideRequest
+from app.schemas.auth import Role
 from app.services.assessmentService.service import (
     get_latest_assessment,
     list_assessment_reports,
@@ -20,6 +21,14 @@ from app.services.auditLogService.service import append_override_audit
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _authorize_report_access(current_user: object, course_id: str, project_id: str, projects: ProjectRepository) -> None:
+    if current_user.role != Role.STUDENT:
+        return
+    project = projects.get_project(project_id)
+    if not project or project.course_id != course_id or current_user.id not in projects.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view assessment reports for your project.")
 
 
 @router.post("/assess", status_code=status.HTTP_202_ACCEPTED)
@@ -112,6 +121,19 @@ def get_latest(
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
 ):
     _ = faculty_user
+    return list_assessment_reports(course_id, project_id, sprint_id, assessment_repository)
+
+
+@router.get("/latest")
+def get_latest(
+    course_id: str,
+    project_id: str,
+    sprint_id: str,
+    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+):
+    _authorize_report_access(current_user, course_id, project_id, projects)
     return get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
 
 

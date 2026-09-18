@@ -15,15 +15,15 @@ import {
   GitCompare,
   LayoutDashboard,
   Pencil,
+  BrainCircuit,
   Search,
   Settings,
   User,
-  RefreshCw,
-  Sparkles,
   Loader2,
 } from "lucide-react";
 
-import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { apiRequest } from "@/features/projects/components/projects-api";
+import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -44,6 +44,7 @@ type ScopeSection = {
 type ScopeTeam = {
   id: string;
   name: string;
+  courseId: string;
   status: string;
   studentCount: number;
   averageScore: number;
@@ -56,6 +57,7 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
+  { label: "Instructor AI Feedback", href: "/instructor-ai-feedback", icon: BrainCircuit },
   { label: "Instructor Review", href: "/instructor-review", icon: Pencil },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -66,7 +68,7 @@ const studentNavItems: NavItem[] = [
   { label: "My Sprint", href: "/sprint-overview", icon: Activity },
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
-  { label: "My Grades & Feedback", href: "/assessment-report", icon: FileText },
+  { label: "Results & Feedback", href: "/assessment-report", icon: FileText },
   { label: "Progress", href: "/progress", icon: GitCompare },
 ];
 
@@ -105,10 +107,8 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [selectedSemester, setSelectedSemester] = useState<string>("");
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const [selectedSprintId, setSelectedSprintId] = useState<string>("sprint-1");
   const [isLoadingScope, setIsLoadingScope] = useState<boolean>(false);
-
-  // State for confirmation modal
-  const [pendingAction, setPendingAction] = useState<"sync" | "assess" | null>(null);
 
   useEffect(() => {
     if (isAuthorized && role === "student" && isRestrictedForStudent) {
@@ -147,12 +147,37 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     async function fetchScopeData() {
       setIsLoadingScope(true);
       try {
-        setSemesterOptions([]);
-        setSections([]);
-        setTeams([]);
-        setSelectedSemester("");
-        setSelectedSectionId("");
-        setSelectedTeamId("");
+        const courses = await apiRequest<Array<{ id: string; code: string; name: string; section: string; term: string; year: number }>>("/courses");
+        const courseSections = courses.map((course) => ({
+          id: course.id,
+          code: course.code,
+          name: `${course.name} - ${course.section}`,
+        }));
+        const projectGroups = await Promise.all(courses.map(async (course) => ({
+          course,
+          projects: await apiRequest<Array<{ id: string; team_name: string; members: unknown[] }>>(`/courses/${course.id}/projects`),
+        })));
+        const scopeTeams = projectGroups.flatMap(({ course, projects }) => projects.map((project) => ({
+          id: project.id,
+          name: project.team_name,
+          status: "Active",
+          studentCount: project.members.length,
+          averageScore: 0,
+          courseId: course.id,
+        })));
+        const persisted = readIngestionState();
+        const selectedTeam = scopeTeams.find((team) => team.id === persisted.selectedProjectId) || scopeTeams[0];
+
+        setSemesterOptions([...new Set(courses.map((course) => `${course.term} ${course.year}`))]);
+        setSections(courseSections);
+        setTeams(scopeTeams);
+        setSelectedSemester(`${courses[0]?.term || ""} ${courses[0]?.year || ""}`.trim());
+        setSelectedSectionId(selectedTeam?.courseId || courseSections[0]?.id || "");
+        setSelectedTeamId(selectedTeam?.id || "");
+        setSelectedSprintId(persisted.selectedSprintId || "sprint-1");
+        if (selectedTeam) {
+          writeIngestionState({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
+        }
       } catch (error) {
         console.error("Failed to load dashboard scope data:", error);
       } finally {
@@ -193,6 +218,34 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     return teams.find((t) => t.id === selectedTeamId) || null;
   }, [teams, selectedTeamId]);
 
+  const teamsInSelectedSection = useMemo(
+    () => teams.filter((team) => team.courseId === selectedSectionId),
+    [selectedSectionId, teams],
+  );
+
+  useEffect(() => {
+    const selectedTeam = teams.find((team) => team.id === selectedTeamId);
+    if (selectedTeam) {
+      writeIngestionState({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
+    }
+  }, [selectedTeamId, teams]);
+
+  useEffect(() => {
+    const selectedTeam = teams.find((team) => team.id === selectedTeamId && team.courseId === selectedSectionId);
+    if (selectedTeam) return;
+
+    const firstTeamInSection = teams.find((team) => team.courseId === selectedSectionId);
+    setSelectedTeamId(firstTeamInSection?.id || "");
+    writeIngestionState({
+      selectedProjectId: firstTeamInSection?.id || "",
+      selectedCourseId: selectedSectionId,
+    });
+  }, [selectedSectionId, selectedTeamId, teams]);
+
+  useEffect(() => {
+    if (isAuthorized && role === "instructor") writeIngestionState({ selectedSprintId });
+  }, [isAuthorized, role, selectedSprintId]);
+
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
 
   const handleLogout = () => {
@@ -203,15 +256,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     sessionStorage.removeItem("sprintsight-access-token");
     setIsProfileMenuOpen(false);
     router.replace("/login");
-  };
-
-  const executeAction = () => {
-    if (pendingAction === "assess") {
-      router.push("/instructor-review");
-    } else if (pendingAction === "sync") {
-      router.push("/artifact-viewer");
-    }
-    setPendingAction(null);
   };
 
   if (!isAuthorized) {
@@ -350,7 +394,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 </div>
               </div>
 
-              {role === "instructor" && (
+              {role === "instructor" && !isProjectsRoot && (
                 <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
                   <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600">
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
@@ -400,14 +444,14 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                       )}
 
                       {/* Team Select */}
-                      {teams.length > 0 && (
+                      {teamsInSelectedSection.length > 0 && (
                         <div className="relative">
                           <select
                             value={selectedTeamId}
                             onChange={(e) => setSelectedTeamId(e.target.value)}
                             className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                           >
-                            {teams.map((team) => (
+                            {teamsInSelectedSection.map((team) => (
                               <option key={team.id} value={team.id}>
                                 {team.name}
                               </option>
@@ -416,29 +460,18 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         </div>
                       )}
+                      {(pathname === "/" || pathname === "/assessment-report") && (
+                        <div className="relative">
+                          <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
+                            {Array.from({ length: 10 }, (_, index) => `sprint-${index + 1}`).map((sprintId) => <option key={sprintId} value={sprintId}>{sprintId}</option>)}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        </div>
+                      )}
                     </>
                   )}
 
                   <div className="ml-auto flex items-center gap-3">
-                    <div className="flex items-center gap-2 border-r border-slate-200 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => setPendingAction("sync")}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Sync Data
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPendingAction("assess")}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        AI Assess
-                      </button>
-                    </div>
-
                     {currentTeamStats && (
                       <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -454,18 +487,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
         </div>
       </div>
 
-      <ConfirmationModal
-        isOpen={pendingAction !== null}
-        onClose={() => setPendingAction(null)}
-        onConfirm={executeAction}
-        title={pendingAction === "assess" ? "Run AI Assessment" : "Sync Latest Data"}
-        message={
-          pendingAction === "assess"
-            ? "This will evaluate the latest sprint data for the current team. Are you ready to begin?"
-            : "Pulling the latest commits and Jira tickets may take a few moments. Do you want to proceed?"
-        }
-        confirmText={pendingAction === "assess" ? "Run Assessment" : "Sync"}
-      />
     </>
   );
 }
