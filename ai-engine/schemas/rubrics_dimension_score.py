@@ -3,12 +3,14 @@ from typing import Literal
 
 class RubricDimensionScore(BaseModel):
     dimension: Literal["code_quality", "testing", "documentation",
-                        "requirements", "collaboration"] # LOOK AT UPDATED DIMENSIONS
+                        "requirements", "collaboration"]
     score: int = Field(ge=1, le=10)
     justification: str = Field(min_length=10)
     evidence_citations: list[str]  # specific file:line or Jira ticket refs
-    strengths: list[str]
-    areas_for_improvement: list[str]
+    # Set only by evaluator.py's fallback path, never by the model itself:
+    # marks a synthesized placeholder used to guarantee all 5 dimensions are
+    # always present, so callers can still distinguish it from a real score.
+    evaluation_failed: bool = False
 
     @field_validator("evidence_citations", mode="before")
     @classmethod

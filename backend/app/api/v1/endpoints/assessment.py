@@ -6,9 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_assessment_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty, require_student_or_faculty
+from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import AssessmentRepository, ManualTextRepository, MetricsRepository, ProjectRepository
+from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository
 from app.schemas.assessment import AssessRequest, OverrideRequest
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
@@ -39,6 +39,7 @@ def assess_sprint(
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
     manual_text_repository: Annotated[ManualTextRepository, Depends(get_manual_text_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
 ) -> dict:
     _ = faculty_user
     project = projects.get_project(payload.project_id)
@@ -54,7 +55,16 @@ def assess_sprint(
 
     # Start the long-polling worker in a background thread so the endpoint
     # returns immediately with the 202 job contract instead of blocking.
-    _executor.submit(run_assessment_job, job.job_id, payload, project, metrics_repository, manual_text_repository, assessment_repository)
+    _executor.submit(
+        run_assessment_job,
+        job.job_id,
+        payload,
+        project,
+        metrics_repository,
+        manual_text_repository,
+        assessment_repository,
+        jira_ingestion_repository,
+    )
 
     return {
         "job_id": job.job_id,
@@ -92,6 +102,18 @@ def assessment_job_events(
 
 @router.get("/reports")
 def list_reports(
+    course_id: str,
+    project_id: str,
+    sprint_id: str,
+    faculty_user: Annotated[object, Depends(require_faculty)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+):
+    _ = faculty_user
+    return list_assessment_reports(course_id, project_id, sprint_id, assessment_repository)
+
+
+@router.get("/latest")
+def get_latest(
     course_id: str,
     project_id: str,
     sprint_id: str,

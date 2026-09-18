@@ -148,7 +148,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
             error=None,
             latency_seconds=latency,
         )
-    except Exception as e:  # evaluate_sprint raises only when ALL 5 dimensions fail
+    except Exception as e:  # evaluate_sprint raises when any required dimension fails
         latency = loop.time() - start
         return RunResult(
             model=model,
@@ -231,8 +231,7 @@ def compute_summary(results: list[RunResult]) -> dict:
         successful = [r for r in model_results if r.success]
  
         # 1. Structural validity, at DIMENSION granularity (not just run granularity).
-        # evaluate_sprint only raises when all 5 dimensions fail, so a failed run
-        # contributes 0/5; a successful run contributes (5 - len(failed_dimensions))/5.
+        # A failed run contributes 0/5; a successful run has all five dimensions.
         dim_attempts = len(model_results) * len(DIMENSIONS) # Total dimension calls attempted
         dim_successes = sum(len(DIMENSIONS) - len(r.failed_dimensions) for r in model_results)
         dimension_structural_validity_rate = round(dim_successes / dim_attempts, 3) if dim_attempts else 0.0

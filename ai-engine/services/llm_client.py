@@ -2,13 +2,17 @@ from __future__ import annotations
 from schemas.rubrics_dimension_score import RubricDimensionScore
 from schemas.sprint_assessment import SprintAssessment
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.fixtures import high_performing_team, good_collab_low_output_team, imbalanced_high_output_team, lone_contributor_poor_outcome_team, struggling_team # Contains various teams
+from schemas.sprint_feedback import SprintFeedback
 from openai import AsyncOpenAI
 import contextvars
+import hashlib
 import json
 import os, httpx, logging, instructor, time
 from uuid import uuid4
 from services.audit_logger import write_audit_record
+from services.grounding import find_ungrounded_citations
+from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
+from schemas.modelname import MODEL_NUM_CTX
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
@@ -32,11 +36,72 @@ How it works:
 # Read from .env file (set by Docker Compose environment block)
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, but OpenAI client requires it
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
-OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "300"))  # 5 min default
+OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
 )
+
+
+_DIMENSION_ARTIFACT_FIELDS = {
+    "code_quality": ("commits",),
+    "testing": ("commits", "jira_tickets", "artifact_metrics"),
+    "documentation": ("commits", "jira_tickets"),
+    "requirements": ("jira_tickets", "artifact_metrics"),
+    "collaboration": (
+        "jira_tickets",
+        "peer_evaluations",
+        "collaboration_metrics",
+    ),
+}
+
+
+def _dimension_bundle_data(bundle: ArtifactBundle, dimension_name: str) -> str:
+    fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name)
+    if fields is None:
+        raise ValueError(f"Unknown rubric dimension: {dimension_name}")
+
+    full_bundle = bundle.model_dump(mode="json")
+    bundle_data = {
+        "team_id": bundle.team_id,
+        "sprint_id": bundle.sprint_id,
+        "instructor_expectations": bundle.instructor_expectations,
+    }
+
+    if "commits" in fields:
+        bundle_data["commits"] = [
+            {
+                "sha": commit["sha"],
+                "author": commit["author"],
+                "message": commit["message"],
+                "timestamp": commit["timestamp"],
+                "lines_added": commit["lines_added"],
+                "lines_deleted": commit["lines_deleted"],
+                "files_changed": [file_change["filename"] for file_change in commit["files_changed"]],
+            }
+            for commit in full_bundle["commits"]
+        ]
+
+    for field in fields:
+        if field != "commits":
+            bundle_data[field] = full_bundle[field]
+
+    return json.dumps(bundle_data, indent=2, ensure_ascii=True)
+
+
+def _request_extra_body(model_name: str) -> dict:
+    # Only override num_ctx for models we have a known Modelfile value for;
+    # otherwise omit it so Ollama falls back to the model's own manifest value
+    # instead of silently applying a single hardcoded number to every model.
+    num_ctx = MODEL_NUM_CTX.get(model_name)
+    if num_ctx is None:
+        log.warning(
+            "No known num_ctx for model '%s' — omitting it so Ollama uses the "
+            "model's own manifest value instead of a guessed default.",
+            model_name,
+        )
+        return {}
+    return {"options": {"num_ctx": num_ctx}}
 
 
 async def _capture_request(request: httpx.Request) -> None:
@@ -63,6 +128,7 @@ async def _capture_response(response: httpx.Response) -> None:
                 }
             )
 
+
 def create_llm_client():
     """
     Creates the instructor-wrapped Ollama client.
@@ -86,44 +152,29 @@ def create_llm_client():
         timeout=OLLAMA_TIMEOUT,
         http_client=transport, # Use the custom transport to capture requests and responses
     )
-    
+
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client,
         mode=instructor.Mode.JSON,
     )
     return client
 
+
 async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str, dimention_prompt) -> RubricDimensionScore:
     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
-    bundle_data = bundle.model_dump_json(indent=2)
-    
-    prompt = f"""
-    You are an expert software engineering professor. 
-    Evaluate the following student team artifacts strictly on this dimension: {dimension_name}.
-    Here are the rubric criteria for {dimension_name}:
-    {dimention_prompt}
-    
-    CRITICAL INSTRUCTIONS:
-    - Return a valid JSON object matching the RubricDimensionScore schema.
-    - Score MUST be an integer between 1 and 10.
-    - Provide justification for the score.
-    - Identify strengths.
-    - Identify areas for improvement.
+    bundle_data = _dimension_bundle_data(bundle, dimension_name)
+    bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()
 
-    CRITICAL CITATION RULES:
-    1. Every item in evidence_citations MUST be a plain text string.
-    2. Do NOT wrap citations inside objects or key-value pairs.
-        CORRECT:
-        "evidence_citations": ["Jira ticket AUTH-1 is marked as Done.", "Alice added 150 lines of code."]
-        INCORRECT:
-        "evidence_citations": [{{"text": "Jira ticket AUTH-1 is marked as Done."}}]
-    
-    Student Artifacts:
-    {bundle_data}
-    """
+    approx_tokens = len(bundle_data) // 4
+    log.info(
+        ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
+        dimension_name, len(bundle_data), approx_tokens,
+    )
+
+    prompt = render_dimension_prompt(dimension_name, dimention_prompt, bundle_data)
 
     client = create_llm_client()  # Create a new client for this model
-    
+
     audit_token = _audit_context.set(
         {
             "request_id": str(uuid4()),
@@ -131,15 +182,48 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             "sprint_id": bundle.sprint_id,
             "dimension": dimension_name,
             "model": model_name,
+            "bundle_hash": bundle_hash,
+            "bundle_bytes": len(bundle_data.encode("utf-8")),
+            "commit_count": len(bundle.commits),
+            "jira_ticket_count": len(bundle.jira_tickets),
+            "peer_evaluation_count": len(bundle.peer_evaluations),
+            "artifact_metric_keys": sorted(bundle.artifact_metrics),
         }
     )
     try: # The transport hooks capture the exact request and raw Ollama response.
-        return await client.chat.completions.create(
+        result = await client.chat.completions.create(
             model=model_name,
             response_model=RubricDimensionScore,
             messages=[{"role": "user", "content": prompt}],
+            temperature=0,
             max_retries=3,
+            extra_body=_request_extra_body(model_name),
         )
+        if result.dimension != dimension_name:
+            raise ValueError(
+                f"Model returned dimension '{result.dimension}' while evaluating '{dimension_name}'."
+            )
+        # Drop only the fabricated/ungrounded citations rather than discarding
+        # the whole dimension over a single bad citation, since the model
+        # can't be forced to self-correct via validation_context on this
+        # Instructor/OpenAI integration.
+        ungrounded = find_ungrounded_citations(bundle_data, result.evidence_citations or [])
+        if ungrounded:
+            log.warning(
+                "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the whole dimension: %r",
+                dimension_name, len(ungrounded), ungrounded,
+            )
+            write_audit_record(
+                {
+                    **(_audit_context.get() or {}),
+                    "ungrounded_citations_dropped": ungrounded,
+                }
+            )
+            result.evidence_citations = [
+                citation for citation in (result.evidence_citations or [])
+                if citation not in ungrounded
+            ]
+        return result
     except Exception as error:
         context = _audit_context.get()
         write_audit_record(
@@ -151,6 +235,43 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
         raise
     finally:
         _audit_context.reset(audit_token)
+
+
+async def generate_sprint_feedback(
+    bundle: ArtifactBundle,
+    rubric_scores: dict[str, dict],
+    model_name: str,
+) -> SprintFeedback:
+    """Generate strengths, weaknesses, and recommendations for the whole sprint."""
+    scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
+    prompt = render_sprint_feedback_prompt(bundle.team_id, bundle.sprint_id, scores_data)
+    audit_token = _audit_context.set(
+        {
+            "request_id": str(uuid4()),
+            "team_id": bundle.team_id,
+            "sprint_id": bundle.sprint_id,
+            "dimension": "sprint_feedback",
+            "model": model_name,
+        }
+    )
+    try:
+        client = create_llm_client()
+        full_prompt_chars = len(prompt)
+        log.info(
+            ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
+            "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
+        )
+        return await client.chat.completions.create(
+            model=model_name,
+            response_model=SprintFeedback,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_retries=3,
+            extra_body=_request_extra_body(model_name),
+        )
+    finally:
+        _audit_context.reset(audit_token)
+
 
 async def check_ollama_health(model_name: str) -> dict:
     """
