@@ -144,6 +144,8 @@ class StudentScore(BaseModel):
 class TeamScore(BaseModel):
     score: float
     rationale: str
+    # Default "" keeps old DB rows (persisted before this field existed) valid.
+    overall_grade: str = ""
 
 
 class AssessmentReport(BaseModel):
@@ -161,6 +163,20 @@ class AssessmentReport(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     recommendations: list[str]
+
+
+class RubricWeightsPayload(BaseModel):
+    """Body for setting a course's custom rubric dimension weights."""
+    weights: dict[str, float]
+
+
+class RubricWeightsResponse(BaseModel):
+    course_id: str
+    weights: dict[str, float]
+    # False when no faculty override exists yet and this is just the default.
+    is_custom: bool
+    updated_by: str | None = None
+    updated_at: datetime | None = None
 
 
 class OverrideRequest(BaseModel):

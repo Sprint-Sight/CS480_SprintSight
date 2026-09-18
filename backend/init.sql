@@ -236,8 +236,9 @@ CREATE TABLE IF NOT EXISTS assessment_override (
     testing_score NUMERIC(5, 2) NOT NULL CHECK (testing_score BETWEEN 0 AND 100),
     documentation_score NUMERIC(5, 2) NOT NULL CHECK (documentation_score BETWEEN 0 AND 100),
     collaboration_score NUMERIC(5, 2) NOT NULL CHECK (collaboration_score BETWEEN 0 AND 100),
+    cicd_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cicd_score BETWEEN 0 AND 100),
     total_score NUMERIC(5, 2) GENERATED ALWAYS AS (
-        (requirements_score + code_quality_score + testing_score + documentation_score + collaboration_score) / 5.0
+        (requirements_score + code_quality_score + testing_score + documentation_score + collaboration_score + cicd_score) / 6.0
     ) STORED,
     graded_by UUID NOT NULL REFERENCES users(user_id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -269,6 +270,15 @@ CREATE TABLE IF NOT EXISTS assessment_reports (
 
 CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint
     ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC);
+
+-- Per-course rubric dimension weights, set by faculty; falls back to the
+-- backend's hardcoded equal-weight default when a course has no row here.
+CREATE TABLE IF NOT EXISTS rubric_weight_configs (
+    course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
+    weights JSONB NOT NULL,
+    updated_by UUID NOT NULL REFERENCES users(user_id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE

@@ -5,7 +5,7 @@ The FastAPI application. This is the HTTP front door of your AI Assessment Servi
  
 Endpoints:
     GET  /health          → Is the service up? Is Ollama reachable? Is the model ready?
-    POST /assess/sprint   → Submit an ArtifactBundle, receive a SprintAssessment
+    POST /assess/sprint/data → Submit ingested sprint data, receive a SprintAssessment
  
 This file is intentionally thin. All real logic lives in services/evaluator.py.
 """

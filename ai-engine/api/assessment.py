@@ -17,10 +17,7 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
 from schemas.peer_evaluation import PeerEvaluation
-from schemas.modelname import ModelName
-from schemas.teamtype import TeamType
 from schemas.sprint_assessment import SprintAssessment
-from schemas.fixtures import high_performing_team, struggling_team, good_collab_low_output_team, lone_contributor_poor_outcome_team, imbalanced_high_output_team
 
 from services.evaluator import evaluate_sprint
 
@@ -57,29 +54,6 @@ class BackendAssessmentPayload(BaseModel):
     instructor_expectations: str = "No instructor guidance provided."
 
 
-team_fixtures = {
-    "high_performing_team": high_performing_team,
-    "struggling_team": struggling_team,
-    "good_collab_low_output_team": good_collab_low_output_team,
-    "lone_contributor_poor_outcome_team": lone_contributor_poor_outcome_team,
-    "imbalanced_high_output_team": imbalanced_high_output_team
-}
-
-
-@router.post("/sprint", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
-async def assess_sprint_endpoint(
-    key: TeamType = Query(..., description="Select the team type to assess"), 
-    modelname: ModelName = Query(..., description="Select the model to use for assessment")
-):
-
-    teamtype = team_fixtures.get(key.value)
-
-    try:
-        return await evaluate_sprint(teamtype, modelname.value, experiment_name="Sprintsight evaluation")
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
     payload: BackendAssessmentPayload,
@@ -93,6 +67,9 @@ async def assess_backend_data_endpoint(
             commits=payload.commits,
             jira_tickets=payload.jira_tickets,
             peer_evaluations=payload.peer_evaluations,
+            collaboration_metrics=payload.collaboration_metrics.model_dump(),
+            artifact_metrics=payload.artifact_metrics,
+            instructor_expectations=payload.instructor_expectations,
         )
         assessment = await evaluate_sprint(bundle, modelname)
         return assessment
