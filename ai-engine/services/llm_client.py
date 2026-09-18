@@ -216,7 +216,10 @@ async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_
             write_audit_record(
                 {
                     **(_audit_context.get() or {}),
-                    "ungrounded_citations_dropped": ungrounded,
+                    "ungrounded_citations_dropped": [
+                        citation.model_dump() if hasattr(citation, "model_dump") else citation
+                        for citation in ungrounded
+                    ],
                 }
             )
             result.evidence_citations = [

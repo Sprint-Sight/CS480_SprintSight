@@ -57,21 +57,28 @@ def _build_value_corpus(bundle_data: str) -> str:
     return _normalize(" ".join(values))
 
 
-def find_ungrounded_citations(bundle_data: str, citations: list[str]) -> list[str]:
+def find_ungrounded_citations(bundle_data: str, citations: list) -> list:
     """
     Returns the subset of `citations` that cannot be traced back to
     `bundle_data` (the actual serialized ArtifactBundle sent to the model) —
     which is exactly the fingerprint of a hallucinated citation, regardless
     of whether it was copied from an example or fabricated outright.
 
-    A citation is considered grounded if EITHER:
+    Each citation is an EvidenceCitation-like object/dict with an
+    `identifier` field (duck-typed here, not imported, to avoid a circular
+    import with the schema module). Only the identifier is checked against
+    the bundle:
       (a) it appears near-verbatim in the bundle's data VALUES
           (whitespace/case-normalized), or
       (b) it contains at least one identifier-like token (a SHA, ticket key,
           filename, etc.) that appears verbatim among those values.
     (a) alone is too strict — the model may rephrase slightly around a real
-    citation. (b) alone is too loose — a common short word could coincidentally
-    match. Requiring one or the other balances precision and recall.
+    identifier. (b) alone is too loose — a common short word could
+    coincidentally match. Requiring one or the other balances precision and
+    recall. The free-text `reason` is intentionally NOT required to match
+    bundle values verbatim — it's the model's own explanation, and real
+    evaluative reasoning ("clear, professional commit message") will rarely
+    quote the data back verbatim.
 
     The corpus is built from data VALUES only, not the raw JSON text — schema
     field names (e.g. "commits", "jira_tickets") must never count as evidence,
@@ -81,10 +88,15 @@ def find_ungrounded_citations(bundle_data: str, citations: list[str]) -> list[st
     corpus = _build_value_corpus(bundle_data)
     ungrounded = []
     for citation in citations:
-        norm_citation = _normalize(citation)
-        if norm_citation and norm_citation in corpus:
+        if isinstance(citation, dict):
+            identifier = citation.get("identifier", "")
+        else:
+            identifier = getattr(citation, "identifier", None) or str(citation)
+
+        norm_identifier = _normalize(identifier)
+        if norm_identifier and norm_identifier in corpus:
             continue
-        tokens = _TOKEN_PATTERN.findall(citation)
+        tokens = _TOKEN_PATTERN.findall(identifier)
         if any(_normalize(tok) in corpus for tok in tokens):
             continue
         ungrounded.append(citation)

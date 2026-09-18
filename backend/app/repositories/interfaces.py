@@ -172,6 +172,20 @@ class AssessmentJobRepository(Protocol):
     def list_events(self, job_id: str) -> list[AssessmentJobEvent]: ...
 
 
+@dataclass
+class RubricWeightsRecord:
+    course_id: str
+    weights: dict[str, float]
+    updated_by: str
+    updated_at: datetime
+
+
+class RubricWeightsRepository(Protocol):
+    def get_weights(self, course_id: str) -> RubricWeightsRecord | None: ...
+
+    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord: ...
+
+
 class OverrideRepository(Protocol):
     def save_override(self, record: OverrideResponse) -> None: ...
 

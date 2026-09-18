@@ -25,23 +25,30 @@ def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle
     - The `dimension` field MUST be exactly `{dimension_name}`.
     - Score MUST be an integer between 1 and 10.
     - Provide justification for the score.
+    - Each score band spans multiple numbers (e.g. 6-8). Do NOT default to the
+        top of the band. If your own justification names specific gaps,
+        missing coverage, or deficiencies, score toward the LOWER end of that
+        band. Only use the top of a band when there are no noted deficiencies
+        at all.
 
     CRITICAL CITATION RULES:
-    1. Every item in evidence_citations MUST be a plain text string copied
-        from, or precisely derived from, Student Artifacts.
-    2. Cite exact commit SHA/message/file names, Jira ticket IDs/statuses, or
-        supplied metric values. Never use placeholders such as "commit 1".
-    3. Do NOT wrap citations inside objects or key-value pairs.
+    1. Every item in evidence_citations MUST be an object with EXACTLY two
+        fields: `identifier` and `reason`. Do NOT invent your own field names
+        for these two fields (e.g. do NOT write "verbatim identifier" or
+        "one short sentence explaining why..." as field names — those are
+        descriptions of what to put in `identifier` and `reason`, not the
+        field names themselves).
+    2. `identifier` MUST be copied verbatim from Student Artifacts: a commit
+        SHA, Jira ticket ID, filename, or supplied metric value. Never use
+        placeholders such as "commit 1", and never invent an identifier.
+    3. `reason` MUST be ONE short sentence explaining why that specific
+        identifier supports the score, referring to details that actually
+        belong to THAT SPECIFIC record (its real commit message, its real
+        file names, its real ticket status) — never a generic-sounding reason
+        that could apply to any commit.
     4. Do NOT repeat benchmark, fixture, or example strings from prior prompts.
         Use only the actual Student Artifacts provided below.
     5. If a citation cannot be matched to the current bundle, do not include it.
-    6. Each citation MUST follow the format
-        "<verbatim identifier> | <one short sentence explaining why this is
-        evidence for the score/feedback>". The identifier before the "|" MUST
-        be copied exactly from Student Artifacts (a commit SHA, Jira ticket
-        ID, filename, or metric value) — only the text after the "|" is your
-        own reasoning. Example: "a1b2c3d | Adds unit tests for the login
-        flow, directly supporting the testing score."
 
     Evidence rules:
     - Use only evidence present in Student Artifacts.
