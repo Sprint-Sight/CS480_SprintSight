@@ -1,4 +1,4 @@
-import asyncio, mlflow, time, os
+import asyncio, mlflow, time, os, json
 from mlflow.entities import SpanType
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
@@ -10,39 +10,6 @@ load_dotenv()  # Load environment variables from .env file
 
 # Dimension prompts
 DIMENSIONS = ["requirements", "code_quality", "testing", "documentation", "collaboration"]
-
-DIMENSION_PROMPT_TEMPLATE = """
-    You are an expert software engineering professor. 
-    Evaluate the individual's performance against the {{ dimension }} dimension using the provided Jira/project data.
-
-    Assess:
-
-    {{ assess }}
-
-    Assign a score from 1–10 using this rubric:
-
-    {{ scoring}}
-
-    Output: {{ output }}
-
-    CRITICAL INSTRUCTIONS:
-        - Return a valid JSON object matching the RubricDimensionScore schema.
-        - Score MUST be an integer between 1 and 10.
-        - Provide justification for the score.
-        - Identify strengths.
-        - Identify areas for improvement.
-    
-    CRITICAL CITATION RULES:
-    1. Every item in evidence_citations MUST be a plain text string.
-    2. Do NOT wrap citations inside objects or key-value pairs.
-        CORRECT:
-        "evidence_citations": ["Jira ticket AUTH-1 is marked as Done.", "Alice added 150 lines of code."]
-        INCORRECT:
-        "evidence_citations": [{{"text": "Jira ticket AUTH-1 is marked as Done."}}]
-    
-    Student Artifacts:
-    {bundle_data}
-"""
 
 '''
 Receives bundle
@@ -64,7 +31,10 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
     # if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
     #     mlflow.end_run()
     
-    with mlflow.start_run(run_name=f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}"):
+    with mlflow.start_run(
+        run_name=f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}",
+        nested=True,
+    ):
 
         start_time = time.time() # Set start time
 
@@ -76,7 +46,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
 
         async def _bounded_evaluate(dim):
             async with semaphore:
-                return await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPT_TEMPLATE)
+                return await evaluate_dimension(bundle, dim, model_name)
 
         # 2. Create a list of asynchronous tasks (one for each dimension)
         tasks = [_bounded_evaluate(dim) for dim in DIMENSIONS] # For running with a semaphore to limit concurrency
