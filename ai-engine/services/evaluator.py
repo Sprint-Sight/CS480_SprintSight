@@ -3,7 +3,7 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
 from schemas.rubrics_score import RubricsScore, DIMENSIONS, DIMENTION_PROMPTS
 from schemas.rubrics_dimension_score import RubricDimensionScore
-from services.llm_client import evaluate_dimension, generate_sprint_feedback
+from services.llm_client import evaluate_dimension, generate_sprint_feedback, select_run_num_ctx
 from llmops.mlflow_config import start_mlflow
 
 '''
@@ -22,6 +22,12 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
 
     start_time = time.time() # Set start time
 
+    # Sized ONCE for the whole run (not per-dimension) and reused for every
+    # call below, including sprint feedback: Ollama reloads the model
+    # whenever num_ctx changes between requests, so varying it per-dimension
+    # would force a reload before nearly every one of the ~6-7 calls here.
+    run_num_ctx = select_run_num_ctx(bundle, model_name, DIMENSIONS)
+
     # Limit parallel requests to avoid overloading one local Ollama model.
     semaphore = asyncio.Semaphore(1)
 
@@ -30,7 +36,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
             dimension_start = time.perf_counter()
             log.info("Starting rubric dimension '%s'", dim)
             try:
-                result = await evaluate_dimension(bundle, dim, model_name, DIMENTION_PROMPTS[dim])
+                result = await evaluate_dimension(bundle, dim, model_name, DIMENTION_PROMPTS[dim], num_ctx=run_num_ctx)
             except Exception:
                 log.exception(
                     "Rubric dimension '%s' failed after %.2f seconds.",
@@ -76,12 +82,17 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
                 failed_dimensions[dim] = str(result)
                 # Guarantee every dimension is present in the response: a
                 # missing dimension is worse than a clearly-flagged failed one.
+                # Truncated: `justification` now has max_length=500 (see
+                # schemas/rubrics_dimension_score.py), and an unbounded
+                # exception message could otherwise fail this fallback
+                # construction itself while already handling a failure.
+                error_summary = str(result)[:300]
                 scores_by_dim[dim] = RubricDimensionScore(
                     dimension=dim,
                     score=1,
                     justification=(
                         "Automated evaluation failed for this dimension after "
-                        f"all retries and could not be scored: {result}. "
+                        f"all retries and could not be scored: {error_summary}. "
                         "Manual review required."
                     ),
                     evidence_citations=[],
@@ -119,6 +130,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
             bundle,
             {dimension: score.model_dump() for dimension, score in scores_by_dim.items()},
             model_name,
+            num_ctx=run_num_ctx,
         )
     except Exception:
         log.exception("General sprint feedback generation failed.")
