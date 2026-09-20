@@ -5,13 +5,16 @@ from typing import Literal
 # including literally copying the prompt's own format description as key
 # names (e.g. "verbatim identifier", "one short sentence explaining why...").
 # Matched by substring so near-miss phrasing still normalizes correctly.
-_IDENTIFIER_KEY_HINTS = ("identifier", "sha", "commit", "ticket", "citation", "text", "value", "id")
+# "id"/"text"/"value" were removed from the identifier hints: "id" is a
+# substring of "evidence" ("ev-id-ence"), so a key literally named "evidence"
+# was being classified as the identifier before the reason check ever ran.
+_IDENTIFIER_KEY_HINTS = ("identifier", "sha", "commit", "ticket", "citation")
 _REASON_KEY_HINTS = ("reason", "sentence", "explan", "justif", "why", "evidence")
 
 
 class EvidenceCitation(BaseModel):
     identifier: str = Field(description="Verbatim commit SHA, Jira ticket ID, filename, or metric value copied from Student Artifacts.")
-    reason: str = Field(default="", description="One short sentence tying this identifier to the score/feedback.")
+    reason: str = Field(min_length=15, description="One short sentence tying this identifier to the score/feedback.")
 
 
 def _normalize_citation(item: object) -> dict:
@@ -45,16 +48,24 @@ def _normalize_citation(item: object) -> dict:
     }
 
 
-class RubricDimensionScore(BaseModel):
-    dimension: Literal["code_quality", "testing", "documentation",
-                        "requirements", "collaboration", "cicd"]
+class ModelOutput(BaseModel):
+    """
+    The ONLY schema the model is asked to produce (see llm_client.py's
+    `response_model=ModelOutput`). `dimension` and `evaluation_failed` are
+    deliberately excluded here: the caller already knows which dimension it
+    requested and assigns it in code, and `evaluation_failed` is only ever
+    set by evaluator.py's fallback path. Handing the model a 6-value enum to
+    echo back and a bool it should always answer False just gives it more
+    prompt surface to copy instead of reading the evidence.
+
+    Field order is deliberate: `justification`/`evidence_citations` come
+    before `score` so the model has to write its reasoning and cite real
+    evidence BEFORE committing to a number, instead of picking a score first
+    and writing a justification to match it.
+    """
+    justification: str = Field(min_length=10, max_length=500)
+    evidence_citations: list[EvidenceCitation] = Field(max_length=3)
     score: int = Field(ge=1, le=10)
-    justification: str = Field(min_length=10)
-    evidence_citations: list[EvidenceCitation]
-    # Set only by evaluator.py's fallback path, never by the model itself:
-    # marks a synthesized placeholder used to guarantee all rubric dimensions are
-    # always present, so callers can still distinguish it from a real score.
-    evaluation_failed: bool = False
 
     @field_validator("evidence_citations", mode="before")
     @classmethod
@@ -66,3 +77,16 @@ class RubricDimensionScore(BaseModel):
         if not isinstance(value, list):
             return value
         return [_normalize_citation(item) for item in value]
+
+
+class RubricDimensionScore(ModelOutput):
+    """What the API actually stores/returns — adds the two fields the model
+    never sees: `dimension` (assigned in code from the dimension that was
+    requested) and `evaluation_failed` (set only by evaluator.py's fallback
+    path, to guarantee every dimension is present even after a failure)."""
+    dimension: Literal["code_quality", "testing", "documentation",
+                        "requirements", "collaboration", "cicd"]
+    # Set only by evaluator.py's fallback path, never by the model itself:
+    # marks a synthesized placeholder used to guarantee all rubric dimensions are
+    # always present, so callers can still distinguish it from a real score.
+    evaluation_failed: bool = False
