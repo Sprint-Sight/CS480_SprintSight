@@ -1,11 +1,21 @@
-import asyncio, logging, mlflow, time, os
+import asyncio
+import logging
+import os
+import time
+
+import mlflow
 from mlflow.entities import SpanType
-from schemas.artifact_bundle import ArtifactBundle
-from schemas.sprint_assessment import SprintAssessment
-from schemas.rubrics_score import RubricsScore, DIMENSIONS, DIMENTION_PROMPTS
-from schemas.rubrics_dimension_score import RubricDimensionScore
-from services.llm_client import evaluate_dimension, generate_sprint_feedback, select_run_num_ctx
+
 from llmops.mlflow_config import start_mlflow
+from schemas.artifact_bundle import ArtifactBundle
+from schemas.rubrics_dimension_score import RubricDimensionScore
+from schemas.rubrics_score import DIMENSIONS, DIMENTION_PROMPTS, RubricsScore
+from schemas.sprint_assessment import SprintAssessment
+from services.llm_client import (
+    evaluate_dimension,
+    generate_sprint_feedback,
+    select_run_num_ctx,
+)
 
 '''
 Receives a bundle, evaluates each rubric dimension serially, generates general
@@ -107,7 +117,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
             else:
                 scores_by_dim[dim] = result
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - translate concurrent-task failure into a domain error
         # mlflow.set_tag("error", str(e))
         raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
     

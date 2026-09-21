@@ -24,7 +24,8 @@ those -- by editing benchmark.py's scores or relaxing these specific links --
 before wiring this into validation_harness.py's compute_summary().
 """
 
-from typing import Literal, NamedTuple, Optional
+from typing import Literal, NamedTuple
+
 
 class OrderLink(NamedTuple):
     higher: str
@@ -49,7 +50,7 @@ COLLABORATION_ORDER: list[OrderLink] = [ # Genera ordering for COLLABORATION dim
 def check_order(
     scores: dict[str, float],
     order: list[OrderLink],
-    stdevs: Optional[dict[str, float]] = None,
+    stdevs: dict[str, float] | None = None,
 ) -> dict[str, dict]:
     """
     scores: {fixture_name: mean_score}

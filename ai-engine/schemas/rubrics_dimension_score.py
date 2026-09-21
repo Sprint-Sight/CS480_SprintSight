@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
 from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 # Keys the model has been observed using instead of "identifier"/"reason" —
 # including literally copying the prompt's own format description as key

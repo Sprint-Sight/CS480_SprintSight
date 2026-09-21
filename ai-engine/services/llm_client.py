@@ -5,13 +5,13 @@ import logging
 import os
 import time
 from collections import Counter
-from dotenv import load_dotenv
 from pathlib import PurePosixPath
 from uuid import uuid4
 
 import httpx
 import instructor
 import mlflow
+from dotenv import load_dotenv
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
@@ -22,7 +22,6 @@ from prompts.templates import (
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import ModelOutput, RubricDimensionScore
-from schemas.sprint_assessment import SprintAssessment
 from schemas.sprint_feedback import SprintFeedback
 from services.audit_logger import write_audit_record
 from services.grounding import find_ungrounded_citations
@@ -202,10 +201,14 @@ def _compute_commit_facts(commits: list[dict]) -> str:
 
     lines = [
         "Computed facts (trust these over your own counting):",
-        f"- {len(commits)} commit(s) by {', '.join(authors) or 'unknown author(s)'} "
-        f"across {len(active_days)} active day(s): {', '.join(active_days) or 'unknown dates'}.",
-        f"- {lines_added_total} lines added, {lines_deleted_total} lines deleted in total "
-        f"({meaningful_lines_added} added lines are in non-{'/'.join(sorted(_LOW_SIGNAL_EXTENSIONS))} files).",
+        (
+            f"- {len(commits)} commit(s) by {', '.join(authors) or 'unknown author(s)'} "
+            f"across {len(active_days)} active day(s): {', '.join(active_days) or 'unknown dates'}."
+        ),
+        (
+            f"- {lines_added_total} lines added, {lines_deleted_total} lines deleted in total "
+            f"({meaningful_lines_added} added lines are in non-{'/'.join(sorted(_LOW_SIGNAL_EXTENSIONS))} files)."
+        ),
         f"- {generic_count} of {len(commits)} commit message(s) are generic/low-detail "
         f"(e.g. {', '.join(repr(m) for m in generic_examples) or 'none'})." if generic_count
         else f"- 0 of {len(commits)} commit message(s) are generic/low-detail.",
@@ -526,7 +529,7 @@ async def check_ollama_health(model_name: str) -> dict:
             "model":  model_name,
             "error":  f"Cannot connect to Ollama at {tags_url}. Is it running?",
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - health check must report status, not raise
         return {
             "status": "error",
             "model":  model_name,
@@ -549,11 +552,10 @@ async def pull_model_if_missing(model_name: str) -> None:
     log.info("Pulling model '%s' — this may take several minutes...", model_name)
 
     try:
-        async with httpx.AsyncClient(timeout=1800.0) as client:   # 30 min timeout
-            async with client.stream("POST", pull_url, json={"name": model_name}) as resp:
-                async for line in resp.aiter_lines():
-                    if line:
-                        log.debug("Pull progress: %s", line)
+        async with httpx.AsyncClient(timeout=1800.0) as client, client.stream("POST", pull_url, json={"name": model_name}) as resp:   # 30 min timeout
+            async for line in resp.aiter_lines():
+                if line:
+                    log.debug("Pull progress: %s", line)
         log.info("Model '%s' downloaded successfully.", model_name)
     except Exception as e:
         log.error("Failed to pull model '%s': %s", model_name, e)

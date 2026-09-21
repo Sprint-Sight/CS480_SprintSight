@@ -1,8 +1,16 @@
 import json
 from typing import Any
+
+from mlflow.entities import (
+    AssessmentSource,
+    AssessmentSourceType,
+    Feedback,
+    SpanType,
+    Trace,
+)
 from mlflow.genai.scorers import scorer
+
 from schemas.rubrics_score import DIMENSIONS
-from mlflow.entities import Trace, Feedback, SpanType, AssessmentSource, AssessmentSourceType
 
 _CODE_SOURCE = AssessmentSource(source_type=AssessmentSourceType.CODE, source_id="numeric_grade_accuracy")
 
@@ -95,7 +103,7 @@ def keyword_presence_scorer(outputs: str, expectations: dict[str, Any]) -> Feedb
 
     missing_keywords = []
     for keyword in expected_keywords:
-        if keyword.lower() not in outputs.lower():
+        if keyword.lower() not in output_text.lower():
             missing_keywords.append(keyword)
 
     if not missing_keywords:

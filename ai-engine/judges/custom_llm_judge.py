@@ -1,13 +1,17 @@
-import os, mlflow, asyncio
+import asyncio
+import os
+
+import mlflow
 from dotenv import load_dotenv
+from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
+from mlflow.genai.scorers import scorer
+from schemas.benchmark_registry import FIXTURES
+
 from judges.judge_verdict import JudgeVerdict
 from llmops.prompt_registry import register_prompt_if_changed
-from schemas.benchmark_registry import FIXTURES
-from schemas.sprint_assessment import SprintAssessment
 from schemas.artifact_bundle import ArtifactBundle
+from schemas.sprint_assessment import SprintAssessment
 from services.llm_client import create_llm_client
-from mlflow.genai.scorers import scorer
-from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -108,7 +112,7 @@ def llm_judge_grounding_and_actionability(inputs: dict, outputs: dict, expectati
             gold=SprintAssessment(**expectations["gold"]),
             judge_model=DEFAULT_JUDGE_MODEL,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
         return [Feedback(name="citation_hallucination_rate", error=e, rationale=f"LLM judge call failed: {e}", source=judge_source)]
 
     return [

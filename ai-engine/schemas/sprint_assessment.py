@@ -1,8 +1,8 @@
-from typing import Optional
 from pydantic import BaseModel, Field, computed_field
-from schemas.rubrics_dimension_score import RubricDimensionScore
+
 from schemas.member_contribution import MemberContribution
 from schemas.rubrics_score import RubricsScore
+
 
 class SprintAssessment(BaseModel):
     sprint_id: str

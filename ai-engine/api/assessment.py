@@ -9,9 +9,9 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, status, Query, HTTPException
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from schemas.artifact_bundle import ArtifactBundle
@@ -20,7 +20,6 @@ from schemas.jira import JiraTicket
 from schemas.modelname import ModelName
 from schemas.peer_evaluation import PeerEvaluation
 from schemas.sprint_assessment import SprintAssessment
-
 from services.evaluator import evaluate_sprint
 
 log = logging.getLogger("sprintsight.router.assessment")
@@ -62,7 +61,7 @@ class BackendAssessmentPayload(BaseModel):
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
     payload: BackendAssessmentPayload,
-    modelname: ModelName = Query(..., description="Select the model to use for assessment"),
+    modelname: Annotated[ModelName, Query(description="Select the model to use for assessment")],
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
     try:

@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from mlflow.genai import load_prompt, register_prompt, set_prompt_alias
 
@@ -41,7 +40,7 @@ def register_dimension_prompt(dimension_name: str) -> None:
             commit_message=f"Prompt for dimension '{dimension_name}' evaluation",
             tags={"dimension": dimension_name, "author": "SprintSight"},
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - translate any registry failure into a domain error
         raise RuntimeError(f"Failed to register prompt for dimension '{dimension_name}': {e}")
 
 def register_all_dimension_prompts() -> None:
@@ -60,7 +59,7 @@ def register_prompt_if_changed(
     template: str,
     commit_message: str,
     alias: str = "production",
-    tags: Optional[dict] = None,
+    tags: dict | None = None,
 ) -> None:
     """Register a new prompt version only when no version carries `alias` yet
     or the aliased version's template differs from `template`. Safe to call
@@ -69,7 +68,7 @@ def register_prompt_if_changed(
     registered again."""
     try:
         existing = load_prompt(f"prompts:/{name}@{alias}")
-    except Exception:
+    except Exception:  # noqa: BLE001 - alias/version not existing yet is expected, not exceptional
         existing = None
 
     if existing is not None and getattr(existing, "template", None) == template:
@@ -81,6 +80,6 @@ def register_prompt_if_changed(
 def load_dimension_prompt(dimension_name: str, alias: str = "production") -> str:
     try:
         return load_prompt(f"prompts:/Evaluate_{dimension_name}@{alias}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - prompt lookup failure must not crash the caller
         print(f"Error loading prompt for dimension '{dimension_name}': {e}")
         return None  # Return None if prompt not found or any error occurs

@@ -56,17 +56,23 @@ STILL UNCONFIRMED (flagging rather than guessing further):
     they're constructed in evaluator.py / assessment.py, not seen directly.
 """
 
-import argparse, asyncio, json, mlflow, os, statistics, time
+import argparse
+import asyncio
+import json
+import statistics
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+
+import mlflow
 from dotenv import load_dotenv
+
 import schemas.fixtures as fixtures_module
-from schemas.artifact_bundle import ArtifactBundle
-from schemas.expected_orders import GENERAL_ORDER, COLLABORATION_ORDER, check_order
-from services.evaluator import evaluate_sprint
 from llmops.mlflow_config import start_mlflow
+from schemas.artifact_bundle import ArtifactBundle
+from schemas.expected_orders import COLLABORATION_ORDER, GENERAL_ORDER, check_order
+from services.evaluator import evaluate_sprint
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -105,12 +111,12 @@ class RunResult: # Stores the result of a single (model, fixture, repeat) run
     success: bool                       # if assessment object was returned at all
     fully_succeeded: bool               # AND zero dimensions failed
     failed_dimensions: list             # dimensions that failed (all 5 if success=False)
-    overall_score: Optional[int]        # rounded int, as returned by evaluator.py
-    raw_average_score: Optional[float]  # recomputed float average from rubric_scores
-    rubric_scores: Optional[dict]       # {dimension: score}
-    evidence_citations: Optional[dict]  # {dimension: [citation, ...]}
-    error: Optional[str]
-    latency_seconds: Optional[float]
+    overall_score: int | None        # rounded int, as returned by evaluator.py
+    raw_average_score: float | None  # recomputed float average from rubric_scores
+    rubric_scores: dict | None       # {dimension: score}
+    evidence_citations: dict | None  # {dimension: [citation, ...]}
+    error: str | None
+    latency_seconds: float | None
 
 async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunResult:
     bundle = _load_fixture(fixture_name)
@@ -148,7 +154,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
             error=None,
             latency_seconds=latency,
         )
-    except Exception as e:  # evaluate_sprint raises when any required dimension fails
+    except Exception as e:  # noqa: BLE001 - evaluate_sprint raises when any required dimension fails
         latency = loop.time() - start
         return RunResult(
             model=model,

@@ -1,11 +1,14 @@
-from schemas.sprint_assessment import SprintAssessment
-from schemas.rubrics_dimension_score import RubricDimensionScore
-from schemas.member_contribution import MemberContribution
-from schemas.rubrics_score import RubricsScore
 from schemas.fixtures import (
-    high_performing_team, struggling_team, good_collab_low_output_team,
-    imbalanced_high_output_team, lone_contributor_poor_outcome_team,
+    good_collab_low_output_team,
+    high_performing_team,
+    imbalanced_high_output_team,
+    lone_contributor_poor_outcome_team,
+    struggling_team,
 )
+from schemas.member_contribution import MemberContribution
+from schemas.rubrics_dimension_score import RubricDimensionScore
+from schemas.rubrics_score import RubricsScore
+from schemas.sprint_assessment import SprintAssessment
 
 high_performing_grade = SprintAssessment(
     team_id=high_performing_team.team_id,
