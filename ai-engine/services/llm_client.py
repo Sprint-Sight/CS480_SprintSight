@@ -1,21 +1,38 @@
-from schemas.rubrics_dimension_score import RubricDimensionScore, ModelOutput
-from schemas.sprint_assessment import SprintAssessment
-from schemas.artifact_bundle import ArtifactBundle
-from schemas.sprint_feedback import SprintFeedback
-from openai import AsyncOpenAI
 import contextvars
 import hashlib
 import json
-import os, httpx, logging, instructor, time
+import logging
+import os
+import time
 from collections import Counter
+from dotenv import load_dotenv
 from pathlib import PurePosixPath
 from uuid import uuid4
+
+import httpx
+import instructor
+import mlflow
+from mlflow.entities import SpanType
+from openai import AsyncOpenAI
+
+from llmops.prompt_registry import (
+    DIMENSION_PLACEHOLDERS,
+    get_dimension_prompt,
+    load_dimension_prompt,
+    register_dimension_prompt,
+)
+from prompts.templates import (
+    render_dimension_prompt,
+    render_sprint_feedback_prompt,
+)
+from schemas.artifact_bundle import ArtifactBundle
+from schemas.modelname import MODEL_NUM_CTX
+from schemas.rubrics_dimension_score import ModelOutput, RubricDimensionScore
+from schemas.sprint_assessment import SprintAssessment
+from schemas.sprint_feedback import SprintFeedback
 from services.audit_logger import write_audit_record
 from services.grounding import find_ungrounded_citations
-from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
-from schemas.modelname import MODEL_NUM_CTX
 
-from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
 
 log = logging.getLogger(__name__)
@@ -49,6 +66,33 @@ OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 # server rejects it.
 _INSTRUCTOR_MODES = {"json": instructor.Mode.JSON, "json_schema": instructor.Mode.JSON_SCHEMA}
 _STRUCTURED_OUTPUT_MODE = os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").strip().lower()
+
+CODE_DIMENSIONS = {"code_quality", "testing"}
+DOCUMENTATION_DIMENSIONS = {"documentation"}
+
+def _with_line_numbers(content: str) -> str:
+    return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
+
+def _bundle_data_for_dimension(bundle: ArtifactBundle, dimension_name: str) -> str:
+    """Dimension-scoped view of the bundle -- keeps prompts smaller for
+    dimensions that don't need source content, and surfaces Java/README
+    content (with line numbers, for citation grounding) for the ones that do."""
+    payload: dict = {
+        "team_id": bundle.team_id,
+        "sprint_id": bundle.sprint_id,
+        "commits": [c.model_dump(mode="json") for c in bundle.commits],
+        "jira_tickets": [t.model_dump(mode="json") for t in bundle.jira_tickets],
+        "peer_evaluations": [p.model_dump(mode="json") for p in bundle.peer_evaluations],
+    }
+    if dimension_name in CODE_DIMENSIONS:
+        payload["code_files"] = [
+            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.code_files
+        ]
+    if dimension_name in DOCUMENTATION_DIMENSIONS:
+        payload["documents"] = [
+            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.documents
+        ]
+    return json.dumps(payload, indent=2, default=str)
 
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
@@ -234,7 +278,6 @@ async def _capture_request(request: httpx.Request) -> None:
             context["request_started_at"] = time.perf_counter()
             context["request"] = request.content.decode("utf-8", errors="replace")
 
-
 async def _capture_response(response: httpx.Response) -> None:
     if response.request.url.path.endswith("/chat/completions"):
         context = _audit_context.get()
@@ -278,6 +321,16 @@ def create_llm_client():
     )
 
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
+        raw_client, # The raw OpenAI-compatible client pointing at Ollama
+        mode=instructor.Mode.JSON, # ensures that the response is parsed as JSON, returned as a Pydantic model
+    )
+    return client
+
+# Each child span of the parent span (Evaluate_Complete_Sprint)
+@mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
+async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
+    # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
+    # bundle_data = bundle.model_dump_json(indent=2) # json representation of the bundle for logging and debugging
         raw_client,
         mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
     )
@@ -328,7 +381,8 @@ async def evaluate_dimension(
             "artifact_metric_keys": sorted(bundle.artifact_metrics),
         }
     )
-    try: # The transport hooks capture the exact request and raw Ollama response.
+    try:
+        # The transport hooks capture the exact request and raw Ollama response.
         model_output = await client.chat.completions.create(
             model=model_name,
             response_model=ModelOutput,
@@ -337,36 +391,56 @@ async def evaluate_dimension(
             max_retries=3,
             extra_body=_request_extra_body(num_ctx),
         )
+
         # dimension/evaluation_failed are assigned here, in code, rather than
         # asked of the model — it can't get the dimension wrong if it's never
         # given the chance to answer it.
-        result = RubricDimensionScore(dimension=dimension_name, **model_output.model_dump())
-        # Drop only the fabricated/ungrounded citations rather than discarding
-        # the whole dimension over a single bad citation, since the model
-        # can't be forced to self-correct via validation_context on this
-        # Instructor/OpenAI integration.
-        ungrounded = find_ungrounded_citations(bundle_data, result.evidence_citations or [])
+        result = RubricDimensionScore(
+            dimension=dimension_name,
+            **model_output.model_dump(),
+        )
+
+        # Drop only fabricated/ungrounded citations rather than discarding
+        # the whole dimension over a single bad citation.
+        ungrounded = find_ungrounded_citations(
+            bundle_data,
+            result.evidence_citations or [],
+        )
+
         if ungrounded:
             log.warning(
-                "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the whole dimension: %r",
-                dimension_name, len(ungrounded), ungrounded,
+                "Dimension '%s': dropping %d ungrounded citation(s) "
+                "rather than failing the whole dimension: %r",
+                dimension_name,
+                len(ungrounded),
+                ungrounded,
             )
+
             write_audit_record(
                 {
                     **(_audit_context.get() or {}),
                     "ungrounded_citations_dropped": [
-                        citation.model_dump() if hasattr(citation, "model_dump") else citation
+                        (
+                            citation.model_dump()
+                            if hasattr(citation, "model_dump")
+                            else citation
+                        )
                         for citation in ungrounded
                     ],
                 }
             )
+
             result.evidence_citations = [
-                citation for citation in (result.evidence_citations or [])
+                citation
+                for citation in (result.evidence_citations or [])
                 if citation not in ungrounded
             ]
+
         return result
+
     except Exception as error:
         context = _audit_context.get()
+
         write_audit_record(
             {
                 **(context or {}),
@@ -374,6 +448,7 @@ async def evaluate_dimension(
             }
         )
         raise
+
     finally:
         _audit_context.reset(audit_token)
 

@@ -57,7 +57,7 @@ class BackendAssessmentPayload(BaseModel):
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
     payload: BackendAssessmentPayload,
-    modelname: str = Query(..., description="Select the model to use for assessment"),
+    modelname: ModelName = Query(..., description="Select the model to use for assessment"),
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
     try:
@@ -71,6 +71,8 @@ async def assess_backend_data_endpoint(
             artifact_metrics=payload.artifact_metrics,
             instructor_expectations=payload.instructor_expectations,
         )
+        print("\nBundle display: ", bundle)
+        print()
         assessment = await evaluate_sprint(bundle, modelname)
         return assessment
     except Exception as exc:

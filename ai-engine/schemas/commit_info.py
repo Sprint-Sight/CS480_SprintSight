@@ -19,6 +19,9 @@ class CommitInfo(BaseModel):
     lines_deleted: int = Field(default=0, ge=0, description="Aggregate total, kept for quick-glance prompts")
     files_changed: list[FileDiff] = Field(default_factory=list)
 
+    def __str__(self):
+        return f"Git commit info: \n CommitInfo(sha={self.sha}, author={self.author}, message={self.message}, timestamp={self.timestamp}, lines_added={self.lines_added}, lines_deleted={self.lines_deleted}, files_changed={len(self.files_changed)} files, \n)"
+
     # # Populated by the preprocessing/mapping service after ingestion, not raw input
     # # Filter real Git history into specific sprint buckets before passing to LLM
     # resolved_sprint_id: Optional[str] = Field(default=None)

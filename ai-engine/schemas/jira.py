@@ -24,6 +24,9 @@ class JiraTicket(BaseModel): # Jira real API returns id & key
         description="Sprint this ticket is currently assigned to. None for backlog items not yet pulled into a sprint."
     )
 
+    def __str__(self):
+        return f"JiraTicket(ticket_id={self.ticket_id}\n, summary={self.summary}\n, assignee={self.assignee}\n, status={self.status}\n, timestamp={self.timestamp}\n, issue_type={self.issue_type}\n, story_points={self.story_points}\n, sprint_id={self.sprint_id}\n)"
+
 # Different ticket types (epic vs story vs task)
 
 # # SECTION 3 — JIRA / AGILE METRICS
