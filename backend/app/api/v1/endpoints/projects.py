@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.errors import UniqueViolation
 
 from app.dependencies.auth import (
+    get_assessment_repository,
+    get_jira_ingestion_repository,
     get_project_repository,
     get_user_repository,
     require_admin,
@@ -14,7 +16,8 @@ from app.dependencies.auth import (
     get_current_user,
 )
 from app.core.credential_crypto import encrypt_secret
-from app.repositories.interfaces import ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.schemas.assessment import AssessmentReport
 from app.schemas.auth import Role, UserResponse
 from app.schemas.projects import (
     CourseCreate,
@@ -437,6 +440,114 @@ def list_projects(
     elif not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this course.")
     return [_project_response(project, repository, users) for project in projects]
+
+
+@router.get("/students/courses", response_model=list[CourseResponse])
+def list_student_courses(
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+) -> list[CourseResponse]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+    courses = [course for course in repository.list_courses() if repository.is_student_enrolled(course.id, current_user.id)]
+    return [
+        CourseResponse(
+            id=course.id,
+            code=course.code,
+            name=course.name,
+            section=course.section,
+            year=course.year,
+            term=course.term,
+            created_by=course.created_by,
+            created_at=course.created_at,
+        )
+        for course in courses
+    ]
+
+
+@router.get("/students/projects", response_model=list[ProjectResponse])
+def list_student_projects(
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> list[ProjectResponse]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+
+    projects: list[ProjectRecord] = []
+    for course in repository.list_courses():
+        if not repository.is_student_enrolled(course.id, current_user.id):
+            continue
+        projects.extend(
+            project for project in repository.list_projects(course.id) if current_user.id in repository.list_member_ids(project.id)
+        )
+    return [_project_response(project, repository, users) for project in projects]
+
+
+@router.get("/students/projects/{project_id}", response_model=ProjectResponse)
+def get_student_project(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> ProjectResponse:
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+    if current_user.id not in repository.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+    return _project_response(project, repository, users)
+
+
+@router.get("/students/projects/{project_id}/reports", response_model=list[AssessmentReport])
+def list_student_project_reports(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+) -> list[AssessmentReport]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if current_user.id not in repository.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    if assessment_repository is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+    return assessment_repository.list_project_reports(project.course_id, project.id)
+
+
+@router.get("/students/projects/{project_id}/sprints", response_model=list[str])
+def list_student_project_sprints(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    jira_runs_repo: Annotated[object, Depends(get_jira_ingestion_repository)],
+) -> list[str]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if current_user.id not in repository.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    sprint_ids: set[str] = set()
+    if assessment_repository is not None:
+        for report in assessment_repository.list_project_reports(project.course_id, project.id):
+            if report.sprint_id:
+                sprint_ids.add(report.sprint_id)
+    for run in jira_runs_repo.list_project_runs(project_id):
+        if run.sprint_id:
+            sprint_ids.add(run.sprint_id)
+    return sorted(sprint_ids)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
