@@ -5,6 +5,26 @@ import { useEffect, useMemo, useState } from "react";
 
 import { INITIAL_AUDIT_HISTORY, INITIAL_REVIEW_CRITERIA } from "@/features/review/data";
 import type { ReviewAuditEvent, ReviewAuditEvent as AuditEvent, ReviewCriterion } from "@/features/review/types";
+import { apiRequest } from "@/features/projects/components/projects-api";
+import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
+import { useReviewScoring } from "@/features/review/hooks/use-review-scoring";
+
+type ManualOverrideRecord = {
+  override_id: string;
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  team_name: string;
+  requirements_score: number;
+  code_quality_score: number;
+  testing_score: number;
+  documentation_score: number;
+  collaboration_score: number;
+  total_score: number;
+  graded_by: string;
+  created_at: string;
+  updated_at: string;
+};
 
 function nowLabel() {
   return new Date().toLocaleString("en-US", {
@@ -35,6 +55,17 @@ export default function InstructorReviewPageContent() {
   const [criterionScoring, setCriterionScoring] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(INITIAL_REVIEW_CRITERIA.map((item) => [item.id, true])),
   );
+  const [overrideError, setOverrideError] = useState("");
+  const [isSubmittingOverride, setIsSubmittingOverride] = useState(false);
+  const [projectContext, setProjectContext] = useState(() => {
+    const state = readIngestionState();
+    const ingestion = state.selectedProjectId ? getProjectIngestion(state.selectedProjectId) : { git: undefined, jira: undefined };
+    return {
+      projectId: state.selectedProjectId || "",
+      courseId: state.selectedCourseId || ingestion.git?.course_id || ingestion.jira?.course_id || "",
+      sprintId: ingestion.git?.sprint_id || ingestion.jira?.sprint_id || "sprint-1",
+    };
+  });
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
@@ -43,12 +74,33 @@ export default function InstructorReviewPageContent() {
     }
   }, []);
 
-  const isInstructor = role === "instructor";
+  useEffect(() => {
+    if (role !== "instructor") return;
 
-  const hasUnsavedChanges = useMemo(
-    () => JSON.stringify(criteria) !== JSON.stringify(savedSnapshot),
-    [criteria, savedSnapshot],
-  );
+    async function loadAuditHistory() {
+      try {
+        if (!projectContext.projectId) return;
+        const query = new URLSearchParams({ project_id: projectContext.projectId });
+        if (projectContext.courseId) query.set("course_id", projectContext.courseId);
+        if (projectContext.sprintId) query.set("sprint_id", projectContext.sprintId);
+        const records = await apiRequest<ManualOverrideRecord[]>(`/manual-scoring/overrides?${query.toString()}`);
+        setAuditHistory(records.map((record) => ({
+          id: record.override_id,
+          type: "modified",
+          actor: record.graded_by,
+          title: "Project Assessment Override",
+          detail: `${record.team_name} total score: ${record.total_score}/100 across the five rubric dimensions.`,
+          timestamp: new Date(record.updated_at).toLocaleString(),
+        })));
+      } catch {
+        // Keep fixture audit history available when no backend review context exists.
+      }
+    }
+
+    loadAuditHistory();
+  }, [role, projectContext]);
+
+  const isInstructor = role === "instructor";
 
   const aiOverallScore = useMemo(() => {
     if (INITIAL_REVIEW_CRITERIA.length === 0) return 0;
@@ -56,13 +108,7 @@ export default function InstructorReviewPageContent() {
     return Math.round(total / INITIAL_REVIEW_CRITERIA.length);
   }, []);
 
-  const overallScore = useMemo(() => {
-    if (!scoringEnabled) return aiOverallScore;
-    const scoredCriteria = scoringEnabled ? criteria.filter((item) => criterionScoring[item.id]) : [];
-    if (scoredCriteria.length === 0) return 0;
-    const total = scoredCriteria.reduce((sum, item) => sum + item.score, 0);
-    return Math.round(total / scoredCriteria.length);
-  }, [aiOverallScore, criteria, criterionScoring, scoringEnabled]);
+  const { overallScore, hasUnsavedChanges } = useReviewScoring(criteria, savedSnapshot, scoringEnabled, criterionScoring, aiOverallScore);
 
   function updateCriterion(id: string, patch: Partial<ReviewCriterion>) {
     setCriteria((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -152,6 +198,44 @@ export default function InstructorReviewPageContent() {
       title: "Final Review Approved",
       detail: "Instructor approved the final rubric with overrides and comments.",
     });
+  }
+
+  async function submitProjectOverride() {
+    if (!projectContext.courseId || !projectContext.projectId || !projectContext.sprintId) {
+      setOverrideError("Select a project and sprint before saving the project override.");
+      return;
+    }
+
+    setOverrideError("");
+    setIsSubmittingOverride(true);
+    try {
+      const response = await apiRequest<ManualOverrideRecord>("/manual-scoring/overrides", {
+        method: "POST",
+        body: JSON.stringify({
+          course_id: projectContext.courseId,
+          project_id: projectContext.projectId,
+          sprint_id: projectContext.sprintId,
+          requirements_score: criteria.find((item) => item.category === "Requirements")?.score ?? 0,
+          code_quality_score: criteria.find((item) => item.category === "Code Quality")?.score ?? 0,
+          testing_score: criteria.find((item) => item.category === "Testing")?.score ?? 0,
+          documentation_score: criteria.find((item) => item.category === "Documentation")?.score ?? 0,
+          collaboration_score: criteria.find((item) => item.category === "Collaboration")?.score ?? 0,
+        }),
+      });
+      const record = response;
+      setAuditHistory((previous) => [{
+        id: record.override_id,
+        type: "modified",
+        actor: record.graded_by,
+        title: "Project Assessment Override",
+        detail: `${record.team_name} total score saved at ${record.total_score}/100.`,
+        timestamp: new Date(record.updated_at).toLocaleString(),
+      }, ...previous]);
+    } catch (error) {
+      setOverrideError(error instanceof Error ? error.message : "Failed to save project override.");
+    } finally {
+      setIsSubmittingOverride(false);
+    }
   }
 
   if (!isInstructor) {
@@ -351,6 +435,17 @@ export default function InstructorReviewPageContent() {
             );
           })}
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-xl font-semibold text-blue-950">Project Assessment Override</h2>
+        <p className="mt-1 text-sm text-slate-500">Save the five rubric scores as the instructor&apos;s final project assessment.</p>
+        <p className="mt-2 text-xs text-slate-500">Project: {projectContext.projectId || "Select a project in Artifact Viewer first"} · Sprint: {projectContext.sprintId}</p>
+        {overrideError && <p className="mt-2 text-sm text-rose-600">{overrideError}</p>}
+        <button type="button" onClick={submitProjectOverride} disabled={isSubmittingOverride || !projectContext.projectId || !projectContext.courseId} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-blue-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+          {isSubmittingOverride ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+          Save Project Assessment
+        </button>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

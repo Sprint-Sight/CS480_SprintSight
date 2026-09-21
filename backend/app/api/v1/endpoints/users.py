@@ -72,7 +72,7 @@ def get_user(
     user = repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    if current_user.role == (Role.INSTRUCTOR and user.role != Role.STUDENT or not user.is_active):
+    if current_user.role == Role.INSTRUCTOR and (user.role != Role.STUDENT or not user.is_active):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors can only view student accounts.")
     return user_response(user)
 

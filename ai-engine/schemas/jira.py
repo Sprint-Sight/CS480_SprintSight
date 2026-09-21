@@ -5,14 +5,14 @@ from datetime import datetime
 class JiraTicket(BaseModel): # Jira real API returns id & key
     ticket_id: str = Field(description="e.g. SPRINT-101")
     summary: str = Field(description="Title of task")
-    assignee: str = Field(description="Student assigned")
-    status: Literal["To Do", "In Progress", "In Review", "Done", "Blocked"] = Field(
+    assignee: str | None = Field(default=None, description="Student assigned")
+    status: Literal["To Do", "In Progress", "In Review", "Done", "Blocked"] | None = Field(
         description="Match these exactly to your own Jira board's column names once you set it up"
     )
-    timestamp: datetime = Field(
+    timestamp: datetime | None = Field(
         description="When this ticket's current status was last set -- mirrors CommitInfo's timestamp field"
     )
-    issue_type: Literal["Bug", "Feature", "Story", "Task", "Epic", "Sub-task"] = Field(
+    issue_type: Literal["Bug", "Feature", "Story", "Task", "Epic", "Sub-task"] | None = Field(
         description="Type of Jira ticket"
     )
     story_points: Optional[int] = Field(

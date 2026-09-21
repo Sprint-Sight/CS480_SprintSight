@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Shield,
@@ -16,23 +16,16 @@ import {
   Users,
   UserCheck,
   FolderGit2,
-  BookOpen,
   KeyRound,
   RotateCcw,
 } from "lucide-react";
-import { UserAccount, Role, CreateUserData, EditUserData, ProjectOption } from "../types";
-import { CreateUserModal } from "./create-user-modal";
-import { EditUserModal } from "./edit-user-modal";
+import { UserAccount, CreateUserData, EditUserData } from "@/features/admin/types";
+import { CreateUserModal } from "@/features/admin/components/create-user-modal";
+import { EditUserModal } from "@/features/admin/components/edit-user-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { useAdminDirectory } from "@/features/admin/hooks/use-admin-directory";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
-
-const initialProjects: ProjectOption[] = [
-  { id: "p1", projectName: "Team Alpha — E-Commerce", courseCode: "CS480", section: "001" },
-  { id: "p2", projectName: "Team Beta — AI Evaluator", courseCode: "CS480", section: "001" },
-  { id: "p3", projectName: "Team Gamma — Health Platform", courseCode: "CS480", section: "002" },
-  { id: "p4", projectName: "Team Delta — Dev Analytics", courseCode: "CS488", section: "001" },
-];
 
 export function AdminPageContent() {
   const router = useRouter();
@@ -42,7 +35,6 @@ export function AdminPageContent() {
 
   // Identity & State
   const [users, setUsers] = useState<UserAccount[]>([]);
-  const [projects] = useState<ProjectOption[]>(initialProjects);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState("all");
@@ -68,6 +60,31 @@ export function AdminPageContent() {
 
   const getAuthToken = () => sessionStorage.getItem("sprintsight-access-token");
 
+  const handleEditUser = async (user: UserAccount) => {
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${user.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        throw new Error(error?.detail || error?.error?.message || "Failed to fetch user details.");
+      }
+
+      const freshUser = await res.json();
+      setEditingUser({
+        ...user,
+        id: freshUser.id,
+        fullName: freshUser.full_name,
+        email: freshUser.email,
+        role: freshUser.role,
+        status: freshUser.is_active ? "Active" : "Inactive",
+      });
+    } catch (error) {
+      showNotification("error", error instanceof Error ? error.message : "Failed to fetch user details.");
+    }
+  };
+
   // 1. GET /users - Fetch User Directory
   const fetchUsers = async () => {
     const token = getAuthToken();
@@ -81,17 +98,12 @@ export function AdminPageContent() {
       if (!res.ok) throw new Error("Failed to fetch user directory");
 
       const data = await res.json();
-      const mappedUsers: UserAccount[] = data.map((u: any, idx: number) => {
-        const assignedProj = initialProjects[idx % initialProjects.length];
+      const mappedUsers: UserAccount[] = data.map((u: any) => {
         return {
           id: u.id,
           fullName: u.full_name,
           email: u.email,
           role: u.role,
-          projectId: u.role === "student" ? assignedProj.id : undefined,
-          projectName: u.role === "student" ? assignedProj.projectName : undefined,
-          courseCode: u.role !== "admin" ? assignedProj.courseCode : "Global System",
-          section: u.role !== "admin" ? assignedProj.section : "-",
           status: u.is_active ? "Active" : "Inactive",
           createdAt: u.created_at ? u.created_at.split("T")[0] : "N/A",
         };
@@ -146,17 +158,11 @@ export function AdminPageContent() {
       }
 
       const newUser = await res.json();
-      const assignedProj = projects.find((p) => p.id === data.projectId);
-
       const createdRecord: UserAccount = {
         id: newUser.id,
         fullName: newUser.full_name,
         email: newUser.email,
         role: newUser.role,
-        projectId: data.role === "student" ? data.projectId : undefined,
-        projectName: data.role === "student" ? assignedProj?.projectName : undefined,
-        courseCode: data.role !== "admin" ? data.courseCode || "CS480" : "Global System",
-        section: data.role !== "admin" ? data.section || "001" : "-",
         status: newUser.is_active ? "Active" : "Inactive",
         createdAt: newUser.created_at ? newUser.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
       };
@@ -192,8 +198,6 @@ export function AdminPageContent() {
       }
 
       const updatedUser = await res.json();
-      const assignedProj = projects.find((p) => p.id === data.projectId);
-
       // Update state with response from backend
       setUsers((prev) =>
         prev.map((u) =>
@@ -203,10 +207,6 @@ export function AdminPageContent() {
                 fullName: updatedUser.full_name,
                 email: updatedUser.email,
                 role: updatedUser.role,
-                projectId: data.role === "student" ? data.projectId : undefined,
-                projectName: data.role === "student" ? assignedProj?.projectName : undefined,
-                courseCode: data.role !== "admin" ? data.courseCode : "Global System",
-                section: data.role !== "admin" ? data.section : "-",
               }
             : u
         )
@@ -304,27 +304,7 @@ export function AdminPageContent() {
     router.replace("/login");
   };
 
-  const filteredUsers = useMemo(() => {
-    return users.filter((user) => {
-      const matchesSearch =
-        user.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (user.projectName && user.projectName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (user.courseCode && user.courseCode.toLowerCase().includes(searchQuery.toLowerCase()));
-      const matchesRole = selectedRoleFilter === "all" || user.role === selectedRoleFilter;
-      const matchesStatus = selectedStatusFilter === "all" || user.status === selectedStatusFilter;
-
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  }, [users, searchQuery, selectedRoleFilter, selectedStatusFilter]);
-
-  const stats = useMemo(() => {
-    const total = users.length;
-    const active = users.filter((u) => u.status === "Active").length;
-    const students = users.filter((u) => u.role === "student").length;
-    const instructors = users.filter((u) => u.role === "instructor").length;
-    return { total, active, students, instructors };
-  }, [users]);
+  const { filteredUsers, stats } = useAdminDirectory(users, searchQuery, selectedRoleFilter, selectedStatusFilter);
 
   if (!mounted) return null;
 
@@ -356,7 +336,7 @@ export function AdminPageContent() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">User & Project Directory</h1>
           <p className="text-slate-500 mt-1">
-            Welcome back, <span className="font-semibold text-slate-700">{adminName || "System Admin"}</span>. Assign users to courses, manage sections, and place students in project teams.
+            Welcome back, <span className="font-semibold text-slate-700">{adminName || "System Admin"}</span>. Provision and manage user accounts.
           </p>
         </div>
         
@@ -488,17 +468,14 @@ export function AdminPageContent() {
               <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-500 text-xs font-semibold">
                 <th className="py-3.5 px-6">User Identity</th>
                 <th className="py-3.5 px-6">Role</th>
-                <th className="py-3.5 px-6">Course & Section</th>
-                <th className="py-3.5 px-6">Assigned Project / Team</th>
                 <th className="py-3.5 px-6">Status</th>
-                <th className="py-3.5 px-6">Created Date</th>
                 <th className="py-3.5 px-6 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
+                  <td colSpan={4} className="py-8 text-center text-slate-500 text-xs">
                     {loadingUsers ? "Loading user records..." : "No matching users found."}
                   </td>
                 </tr>
@@ -531,32 +508,6 @@ export function AdminPageContent() {
                           {user.role.toUpperCase()}
                         </span>
                       </td>
-                      <td className="py-4 px-6 text-xs text-slate-700 font-medium">
-                        {user.role === "admin" ? (
-                          <span className="text-slate-400">System Global</span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md font-mono">
-                            <BookOpen className="w-3 h-3 text-slate-500" />
-                            {user.courseCode} (Sec {user.section})
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 px-6 text-xs">
-                        {user.role === "student" ? (
-                          user.projectName ? (
-                            <span className="font-medium text-slate-900 bg-purple-50 border border-purple-200 text-purple-800 px-2.5 py-1 rounded-md inline-flex items-center gap-1.5">
-                              <FolderGit2 className="w-3.5 h-3.5 text-purple-600" />
-                              {user.projectName}
-                            </span>
-                          ) : (
-                            <span className="text-amber-600 font-medium bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
-                              Unassigned
-                            </span>
-                          )
-                        ) : (
-                          <span className="text-slate-400">N/A ({user.role})</span>
-                        )}
-                      </td>
                       <td className="py-4 px-6">
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -573,11 +524,10 @@ export function AdminPageContent() {
                           {user.status}
                         </span>
                       </td>
-                      <td className="py-4 px-6 text-xs text-slate-500">{user.createdAt}</td>
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => setEditingUser(user)}
+                            onClick={() => handleEditUser(user)}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                             title="Edit Role / User Details"
                           >
@@ -629,7 +579,6 @@ export function AdminPageContent() {
       {/* Modals */}
       <CreateUserModal
         isOpen={isCreateModalOpen}
-        projects={projects}
         onClose={() => setIsCreateModalOpen(false)}
         onCreate={handleCreateUser}
       />
@@ -637,7 +586,6 @@ export function AdminPageContent() {
       {editingUser && (
         <EditUserModal
           user={editingUser}
-          projects={projects}
           onClose={() => setEditingUser(null)}
           onSave={(user, data) => handleUpdateUser(user, data)}
         />

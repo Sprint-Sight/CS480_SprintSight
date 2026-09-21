@@ -29,7 +29,7 @@ export function RosterModal({
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Course Roster & Enrollment</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Create student accounts and manage enrollment.</p>
+            <p className="mt-0.5 text-sm text-slate-500">Create student accounts and enroll them in this course.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close roster" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
             <X className="h-4 w-4" />
@@ -39,8 +39,8 @@ export function RosterModal({
         <div className="space-y-5 px-5 py-5 sm:px-6">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Enroll or create student</span>
-              <span className="text-xs text-slate-400">Password required</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Create and enroll student</span>
+              <span className="text-xs text-slate-400">Login password required</span>
             </div>
             <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <input
@@ -60,6 +60,7 @@ export function RosterModal({
               <input
                 type="password"
                 placeholder="Password"
+                required
                 value={studentForm.password}
                 onChange={(event) => setStudentForm((current) => ({ ...current, password: event.target.value }))}
                 className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:col-span-2"
@@ -71,7 +72,7 @@ export function RosterModal({
                 onClick={onEnroll}
                 className="h-10 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:ring-offset-1"
               >
-                Enroll
+                Create and Enroll
               </button>
             </div>
           </div>

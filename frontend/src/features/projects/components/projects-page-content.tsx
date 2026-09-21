@@ -5,18 +5,15 @@ import { useEffect, useMemo, useState } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
 import { ProjectCard } from "@/features/projects/components/project-card";
+import { ProjectMembersModal } from "@/features/projects/components/project-members-modal";
 import { ProjectModal } from "@/features/projects/components/project-modal";
 import { RosterModal } from "@/features/projects/components/roster-modal";
+import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
-import { PROJECTS } from "@/features/projects/data";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
+import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
-const sprintOptions = [
-  "All sprints",
-  ...Array.from(new Set(PROJECTS.flatMap((project) => project.sprints.map((sprint) => sprint.name)))),
-];
-const moduleOptions = ["All modules", ...Array.from(new Set(PROJECTS.map((project) => project.module)))];
 const sortOptions = [
   { value: "name-asc", label: "Name (A-Z)" },
   { value: "name-desc", label: "Name (Z-A)" },
@@ -28,18 +25,6 @@ const sortOptions = [
 ] as const;
 
 type SortValue = (typeof sortOptions)[number]["value"];
-
-type ProjectFilters = {
-  teamName: string;
-  status: "All statuses" | ProjectStatus;
-  sprint: string;
-  module: string;
-  minScore: string;
-  maxScore: string;
-  minCompletion: string;
-  maxCompletion: string;
-  sortBy: SortValue;
-};
 
 const DEFAULT_FILTERS: ProjectFilters = {
   teamName: "",
@@ -65,11 +50,16 @@ export default function ProjectsPageContent() {
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
+  const [projectForMemberSelection, setProjectForMemberSelection] = useState<Project | null>(null);
+  const [selectedProjectMemberId, setSelectedProjectMemberId] = useState("");
+  const [memberToRemove, setMemberToRemove] = useState<{ projectId: string; userId: string; fullName: string } | null>(null);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
   const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string }>>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
+  const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
 
   const [projectForm, setProjectForm] = useState<ProjectFormValues>({
     project_name: "",
@@ -394,22 +384,31 @@ export default function ProjectsPageContent() {
       return;
     }
 
-    const trimmedEmail = studentForm.email.trim();
+    const trimmedEmail = studentForm.email.trim().toLowerCase();
     const trimmedName = studentForm.full_name.trim();
-    const password = studentForm.password.trim() || "TempPass123!";
+    const password = studentForm.password;
 
-    if (!trimmedEmail || !trimmedName) {
-      window.alert("Student name and email are required.");
+    if (!trimmedEmail || !trimmedName || !password) {
+      window.alert("Student name, email, and password are required.");
+      return;
+    }
+    if (password.length < 8) {
+      window.alert("The student password must be at least 8 characters.");
+      return;
+    }
+    if (courseStudents.some((student) => student.email.trim().toLowerCase() === trimmedEmail)) {
+      window.alert("This student is already enrolled in the selected course. Their existing password was not changed.");
       return;
     }
 
     try {
-      const student = await apiRequest<{ id: string }>("/students", {
+      const student = await apiRequest<{ id: string; email: string; full_name: string; must_change_password?: boolean }>(`/courses/${selectedCourseId}/students`, {
         method: "POST",
         body: JSON.stringify({ email: trimmedEmail, full_name: trimmedName, password }),
       });
-      await apiRequest(`/courses/${selectedCourseId}/students/${student.id}`, { method: "POST" });
-      window.alert("Student enrolled and created with a password.");
+
+      window.alert(`Student ${student.full_name} created and enrolled. They can log in with ${student.email} and the password entered here, then change it after first login.`);
+
       setStudentForm({ email: "", full_name: "", password: "" });
       await loadCourseStudents();
     } catch (error) {
@@ -435,26 +434,49 @@ export default function ProjectsPageContent() {
   async function handleAddProjectMember(projectId: string, event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    const userId = prompt("Enter Student User ID to add to project:");
-    if (!userId) return;
-
-    try {
-      await apiRequest(`/projects/${projectId}/members/${userId}`, { method: "POST" });
-      window.alert("Project member added.");
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to add project member.");
+    if (!selectedCourseId || !isUuid(selectedCourseId)) {
+      window.alert("Please select a valid course before adding a project member.");
+      return;
     }
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (!project) return;
+    await loadCourseStudents();
+    setSelectedProjectMemberId("");
+    setProjectForMemberSelection(project);
   }
 
-  async function handleRemoveProjectMember(projectId: string, userId: string, event: React.MouseEvent) {
+  function handleRemoveProjectMember(projectId: string, userId: string, event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
+    const project = projects.find((candidate) => candidate.id === projectId);
+    const member = project?.members.find((candidate) => candidate.id === userId);
+    if (member) setMemberToRemove({ projectId, userId, fullName: member.full_name });
+  }
 
+  async function handleConfirmedRemoveProjectMember() {
+    if (!memberToRemove) return;
     try {
-      await apiRequest(`/projects/${projectId}/members/${userId}`, { method: "DELETE" });
+      await apiRequest(`/projects/${memberToRemove.projectId}/members/${memberToRemove.userId}`, { method: "DELETE" });
+      await loadProjects();
       window.alert("Project member removed.");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to remove project member.");
+    } finally {
+      setMemberToRemove(null);
+    }
+  }
+
+  async function handleConfirmAddProjectMember() {
+    if (!projectForMemberSelection || !selectedProjectMemberId) return;
+
+    try {
+      await apiRequest(`/projects/${projectForMemberSelection.id}/members/${selectedProjectMemberId}`, { method: "POST" });
+      await loadProjects();
+      setProjectForMemberSelection(null);
+      setSelectedProjectMemberId("");
+      window.alert("Student added to the project.");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to add project member.");
     }
   }
 
@@ -462,66 +484,7 @@ export default function ProjectsPageContent() {
     setDraftFilters((current) => ({ ...current, [key]: value }));
   }
 
-  function parseRangeValue(value: string) {
-    if (value.trim() === "") return null;
-    const parsed = Number(value);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-
-  const filteredProjects = useMemo(() => {
-    const minScore = parseRangeValue(appliedFilters.minScore);
-    const maxScore = parseRangeValue(appliedFilters.maxScore);
-    const minCompletion = parseRangeValue(appliedFilters.minCompletion);
-    const maxCompletion = parseRangeValue(appliedFilters.maxCompletion);
-
-    const matches = projects.filter((project) => {
-      const normalizedSearch = searchTerm.trim().toLowerCase();
-      const normalizedTeamName = appliedFilters.teamName.trim().toLowerCase();
-      const searchBlob = [project.project_name, project.team_name, project.module, ...project.sprints.map((sprint) => sprint.name)]
-        .join(" ")
-        .toLowerCase();
-
-      const matchesSearch = normalizedSearch.length === 0 || searchBlob.includes(normalizedSearch);
-      const matchesTeamName = normalizedTeamName.length === 0 || project.team_name.toLowerCase().includes(normalizedTeamName);
-      const matchesStatus = appliedFilters.status === "All statuses" || project.status === appliedFilters.status;
-      const matchesSprint = appliedFilters.sprint === "All sprints" || project.sprints.some((sprint) => sprint.name === appliedFilters.sprint);
-      const matchesModule = appliedFilters.module === "All modules" || project.module === appliedFilters.module;
-      const matchesMinScore = minScore === null || project.score >= minScore;
-      const matchesMaxScore = maxScore === null || project.score <= maxScore;
-      const matchesMinCompletion = minCompletion === null || project.completion >= minCompletion;
-      const matchesMaxCompletion = maxCompletion === null || project.completion <= maxCompletion;
-
-      return (
-        matchesSearch &&
-        matchesTeamName &&
-        matchesStatus &&
-        matchesSprint &&
-        matchesModule &&
-        matchesMinScore &&
-        matchesMaxScore &&
-        matchesMinCompletion &&
-        matchesMaxCompletion
-      );
-    });
-
-    const sorted = [...matches];
-    sorted.sort((left, right) => {
-      if (appliedFilters.sortBy === "name-desc") return right.project_name.localeCompare(left.project_name);
-      if (appliedFilters.sortBy === "score-desc") return right.score - left.score;
-      if (appliedFilters.sortBy === "score-asc") return left.score - right.score;
-      if (appliedFilters.sortBy === "completion-desc") return right.completion - left.completion;
-      if (appliedFilters.sortBy === "completion-asc") return left.completion - right.completion;
-      if (appliedFilters.sortBy === "status-priority") {
-        const rank: Record<ProjectStatus, number> = { "At Risk": 0, Active: 1, Completed: 2 };
-        const statusDiff = rank[left.status] - rank[right.status];
-        if (statusDiff !== 0) return statusDiff;
-        return right.score - left.score;
-      }
-      return left.project_name.localeCompare(right.project_name);
-    });
-
-    return sorted;
-  }, [searchTerm, appliedFilters, projects]);
+  const filteredProjects = useProjectFilters(projects, searchTerm, appliedFilters);
 
   return (
     <div className="space-y-6 p-8">
@@ -631,10 +594,32 @@ export default function ProjectsPageContent() {
         isOpen={isRosterModalOpen}
         courseStudents={courseStudents}
         studentForm={studentForm}
-        onClose={() => setIsRosterModalOpen(false)}
+        onClose={() => {
+          setIsRosterModalOpen(false);
+        }}
         onEnroll={handleEnrollStudent}
         onUnenroll={handleUnenrollStudent}
         setStudentForm={setStudentForm}
+      />
+
+      <ProjectMembersModal
+        isOpen={Boolean(projectForMemberSelection)}
+        projectName={projectForMemberSelection?.team_name || "this project"}
+        availableStudents={courseStudents.filter((student) => !projects.some((project) => project.members.some((member) => member.id === student.id)))}
+        selectedStudentId={selectedProjectMemberId}
+        onClose={() => { setProjectForMemberSelection(null); setSelectedProjectMemberId(""); }}
+        onSelectStudent={setSelectedProjectMemberId}
+        onAddMember={handleConfirmAddProjectMember}
+      />
+
+      <ConfirmationModal
+        isOpen={Boolean(memberToRemove)}
+        onClose={() => setMemberToRemove(null)}
+        onConfirm={handleConfirmedRemoveProjectMember}
+        title="Remove Project Member"
+        message={`Remove ${memberToRemove?.fullName || "this student"} from the project? They will remain enrolled in the course.`}
+        confirmText="Remove Member"
+        cancelText="Keep Member"
       />
 
       {isFilterModalOpen && (

@@ -1,7 +1,7 @@
 FROM gemma4:12b
 
 PARAMETER temperature 0.1
-PARAMETER num_ctx 8192
+PARAMETER num_ctx 49152
 
 SYSTEM """
 You are a strict, automated CS203 Academic Grading Assistant.

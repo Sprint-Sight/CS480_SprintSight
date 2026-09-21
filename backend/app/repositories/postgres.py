@@ -6,8 +6,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
-from app.schemas.assessment import JiraCleanedSnapshot, ManualTextPayload
+from app.repositories.interfaces import AssessmentRepository, CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository, UserRecord, UserRepository
+from app.schemas.assessment import AssessmentReport, JiraCleanedSnapshot, ManualTextPayload
 from app.schemas.auth import Role
 
 _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
@@ -535,6 +535,180 @@ class PostgresManualTextRepository(ManualTextRepository):
         return row["expectations_text"] if row else None
 
 
+def ensure_rubric_weights_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS rubric_weight_configs (
+                course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
+                weights JSONB NOT NULL,
+                updated_by UUID NOT NULL REFERENCES users(user_id),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+
+
+class PostgresRubricWeightsRepository(RubricWeightsRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def get_weights(self, course_id: str) -> RubricWeightsRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT course_id, weights, updated_by, updated_at
+                FROM rubric_weight_configs WHERE course_id = %s""",
+                (UUID(course_id),),
+            ).fetchone()
+        if not row:
+            return None
+        return RubricWeightsRecord(
+            course_id=str(row["course_id"]),
+            weights=row["weights"],
+            updated_by=str(row["updated_by"]),
+            updated_at=row["updated_at"],
+        )
+
+    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO rubric_weight_configs (course_id, weights, updated_by)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (course_id)
+                DO UPDATE SET weights = EXCLUDED.weights,
+                              updated_by = EXCLUDED.updated_by,
+                              updated_at = CURRENT_TIMESTAMP
+                RETURNING course_id, weights, updated_by, updated_at""",
+                (UUID(course_id), Json(weights), UUID(updated_by)),
+            ).fetchone()
+        return RubricWeightsRecord(
+            course_id=str(row["course_id"]),
+            weights=row["weights"],
+            updated_by=str(row["updated_by"]),
+            updated_at=row["updated_at"],
+        )
+
+
+def ensure_assessment_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS assessment_reports (
+                report_id UUID PRIMARY KEY,
+                model_name VARCHAR(255) NOT NULL,
+                mode VARCHAR(255) NOT NULL,
+                course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                sprint_id VARCHAR(100) NOT NULL,
+                generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                rubric_weights JSONB NOT NULL,
+                team_score JSONB NOT NULL,
+                individual_scores JSONB NOT NULL DEFAULT '[]'::jsonb,
+                recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+                rubric_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+                strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
+                weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb
+            )"""
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC)")
+
+
+class PostgresAssessmentRepository(AssessmentRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def save_report(self, report: AssessmentReport) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO assessment_reports
+                (report_id, model_name, mode, course_id, project_id,
+                 sprint_id, generated_at, rubric_weights, team_score,
+                 individual_scores, recommendations, rubric_scores,
+                 strengths, weaknesses)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (report_id)
+                DO UPDATE SET model_name = EXCLUDED.model_name,
+                              mode = EXCLUDED.mode,
+                              course_id = EXCLUDED.course_id,
+                              project_id = EXCLUDED.project_id,
+                              sprint_id = EXCLUDED.sprint_id,
+                              generated_at = EXCLUDED.generated_at,
+                              rubric_weights = EXCLUDED.rubric_weights,
+                              team_score = EXCLUDED.team_score,
+                              individual_scores = EXCLUDED.individual_scores,
+                              recommendations = EXCLUDED.recommendations,
+                              rubric_scores = EXCLUDED.rubric_scores,
+                              strengths = EXCLUDED.strengths,
+                              weaknesses = EXCLUDED.weaknesses""",
+                (
+                    UUID(report.report_id.replace('rpt-', '')) if report.report_id.startswith('rpt-') else UUID(report.report_id),
+                    report.model_name,
+                    report.mode,
+                    UUID(report.course_id),
+                    UUID(report.project_id),
+                    report.sprint_id,
+                    report.generated_at,
+                    Json(report.rubric_weights),
+                    Json(report.team_score.model_dump(mode='json')),
+                    Json([score.model_dump(mode='json') for score in report.individual_scores]),
+                    Json(report.recommendations),
+                    Json({k: v.model_dump(mode='json') for k, v in report.rubric_scores.items()}),
+                    Json(report.strengths),
+                    Json(report.weaknesses),
+                ),
+            )
+
+    def get_report(self, report_id: str) -> AssessmentReport | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM assessment_reports WHERE report_id = %s",
+                (UUID(report_id),),
+            ).fetchone()
+            return self._report(row) if row else None
+
+    def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM assessment_reports
+                WHERE course_id = %s AND project_id = %s AND sprint_id = %s
+                ORDER BY generated_at DESC""",
+                (UUID(course_id), UUID(project_id), sprint_id),
+            ).fetchall()
+        return [self._report(row) for row in rows]
+
+    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT * FROM assessment_reports
+                WHERE course_id = %s AND project_id = %s AND sprint_id = %s
+                ORDER BY generated_at DESC LIMIT 1""",
+                (UUID(course_id), UUID(project_id), sprint_id),
+            ).fetchone()
+            return self._report(row) if row else None
+
+    @staticmethod
+    def _report(row: dict) -> AssessmentReport:
+        from app.schemas.assessment import TeamScore, StudentScore, RubricDimensionScoreDetail
+        rubric_scores = {}
+        if row.get("rubric_scores"):
+            for key, value in row["rubric_scores"].items():
+                rubric_scores[key] = RubricDimensionScoreDetail.model_validate(value)
+
+        return AssessmentReport(
+            report_id=str(row["report_id"]),
+            model_name=row["model_name"],
+            mode=row["mode"],
+            course_id=str(row["course_id"]),
+            project_id=str(row["project_id"]),
+            sprint_id=row["sprint_id"],
+            generated_at=row["generated_at"],
+            rubric_weights=row["rubric_weights"],
+            team_score=TeamScore.model_validate(row["team_score"]),
+            individual_scores=[StudentScore.model_validate(x) for x in row["individual_scores"]],
+            recommendations=row["recommendations"],
+            rubric_scores=rubric_scores,
+            strengths=row["strengths"],
+            weaknesses=row["weaknesses"],
+        )
+
+
 class PostgresMetricsRepository(MetricsRepository):
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
@@ -562,10 +736,10 @@ class PostgresMetricsRepository(MetricsRepository):
                 for commit in metrics.commits:
                     connection.execute(
                         """INSERT INTO ingestion_commits
-                        (ingestion_run_id, sha, author, message, timestamp,
+                        (ingestion_run_id, sha, author, author_email, student_id, message, timestamp,
                          lines_added, lines_deleted, files_changed)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (run["ingestion_run_id"], commit.sha, commit.author, commit.message,
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (run["ingestion_run_id"], commit.sha, commit.author, commit.author_email, commit.student_id, commit.message,
                          commit.timestamp, commit.lines_added, commit.lines_deleted,
                          Json([file.model_dump() for file in commit.files_changed])),
                     )
@@ -584,7 +758,7 @@ class PostgresMetricsRepository(MetricsRepository):
             if not row:
                 return None
             commit_rows = connection.execute(
-                """SELECT sha, author, message, timestamp, lines_added,
+                """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
                     FROM ingestion_commits WHERE ingestion_run_id = (
                         SELECT ingestion_run_id FROM ingestion_runs
@@ -599,7 +773,16 @@ class PostgresMetricsRepository(MetricsRepository):
             code_churn=row["code_churn"], pr_turnaround_hours=row["pr_turnaround_hours"],
             assigned_story_points=row["assigned_story_points"],
             completion_percent=row["completion_percent"],
-            commits=[CommitInfo(**{**dict(commit), "files_changed": commit["files_changed"]}) for commit in commit_rows],
+            commits=[
+                CommitInfo(
+                    **{
+                        **dict(commit),
+                        "student_id": str(commit["student_id"]) if commit["student_id"] else None,
+                        "files_changed": commit["files_changed"],
+                    }
+                )
+                for commit in commit_rows
+            ],
             local_repo_path=row["local_repo_path"],
             head_sha=row["head_sha"],
             captured_at=row["captured_at"],
@@ -624,7 +807,7 @@ class PostgresMetricsRepository(MetricsRepository):
                 (row["ingestion_run_id"],),
             ).fetchone()["total"]
             commit_rows = connection.execute(
-                """SELECT sha, author, message, timestamp, lines_added,
+                """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
                     FROM ingestion_commits
                     WHERE ingestion_run_id = %s
@@ -639,7 +822,16 @@ class PostgresMetricsRepository(MetricsRepository):
             code_churn=row["code_churn"], pr_turnaround_hours=row["pr_turnaround_hours"],
             assigned_story_points=row["assigned_story_points"],
             completion_percent=row["completion_percent"],
-            commits=[CommitInfo(**{**dict(commit), "files_changed": commit["files_changed"]}) for commit in commit_rows],
+            commits=[
+                CommitInfo(
+                    **{
+                        **dict(commit),
+                        "student_id": str(commit["student_id"]) if commit["student_id"] else None,
+                        "files_changed": commit["files_changed"],
+                    }
+                )
+                for commit in commit_rows
+            ],
             local_repo_path=row["local_repo_path"], head_sha=row["head_sha"],
             captured_at=row["captured_at"],
         ), total

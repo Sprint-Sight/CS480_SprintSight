@@ -21,6 +21,8 @@ class FileDiff(BaseModel):
 class CommitInfo(BaseModel):
     sha: str
     author: str
+    author_email: str | None = None
+    student_id: str | None = None
     message: str
     timestamp: datetime
     lines_added: int = Field(default=0, ge=0)
@@ -127,6 +129,12 @@ class AssessmentJobEvent(BaseModel):
     data: dict
 
 
+class RubricDimensionScoreDetail(BaseModel):
+    score: float | int
+    justification: str | None = None
+    evidence_citations: list[str] = Field(default_factory=list)
+
+
 class StudentScore(BaseModel):
     student_id: str
     score: float
@@ -136,6 +144,8 @@ class StudentScore(BaseModel):
 class TeamScore(BaseModel):
     score: float
     rationale: str
+    # Default "" keeps old DB rows (persisted before this field existed) valid.
+    overall_grade: str = ""
 
 
 class AssessmentReport(BaseModel):
@@ -149,7 +159,24 @@ class AssessmentReport(BaseModel):
     rubric_weights: dict[str, float]
     team_score: TeamScore
     individual_scores: list[StudentScore]
+    rubric_scores: dict[str, RubricDimensionScoreDetail] = Field(default_factory=dict)
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
     recommendations: list[str]
+
+
+class RubricWeightsPayload(BaseModel):
+    """Body for setting a course's custom rubric dimension weights."""
+    weights: dict[str, float]
+
+
+class RubricWeightsResponse(BaseModel):
+    course_id: str
+    weights: dict[str, float]
+    # False when no faculty override exists yet and this is just the default.
+    is_custom: bool
+    updated_by: str | None = None
+    updated_at: datetime | None = None
 
 
 class OverrideRequest(BaseModel):

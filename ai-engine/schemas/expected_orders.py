@@ -3,7 +3,7 @@ schemas/expected_orders.py
 
 Encodes the two target orderings across the 5-fixture set:
 
-  GENERAL (code_quality, testing, documentation, requirements, and overall):
+    GENERAL (code_quality, testing, documentation, requirements, CICD, and overall):
       high_performing >= imbalanced_high_output > good_collab_low_output
                         > lone_contributor_poor_outcome > struggling
 
@@ -31,7 +31,7 @@ class OrderLink(NamedTuple):
     lower: str
     op: Literal[">", ">="]
 
-GENERAL_ORDER: list[OrderLink] = [ # General ordering for the other 4 dimensions
+GENERAL_ORDER: list[OrderLink] = [ # General ordering for general dimensions
     OrderLink("high_performing", "imbalanced_high_output", ">="),
     OrderLink("imbalanced_high_output", "good_collab_low_output", ">"),
     OrderLink("good_collab_low_output", "lone_contributor_poor_outcome", ">"),
@@ -101,6 +101,7 @@ if __name__ == "__main__":
     for dim, order in [
         ("code_quality", GENERAL_ORDER), ("testing", GENERAL_ORDER),
         ("documentation", GENERAL_ORDER), ("requirements", GENERAL_ORDER),
+        ("cicd", GENERAL_ORDER),
         ("collaboration", COLLABORATION_ORDER),
     ]:
         print(f"\n {dim} fixture ordering check:")

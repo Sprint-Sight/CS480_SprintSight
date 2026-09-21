@@ -146,6 +146,8 @@ class AssessmentRepository(Protocol):
 
     def get_report(self, report_id: str) -> AssessmentReport | None: ...
 
+    def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]: ...
+
     def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None: ...
 
 
@@ -168,6 +170,20 @@ class AssessmentJobRepository(Protocol):
     def append_event(self, job_id: str, event: str, data: dict) -> None: ...
 
     def list_events(self, job_id: str) -> list[AssessmentJobEvent]: ...
+
+
+@dataclass
+class RubricWeightsRecord:
+    course_id: str
+    weights: dict[str, float]
+    updated_by: str
+    updated_at: datetime
+
+
+class RubricWeightsRepository(Protocol):
+    def get_weights(self, course_id: str) -> RubricWeightsRecord | None: ...
+
+    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord: ...
 
 
 class OverrideRepository(Protocol):

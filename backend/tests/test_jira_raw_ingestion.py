@@ -55,7 +55,7 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
             return original_post(self, url, **kwargs)
         assert captured_client["auth"] == ("jira.owner@university.edu", "project-jira-token")
         assert captured_client["base_url"] == "https://team.atlassian.net"
-        assert kwargs["json"]["jql"] == 'project = "JIRA" ORDER BY updated DESC'
+        assert kwargs["json"]["jql"] == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
         assert kwargs["json"]["fields"] == ["*all"]
         return httpx.Response(200, content=raw_bytes, request=httpx.Request("POST", url))
 
@@ -104,7 +104,7 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
     def fake_post(self, url, **kwargs):
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
-        assert kwargs["json"]["jql"] == 'project = "STORED" ORDER BY updated DESC'
+        assert kwargs["json"]["jql"] == 'project = "STORED" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
         return httpx.Response(
             200,
             content=b'{"issues":[],"total":0}',
@@ -120,6 +120,49 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
     )
     assert response.status_code == 200
     assert response.json()["jira_project_key"] == "STORED"
+
+
+def test_jira_raw_sync_filters_by_requested_sprint(monkeypatch) -> None:
+    token = login("faculty@sprintsight.edu")
+    course = client.post(
+        "/api/v1/courses",
+        json={"code": "JIRA482", "name": "Jira Sprint Filter", "section": "001", "year": 2026, "term": "Fall"},
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+    project = client.post(
+        f"/api/v1/courses/{course['id']}/projects",
+        json={
+            "project_name": "Sprint Filter Project",
+            "team_name": "Sprint Filter Team",
+            "jira_email": "jira.owner@university.edu",
+            "jira_domain": "https://team.atlassian.net",
+            "jira_project_key": "JIRA",
+            "jira_api_token": "project-jira-token",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+
+    original_post = httpx.Client.post
+
+    def fake_post(self, url, **kwargs):
+        if url != "/rest/api/3/search/jql":
+            return original_post(self, url, **kwargs)
+        assert kwargs["json"]["jql"] == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        return httpx.Response(
+            200,
+            content=b'{"issues":[],"total":0}',
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(storage, "upload", lambda *args, **kwargs: "raw/jira/key.json")
+    response = client.post(
+        f"/api/v1/jira-ingestion/raw/{project['id']}",
+        json={"sprint_id": "Sprint 1", "jira_project_key": "JIRA"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["issue_count"] == 0
 
 
 def test_jira_raw_sync_requires_project_credentials() -> None:

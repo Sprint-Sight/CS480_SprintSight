@@ -6,20 +6,31 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_manual_text_repository, get_metrics_repository, get_project_repository, require_faculty
+from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_student_or_faculty
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import ManualTextRepository, MetricsRepository, ProjectRepository
-from app.schemas.assessment import AssessRequest, OverrideRequest
+from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
+from app.schemas.assessment import AssessRequest, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
+from app.schemas.auth import Role
 from app.services.assessmentService.service import (
-    generate_mock_assessment,
+    get_effective_rubric_weights,
     get_latest_assessment,
+    list_assessment_reports,
     override_student_score,
     run_assessment_job,
+    set_rubric_weights,
 )
 from app.services.auditLogService.service import append_override_audit
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _authorize_report_access(current_user: object, course_id: str, project_id: str, projects: ProjectRepository) -> None:
+    if current_user.role != Role.STUDENT:
+        return
+    project = projects.get_project(project_id)
+    if not project or project.course_id != course_id or current_user.id not in projects.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view assessment reports for your project.")
 
 
 @router.post("/assess", status_code=status.HTTP_202_ACCEPTED)
@@ -29,6 +40,9 @@ def assess_sprint(
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
     manual_text_repository: Annotated[ManualTextRepository, Depends(get_manual_text_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
 ) -> dict:
     _ = faculty_user
     project = projects.get_project(payload.project_id)
@@ -44,7 +58,17 @@ def assess_sprint(
 
     # Start the long-polling worker in a background thread so the endpoint
     # returns immediately with the 202 job contract instead of blocking.
-    _executor.submit(run_assessment_job, job.job_id, payload, project, metrics_repository, manual_text_repository)
+    _executor.submit(
+        run_assessment_job,
+        job.job_id,
+        payload,
+        project,
+        metrics_repository,
+        manual_text_repository,
+        assessment_repository,
+        jira_ingestion_repository,
+        rubric_weights_repository,
+    )
 
     return {
         "job_id": job.job_id,
@@ -80,15 +104,69 @@ def assessment_job_events(
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@router.get("/reports")
+def list_reports(
+    course_id: str,
+    project_id: str,
+    sprint_id: str,
+    faculty_user: Annotated[object, Depends(require_faculty)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+):
+    _ = faculty_user
+    return list_assessment_reports(course_id, project_id, sprint_id, assessment_repository)
+
+
 @router.get("/latest")
 def get_latest(
     course_id: str,
     project_id: str,
     sprint_id: str,
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
 ):
+    _authorize_report_access(current_user, course_id, project_id, projects)
+    return get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
+
+
+@router.get("/rubric-weights", response_model=RubricWeightsResponse)
+def get_rubric_weights(
+    course_id: str,
+    faculty_user: Annotated[object, Depends(require_faculty)],
+    rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
+) -> RubricWeightsResponse:
     _ = faculty_user
-    return get_latest_assessment(course_id, project_id, sprint_id)
+    record = rubric_weights_repository.get_weights(course_id)
+    if record:
+        return RubricWeightsResponse(
+            course_id=course_id,
+            weights=record.weights,
+            is_custom=True,
+            updated_by=record.updated_by,
+            updated_at=record.updated_at,
+        )
+    return RubricWeightsResponse(
+        course_id=course_id,
+        weights=get_effective_rubric_weights(course_id, rubric_weights_repository),
+        is_custom=False,
+    )
+
+
+@router.put("/rubric-weights", response_model=RubricWeightsResponse)
+def put_rubric_weights(
+    course_id: str,
+    payload: RubricWeightsPayload,
+    faculty_user: Annotated[object, Depends(require_faculty)],
+    rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
+) -> RubricWeightsResponse:
+    record = set_rubric_weights(course_id, payload.weights, faculty_user.id, rubric_weights_repository)
+    return RubricWeightsResponse(
+        course_id=course_id,
+        weights=record.weights,
+        is_custom=True,
+        updated_by=record.updated_by,
+        updated_at=record.updated_at,
+    )
 
 
 @router.post("/override")

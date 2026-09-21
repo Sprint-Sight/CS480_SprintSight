@@ -2,21 +2,25 @@
 
 > Updated: September 8, 2026
 
-SprintSight's AI engine is a local FastAPI service that evaluates synthetic
+SprintSight's AI engine is a local FastAPI service that evaluates ingested
 sprint artifact bundles with an Ollama model. It uses the OpenAI-compatible
 Ollama API and Instructor's Pydantic response validation; no student data is
 sent to a cloud LLM.
 
 ## Current Status
 
-- The HTTP API currently evaluates fixture data from `schemas/fixtures.py`.
+- The HTTP API evaluates sprint data ingested by the backend from Git, Jira,
+  and uploaded documents.
 - Five rubric dimensions are scored: `code_quality`, `testing`,
   `documentation`, `requirements`, and `collaboration`.
 - Dimension evaluations run concurrently with a limit of five active calls.
-- A failed dimension is excluded from the average. The request fails only when
-  all five dimensions fail.
-- The evaluator returns an integer `overall_score` rounded from the average of
-  the successfully scored dimensions.
+- A dimension that fails after retries is filled with a conservative
+  placeholder score (`evaluation_failed: true`) instead of being excluded, so
+  all 5 dimensions are always present in the average and in the response.
+- The evaluator returns a float `overall_score` (average of the 5 dimensions,
+  rounded to 2 decimal places) — not rounded to an integer, since the backend
+  multiplies it by 10 for its /100 team score and integer rounding here would
+  collapse that /100 score down to multiples of 10.
 - `member_contributions` is currently returned as its default empty list; the
   evaluator does not generate individual contribution scores yet.
 - Each Ollama request and raw response is written to a text audit record,
@@ -30,13 +34,13 @@ sent to a cloud LLM.
 ```text
 Client
   |
-  | POST /assess/sprint?key=...&modelname=...
+  | POST /assess/sprint/data?modelname=...
   v
 FastAPI (main.py, port 8001)
   |
   v
 api/assessment.py
-  | selects a fixture and validates query enums
+  | validates and converts the ingested payload
   v
 services/evaluator.py
   | concurrently evaluates five rubric dimensions
@@ -76,33 +80,24 @@ The services are available at:
 | MLflow | `http://localhost:5000` |
 | Ollama | `http://localhost:11434` |
 
-### Create the custom Ollama models
+### Custom Ollama models are created by a one-shot Compose initializer
 
-The compose file does not pull or create models automatically. Run the
-commands for the models you intend to use:
+The compose file now contains a lightweight `model-init` service that waits for
+Ollama to be reachable and only creates the SprintSight aliases when they are
+missing:
+
+- `sprintsight-llama` from `models/Modelfile.llama`
+- `sprintsight-qwen` from `models/Modelfile.qwen`
+- `sprintsight-mistral` from `models/Modelfile.mistral`
+- `sprintsight-gemma` from `models/Modelfile.gemma`
+
+This means repeated `docker compose up` runs are mostly idempotent because the
+initializer checks `ollama list` for the target model aliases and skips the
+`pull`/`create` work when the aliases already exist.
+
+You can still verify the installed models with:
 
 ```powershell
-# Llama
-docker compose cp models/Modelfile.llama ollama:/tmp/Modelfile.llama
-docker compose exec -T ollama ollama pull llama3.2
-docker compose exec -T ollama ollama create sprintsight-llama -f /tmp/Modelfile.llama
-
-# Qwen
-docker compose cp models/Modelfile.qwen ollama:/tmp/Modelfile.qwen
-docker compose exec -T ollama ollama pull qwen3:8b
-docker compose exec -T ollama ollama create sprintsight-qwen -f /tmp/Modelfile.qwen
-
-# Mistral
-docker compose cp models/Modelfile.mistral ollama:/tmp/Modelfile.mistral
-docker compose exec -T ollama ollama pull mistral:7b
-docker compose exec -T ollama ollama create sprintsight-mistral -f /tmp/Modelfile.mistral
-
-# Gemma
-docker compose cp models/Modelfile.gemma ollama:/tmp/Modelfile.gemma
-docker compose exec -T ollama ollama pull gemma4:12b
-docker compose exec -T ollama ollama create sprintsight-gemma -f /tmp/Modelfile.gemma
-
-# Verify installed models
 docker compose exec ollama ollama list
 ```
 
@@ -156,48 +151,35 @@ default model is available. It returns `200` with `status: "ok"` when ready,
 `200` with `status: "degraded"` when Ollama is reachable but the model is
 missing, and `503` when Ollama cannot be reached.
 
-### Assess a sprint fixture
-
-```powershell
-curl.exe -X POST "http://localhost:8001/assess/sprint?key=high_performing_team&modelname=sprintsight-llama"
-```
+### Assess ingested sprint data
 
 The endpoint returns a `SprintAssessment` containing:
 
-- `overall_score`: rounded score from 1 to 10
-- `rubric_scores`: one optional `RubricDimensionScore` for each dimension
+- `overall_score`: float average from 0 to 10, rounded to 2 decimal places
+- `rubric_scores`: one `RubricDimensionScore` for each of the 5 dimensions —
+  always present; if a dimension's evaluation failed after retries, it is
+  filled with a conservative placeholder score and `evaluation_failed: true`
+  instead of being omitted
 - `failed_dimensions`: computed list of dimensions that could not be scored
+  (i.e. flagged with `evaluation_failed: true`)
 - `executive_summary`: deterministic summary based on the average
 - `key_recommendations`: currently contains that summary
 - `member_contributions`: currently empty because it is not generated by the
   evaluator
 
-The request query parameters are validated using these enums:
-
-| Parameter | Current accepted values |
-|---|---|
-| `key` | `high_performing_team`, `imbalanced_team`, `struggling_team` |
-| `modelname` | `sprintsight-grader`, `sprintsight-llama`, `sprintsight-qwen`, `sprintsight-mistral`, `sprintsight-gemma`, plus the base model names defined in `schemas/modelname.py` |
-
-The router's fixture map also contains experimental fixtures such as
-`good_collab_low_output_team`, `lone_contributor_poor_outcome_team`, and
-`imbalanced_high_output_team`. They are used by the research harness, but are
-not currently selectable through the `TeamType` query enum. The enum value
-`imbalanced_team` also does not currently match the fixture-map key
-`imbalanced_high_output_team`; align those names in the code before relying on
-that request.
-
 ## Evaluation flow
 
-1. `api/assessment.py` validates the query parameters and selects a fixture.
-2. `services/evaluator.py` starts one task per rubric dimension.
-3. `services/llm_client.py` serializes the full `ArtifactBundle` and sends a
+1. The backend ingests Git, Jira, and document data and sends the canonical
+  payload to `api/assessment.py`.
+2. `api/assessment.py` validates the payload and builds an `ArtifactBundle`.
+3. `services/evaluator.py` starts one task per rubric dimension.
+4. `services/llm_client.py` serializes the full `ArtifactBundle` and sends
    rubric-specific prompt to Ollama.
-4. Instructor validates the response as `RubricDimensionScore`, retrying up to
+5. Instructor validates the response as `RubricDimensionScore`, retrying up to
    three times for a dimension-level failure.
-5. The evaluator collects successful dimensions, calculates their average, and
+6. The evaluator collects successful dimensions, calculates their average, and
    builds `SprintAssessment`.
-6. MLflow records traces and the average score. The HTTP client hooks write
+7. MLflow records traces and the average score. The HTTP client hooks write
    request/response audit files under `audit_logs/`.
 
 ## Audit records

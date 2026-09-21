@@ -30,4 +30,3 @@ export type SprintOverviewPayload = {
   summary: SprintOverviewSummary;
 };
 
-export type OngoingStatuses = Exclude<SprintStatus, "Completed">;

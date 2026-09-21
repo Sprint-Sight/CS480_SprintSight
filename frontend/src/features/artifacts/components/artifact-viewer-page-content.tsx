@@ -6,12 +6,19 @@ import {
   FolderGit2, 
   MessageSquare, 
   Users,
-  Upload
+  Upload,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { getArtifactDataset, getArtifactProjectOptions } from "@/features/artifacts/data";
+import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
+import { getProjectGitMetrics, getProjectIngestion, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
+import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
+import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
+import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
+import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "github", label: "GitHub", icon: FolderGit2 },
@@ -37,20 +44,156 @@ function formatBytes(bytes: number, decimals = 1) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
+type BackendDocument = {
+  id: string;
+  filename: string;
+  byte_size: number;
+  uploaded_by: string;
+  created_at: string;
+};
+
+type DocumentUploadResponse = { documents: BackendDocument[] };
+
+type FileDiff = {
+  filename: string;
+  change_type: "added" | "modified" | "deleted" | "renamed";
+  lines_added: number;
+  lines_deleted: number;
+};
+
+type CommitInfo = {
+  sha: string;
+  author: string;
+  message: string;
+  timestamp: string;
+  lines_added: number;
+  lines_deleted: number;
+  files_changed: FileDiff[];
+};
+
+type RepoIngestionData = {
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  head_sha: string | null;
+  captured_at: string;
+  commit_frequency: number;
+  code_churn: number;
+  pr_turnaround_hours: number | null;
+  assigned_story_points: number | null;
+  completion_percent: number | null;
+  commits: CommitInfo[];
+  pagination: {
+    limit: number | null;
+    offset: number | null;
+    total: number;
+    has_more: boolean;
+  };
+};
+
+type RepoSyncResponse = {
+  github_metrics: RepoIngestionData;
+  jira_metrics: unknown;
+  document_signals: {
+    documentation_quality: number;
+    demo_completeness: number;
+  };
+};
+
+type JiraTicket = {
+  ticket_id: string;
+  summary: string;
+  assignee: string | null;
+  status: string | null;
+  issue_type: string | null;
+  story_points: number | null;
+  sprint_id: string | null;
+};
+
+type JiraCleanedSnapshot = {
+  normalization_version: string;
+  source: string;
+  jira_project_key: string;
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  captured_at: string;
+  tickets: JiraTicket[];
+};
+
+function normalizeSprintLabel(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const match = value.match(/(\d+)/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildNextSprintLabel(existingValues: Array<string | null | undefined>) {
+  const maxSprintNumber = existingValues.reduce((max, value) => {
+    const parsed = normalizeSprintLabel(value);
+    return parsed !== null && parsed > max ? parsed : max;
+  }, 0);
+  return `Sprint ${maxSprintNumber + 1}`;
+}
+
+function buildSprintApiId(value: string) {
+  const normalized = value.trim();
+  const match = normalized.match(/(\d+)/);
+  if (!match) return `sprint-${normalized.toLowerCase().replace(/\s+/g, "-")}`;
+  return `sprint-${match[1]}`;
+}
+
+function buildNextSprintId(existingValues: Array<string | null | undefined>) {
+  return buildSprintApiId(buildNextSprintLabel(existingValues));
+}
+
+function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
+  return {
+    id: document.id,
+    fileName: document.filename,
+    fileType: "PDF",
+    uploadedBy: document.uploaded_by,
+    uploadedAt: new Date(document.created_at).toLocaleDateString(),
+    size: formatBytes(document.byte_size),
+  };
+}
+
 export default function ArtifactViewerPageContent() {
-  const projectOptions = useMemo(() => getArtifactProjectOptions(), []);
-  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
   
   // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
   const [fullName, setFullName] = useState<string>("");
+  const { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
 
-  const dataset = useMemo(() => getArtifactDataset(selectedProjectId), [selectedProjectId]);
   
   // Local state for documents to allow instant UI updates upon upload
   const [localDocuments, setLocalDocuments] = useState<DocumentArtifact[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [documentError, setDocumentError] = useState("");
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [sprintId, setSprintId] = useState("");
+  const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
+  const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
+  const [jiraError, setJiraError] = useState("");
+  const [isLoadingJira, setIsLoadingJira] = useState(false);
+  const [isSyncingJira, setIsSyncingJira] = useState(false);
+  const [gitSprintId, setGitSprintId] = useState("");
+  const [gitMetrics, setGitMetrics] = useState<RepoIngestionData | null>(null);
+  const [gitError, setGitError] = useState("");
+  const [isLoadingGit, setIsLoadingGit] = useState(false);
+  const [isSyncingGit, setIsSyncingGit] = useState(false);
+  const [gitRuns, setGitRuns] = useState<RepoIngestionData[]>([]);
+
+  const sourceRows = useMemo(() => {
+    const sources = [];
+    if (gitMetrics) sources.push({ source: "GitHub", records: gitMetrics.pagination?.total ?? gitMetrics.commits.length, lastSyncedAt: new Date(gitMetrics.captured_at).toLocaleString(), parserStatus: "Healthy", evaluationUsage: "Code quality, ownership, delivery cadence" });
+    if (jiraSnapshot) sources.push({ source: "Jira", records: jiraSnapshot.tickets.length, lastSyncedAt: new Date(jiraSnapshot.captured_at).toLocaleString(), parserStatus: "Healthy", evaluationUsage: "Task completion, planning reliability" });
+    if (isUuid(selectedProjectId) && localDocuments.length > 0) sources.push({ source: "Documents", records: localDocuments.length, lastSyncedAt: "Available", parserStatus: "Healthy", evaluationUsage: "Evidence quality, documentation completeness" });
+    return sources;
+  }, [gitMetrics, jiraSnapshot, localDocuments.length, selectedProjectId]);
 
   // Initialize role, name, and local documents on mount/dataset change
   useEffect(() => {
@@ -63,9 +206,217 @@ export default function ArtifactViewerPageContent() {
     }
   }, []);
 
+  const selectedBackendProject = projectOptions.find(
+    (project) => project.id === selectedProjectId && isUuid(project.id) && Boolean(project.courseId),
+  );
+  const ingestionDisabledReason = role !== "instructor"
+    ? "Git and Jira ingestion requires an instructor account."
+    : isLoadingProjects
+      ? "Loading backend projects..."
+      : projectLoadError
+        ? projectLoadError
+        : !selectedBackendProject
+          ? "Select a real backend project before starting ingestion."
+          : "";
+
   useEffect(() => {
-    setLocalDocuments(dataset.documents);
-  }, [dataset]);
+    const persisted = getProjectIngestion(selectedProjectId);
+    const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
+    setGitRuns(persistedGitRuns);
+    const latestGitRun = persistedGitRuns.at(-1) || null;
+    if (latestGitRun) {
+      setGitMetrics(latestGitRun);
+      setGitSprintId(buildNextSprintId(persistedGitRuns.map((run) => run.sprint_id)));
+    } else {
+      setGitMetrics(null);
+      setGitSprintId(buildNextSprintId([]));
+    }
+    if (persisted.jira) {
+      setJiraSnapshot(persisted.jira);
+    } else {
+      setJiraSnapshot(null);
+    }
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    async function loadDocuments() {
+      setDocumentError("");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
+        setLocalDocuments([]);
+        return;
+      }
+
+      setIsLoadingDocuments(true);
+      try {
+        const documents = await apiRequest<BackendDocument[]>(`/projects/${selectedProjectId}/documents`);
+        setLocalDocuments(documents.map(toDocumentArtifact));
+        saveDocumentCount(selectedProjectId, documents.length);
+      } catch (error) {
+        setDocumentError(error instanceof Error ? error.message : "Failed to load documents.");
+        setLocalDocuments([]);
+      } finally {
+        setIsLoadingDocuments(false);
+      }
+    }
+
+    loadDocuments();
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!isUuid(selectedProjectId)) {
+      setJiraRuns([]);
+      setJiraSnapshot(null);
+      return;
+    }
+
+    async function loadProjectRuns() {
+      setJiraError("");
+      setIsLoadingJira(true);
+      try {
+        const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`);
+        setJiraRuns(runs);
+        const latestCompleted = runs.find((run) => run.processing_status === "completed");
+        if (latestCompleted) {
+          await loadCleanedRun(latestCompleted);
+        }
+        setSprintId(buildNextSprintId(runs.map((run) => run.sprint_id)));
+      } catch (error) {
+        setJiraError(error instanceof Error ? error.message : "Failed to load Jira ingestion runs.");
+      } finally {
+        setIsLoadingJira(false);
+      }
+    }
+
+    loadProjectRuns();
+  }, [selectedProjectId]);
+
+  async function loadGitMetrics() {
+    const sprint = gitSprintId.trim();
+    const project = projectOptions.find((option) => option.id === selectedProjectId);
+    if (!isUuid(selectedProjectId) || !project?.courseId) {
+      setGitError("Select a real backend project with a course before loading Git data.");
+      return;
+    }
+    if (!sprint) {
+      setGitError("Enter a sprint ID before loading Git data.");
+      return;
+    }
+
+    setGitError("");
+    setIsLoadingGit(true);
+    try {
+      const metrics = await apiRequest<RepoIngestionData>(
+        `/repo-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint)}?course_id=${encodeURIComponent(project.courseId)}`
+      );
+      setGitMetrics(metrics);
+      saveGitMetrics(metrics);
+    } catch (error) {
+      setGitError(error instanceof Error ? error.message : "Failed to load Git ingestion data.");
+    } finally {
+      setIsLoadingGit(false);
+    }
+  }
+
+  async function loadCleanedRun(run: JiraIngestionRun) {
+    const snapshot = await apiRequest<JiraCleanedSnapshot>(
+      `/jira-ingestion/runs/${run.project_id}/${run.sprint_id}/${run.run_id}/cleaned`
+    );
+    setJiraSnapshot(snapshot);
+    saveJiraSnapshot(snapshot);
+  }
+
+  async function loadSprintRuns(sprint: string) {
+    if (!isUuid(selectedProjectId) || !sprint.trim()) return;
+    const runs = await apiRequest<JiraIngestionRun[]>(
+      `/jira-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint.trim())}`
+    );
+    setJiraRuns((previous) => {
+      const otherRuns = previous.filter((run) => run.sprint_id !== sprint.trim());
+      return [...runs, ...otherRuns];
+    });
+  }
+
+  async function syncJira() {
+    const project = projectOptions.find((option) => option.id === selectedProjectId);
+    if (!isUuid(selectedProjectId)) {
+      setJiraError("Select a real backend project before syncing Jira.");
+      return;
+    }
+    if (!project?.jiraProjectKey) {
+      setJiraError("The selected project has no saved Jira project key. Configure it in Projects first.");
+      return;
+    }
+
+    const sprint = sprintId || buildNextSprintId(jiraRuns.map((run) => run.sprint_id));
+    setJiraError("");
+    setIsSyncingJira(true);
+    setJiraSnapshot(null);
+    try {
+      const rawRun = await apiRequest<JiraIngestionRun>(`/jira-ingestion/raw/${selectedProjectId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          sprint_id: sprint,
+        }),
+      });
+
+      const processedRun = await apiRequest<JiraIngestionRun>(
+        `/jira-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint)}/${rawRun.run_id}/process`,
+        { method: "POST" }
+      );
+      await loadCleanedRun(processedRun);
+      await loadSprintRuns(sprint);
+      setSprintId(buildNextSprintId([...jiraRuns.map((run) => run.sprint_id), sprint]));
+    } catch (error) {
+      setJiraError(error instanceof Error ? error.message : "Jira ingestion failed.");
+    } finally {
+      setIsSyncingJira(false);
+    }
+  }
+
+  async function syncGit() {
+    const project = projectOptions.find((option) => option.id === selectedProjectId);
+    if (!isUuid(selectedProjectId) || !project?.courseId) {
+      setGitError("Select a real backend project with a course before syncing Git.");
+      return;
+    }
+
+    const sprint = gitSprintId || buildNextSprintId(gitRuns.map((run) => run.sprint_id));
+    setGitError("");
+    setIsSyncingGit(true);
+    try {
+      const response = await apiRequest<RepoSyncResponse>("/repo-ingestion/sync", {
+        method: "POST",
+        body: JSON.stringify({
+          course_id: project.courseId,
+          project_id: selectedProjectId,
+          sprint_id: sprint,
+        }),
+      });
+      const metrics = {
+        ...response.github_metrics,
+        sprint_id: sprint,
+        pagination: response.github_metrics.pagination ?? {
+          limit: null,
+          offset: null,
+          total: response.github_metrics.commits?.length ?? 0,
+          has_more: false,
+        },
+      };
+      setGitMetrics(metrics);
+      saveGitMetrics(metrics);
+      const updatedRuns = [...gitRuns.filter((run) => run.sprint_id !== sprint), metrics];
+      setGitRuns(updatedRuns);
+      setGitSprintId(buildNextSprintId(updatedRuns.map((run) => run.sprint_id)));
+    } catch (error) {
+      setGitError(error instanceof Error ? error.message : "Git ingestion failed.");
+    } finally {
+      setIsSyncingGit(false);
+    }
+  }
+
+  function isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
 
   // Filter tabs dynamically based on user role
   const visibleTabs = useMemo(() => {
@@ -75,29 +426,62 @@ export default function ArtifactViewerPageContent() {
     return tabs;
   }, [role]);
 
-  // Handle local file upload
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
 
-    // Determine file type badge based on extension
-    const extension = file.name.split('.').pop()?.toUpperCase() || "FILE";
-    const validTypes = ["PDF", "DOCX", "MD"];
-    const fileType = validTypes.includes(extension) ? extension : "FILE";
+    try {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
+        throw new Error("Select a backend project before uploading documents.");
+      }
+      if (files.some((file) => !file.name.toLowerCase().endsWith(".pdf") || file.type !== "application/pdf")) {
+        throw new Error("Only PDF files with application/pdf MIME type are allowed.");
+      }
+      if (files.some((file) => file.size > 25 * 1024 * 1024)) {
+        throw new Error("Each PDF must be 25 MB or smaller.");
+      }
+      if (files.reduce((total, file) => total + file.size, 0) > 100 * 1024 * 1024) {
+        throw new Error("The total upload size must be 100 MB or smaller.");
+      }
 
-    const newDoc: DocumentArtifact = {
-      id: `d-local-${Date.now()}`,
-      fileName: file.name,
-      fileType: fileType as any,
-      uploadedBy: fullName || (role === "student" ? "Student User" : "Instructor User"),
-      uploadedAt: new Date().toISOString().split("T")[0],
-      size: formatBytes(file.size),
-    };
+      for (const file of files) {
+        const header = new TextDecoder().decode(await file.slice(0, 5).arrayBuffer());
+        if (header !== "%PDF-") throw new Error(`${file.name} is not a valid PDF file.`);
+      }
 
-    setLocalDocuments((prev) => [newDoc, ...prev]);
-    
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+      const formData = new FormData();
+      files.forEach((file) => formData.append("files", file));
+      setIsUploading(true);
+      const response = await apiRequest<DocumentUploadResponse>(`/projects/${selectedProjectId}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      setLocalDocuments((previous) => [...response.documents.map(toDocumentArtifact), ...previous]);
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Failed to upload documents.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownloadDocument = async (documentId: string, fileName: string) => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/projects/${selectedProjectId}/documents/${documentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to download document.");
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      anchor.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Failed to download document.");
     }
   };
 
@@ -111,74 +495,138 @@ export default function ArtifactViewerPageContent() {
 
         <div className="w-full max-w-sm">
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Project context</label>
-          <select
-            value={selectedProjectId}
-            onChange={(event) => setSelectedProjectId(event.target.value)}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-100 transition focus:border-blue-300 focus:ring-2"
-          >
-            {projectOptions.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+            {isLoadingProjects ? "Loading selected project..." : projectOptions.find((option) => option.id === selectedProjectId)?.label || "No project selected"}
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition ${
-              activeTab === tab.id ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <ArtifactTabs tabs={tabs} visibleTabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         {activeTab === "github" && (
           <>
-            <h2 className="text-3xl font-semibold text-blue-950">GitHub Activity</h2>
-            {dataset.github.map((entry) => (
-              <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{entry.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {entry.author} - {entry.date} - {entry.ref}
-                    </p>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${entry.type === "pr" ? "bg-violet-50 text-violet-700" : "bg-blue-50 text-blue-700"}`}>
-                    {entry.type === "pr" ? "PR" : "Commit"}
-                  </span>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-3xl font-semibold text-blue-950">Git Repository Activity</h2>
+                <p className="mt-1 text-sm text-slate-500">Sync commits and inspect repository metrics for a sprint.</p>
+              </div>
+              <button
+                type="button"
+                onClick={syncGit}
+                disabled={isSyncingGit || !selectedBackendProject}
+                title={ingestionDisabledReason || "Sync the selected Git repository"}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSyncingGit ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {isSyncingGit ? "Syncing Git..." : "Sync Git Repository"}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[220px] flex-1 space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</span>
+                <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700">
+                  {gitSprintId || "sprint-1"}
                 </div>
-              </article>
-            ))}
+              </div>
+            </div>
+
+            {gitError && <p className="text-sm text-rose-600">{gitError}</p>}
+            {ingestionDisabledReason && <p className="text-sm text-amber-700">{ingestionDisabledReason}</p>}
+            {isLoadingGit && <p className="text-sm text-slate-500">Loading Git ingestion data...</p>}
+
+            <GitIngestionRunsTable
+              runs={gitRuns.map((run) => ({
+                sprintId: run.sprint_id,
+                recordCount: run.pagination?.total ?? run.commits.length,
+                capturedAt: run.captured_at,
+              }))}
+            />
+
+            {gitMetrics ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Commits</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{gitMetrics.pagination.total}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Commit frequency</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{gitMetrics.commit_frequency}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Code churn</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">{gitMetrics.code_churn}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Captured</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{new Date(gitMetrics.captured_at).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-500">Head SHA: {gitMetrics.head_sha || "Unavailable"}</p>
+                {gitMetrics.commits.map((commit) => (
+                  <article key={commit.sha} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-lg font-semibold text-slate-900">{commit.message}</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {commit.author} - {new Date(commit.timestamp).toLocaleString()} - {commit.sha.slice(0, 10)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">+{commit.lines_added} / -{commit.lines_deleted} lines</p>
+                  </article>
+                ))}
+              </>
+            ) : <p className="text-sm text-slate-500">No Git data is available for the selected project and sprint.</p>}
           </>
         )}
 
         {activeTab === "jira" && (
           <>
-            <h2 className="text-3xl font-semibold text-blue-950">Jira Backlog and Tasks</h2>
-            {dataset.jira.map((task) => (
-              <article key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{task.key}: {task.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {task.assignee} - {task.sprint} - {task.points} pts
-                    </p>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPill(task.status)}`}>{task.status}</span>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-3xl font-semibold text-blue-950">Jira Backlog and Tasks</h2>
+                <p className="mt-1 text-sm text-slate-500">Sync, normalize, and inspect Jira data for a sprint.</p>
+              </div>
+              <button
+                type="button"
+                onClick={syncJira}
+                disabled={isSyncingJira || !selectedBackendProject}
+                title={ingestionDisabledReason || "Sync Jira for the selected project"}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSyncingJira ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {isSyncingJira ? "Syncing Jira..." : "Sync Jira"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+              <div className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</span>
+                <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700">
+                  {sprintId || "sprint-1"}
                 </div>
-              </article>
-            ))}
+              </div>
+            </div>
+
+            {jiraError && <p className="text-sm text-rose-600">{jiraError}</p>}
+
+            <JiraIngestionRunsTable runs={jiraRuns} onLoadCleanedRun={loadCleanedRun} />
+
+            {jiraSnapshot ? (
+              jiraSnapshot.tickets.map((ticket) => (
+                <article key={ticket.ticket_id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{ticket.ticket_id}: {ticket.summary}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {ticket.assignee || "Unassigned"} - {ticket.issue_type || "Issue"} - {ticket.story_points ?? 0} pts
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPill(ticket.status || undefined)}`}>{ticket.status || "Unknown"}</span>
+                  </div>
+                </article>
+              ))
+            ) : <p className="text-sm text-slate-500">No Jira data is available for the selected project and sprint.</p>}
           </>
         )}
 
@@ -192,17 +640,22 @@ export default function ArtifactViewerPageContent() {
                 ref={fileInputRef} 
                 onChange={handleFileUpload}
                 className="hidden" 
-                accept=".pdf,.doc,.docx,.md,.txt"
+                accept="application/pdf,.pdf"
+                multiple
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)}
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 <Upload className="h-4 w-4" />
-                Upload Document
+                {isUploading ? "Uploading..." : "Upload PDF"}
               </button>
             </div>
+
+            {documentError && <p className="text-sm text-rose-600">{documentError}</p>}
+            {isLoadingDocuments && <p className="text-sm text-slate-500">Loading documents...</p>}
 
             {localDocuments.map((doc) => (
               <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -213,7 +666,13 @@ export default function ArtifactViewerPageContent() {
                       {doc.uploadedBy} - {doc.uploadedAt} - {doc.size}
                     </p>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{doc.fileType}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadDocument(doc.id, doc.fileName)}
+                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                  >
+                    Download {doc.fileType}
+                  </button>
                 </div>
               </article>
             ))}
@@ -229,30 +688,14 @@ export default function ArtifactViewerPageContent() {
         {activeTab === "communication" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Communication Artifacts</h2>
-            {dataset.communication.map((entry) => (
-              <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-base font-semibold text-slate-900">{entry.channel}</p>
-                <p className="mt-1 text-sm text-slate-600">{entry.summary}</p>
-                <p className="mt-1 text-xs text-slate-500">Captured {entry.capturedAt}</p>
-              </article>
-            ))}
+            <p className="text-sm text-slate-500">No communication artifacts are available for the selected project.</p>
           </>
         )}
 
         {activeTab === "peer-evaluation" && role !== "student" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Peer Evaluation Inputs</h2>
-            {dataset.peerEvaluation.map((entry) => (
-              <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-base font-semibold text-slate-900">
-                    {entry.reviewer} reviewed {entry.target}
-                  </p>
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{entry.score}/100</span>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">{entry.sprint}</p>
-              </article>
-            ))}
+            <p className="text-sm text-slate-500">No peer evaluation data is available for the selected project and sprint.</p>
           </>
         )}
       </section>
@@ -273,7 +716,8 @@ export default function ArtifactViewerPageContent() {
               </tr>
             </thead>
             <tbody>
-              {dataset.sources.map((source) => (
+              {sourceRows.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-sm text-slate-500">No structured ingestion inputs are available for the selected project and sprint.</td></tr>}
+              {sourceRows.map((source) => (
                 <tr key={source.source} className="border-b border-slate-100 text-sm text-slate-700 last:border-b-0">
                   <td className="py-3 pr-4 font-semibold text-slate-900">{source.source}</td>
                   <td className="py-3 pr-4">{source.records}</td>

@@ -7,11 +7,45 @@ from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.main import app
 from app.repositories.interfaces import ProjectRecord
+from app.services.assessmentService.service import convert_ai_result_to_assessment_report
 from app.services.middleManService.service import send_assessment_to_ai_engine
 from datetime import datetime, timezone
 
 
 client = TestClient(app)
+
+
+def test_convert_ai_result_to_assessment_report_maps_real_ai_payload() -> None:
+    payload = {
+        "course_id": "cs480",
+        "project_id": "proj-a",
+        "sprint_id": "sp1",
+        "model_name": "sprintsight-llama",
+    }
+    ai_result = {
+        "overall_score": 8,
+        "executive_summary": "Strong sprint delivery.",
+        "key_recommendations": ["Improve test coverage."],
+        "member_contributions": [
+            {
+                "student_id": "stu-001",
+                "contribution_score": 8,
+                "primary_contributions": ["Implemented backend API."],
+                "evidence": ["git commit evidence"],
+            }
+        ],
+    }
+
+    report = convert_ai_result_to_assessment_report(payload, ai_result)
+
+    assert report.course_id == "cs480"
+    assert report.project_id == "proj-a"
+    assert report.sprint_id == "sp1"
+    assert report.team_score.score == 80.0
+    assert report.team_score.rationale == "Strong sprint delivery."
+    assert report.individual_scores[0].student_id == "stu-001"
+    assert report.individual_scores[0].score == 80.0
+    assert report.recommendations == ["Improve test coverage."]
 
 
 def faculty_token() -> str:

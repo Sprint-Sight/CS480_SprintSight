@@ -13,6 +13,8 @@ from app.repositories.interfaces import (
     ManualTextRepository,
     MetricsRepository,
     OverrideRepository,
+    RubricWeightsRecord,
+    RubricWeightsRepository,
     UserRecord,
     UserRepository,
     CourseRecord,
@@ -231,6 +233,27 @@ class InMemoryManualTextRepository(ManualTextRepository):
         return self._store.get((course_id, project_id, sprint_id))
 
 
+class InMemoryRubricWeightsRepository(RubricWeightsRepository):
+    def __init__(self) -> None:
+        self._weights: dict[str, RubricWeightsRecord] = {}
+
+    def get_weights(self, course_id: str) -> RubricWeightsRecord | None:
+        return self._weights.get(course_id)
+
+    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord:
+        record = RubricWeightsRecord(
+            course_id=course_id,
+            weights=dict(weights),
+            updated_by=updated_by,
+            updated_at=datetime.now(timezone.utc),
+        )
+        self._weights[course_id] = record
+        return record
+
+
+rubric_weights_repo = InMemoryRubricWeightsRepository()
+
+
 class InMemoryDocumentRepository(DocumentRepository):
     def __init__(self) -> None:
         self._documents: dict[str, DocumentRecord] = {}
@@ -260,7 +283,7 @@ class InMemoryAssessmentRepository(AssessmentRepository):
     def get_report(self, report_id: str) -> AssessmentReport | None:
         return self._reports.get(report_id)
 
-    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+    def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]:
         matching = [
             report
             for report in self._reports.values()
@@ -268,9 +291,13 @@ class InMemoryAssessmentRepository(AssessmentRepository):
             and report.project_id == project_id
             and report.sprint_id == sprint_id
         ]
+        return sorted(matching, key=lambda report: report.generated_at, reverse=True)
+
+    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+        matching = self.list_reports(course_id, project_id, sprint_id)
         if not matching:
             return None
-        return sorted(matching, key=lambda report: report.generated_at)[-1]
+        return matching[0]
 
 
 class InMemoryAssessmentJobRepository:
