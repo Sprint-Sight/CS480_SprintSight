@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from app.schemas.assessment import JiraCleanedSnapshot, JiraTicket
@@ -14,6 +15,16 @@ def _nested_name(value: Any) -> str | None:
         return None
     name = value.get("displayName") or value.get("name") or value.get("accountId")
     return str(name).strip() if name else None
+
+
+def _ticket_timestamp(fields: dict[str, Any]) -> datetime | None:
+    raw = fields.get("updated") or fields.get("statuscategorychangedate") or fields.get("created")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _story_points(fields: dict[str, Any], story_points_field: str | None) -> float | None:
@@ -94,6 +105,7 @@ def normalize_jira_envelope(
                 issue_type=_nested_name(fields.get("issuetype")),
                 story_points=_story_points(fields, story_points_field),
                 sprint_id=envelope["sprint_id"],
+                timestamp=_ticket_timestamp(fields),
             )
         )
 

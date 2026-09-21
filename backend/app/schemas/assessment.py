@@ -72,6 +72,7 @@ class JiraTicket(BaseModel):
     issue_type: str | None = None
     story_points: float | None = Field(default=None, ge=0)
     sprint_id: str | None = None
+    timestamp: datetime | None = None
 
 
 class JiraCleanedSnapshot(BaseModel):
