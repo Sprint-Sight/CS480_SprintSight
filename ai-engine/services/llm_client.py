@@ -15,12 +15,6 @@ import mlflow
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
-from llmops.prompt_registry import (
-    DIMENSION_PLACEHOLDERS,
-    get_dimension_prompt,
-    load_dimension_prompt,
-    register_dimension_prompt,
-)
 from prompts.templates import (
     render_dimension_prompt,
     render_sprint_feedback_prompt,
@@ -322,21 +316,17 @@ def create_llm_client():
 
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client, # The raw OpenAI-compatible client pointing at Ollama
-        mode=instructor.Mode.JSON, # ensures that the response is parsed as JSON, returned as a Pydantic model
+        # Actually honor LLM_STRUCTURED_OUTPUT_MODE instead of always using
+        # JSON mode -- JSON mode only describes the schema in the prompt, so
+        # weak models can literally echo the schema back as their "answer"
+        # instead of an instance of it. JSON_SCHEMA mode constrains Ollama's
+        # decoding to the real schema and avoids that failure mode.
+        mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
     )
     return client
 
 # Each child span of the parent span (Evaluate_Complete_Sprint)
 @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
-async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
-    # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
-    # bundle_data = bundle.model_dump_json(indent=2) # json representation of the bundle for logging and debugging
-        raw_client,
-        mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
-    )
-    return client
-
-
 async def evaluate_dimension(
     bundle: ArtifactBundle,
     dimension_name: str,
@@ -344,15 +334,19 @@ async def evaluate_dimension(
     dimention_prompt,
     num_ctx: int | None = None,
 ) -> RubricDimensionScore:
-    # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
+    # Evaluate a single rubric dimension.
     fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name, ())
     bundle_data = _dimension_bundle_data(bundle, dimension_name)
-    bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()
+    bundle_hash = hashlib.sha256(
+        bundle_data.encode("utf-8")
+    ).hexdigest()
 
     approx_tokens = len(bundle_data) // 4
     log.info(
         ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
-        dimension_name, len(bundle_data), approx_tokens,
+        dimension_name,
+        len(bundle_data),
+        approx_tokens,
     )
 
     computed_facts = (
