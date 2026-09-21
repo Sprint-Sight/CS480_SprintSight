@@ -10,6 +10,7 @@ class JiraTicket(BaseModel): # Jira real API returns id & key
         description="Match these exactly to your own Jira board's column names once you set it up"
     )
     timestamp: datetime | None = Field(
+        default=None,
         description="When this ticket's current status was last set -- mirrors CommitInfo's timestamp field"
     )
     issue_type: Literal["Bug", "Feature", "Story", "Task", "Epic", "Sub-task"] | None = Field(
