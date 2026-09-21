@@ -72,6 +72,9 @@ services: # Seperate containers to run
         # Moved from the mlflow service to here where the FastAPI client actually uses it
         - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}
         - LLM_AUDIT_LOG_DIR=/app/audit_logs
+
+        # debug print of the full ingested bundle on /assess/sprint/data
+        - LOG_BUNDLE_DISPLAY=${LOG_BUNDLE_DISPLAY:-false}
       volumes:
         - ./:/app
         - ./audit_logs:/app/audit_logs

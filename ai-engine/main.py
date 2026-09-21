@@ -26,6 +26,7 @@ from services.llm_client import (
     pull_model_if_missing,
 )
 from llmops.mlflow_config import start_mlflow
+from llmops.prompt_registry import register_all_dimension_prompts
 
 load_dotenv()
 
@@ -58,6 +59,14 @@ Analyze the following sprint bundle and output a score:
 """, 
         commit_message="Initial prompt bootstrap"
     )
+
+    try:
+        # Versions every rubric dimension's live prompt in MLflow before any
+        # grading request arrives. A registry outage here must not block
+        # startup -- grading always renders prompts locally regardless.
+        register_all_dimension_prompts()
+    except Exception:
+        log.exception("Failed to register dimension prompts in MLflow prompt registry.")
 
     global _llm_client
  
