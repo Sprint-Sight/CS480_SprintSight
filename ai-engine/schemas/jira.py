@@ -16,7 +16,7 @@ class JiraTicket(BaseModel): # Jira real API returns id & key
     issue_type: Literal["Bug", "Feature", "Story", "Task", "Epic", "Sub-task"] | None = Field(
         description="Type of Jira ticket"
     )
-    story_points: Optional[int] = Field(
+    story_points: Optional[float] = Field(
         default=None, ge=0,
         description="None means not estimated — that's a planning-quality signal, not a value to guess at"
     )
