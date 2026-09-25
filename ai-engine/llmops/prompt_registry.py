@@ -2,8 +2,9 @@ import logging
 
 from mlflow.genai import load_prompt, register_prompt, set_prompt_alias
 
-from prompts.dimension_criteria import DIMENSIONS, DIMENTION_PROMPTS
+from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from prompts.templates import render_dimension_prompt
+from schemas.rubrics_dimension_score import DimensionName
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ _BUNDLE_DATA_PLACEHOLDER = "{{ bundle_data }}"
 _COMPUTED_FACTS_PLACEHOLDER = "{{ computed_facts }}"
 
 
-def dimension_prompt_template(dimension_name: str) -> str:
+def dimension_prompt_template(dimension_name: DimensionName) -> str:
     """The exact prompt structure used at grading time for `dimension_name`
     (see prompts/templates.render_dimension_prompt), with bundle_data and
     computed_facts left as placeholders. Registered to the MLflow prompt
@@ -24,12 +25,12 @@ def dimension_prompt_template(dimension_name: str) -> str:
     registry downtime can't break grading."""
     return render_dimension_prompt(
         dimension_name,
-        DIMENTION_PROMPTS[dimension_name],
+        DIMENSION_PROMPTS[dimension_name],
         _BUNDLE_DATA_PLACEHOLDER,
         _COMPUTED_FACTS_PLACEHOLDER,
     )
 
-def register_dimension_prompt(dimension_name: str) -> None:
+def register_dimension_prompt(dimension_name: DimensionName) -> None:
     try:
         # Only registers a new version if the "production" alias doesn't
         # already point at this exact template, so repeated calls (e.g. once
@@ -77,7 +78,7 @@ def register_prompt_if_changed(
     prompt = register_prompt(name=name, template=template, commit_message=commit_message, tags=tags)
     set_prompt_alias(name, alias, prompt.version)
 
-def load_dimension_prompt(dimension_name: str, alias: str = "production") -> str:
+def load_dimension_prompt(dimension_name: str, alias: str = "production") -> str | None:
     try:
         return load_prompt(f"prompts:/Evaluate_{dimension_name}@{alias}")
     except Exception as e:  # noqa: BLE001 - prompt lookup failure must not crash the caller

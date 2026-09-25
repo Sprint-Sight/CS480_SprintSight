@@ -63,7 +63,9 @@ def numeric_grade_accuracy(outputs: dict, expectations: dict) -> list[Feedback]:
 @scorer
 def llm_response_time_good(trace: Trace) -> Feedback: # Check if LLM response time is acceptable
     # Search particular span type from the trace
-    llm_spans = trace.search_spans(span_type=SpanType.LLM)
+    # mlflow's SpanType is a plain str-constants class, not a real enum, so
+    # its own members don't structurally satisfy search_spans' stub signature.
+    llm_spans = trace.search_spans(span_type=SpanType.LLM)  # type: ignore[arg-type]
     if not llm_spans:
         return Feedback(
             value="no",
@@ -71,6 +73,11 @@ def llm_response_time_good(trace: Trace) -> Feedback: # Check if LLM response ti
         )
 
     llm_span = llm_spans[0]
+    if llm_span.end_time_ns is None or llm_span.start_time_ns is None:
+        return Feedback(
+            value="no",
+            rationale="LLM span is missing start/end timestamps.",
+        )
     response_time = (llm_span.end_time_ns - llm_span.start_time_ns) / 1e9  # convert to seconds
     max_duration = 5.0
     if response_time <= max_duration:

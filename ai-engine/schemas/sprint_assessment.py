@@ -20,7 +20,7 @@ class SprintAssessment(BaseModel):
     key_recommendations: list[str]
     # failed_dimensions: list[str] = Field(default_factory=list) REPLACED W THE @property BELOW
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def failed_dimensions(self) -> list[str]: # computes from the rubric_scores attribute
         return self.rubric_scores.failed_dimensions

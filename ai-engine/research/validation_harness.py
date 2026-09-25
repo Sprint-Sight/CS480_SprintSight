@@ -64,6 +64,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import mlflow
 from dotenv import load_dotenv
@@ -111,9 +112,9 @@ class RunResult: # Stores the result of a single (model, fixture, repeat) run
     success: bool                       # if assessment object was returned at all
     fully_succeeded: bool               # AND zero dimensions failed
     failed_dimensions: list             # dimensions that failed (all 5 if success=False)
-    overall_score: int | None        # rounded int, as returned by evaluator.py
+    overall_score: float | None       # raw float, as returned by evaluator.py
     raw_average_score: float | None  # recomputed float average from rubric_scores
-    rubric_scores: dict | None       # {dimension: score}
+    rubric_scores: dict[str, int] | None       # {dimension: score}
     evidence_citations: dict | None  # {dimension: [citation, ...]}
     error: str | None
     latency_seconds: float | None
@@ -228,6 +229,10 @@ def _pearson(x: list[float], y: list[float]) -> float:
 #     return result
 
 # Aggregates all RunResults into a summary dictionary with metrics for each model and cross-model agreement.
+def _drop_none(values: dict[str, float | None]) -> dict[str, float]:
+    return {k: v for k, v in values.items() if v is not None}
+
+
 def compute_summary(results: list[RunResult]) -> dict:
     summary: dict = {"models": {}}
     models = sorted({r.model for r in results})
@@ -245,7 +250,8 @@ def compute_summary(results: list[RunResult]) -> dict:
  
         # 2 & 3: overall discriminative validity + reliability, using the RAW
         # (unrounded) average, not evaluator.py's rounded overall_score.
-        reliability, fixture_means = {}, {} # Reliability (stdev) and mean raw average score per fixture
+        reliability: dict[str, float | None] = {}
+        fixture_means: dict[str, float | None] = {} # Reliability (stdev) and mean raw average score per fixture
         for fixture_name in FIXTURE_CANDIDATES:
             scores = [
                 r.raw_average_score for r in successful
@@ -257,15 +263,16 @@ def compute_summary(results: list[RunResult]) -> dict:
         # Top-level (overall raw_average) check -- fixture_means/reliability
         # (computed just above) already give us real per-fixture stdevs, so
         # this gets the noise-band tolerance for free.
-        pairwise_discriminative_validity = check_order(fixture_means, GENERAL_ORDER, reliability)
+        pairwise_discriminative_validity = check_order(_drop_none(fixture_means), GENERAL_ORDER, _drop_none(reliability))
  
         # Per-dimension discriminative validity -- shows WHICH rubric dimensions
         # discriminate and which don't, using the dimension-appropriate order:
         # collaboration has its own chain (should NOT just track output volume),
         # the other four dimensions use GENERAL_ORDER.
-        dimension_breakdown = {}
+        dimension_breakdown: dict[str, dict[str, Any]] = {}
         for dim in DIMENSIONS:
-            dim_means, dim_stdevs = {}, {}
+            dim_means: dict[str, float | None] = {}
+            dim_stdevs: dict[str, float] = {}
             for fixture_name in FIXTURE_CANDIDATES:
                 dim_scores = [
                     r.rubric_scores[dim] for r in successful
@@ -278,7 +285,7 @@ def compute_summary(results: list[RunResult]) -> dict:
             dimension_breakdown[dim] = { # Store mean/stdev and pairwise discriminative validity for each dimension
                 "mean_score_by_fixture": dim_means,
                 "stdev_by_fixture": dim_stdevs,
-                "pairwise_discriminative_validity": check_order(dim_means, order, dim_stdevs),
+                "pairwise_discriminative_validity": check_order(_drop_none(dim_means), order, dim_stdevs),
             }
  
         # Kept as its own top-level key for backward compatibility with existing
@@ -315,7 +322,7 @@ def compute_summary(results: list[RunResult]) -> dict:
  
     # 4. Cross-model agreement: correlate each model pair's mean-score profile across fixtures
     if len(models) >= 2:
-        agreement = {}
+        agreement: dict[str, float | None] = {}
         for i, m1 in enumerate(models): # Compute Pearson correlation for each pair of models
             for m2 in models[i + 1:]: # Avoid double-counting pairs (m1, m2) and (m2, m1)
                 means1 = [summary["models"][m1]["mean_raw_average_score_by_fixture"][f] for f in FIXTURE_CANDIDATES]
