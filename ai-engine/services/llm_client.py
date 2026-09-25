@@ -5,8 +5,9 @@ import logging
 import os
 import time
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import PurePosixPath
-from typing import Any, Sequence
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -22,7 +23,11 @@ from prompts.templates import (
 )
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_NUM_CTX
-from schemas.rubrics_dimension_score import DimensionName, ModelOutput, RubricDimensionScore
+from schemas.rubrics_dimension_score import (
+    DimensionName,
+    ModelOutput,
+    RubricDimensionScore,
+)
 from schemas.sprint_feedback import SprintFeedback
 from services.audit_logger import write_audit_record
 from services.grounding import find_ungrounded_citations
