@@ -7,6 +7,8 @@ the RubricsScore Pydantic model) so the criteria can be read, reviewed, and
 versioned as a single unit instead of being buried next to unrelated model code.
 """
 
+from schemas.rubrics_dimension_score import DimensionName
+
 requirements = '''
     Evaluate the individual's performance against the Requirements dimension using the provided Jira/project data.
 
@@ -132,9 +134,9 @@ cicd_prompt = '''
     Output: Provide the score, a concise justification, and the specific CI/CD evidence supporting the score. Do not award credit for CI/CD practices that cannot be attributed to the individual.
     '''
 
-DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
+DIMENSIONS: list[DimensionName] = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
 
-DIMENTION_PROMPTS = {
+DIMENSION_PROMPTS: dict[DimensionName, str] = {
     "code_quality": code_quality_prompt,
     "testing": testing_prompt,
     "documentation": documentation_prompt,

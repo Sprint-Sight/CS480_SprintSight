@@ -5,13 +5,15 @@ import logging
 import os
 import time
 from collections import Counter
-from dotenv import load_dotenv
+from collections.abc import Sequence
 from pathlib import PurePosixPath
+from typing import Any
 from uuid import uuid4
 
 import httpx
 import instructor
 import mlflow
+from dotenv import load_dotenv
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
@@ -21,8 +23,11 @@ from prompts.templates import (
 )
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_NUM_CTX
-from schemas.rubrics_dimension_score import ModelOutput, RubricDimensionScore
-from schemas.sprint_assessment import SprintAssessment
+from schemas.rubrics_dimension_score import (
+    DimensionName,
+    ModelOutput,
+    RubricDimensionScore,
+)
 from schemas.sprint_feedback import SprintFeedback
 from services.audit_logger import write_audit_record
 from services.grounding import find_ungrounded_citations
@@ -61,32 +66,8 @@ OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 _INSTRUCTOR_MODES = {"json": instructor.Mode.JSON, "json_schema": instructor.Mode.JSON_SCHEMA}
 _STRUCTURED_OUTPUT_MODE = os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").strip().lower()
 
-CODE_DIMENSIONS = {"code_quality", "testing"}
-DOCUMENTATION_DIMENSIONS = {"documentation"}
-
 def _with_line_numbers(content: str) -> str:
     return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
-
-def _bundle_data_for_dimension(bundle: ArtifactBundle, dimension_name: str) -> str:
-    """Dimension-scoped view of the bundle -- keeps prompts smaller for
-    dimensions that don't need source content, and surfaces Java/README
-    content (with line numbers, for citation grounding) for the ones that do."""
-    payload: dict = {
-        "team_id": bundle.team_id,
-        "sprint_id": bundle.sprint_id,
-        "commits": [c.model_dump(mode="json") for c in bundle.commits],
-        "jira_tickets": [t.model_dump(mode="json") for t in bundle.jira_tickets],
-        "peer_evaluations": [p.model_dump(mode="json") for p in bundle.peer_evaluations],
-    }
-    if dimension_name in CODE_DIMENSIONS:
-        payload["code_files"] = [
-            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.code_files
-        ]
-    if dimension_name in DOCUMENTATION_DIMENSIONS:
-        payload["documents"] = [
-            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.documents
-        ]
-    return json.dumps(payload, indent=2, default=str)
 
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
@@ -128,7 +109,7 @@ def _dimension_bundle_data(bundle: ArtifactBundle, dimension_name: str) -> str:
         raise ValueError(f"Unknown rubric dimension: {dimension_name}")
 
     full_bundle = bundle.model_dump(mode="json")
-    bundle_data = {
+    bundle_data: dict[str, Any] = {
         "team_id": bundle.team_id,
         "sprint_id": bundle.sprint_id,
         "instructor_expectations": bundle.instructor_expectations,
@@ -202,10 +183,14 @@ def _compute_commit_facts(commits: list[dict]) -> str:
 
     lines = [
         "Computed facts (trust these over your own counting):",
-        f"- {len(commits)} commit(s) by {', '.join(authors) or 'unknown author(s)'} "
-        f"across {len(active_days)} active day(s): {', '.join(active_days) or 'unknown dates'}.",
-        f"- {lines_added_total} lines added, {lines_deleted_total} lines deleted in total "
-        f"({meaningful_lines_added} added lines are in non-{'/'.join(sorted(_LOW_SIGNAL_EXTENSIONS))} files).",
+        (
+            f"- {len(commits)} commit(s) by {', '.join(authors) or 'unknown author(s)'} "
+            f"across {len(active_days)} active day(s): {', '.join(active_days) or 'unknown dates'}."
+        ),
+        (
+            f"- {lines_added_total} lines added, {lines_deleted_total} lines deleted in total "
+            f"({meaningful_lines_added} added lines are in non-{'/'.join(sorted(_LOW_SIGNAL_EXTENSIONS))} files)."
+        ),
         f"- {generic_count} of {len(commits)} commit message(s) are generic/low-detail "
         f"(e.g. {', '.join(repr(m) for m in generic_examples) or 'none'})." if generic_count
         else f"- 0 of {len(commits)} commit message(s) are generic/low-detail.",
@@ -235,7 +220,7 @@ def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> in
 _NUM_CTX_FLOOR = int(os.getenv("LLM_NUM_CTX_FLOOR", "0")) or None
 
 
-def select_run_num_ctx(bundle: ArtifactBundle, model_name: str, dimension_names: list[str]) -> int | None:
+def select_run_num_ctx(bundle: ArtifactBundle, model_name: str, dimension_names: Sequence[str]) -> int | None:
     """
     Picks ONE num_ctx value to reuse across every `evaluate_dimension` call
     for this sprint's evaluation run. This must be computed ONCE per sprint
@@ -329,7 +314,7 @@ def create_llm_client():
 @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
 async def evaluate_dimension(
     bundle: ArtifactBundle,
-    dimension_name: str,
+    dimension_name: DimensionName,
     model_name: str,
     dimention_prompt,
     num_ctx: int | None = None,
@@ -526,7 +511,7 @@ async def check_ollama_health(model_name: str) -> dict:
             "model":  model_name,
             "error":  f"Cannot connect to Ollama at {tags_url}. Is it running?",
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - health check must report status, not raise
         return {
             "status": "error",
             "model":  model_name,
@@ -549,11 +534,10 @@ async def pull_model_if_missing(model_name: str) -> None:
     log.info("Pulling model '%s' — this may take several minutes...", model_name)
 
     try:
-        async with httpx.AsyncClient(timeout=1800.0) as client:   # 30 min timeout
-            async with client.stream("POST", pull_url, json={"name": model_name}) as resp:
-                async for line in resp.aiter_lines():
-                    if line:
-                        log.debug("Pull progress: %s", line)
+        async with httpx.AsyncClient(timeout=1800.0) as client, client.stream("POST", pull_url, json={"name": model_name}) as resp:   # 30 min timeout
+            async for line in resp.aiter_lines():
+                if line:
+                    log.debug("Pull progress: %s", line)
         log.info("Model '%s' downloaded successfully.", model_name)
     except Exception as e:
         log.error("Failed to pull model '%s': %s", model_name, e)

@@ -1,10 +1,10 @@
 import logging
-from typing import Optional
 
 from mlflow.genai import load_prompt, register_prompt, set_prompt_alias
 
-from prompts.dimension_criteria import DIMENSIONS, DIMENTION_PROMPTS
+from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from prompts.templates import render_dimension_prompt
+from schemas.rubrics_dimension_score import DimensionName
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ _BUNDLE_DATA_PLACEHOLDER = "{{ bundle_data }}"
 _COMPUTED_FACTS_PLACEHOLDER = "{{ computed_facts }}"
 
 
-def dimension_prompt_template(dimension_name: str) -> str:
+def dimension_prompt_template(dimension_name: DimensionName) -> str:
     """The exact prompt structure used at grading time for `dimension_name`
     (see prompts/templates.render_dimension_prompt), with bundle_data and
     computed_facts left as placeholders. Registered to the MLflow prompt
@@ -25,12 +25,12 @@ def dimension_prompt_template(dimension_name: str) -> str:
     registry downtime can't break grading."""
     return render_dimension_prompt(
         dimension_name,
-        DIMENTION_PROMPTS[dimension_name],
+        DIMENSION_PROMPTS[dimension_name],
         _BUNDLE_DATA_PLACEHOLDER,
         _COMPUTED_FACTS_PLACEHOLDER,
     )
 
-def register_dimension_prompt(dimension_name: str) -> None:
+def register_dimension_prompt(dimension_name: DimensionName) -> None:
     try:
         # Only registers a new version if the "production" alias doesn't
         # already point at this exact template, so repeated calls (e.g. once
@@ -41,7 +41,7 @@ def register_dimension_prompt(dimension_name: str) -> None:
             commit_message=f"Prompt for dimension '{dimension_name}' evaluation",
             tags={"dimension": dimension_name, "author": "SprintSight"},
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - translate any registry failure into a domain error
         raise RuntimeError(f"Failed to register prompt for dimension '{dimension_name}': {e}")
 
 def register_all_dimension_prompts() -> None:
@@ -60,7 +60,7 @@ def register_prompt_if_changed(
     template: str,
     commit_message: str,
     alias: str = "production",
-    tags: Optional[dict] = None,
+    tags: dict | None = None,
 ) -> None:
     """Register a new prompt version only when no version carries `alias` yet
     or the aliased version's template differs from `template`. Safe to call
@@ -69,7 +69,7 @@ def register_prompt_if_changed(
     registered again."""
     try:
         existing = load_prompt(f"prompts:/{name}@{alias}")
-    except Exception:
+    except Exception:  # noqa: BLE001 - alias/version not existing yet is expected, not exceptional
         existing = None
 
     if existing is not None and getattr(existing, "template", None) == template:
@@ -78,9 +78,9 @@ def register_prompt_if_changed(
     prompt = register_prompt(name=name, template=template, commit_message=commit_message, tags=tags)
     set_prompt_alias(name, alias, prompt.version)
 
-def load_dimension_prompt(dimension_name: str, alias: str = "production") -> str:
+def load_dimension_prompt(dimension_name: str, alias: str = "production") -> str | None:
     try:
         return load_prompt(f"prompts:/Evaluate_{dimension_name}@{alias}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - prompt lookup failure must not crash the caller
         print(f"Error loading prompt for dimension '{dimension_name}': {e}")
         return None  # Return None if prompt not found or any error occurs

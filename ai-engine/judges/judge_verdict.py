@@ -33,8 +33,9 @@ two integers are" or "check per-fixture rank order" adds LLM cost, latency,
 and its own error source for something arithmetic can do exactly.
 """
 
-from pydantic import BaseModel, Field, field_validator
 from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration"]
 

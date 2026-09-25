@@ -19,6 +19,7 @@ RubricDimensionScore from the schema module, so the schema module can't also
 import from llm_client.py.
 """
 from __future__ import annotations
+
 import json
 import re
 

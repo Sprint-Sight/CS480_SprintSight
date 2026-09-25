@@ -1,11 +1,22 @@
-import asyncio, logging, mlflow, time, os
+import asyncio
+import logging
+import os
+import time
+
+import mlflow
 from mlflow.entities import SpanType
-from schemas.artifact_bundle import ArtifactBundle
-from schemas.sprint_assessment import SprintAssessment
-from schemas.rubrics_score import RubricsScore, DIMENSIONS, DIMENTION_PROMPTS
-from schemas.rubrics_dimension_score import RubricDimensionScore
-from services.llm_client import evaluate_dimension, generate_sprint_feedback, select_run_num_ctx
+
 from llmops.mlflow_config import start_mlflow
+from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
+from schemas.artifact_bundle import ArtifactBundle
+from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
+from schemas.rubrics_score import RubricsScore
+from schemas.sprint_assessment import SprintAssessment
+from services.llm_client import (
+    evaluate_dimension,
+    generate_sprint_feedback,
+    select_run_num_ctx,
+)
 
 '''
 Receives a bundle, evaluates each rubric dimension serially, generates general
@@ -21,7 +32,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
     """
 
     # Start Mlflow experiment
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
     mlflow.set_experiment("SprintSight Evaluations")
      
     # if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
@@ -37,12 +48,12 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
     # Limit parallel requests to avoid overloading one local Ollama model.
     semaphore = asyncio.Semaphore(1)
 
-    async def _bounded_evaluate(dim):
+    async def _bounded_evaluate(dim: DimensionName) -> RubricDimensionScore:
         async with semaphore:
             dimension_start = time.perf_counter()
             log.info("Starting rubric dimension '%s'", dim)
             try:
-                result = await evaluate_dimension(bundle, dim, model_name, DIMENTION_PROMPTS[dim], num_ctx=run_num_ctx)
+                result = await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPTS[dim], num_ctx=run_num_ctx)
             except Exception:
                 log.exception(
                     "Rubric dimension '%s' failed after %.2f seconds.",
@@ -84,7 +95,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
         failed_dimensions = {}
 
         for dim, result in zip(DIMENSIONS, results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 failed_dimensions[dim] = str(result)
                 # Guarantee every dimension is present in the response: a
                 # missing dimension is worse than a clearly-flagged failed one.
@@ -107,7 +118,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str) -> SprintAsse
             else:
                 scores_by_dim[dim] = result
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - translate concurrent-task failure into a domain error
         # mlflow.set_tag("error", str(e))
         raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
     
