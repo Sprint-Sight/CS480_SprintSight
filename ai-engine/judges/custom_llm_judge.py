@@ -5,11 +5,11 @@ import mlflow
 from dotenv import load_dotenv
 from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
 from mlflow.genai.scorers import scorer
-from schemas.benchmark_registry import FIXTURES
 
 from judges.judge_verdict import JudgeVerdict
 from llmops.prompt_registry import register_prompt_if_changed
 from schemas.artifact_bundle import ArtifactBundle
+from schemas.benchmark_registry import FIXTURES
 from schemas.sprint_assessment import SprintAssessment
 from services.llm_client import create_llm_client
 
