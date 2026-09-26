@@ -7,7 +7,9 @@
 #SBATCH --partition=project          # UseMyInfoCommandToCheck
 #SBATCH --qos=cs480qos               # UseMyInfoCommandToCheck
 #SBATCH --job-name=sprintsight-ollama
-#SBATCH --output=%u.%j.ollama.out
+# Absolute path: %u.%j.ollama.out (relative) lands wherever `sbatch` was run from, not here.
+# Create the directory once: mkdir -p ~/slurm-logs
+#SBATCH --output=/common/home/projectgrps/CS480/CS480G2/slurm-logs/%u.%j.ollama.out
 
 set -e
 
