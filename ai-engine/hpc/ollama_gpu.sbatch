@@ -27,7 +27,7 @@ srun enroot start --rw \
   --env OLLAMA_HOST=0.0.0.0:11434 \
   --mount "$DATA_DIR:/root/.ollama" \
   --mount "$MODELS_DIR:/mnt/models" \
-  ollama bash -c '
+  ollama /bin/bash -c '
     set -e
     ollama serve &
     SERVE_PID=$!
