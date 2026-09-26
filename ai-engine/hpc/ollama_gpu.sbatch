@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1                 # Ollama needs the GPU; the rest of the stack stays local
 #SBATCH --time=08:00:00              # Raise this (or resubmit) for longer assessment sessions
 #SBATCH --partition=project          # UseMyInfoCommandToCheck
-#SBATCH --qos=project                # UseMyInfoCommandToCheck
+#SBATCH --qos=cs480qos               # UseMyInfoCommandToCheck
 #SBATCH --job-name=sprintsight-ollama
 #SBATCH --output=%u.%j.ollama.out
 

@@ -11,7 +11,7 @@
 set -e
 
 PARTITION="${PARTITION:-project}"   # change to your assigned partition (see `myinfo`)
-QOS="${QOS:-project}"               # change to your assigned qos (see `myinfo`)
+QOS="${QOS:-cs480qos}"               # change to your assigned qos (see `myinfo`)
 
 IMAGE_SQSH="ollama+ollama+latest.sqsh"
 
