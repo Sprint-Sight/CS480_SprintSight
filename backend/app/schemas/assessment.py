@@ -210,3 +210,14 @@ class AuditRecord(BaseModel):
     original_score: float
     new_score: float
     reason_comment: str
+
+
+class ActionAuditRecord(BaseModel):
+    audit_id: str
+    actor_id: str
+    actor_role: Literal["admin", "instructor", "student"]
+    action: str
+    target_type: str
+    target_id: str
+    details: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)

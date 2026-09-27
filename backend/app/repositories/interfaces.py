@@ -188,6 +188,12 @@ class AuditRepository(Protocol):
     def list_audits(self) -> list[AuditRecord]: ...
 
 
+class ActionAuditRepository(Protocol):
+    def save_action_audit(self, record: object) -> None: ...
+
+    def list_action_audits(self) -> list[object]: ...
+
+
 @dataclass
 class IngestionMetricBundle:
     course_id: str

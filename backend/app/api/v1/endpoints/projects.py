@@ -18,6 +18,7 @@ from app.dependencies.auth import (
 from app.core.credential_crypto import encrypt_secret
 from app.repositories.interfaces import AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.assessment import AssessmentReport
+from app.services.auditLogService.service import append_action_audit
 from app.schemas.auth import Role, UserResponse
 from app.schemas.projects import (
     CourseCreate,
@@ -131,6 +132,19 @@ def create_course(
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
     course = repository.create_course(payload.code, payload.name, payload.section, payload.year, payload.term, current_user.id)
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="create_course",
+        target_type="course",
+        target_id=course.id,
+        details={
+            "code": course.code,
+            "section": course.section,
+            "year": course.year,
+            "term": course.term,
+        },
+    )
     return CourseResponse(
         id=course.id,
         code=course.code,
@@ -214,6 +228,14 @@ def update_course(
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
     updated = repository.update_course(course_id, code, payload.name or course.name, section, year, term)
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="update_course",
+        target_type="course",
+        target_id=course_id,
+        details={"code": code, "section": section, "year": year, "term": term},
+    )
     return CourseResponse(
         id=updated.id,
         code=updated.code,
@@ -236,6 +258,14 @@ def delete_course(
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an assigned instructor can manage this course.")
     repository.delete_course(course_id)
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="delete_course",
+        target_type="course",
+        target_id=course_id,
+        details={"code": course.code, "section": course.section, "year": course.year, "term": course.term},
+    )
     return CourseResponse(
         id=course.id,
         code=course.code,
@@ -423,6 +453,14 @@ def create_project(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A student is already assigned to another project in this course.") from exc
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name or project parameters conflict with existing records.") from exc
 
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="create_project",
+        target_type="project",
+        target_id=project.id,
+        details={"team_name": project.team_name, "course_id": course_id},
+    )
     return _project_response(project, repository, users)
 
 
@@ -624,7 +662,48 @@ def update_project(
     except UniqueViolation as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project fields conflict with an existing project.") from exc
 
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="update_project",
+        target_type="project",
+        target_id=project_id,
+        details={
+            "project_name": project_name,
+            "team_name": team_name,
+            "course_id": project.course_id,
+            "jira_project_key": jira_key,
+        },
+    )
     return _project_response(updated, repository, users)
+
+
+@router.delete("/projects/{project_id}", response_model=ProjectResponse)
+def delete_project(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> ProjectResponse:
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if not _can_manage_course(current_user, project.course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    deleted = repository.delete_project(project_id)
+    if deleted is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="delete_project",
+        target_type="project",
+        target_id=project_id,
+        details={"team_name": project.team_name, "course_id": project.course_id},
+    )
+    return _project_response(project, repository, users)
 
 
 @router.post("/projects/{project_id}/members/{user_id}", response_model=ProjectResponse)
@@ -656,6 +735,14 @@ def add_member(
             status_code=status.HTTP_409_CONFLICT, detail="Student is already assigned to a project group in this course."
         ) from exc
 
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="add_project_member",
+        target_type="project_member",
+        target_id=user_id,
+        details={"project_id": project_id, "course_id": project.course_id},
+    )
     return _project_response(project, repository, users)
 
 
@@ -676,4 +763,12 @@ def remove_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not a member of this project.")
 
     repository.set_members(project_id, [m_id for m_id in current_members if m_id != user_id])
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="remove_project_member",
+        target_type="project_member",
+        target_id=user_id,
+        details={"project_id": project_id, "course_id": project.course_id},
+    )
     return _project_response(project, repository, users)  

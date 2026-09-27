@@ -19,7 +19,17 @@ from app.repositories.interfaces import (
     ProjectRecord,
     ProjectRepository,
 )
-from app.schemas.assessment import AssessmentJobEvent, AssessmentJobRecord, AssessmentReport, AuditRecord, JiraCleanedSnapshot, ManualTextPayload, OverrideResponse
+from app.schemas.assessment import (
+    ActionAuditRecord,
+    AssessRequest,
+    AssessmentJobEvent,
+    AssessmentJobRecord,
+    AssessmentReport,
+    AuditRecord,
+    JiraCleanedSnapshot,
+    ManualTextPayload,
+    OverrideResponse,
+)
 from app.schemas.auth import Role
 
 
@@ -381,6 +391,17 @@ class InMemoryAuditRepository(AuditRepository):
         return list(self._audits)
 
 
+class InMemoryActionAuditRepository:
+    def __init__(self) -> None:
+        self._audit_actions: list[ActionAuditRecord] = []
+
+    def save_action_audit(self, record: ActionAuditRecord) -> None:
+        self._audit_actions.append(record)
+
+    def list_action_audits(self) -> list[ActionAuditRecord]:
+        return list(self._audit_actions)
+
+
 class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
     def __init__(self) -> None:
         self._runs: dict[str, JiraIngestionRunRecord] = {}
@@ -469,6 +490,7 @@ manual_text_repo = InMemoryManualTextRepository()
 assessment_repo = InMemoryAssessmentRepository()
 overrides_repo = InMemoryOverrideRepository()
 audit_repo = InMemoryAuditRepository()
+audit_action_repo = InMemoryActionAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
 projects_repo = InMemoryProjectRepository()
 jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
