@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
 from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 # Keys the model has been observed using instead of "identifier"/"reason" —
 # including literally copying the prompt's own format description as key
@@ -10,6 +11,12 @@ from typing import Literal
 # was being classified as the identifier before the reason check ever ran.
 _IDENTIFIER_KEY_HINTS = ("identifier", "sha", "commit", "ticket", "citation")
 _REASON_KEY_HINTS = ("reason", "sentence", "explan", "justif", "why", "evidence")
+
+# Shared across schemas/rubrics_score.py, prompts/dimension_criteria.py, and
+# services/llm_client.py so a rubric dimension name is always one of these
+# six values wherever it's typed, instead of a plain (unchecked) str.
+DimensionName = Literal["code_quality", "testing", "documentation",
+                         "requirements", "collaboration", "cicd"]
 
 
 class EvidenceCitation(BaseModel):
@@ -84,9 +91,12 @@ class RubricDimensionScore(ModelOutput):
     never sees: `dimension` (assigned in code from the dimension that was
     requested) and `evaluation_failed` (set only by evaluator.py's fallback
     path, to guarantee every dimension is present even after a failure)."""
-    dimension: Literal["code_quality", "testing", "documentation",
-                        "requirements", "collaboration", "cicd"]
+    dimension: DimensionName
     # Set only by evaluator.py's fallback path, never by the model itself:
     # marks a synthesized placeholder used to guarantee all rubric dimensions are
     # always present, so callers can still distinguish it from a real score.
     evaluation_failed: bool = False
+    # Human-curated only (e.g. schemas/benchmark.py's gold reference data) --
+    # never asked of the model, same reasoning as ModelOutput's docstring above.
+    strengths: list[str] = Field(default_factory=list)
+    areas_for_improvement: list[str] = Field(default_factory=list)

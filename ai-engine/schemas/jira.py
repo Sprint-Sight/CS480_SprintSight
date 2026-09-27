@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
 from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
 
 class JiraTicket(BaseModel): # Jira real API returns id & key
     ticket_id: str = Field(description="e.g. SPRINT-101")
@@ -10,16 +12,17 @@ class JiraTicket(BaseModel): # Jira real API returns id & key
         description="Match these exactly to your own Jira board's column names once you set it up"
     )
     timestamp: datetime | None = Field(
+        default=None,
         description="When this ticket's current status was last set -- mirrors CommitInfo's timestamp field"
     )
     issue_type: Literal["Bug", "Feature", "Story", "Task", "Epic", "Sub-task"] | None = Field(
         description="Type of Jira ticket"
     )
-    story_points: Optional[int] = Field(
+    story_points: float | None = Field(
         default=None, ge=0,
         description="None means not estimated — that's a planning-quality signal, not a value to guess at"
     )
-    sprint_id: Optional[str] = Field(
+    sprint_id: str | None = Field(
         default=None,
         description="Sprint this ticket is currently assigned to. None for backlog items not yet pulled into a sprint."
     )

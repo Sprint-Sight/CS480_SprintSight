@@ -1,12 +1,17 @@
-import os, mlflow, asyncio
+import asyncio
+import os
+
+import mlflow
 from dotenv import load_dotenv
+from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
+from mlflow.genai.scorers import scorer
+
 from judges.judge_verdict import JudgeVerdict
+from llmops.prompt_registry import register_prompt_if_changed
+from schemas.artifact_bundle import ArtifactBundle
 from schemas.benchmark_registry import FIXTURES
 from schemas.sprint_assessment import SprintAssessment
-from schemas.artifact_bundle import ArtifactBundle
 from services.llm_client import create_llm_client
-from mlflow.genai.scorers import scorer
-from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -48,13 +53,23 @@ Return your JudgeVerdict now.
 PROMPT_NAME, PROMPT_ALIAS = "SprintSight_Judge_Grounding_Actionability", "production"
 
 def ensure_judge_prompt_registered() -> None:
-    prompt = mlflow.genai.register_prompt(
+    # prompt = mlflow.genai.register_prompt(
+    #     name=PROMPT_NAME,
+    #     template=JUDGE_USER_PROMPT_TEMPLATE,
+    #     commit_message="SprintSight LLM-judge prompt (grounding + recommendation actionability)",
+    #     tags={"author": "SprintSight", "component": "llm-judge"},
+    # )
+    # mlflow.genai.set_prompt_alias(PROMPT_NAME, PROMPT_ALIAS, prompt.version)
+    # Idempotent: skips re-registering when "production" already points at
+    # this exact template, so repeated calls (e.g. once per judge run) don't
+    # clutter the registry with identical versions.
+    register_prompt_if_changed(
         name=PROMPT_NAME,
         template=JUDGE_USER_PROMPT_TEMPLATE,
         commit_message="SprintSight LLM-judge prompt (grounding + recommendation actionability)",
+        alias=PROMPT_ALIAS,
         tags={"author": "SprintSight", "component": "llm-judge"},
     )
-    mlflow.genai.set_prompt_alias(PROMPT_NAME, PROMPT_ALIAS, prompt.version)
 
 @mlflow.trace(name="LLM_Judge_Verdict", span_type=SpanType.LLM)
 async def run_judge(
@@ -65,6 +80,7 @@ async def run_judge(
     judge_model: str,
 ) -> JudgeVerdict:
     client = create_llm_client()
+    ensure_judge_prompt_registered()  # Guarantees the "production" alias exists before loading it below.
     loaded = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@{PROMPT_ALIAS}")
     filled_user_prompt = loaded.format(
         candidate_model_name=candidate_model_name,
@@ -103,7 +119,7 @@ def llm_judge_grounding_and_actionability(inputs: dict, outputs: dict, expectati
             gold=SprintAssessment(**expectations["gold"]),
             judge_model=DEFAULT_JUDGE_MODEL,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
         return [Feedback(name="citation_hallucination_rate", error=e, rationale=f"LLM judge call failed: {e}", source=judge_source)]
 
     return [

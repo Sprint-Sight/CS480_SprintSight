@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
 from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
 
 # LLM can see if commit touched readme file or test_auth without having to rely soley on the git commit message.
 class FileDiff(BaseModel):

@@ -1,8 +1,8 @@
-from typing import Optional
 from pydantic import BaseModel, Field, computed_field
-from schemas.rubrics_dimension_score import RubricDimensionScore
+
 from schemas.member_contribution import MemberContribution
 from schemas.rubrics_score import RubricsScore
+
 
 class SprintAssessment(BaseModel):
     sprint_id: str
@@ -20,7 +20,7 @@ class SprintAssessment(BaseModel):
     key_recommendations: list[str]
     # failed_dimensions: list[str] = Field(default_factory=list) REPLACED W THE @property BELOW
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def failed_dimensions(self) -> list[str]: # computes from the rubric_scores attribute
         return self.rubric_scores.failed_dimensions

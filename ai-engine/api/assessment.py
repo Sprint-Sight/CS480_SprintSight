@@ -7,21 +7,25 @@ Gets back SprintAssessment object from evaluator, which FastAPI serializes to JS
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, status, Query, HTTPException
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
+from schemas.modelname import ModelName
 from schemas.peer_evaluation import PeerEvaluation
 from schemas.sprint_assessment import SprintAssessment
-
 from services.evaluator import evaluate_sprint
 
 log = logging.getLogger("sprintsight.router.assessment")
+
+# Bundle contents can be large and may include student data, so printing is opt-in.
+LOG_BUNDLE_DISPLAY = os.getenv("LOG_BUNDLE_DISPLAY", "false").strip().lower() in ("1", "true", "yes")
 
 router = APIRouter( # Create router (defines path group)
     prefix="/assess",
@@ -58,6 +62,7 @@ class BackendAssessmentPayload(BaseModel):
 async def assess_backend_data_endpoint(
     payload: BackendAssessmentPayload,
     modelname: ModelName = Query(..., description="Select the model to use for assessment"),
+    #modelname: Annotated[ModelName, Query(description="Select the model to use for assessment")],
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
     try:
@@ -71,8 +76,9 @@ async def assess_backend_data_endpoint(
             artifact_metrics=payload.artifact_metrics,
             instructor_expectations=payload.instructor_expectations,
         )
-        print("\nBundle display: ", bundle)
-        print()
+        if LOG_BUNDLE_DISPLAY:
+            print("\nBundle display: ", bundle)
+            print()
         assessment = await evaluate_sprint(bundle, modelname)
         return assessment
     except Exception as exc:

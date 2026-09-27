@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class ModelName(str, Enum):
     SPRINTSIGHT_GRADER = "sprintsight-grader"
     SPRINTSIGHT_LLAMA = "sprintsight-llama"
