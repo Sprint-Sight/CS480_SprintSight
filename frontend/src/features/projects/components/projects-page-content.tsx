@@ -10,16 +10,10 @@ import { ProjectModal } from "@/features/projects/components/project-modal";
 import { RosterModal } from "@/features/projects/components/roster-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
-import { PROJECTS } from "@/features/projects/data";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
-const sprintOptions = [
-  "All sprints",
-  ...Array.from(new Set(PROJECTS.flatMap((project) => project.sprints.map((sprint) => sprint.name)))),
-];
-const moduleOptions = ["All modules", ...Array.from(new Set(PROJECTS.map((project) => project.module)))];
 const sortOptions = [
   { value: "name-asc", label: "Name (A-Z)" },
   { value: "name-desc", label: "Name (Z-A)" },
@@ -64,6 +58,8 @@ export default function ProjectsPageContent() {
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
   const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string }>>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
+  const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
 
   const [projectForm, setProjectForm] = useState<ProjectFormValues>({
     project_name: "",

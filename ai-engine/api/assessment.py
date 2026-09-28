@@ -7,24 +7,25 @@ Gets back SprintAssessment object from evaluator, which FastAPI serializes to JS
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, status, Query, HTTPException
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
-from schemas.peer_evaluation import PeerEvaluation
 from schemas.modelname import ModelName
-from schemas.teamtype import TeamType
+from schemas.peer_evaluation import PeerEvaluation
 from schemas.sprint_assessment import SprintAssessment
-from schemas.fixtures import high_performing_team, struggling_team, good_collab_low_output_team, lone_contributor_poor_outcome_team, imbalanced_high_output_team
-
 from services.evaluator import evaluate_sprint
 
 log = logging.getLogger("sprintsight.router.assessment")
+
+# Bundle contents can be large and may include student data, so printing is opt-in.
+LOG_BUNDLE_DISPLAY = os.getenv("LOG_BUNDLE_DISPLAY", "false").strip().lower() in ("1", "true", "yes")
 
 router = APIRouter( # Create router (defines path group)
     prefix="/assess",
@@ -57,33 +58,10 @@ class BackendAssessmentPayload(BaseModel):
     instructor_expectations: str = "No instructor guidance provided."
 
 
-team_fixtures = {
-    "high_performing_team": high_performing_team,
-    "struggling_team": struggling_team,
-    "good_collab_low_output_team": good_collab_low_output_team,
-    "lone_contributor_poor_outcome_team": lone_contributor_poor_outcome_team,
-    "imbalanced_high_output_team": imbalanced_high_output_team
-}
-
-
-@router.post("/sprint", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
-async def assess_sprint_endpoint(
-    key: TeamType = Query(..., description="Select the team type to assess"), 
-    modelname: ModelName = Query(..., description="Select the model to use for assessment")
-):
-
-    teamtype = team_fixtures.get(key.value)
-
-    try:
-        return await evaluate_sprint(teamtype, modelname.value, experiment_name="Sprintsight evaluation")
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
     payload: BackendAssessmentPayload,
-    modelname: str = Query(..., description="Select the model to use for assessment"),
+    modelname: Annotated[ModelName, Query(description="Select the model to use for assessment")],
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
     try:
@@ -93,7 +71,13 @@ async def assess_backend_data_endpoint(
             commits=payload.commits,
             jira_tickets=payload.jira_tickets,
             peer_evaluations=payload.peer_evaluations,
+            collaboration_metrics=payload.collaboration_metrics.model_dump(),
+            artifact_metrics=payload.artifact_metrics,
+            instructor_expectations=payload.instructor_expectations,
         )
+        if LOG_BUNDLE_DISPLAY:
+            print("\nBundle display: ", bundle)
+            print()
         assessment = await evaluate_sprint(bundle, modelname)
         return assessment
     except Exception as exc:

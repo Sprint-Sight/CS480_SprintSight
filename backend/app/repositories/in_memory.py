@@ -13,6 +13,8 @@ from app.repositories.interfaces import (
     ManualTextRepository,
     MetricsRepository,
     OverrideRepository,
+    RubricWeightsRecord,
+    RubricWeightsRepository,
     UserRecord,
     UserRepository,
     CourseRecord,
@@ -239,6 +241,27 @@ class InMemoryManualTextRepository(ManualTextRepository):
 
     def get(self, course_id: str, project_id: str, sprint_id: str) -> str | None:
         return self._store.get((course_id, project_id, sprint_id))
+
+
+class InMemoryRubricWeightsRepository(RubricWeightsRepository):
+    def __init__(self) -> None:
+        self._weights: dict[str, RubricWeightsRecord] = {}
+
+    def get_weights(self, course_id: str) -> RubricWeightsRecord | None:
+        return self._weights.get(course_id)
+
+    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord:
+        record = RubricWeightsRecord(
+            course_id=course_id,
+            weights=dict(weights),
+            updated_by=updated_by,
+            updated_at=datetime.now(timezone.utc),
+        )
+        self._weights[course_id] = record
+        return record
+
+
+rubric_weights_repo = InMemoryRubricWeightsRepository()
 
 
 class InMemoryDocumentRepository(DocumentRepository):
