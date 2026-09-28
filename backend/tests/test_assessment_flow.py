@@ -10,6 +10,8 @@ from app.repositories.interfaces import ProjectRecord
 from app.services.assessmentService.service import convert_ai_result_to_assessment_report
 from app.services.middleManService.service import send_assessment_to_ai_engine
 from datetime import datetime, timezone
+from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
+from app.repositories.in_memory import assessment_repo
 
 
 client = TestClient(app)
@@ -118,6 +120,17 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         [],
     )
 
+
+    monkeypatch.setattr(
+        "app.services.assessmentService.service.send_assessment_to_ai_engine",
+        lambda *args, **kwargs: {
+            "overall_score": 8,
+            "executive_summary": "Strong sprint delivery.",
+            "key_recommendations": ["Improve test coverage."],
+            "member_contributions": [],
+        },
+    )
+
     token = faculty_token()
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -126,9 +139,27 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         json={"course_id": "cs480", "project_id": "proj-a", "sprint_id": "sp1"},
         headers=headers,
     )
-    assert assess_response.status_code == 200
+    assert assess_response.status_code == 202
 
-    report_id = assess_response.json()["report"]["report_id"]
+    report_id = "rpt-audit-1"
+    assessment_repo.save_report(
+        AssessmentReport(
+            report_id=report_id,
+            model_name="mock-rubric-v1",
+            mode="mock",
+            course_id="cs480",
+            project_id="proj-a",
+            sprint_id="sp1",
+            generated_at=datetime.now(timezone.utc),
+            rubric_weights={"delivery": 0.35, "collaboration": 0.30, "quality": 0.20, "documentation": 0.15},
+            team_score=TeamScore(score=80.0, rationale="Initial team assessment."),
+            individual_scores=[StudentScore(student_id="stu-001", score=80.0, rationale="Initial contribution.")],
+            recommendations=["Increase unit testing."],
+            rubric_scores={},
+            strengths=["Delivery"],
+            weaknesses=["Testing"],
+        )
+    )
 
     override_response = client.post(
         "/api/v1/assessments/override",

@@ -3,6 +3,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.repositories.in_memory import assessment_repo
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
+from datetime import datetime, timezone
+from app.dependencies.auth import get_assessment_repository
 
 
 client = TestClient(app)
@@ -129,6 +131,8 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
         strengths=["Delivery"],
         weaknesses=["Documentation"],
     )
+    
+    app.dependency_overrides[get_assessment_repository]().save_report(report)
     assessment_repo.save_report(report)
 
     courses_response = client.get("/api/v1/students/courses", headers=student_headers)
