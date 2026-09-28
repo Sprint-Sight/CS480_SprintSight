@@ -216,12 +216,29 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     return teams.find((t) => t.id === selectedTeamId) || null;
   }, [teams, selectedTeamId]);
 
+  const teamsInSelectedSection = useMemo(
+    () => teams.filter((team) => team.courseId === selectedSectionId),
+    [selectedSectionId, teams],
+  );
+
   useEffect(() => {
     const selectedTeam = teams.find((team) => team.id === selectedTeamId);
     if (selectedTeam) {
       writeIngestionState({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
     }
   }, [selectedTeamId, teams]);
+
+  useEffect(() => {
+    const selectedTeam = teams.find((team) => team.id === selectedTeamId && team.courseId === selectedSectionId);
+    if (selectedTeam) return;
+
+    const firstTeamInSection = teams.find((team) => team.courseId === selectedSectionId);
+    setSelectedTeamId(firstTeamInSection?.id || "");
+    writeIngestionState({
+      selectedProjectId: firstTeamInSection?.id || "",
+      selectedCourseId: selectedSectionId,
+    });
+  }, [selectedSectionId, selectedTeamId, teams]);
 
   useEffect(() => {
     if (isAuthorized && role === "instructor") writeIngestionState({ selectedSprintId });
@@ -425,14 +442,14 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                       )}
 
                       {/* Team Select */}
-                      {teams.length > 0 && (
+                      {teamsInSelectedSection.length > 0 && (
                         <div className="relative">
                           <select
                             value={selectedTeamId}
                             onChange={(e) => setSelectedTeamId(e.target.value)}
                             className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                           >
-                            {teams.map((team) => (
+                            {teamsInSelectedSection.map((team) => (
                               <option key={team.id} value={team.id}>
                                 {team.name}
                               </option>

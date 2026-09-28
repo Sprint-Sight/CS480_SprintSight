@@ -2,25 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { getCollaborationDataset, getCollaborationProjectOptions, getContributionDataset } from "@/features/collaboration/data";
 import type { CollaborationDataset, HeatmapRow, MemberCommitMetric, WorkloadSlice } from "@/features/collaboration/types";
 import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
 
 type LiveCollaboration = Pick<CollaborationDataset, "commitsByMember" | "workloadDistribution" | "participationHeatmap" | "riskIndicators">;
 
 export function useCollaborationData() {
-  const fallbackProjectOptions = useMemo(() => getCollaborationProjectOptions(), []);
-  const projectOptions = useMemo(() => {
-    const persistedProjectId = readIngestionState().selectedProjectId;
-    if (!persistedProjectId || fallbackProjectOptions.some((option) => option.id === persistedProjectId)) return fallbackProjectOptions;
-    return [{ id: persistedProjectId, label: "Live backend project" }, ...fallbackProjectOptions];
-  }, [fallbackProjectOptions]);
-  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || projectOptions[0]?.id || "");
+  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
   const [ingestionVersion, setIngestionVersion] = useState(0);
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
 
-  const collaborationData = useMemo(() => getCollaborationDataset(selectedProjectId), [selectedProjectId]);
-  const contributionData = useMemo(() => getContributionDataset(selectedProjectId), [selectedProjectId]);
   const liveIngestion = useMemo(() => {
     void ingestionVersion;
     return getProjectIngestion(selectedProjectId);
@@ -51,8 +42,9 @@ export function useCollaborationData() {
     const participationHeatmap: HeatmapRow[] = Array.from(heatmapByMember.entries()).map(([member, values]) => ({ member, week1: values[0], week2: values[1], week3: values[2], week4: values[3] }));
     const totalCommits = commitsByMember.reduce((sum, item) => sum + item.commits, 0);
     const balanceScore = commitsByMember.length ? Math.round((1 - (Math.max(...commitsByMember.map((item) => item.commits)) - Math.min(...commitsByMember.map((item) => item.commits))) / Math.max(1, totalCommits)) * 100) : 0;
-    return { commitsByMember, workloadDistribution, participationHeatmap, riskIndicators: [{ team: "Current project", risk: balanceScore >= 70 ? "Low" : balanceScore >= 45 ? "Medium" : "High", summary: `${commitsByMember.length} Git authors across ${totalCommits} commits`, balanceScore }] };
+    return { commitsByMember, workloadDistribution, participationHeatmap, riskIndicators: [{ team: "Selected project", risk: balanceScore >= 70 ? "Low" : balanceScore >= 45 ? "Medium" : "High", summary: `${commitsByMember.length} Git authors across ${totalCommits} commits`, balanceScore }] };
   }, [liveIngestion]);
+  const collaborationData = useMemo<CollaborationDataset>(() => ({ projectId: selectedProjectId, projectLabel: selectedProjectId || "No project selected", subtitle: liveCollaborationData ? "Analytics derived from captured Git and Jira data." : "No collaboration data is available for the selected project.", commitsByMember: liveCollaborationData?.commitsByMember || [], workloadDistribution: liveCollaborationData?.workloadDistribution || [], participationHeatmap: liveCollaborationData?.participationHeatmap || [], riskIndicators: liveCollaborationData?.riskIndicators || [] }), [liveCollaborationData, selectedProjectId]);
 
   useEffect(() => setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null) ?? "student"), []);
   useEffect(() => {
@@ -61,5 +53,5 @@ export function useCollaborationData() {
     return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
   }, []);
 
-  return { role, projectOptions, selectedProjectId, setSelectedProjectId, collaborationData: liveCollaborationData ? { ...collaborationData, ...liveCollaborationData } : collaborationData, contributionData, liveIngestion };
+  return { role, selectedProjectId, setSelectedProjectId, collaborationData, liveIngestion };
 }

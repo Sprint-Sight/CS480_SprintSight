@@ -267,6 +267,15 @@ CREATE TABLE IF NOT EXISTS assessment_reports (
 CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint
     ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC);
 
+-- Per-course rubric dimension weights, set by faculty; falls back to the
+-- backend's hardcoded equal-weight default when a course has no row here.
+CREATE TABLE IF NOT EXISTS rubric_weight_configs (
+    course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
+    weights JSONB NOT NULL,
+    updated_by UUID NOT NULL REFERENCES users(user_id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- =============================================================
 -- 3. LOCAL GIT INGESTION EVIDENCE
 -- One run represents one project/sprint ingestion and is replaced

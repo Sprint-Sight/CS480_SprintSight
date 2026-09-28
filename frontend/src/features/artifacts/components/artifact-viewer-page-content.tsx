@@ -12,13 +12,13 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { getArtifactDataset, getArtifactProjectOptions } from "@/features/artifacts/data";
-import { API_BASE_URL, apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
-import { getProjectGitMetrics, getProjectIngestion, readIngestionState, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
+import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
+import { getProjectGitMetrics, getProjectIngestion, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
+import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "github", label: "GitHub", icon: FolderGit2 },
@@ -53,13 +53,6 @@ type BackendDocument = {
 };
 
 type DocumentUploadResponse = { documents: BackendDocument[] };
-
-type ProjectOption = {
-  id: string;
-  courseId?: string;
-  jiraProjectKey?: string | null;
-  label: string;
-};
 
 type FileDiff = {
   filename: string;
@@ -167,18 +160,13 @@ function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
 }
 
 export default function ArtifactViewerPageContent() {
-  const fallbackProjectOptions = useMemo(() => getArtifactProjectOptions(), []);
-  const [projectOptions, setProjectOptions] = useState<ProjectOption[]>(fallbackProjectOptions);
-  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || fallbackProjectOptions[0]?.id || "");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
   
   // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
   const [fullName, setFullName] = useState<string>("");
-  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
-  const [projectLoadError, setProjectLoadError] = useState("");
+  const { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
 
-  const dataset = useMemo(() => getArtifactDataset(selectedProjectId), [selectedProjectId]);
   
   // Local state for documents to allow instant UI updates upon upload
   const [localDocuments, setLocalDocuments] = useState<DocumentArtifact[]>([]);
@@ -200,17 +188,12 @@ export default function ArtifactViewerPageContent() {
   const [gitRuns, setGitRuns] = useState<RepoIngestionData[]>([]);
 
   const sourceRows = useMemo(() => {
-    const sources = [...dataset.sources];
-    const replace = (source: "GitHub" | "Jira" | "Documents", records: number, lastSyncedAt: string, parserStatus: "Healthy" | "Warning") => {
-      const index = sources.findIndex((item) => item.source === source);
-      if (index >= 0) sources[index] = { ...sources[index], records, lastSyncedAt, parserStatus };
-    };
-
-    if (gitMetrics) replace("GitHub", gitMetrics.pagination?.total ?? gitMetrics.commits.length, new Date(gitMetrics.captured_at).toLocaleString(), "Healthy");
-    if (jiraSnapshot) replace("Jira", jiraSnapshot.tickets.length, new Date(jiraSnapshot.captured_at).toLocaleString(), "Healthy");
-    if (isUuid(selectedProjectId)) replace("Documents", localDocuments.length, new Date().toLocaleString(), "Healthy");
+    const sources = [];
+    if (gitMetrics) sources.push({ source: "GitHub", records: gitMetrics.pagination?.total ?? gitMetrics.commits.length, lastSyncedAt: new Date(gitMetrics.captured_at).toLocaleString(), parserStatus: "Healthy", evaluationUsage: "Code quality, ownership, delivery cadence" });
+    if (jiraSnapshot) sources.push({ source: "Jira", records: jiraSnapshot.tickets.length, lastSyncedAt: new Date(jiraSnapshot.captured_at).toLocaleString(), parserStatus: "Healthy", evaluationUsage: "Task completion, planning reliability" });
+    if (isUuid(selectedProjectId) && localDocuments.length > 0) sources.push({ source: "Documents", records: localDocuments.length, lastSyncedAt: "Available", parserStatus: "Healthy", evaluationUsage: "Evidence quality, documentation completeness" });
     return sources;
-  }, [dataset.sources, gitMetrics, jiraSnapshot, localDocuments.length, selectedProjectId]);
+  }, [gitMetrics, jiraSnapshot, localDocuments.length, selectedProjectId]);
 
   // Initialize role, name, and local documents on mount/dataset change
   useEffect(() => {
@@ -222,48 +205,6 @@ export default function ArtifactViewerPageContent() {
       setFullName(savedName);
     }
   }, []);
-
-  useEffect(() => {
-    if (role !== "instructor") return;
-
-    async function loadBackendProjects() {
-      setIsLoadingProjects(true);
-      setProjectLoadError("");
-      try {
-        const courses = await apiRequest<Array<{ id: string }>>("/courses");
-        const projectGroups = await Promise.all(
-          courses.map(async (course) => ({
-            courseId: course.id,
-            projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string; jira_project_key: string | null }>>(`/courses/${course.id}/projects`),
-          }))
-        );
-        const options = projectGroups.flatMap(({ courseId, projects }) => projects.map((project) => ({
-          id: project.id,
-          courseId,
-          jiraProjectKey: project.jira_project_key,
-          label: `${project.team_name} - ${project.project_name}`,
-        })));
-        if (options.length > 0) {
-          setProjectOptions(options);
-          const persistedProjectId = readIngestionState().selectedProjectId;
-          setSelectedProjectId(
-            persistedProjectId && options.some((option) => option.id === persistedProjectId)
-              ? persistedProjectId
-              : options[0].id,
-          );
-        } else {
-          setProjectLoadError("No backend projects are available for this instructor.");
-        }
-      } catch (error) {
-        console.error("Failed to load artifact projects:", error);
-        setProjectLoadError("Could not load backend projects. Check the instructor session and API connection.");
-      } finally {
-        setIsLoadingProjects(false);
-      }
-    }
-
-    loadBackendProjects();
-  }, [role]);
 
   const selectedBackendProject = projectOptions.find(
     (project) => project.id === selectedProjectId && isUuid(project.id) && Boolean(project.courseId),
@@ -301,7 +242,7 @@ export default function ArtifactViewerPageContent() {
     async function loadDocuments() {
       setDocumentError("");
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
-        setLocalDocuments(dataset.documents);
+        setLocalDocuments([]);
         return;
       }
 
@@ -319,7 +260,7 @@ export default function ArtifactViewerPageContent() {
     }
 
     loadDocuments();
-  }, [dataset, selectedProjectId]);
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!isUuid(selectedProjectId)) {
@@ -554,17 +495,9 @@ export default function ArtifactViewerPageContent() {
 
         <div className="w-full max-w-sm">
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Project context</label>
-          <select
-            value={selectedProjectId}
-            onChange={(event) => setSelectedProjectId(event.target.value)}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-100 transition focus:border-blue-300 focus:ring-2"
-          >
-            {projectOptions.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+            {isLoadingProjects ? "Loading selected project..." : projectOptions.find((option) => option.id === selectedProjectId)?.label || "No project selected"}
+          </div>
         </div>
       </div>
 
@@ -643,21 +576,7 @@ export default function ArtifactViewerPageContent() {
                   </article>
                 ))}
               </>
-            ) : (
-              dataset.github.map((entry) => (
-                <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-semibold text-slate-900">{entry.title}</p>
-                      <p className="mt-1 text-sm text-slate-500">{entry.author} - {entry.date} - {entry.ref}</p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${entry.type === "pr" ? "bg-violet-50 text-violet-700" : "bg-blue-50 text-blue-700"}`}>
-                      {entry.type === "pr" ? "PR" : "Commit"}
-                    </span>
-                  </div>
-                </article>
-              ))
-            )}
+            ) : <p className="text-sm text-slate-500">No Git data is available for the selected project and sprint.</p>}
           </>
         )}
 
@@ -707,19 +626,7 @@ export default function ArtifactViewerPageContent() {
                   </div>
                 </article>
               ))
-            ) : (
-              dataset.jira.map((task) => (
-                <article key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-semibold text-slate-900">{task.key}: {task.title}</p>
-                      <p className="mt-1 text-sm text-slate-500">{task.assignee} - {task.sprint} - {task.points} pts</p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPill(task.status)}`}>{task.status}</span>
-                  </div>
-                </article>
-              ))
-            )}
+            ) : <p className="text-sm text-slate-500">No Jira data is available for the selected project and sprint.</p>}
           </>
         )}
 
@@ -781,30 +688,14 @@ export default function ArtifactViewerPageContent() {
         {activeTab === "communication" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Communication Artifacts</h2>
-            {dataset.communication.map((entry) => (
-              <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-base font-semibold text-slate-900">{entry.channel}</p>
-                <p className="mt-1 text-sm text-slate-600">{entry.summary}</p>
-                <p className="mt-1 text-xs text-slate-500">Captured {entry.capturedAt}</p>
-              </article>
-            ))}
+            <p className="text-sm text-slate-500">No communication artifacts are available for the selected project.</p>
           </>
         )}
 
         {activeTab === "peer-evaluation" && role !== "student" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Peer Evaluation Inputs</h2>
-            {dataset.peerEvaluation.map((entry) => (
-              <article key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-base font-semibold text-slate-900">
-                    {entry.reviewer} reviewed {entry.target}
-                  </p>
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{entry.score}/100</span>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">{entry.sprint}</p>
-              </article>
-            ))}
+            <p className="text-sm text-slate-500">No peer evaluation data is available for the selected project and sprint.</p>
           </>
         )}
       </section>
@@ -825,6 +716,7 @@ export default function ArtifactViewerPageContent() {
               </tr>
             </thead>
             <tbody>
+              {sourceRows.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-sm text-slate-500">No structured ingestion inputs are available for the selected project and sprint.</td></tr>}
               {sourceRows.map((source) => (
                 <tr key={source.source} className="border-b border-slate-100 text-sm text-slate-700 last:border-b-0">
                   <td className="py-3 pr-4 font-semibold text-slate-900">{source.source}</td>
