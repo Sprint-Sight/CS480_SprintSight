@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -160,6 +160,8 @@ def get_repo_ingestion_data(
     pagination: bool = Query(default=False),
     limit: int | None = Query(default=None, ge=1, le=200),
     offset: int | None = Query(default=None, ge=0),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
 ) -> IngestionDataResponse:
     project = projects.get_project(project_id)
     if not project:
@@ -180,12 +182,31 @@ def get_repo_ingestion_data(
             detail="limit and offset must be omitted when pagination is disabled.",
         )
 
+    if (start_date is None) != (end_date is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="start_date and end_date must be provided together.",
+        )
+    start_datetime = datetime.combine(start_date, time.min, tzinfo=timezone.utc) if start_date else None
+    end_datetime = (
+        datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        if end_date
+        else None
+    )
+    if start_datetime and end_datetime and start_datetime >= end_datetime:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="start_date must be before or equal to end_date.",
+        )
+
     if pagination:
         metrics, total = metrics_repository.get_metrics_page(
-            course_id, project_id, sprint_id, limit, offset
+            course_id, project_id, sprint_id, limit, offset, start_datetime, end_datetime
         )
     else:
-        metrics = metrics_repository.get_metrics(course_id, project_id, sprint_id)
+        metrics = metrics_repository.get_metrics(
+            course_id, project_id, sprint_id, start_datetime, end_datetime
+        )
         total = len(metrics.commits) if metrics else 0
     if not metrics:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingestion data not found.")

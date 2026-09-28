@@ -213,10 +213,24 @@ class IngestionMetricBundle:
 class MetricsRepository(Protocol):
     def save_metrics(self, metrics: IngestionMetricBundle) -> None: ...
 
-    def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None: ...
+    def get_metrics(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> IngestionMetricBundle | None: ...
 
     def get_metrics_page(
-        self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        limit: int,
+        offset: int,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
     ) -> tuple[IngestionMetricBundle | None, int]: ...
 
 

@@ -43,7 +43,7 @@ def test_retrieve_stored_commits_and_file_changes(override_user_repository) -> N
     project_repository.assign_instructor("course-retrieval", "u-faculty-1")
 
     metrics_repository = InMemoryMetricsRepository()
-    captured_at = datetime.now(timezone.utc)
+    captured_at = datetime(2026, 1, 15, 12, tzinfo=timezone.utc)
     metrics_repository.save_metrics(
         IngestionMetricBundle(
             course_id="course-retrieval",
@@ -101,6 +101,41 @@ def test_retrieve_stored_commits_and_file_changes(override_user_repository) -> N
             params={"course_id": "course-retrieval", "limit": 10},
             headers={"Authorization": f"Bearer {token()}"},
         )
+        filtered_response = client.get(
+            "/api/v1/repo-ingestion/runs/project-retrieval/sprint-1",
+            params={
+                "course_id": "course-retrieval",
+                "start_date": "2026-01-01",
+                "end_date": "2026-01-31",
+            },
+            headers={"Authorization": f"Bearer {token()}"},
+        )
+        empty_response = client.get(
+            "/api/v1/repo-ingestion/runs/project-retrieval/sprint-1",
+            params={
+                "course_id": "course-retrieval",
+                "pagination": True,
+                "limit": 10,
+                "offset": 0,
+                "start_date": "2026-02-01",
+                "end_date": "2026-02-28",
+            },
+            headers={"Authorization": f"Bearer {token()}"},
+        )
+        incomplete_range_response = client.get(
+            "/api/v1/repo-ingestion/runs/project-retrieval/sprint-1",
+            params={"course_id": "course-retrieval", "start_date": "2026-01-01"},
+            headers={"Authorization": f"Bearer {token()}"},
+        )
+        reversed_range_response = client.get(
+            "/api/v1/repo-ingestion/runs/project-retrieval/sprint-1",
+            params={
+                "course_id": "course-retrieval",
+                "start_date": "2026-02-01",
+                "end_date": "2026-01-31",
+            },
+            headers={"Authorization": f"Bearer {token()}"},
+        )
     finally:
         app.dependency_overrides.pop(get_metrics_repository, None)
 
@@ -128,3 +163,10 @@ def test_retrieve_stored_commits_and_file_changes(override_user_repository) -> N
         "has_more": False,
     }
     assert invalid_response.status_code == 422
+    assert filtered_response.status_code == 200
+    assert len(filtered_response.json()["commits"]) == 1
+    assert empty_response.status_code == 200
+    assert empty_response.json()["commits"] == []
+    assert empty_response.json()["pagination"]["total"] == 0
+    assert incomplete_range_response.status_code == 422
+    assert reversed_range_response.status_code == 422

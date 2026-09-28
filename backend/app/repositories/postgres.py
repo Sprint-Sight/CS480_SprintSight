@@ -787,7 +787,14 @@ class PostgresMetricsRepository(MetricsRepository):
                          Json([file.model_dump() for file in commit.files_changed])),
                     )
 
-    def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None:
+    def get_metrics(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> IngestionMetricBundle | None:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """SELECT ir.course_id, ir.project_id, ir.sprint_id,
@@ -800,14 +807,24 @@ class PostgresMetricsRepository(MetricsRepository):
             ).fetchone()
             if not row:
                 return None
+            commit_filters = [
+                "ingestion_run_id = (SELECT ingestion_run_id FROM ingestion_runs "
+                "WHERE course_id = %s AND project_id = %s AND sprint_id = %s)"
+            ]
+            commit_params: list[object] = [UUID(course_id), UUID(project_id), sprint_id]
+            if start_datetime is not None:
+                commit_filters.append("timestamp >= %s")
+                commit_params.append(start_datetime)
+            if end_datetime is not None:
+                commit_filters.append("timestamp < %s")
+                commit_params.append(end_datetime)
             commit_rows = connection.execute(
                 """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
-                    FROM ingestion_commits WHERE ingestion_run_id = (
-                        SELECT ingestion_run_id FROM ingestion_runs
-                        WHERE course_id = %s AND project_id = %s AND sprint_id = %s
-                    ) ORDER BY timestamp, sha""",
-                (UUID(course_id), UUID(project_id), sprint_id),
+                    FROM ingestion_commits WHERE """
+                + " AND ".join(commit_filters)
+                + " ORDER BY timestamp, sha",
+                commit_params,
             ).fetchall()
         from app.schemas.assessment import CommitInfo
         return IngestionMetricBundle(
@@ -831,7 +848,16 @@ class PostgresMetricsRepository(MetricsRepository):
             captured_at=row["captured_at"],
         )
 
-    def get_metrics_page(self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int) -> tuple[IngestionMetricBundle | None, int]:
+    def get_metrics_page(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        limit: int,
+        offset: int,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> tuple[IngestionMetricBundle | None, int]:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """SELECT ir.course_id, ir.project_id, ir.sprint_id,
@@ -845,18 +871,27 @@ class PostgresMetricsRepository(MetricsRepository):
             ).fetchone()
             if not row:
                 return None, 0
+            commit_filters = ["ingestion_run_id = %s"]
+            commit_params: list[object] = [row["ingestion_run_id"]]
+            if start_datetime is not None:
+                commit_filters.append("timestamp >= %s")
+                commit_params.append(start_datetime)
+            if end_datetime is not None:
+                commit_filters.append("timestamp < %s")
+                commit_params.append(end_datetime)
             total = connection.execute(
-                "SELECT COUNT(*) AS total FROM ingestion_commits WHERE ingestion_run_id = %s",
-                (row["ingestion_run_id"],),
+                "SELECT COUNT(*) AS total FROM ingestion_commits WHERE "
+                + " AND ".join(commit_filters),
+                commit_params,
             ).fetchone()["total"]
             commit_rows = connection.execute(
                 """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
                     FROM ingestion_commits
-                    WHERE ingestion_run_id = %s
-                    ORDER BY timestamp, sha
-                    LIMIT %s OFFSET %s""",
-                (row["ingestion_run_id"], limit, offset),
+                    WHERE """
+                + " AND ".join(commit_filters)
+                + " ORDER BY timestamp, sha LIMIT %s OFFSET %s",
+                [*commit_params, limit, offset],
             ).fetchall()
         from app.schemas.assessment import CommitInfo
         return IngestionMetricBundle(

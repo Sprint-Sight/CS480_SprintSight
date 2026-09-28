@@ -460,11 +460,49 @@ class InMemoryMetricsRepository(MetricsRepository):
         key = (metrics.course_id, metrics.project_id, metrics.sprint_id)
         self._metrics[key] = metrics
 
-    def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None:
-        return self._metrics.get((course_id, project_id, sprint_id))
+    def get_metrics(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> IngestionMetricBundle | None:
+        metrics = self._metrics.get((course_id, project_id, sprint_id))
+        if not metrics or (start_datetime is None and end_datetime is None):
+            return metrics
+        filtered_commits = [
+            commit
+            for commit in metrics.commits
+            if (start_datetime is None or commit.timestamp >= start_datetime)
+            and (end_datetime is None or commit.timestamp < end_datetime)
+        ]
+        return IngestionMetricBundle(
+            course_id=metrics.course_id,
+            project_id=metrics.project_id,
+            sprint_id=metrics.sprint_id,
+            commit_frequency=metrics.commit_frequency,
+            code_churn=metrics.code_churn,
+            pr_turnaround_hours=metrics.pr_turnaround_hours,
+            assigned_story_points=metrics.assigned_story_points,
+            completion_percent=metrics.completion_percent,
+            commits=filtered_commits,
+            local_repo_path=metrics.local_repo_path,
+            head_sha=metrics.head_sha,
+            captured_at=metrics.captured_at,
+        )
 
-    def get_metrics_page(self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int) -> tuple[IngestionMetricBundle | None, int]:
-        metrics = self.get_metrics(course_id, project_id, sprint_id)
+    def get_metrics_page(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        limit: int,
+        offset: int,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> tuple[IngestionMetricBundle | None, int]:
+        metrics = self.get_metrics(course_id, project_id, sprint_id, start_datetime, end_datetime)
         if not metrics:
             return None, 0
         ordered_commits = sorted(metrics.commits, key=lambda commit: (commit.timestamp, commit.sha))
