@@ -115,6 +115,14 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
     assert project.status_code == 201
     project_id = project.json()["id"]
 
+    empty_sprints_response = client.get(f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers)
+    assert empty_sprints_response.status_code == 200
+    assert empty_sprints_response.json() == []
+
+    empty_reports_response = client.get(f"/api/v1/students/projects/{project_id}/reports", headers=student_headers)
+    assert empty_reports_response.status_code == 200
+    assert empty_reports_response.json() == []
+
     report = AssessmentReport(
         report_id="rpt-student-flow",
         model_name="mock-rubric-v1",
@@ -154,3 +162,54 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
     reports_response = client.get(f"/api/v1/students/projects/{project_id}/reports", headers=student_headers)
     assert reports_response.status_code == 200
     assert any(item["report_id"] == "rpt-student-flow" for item in reports_response.json())
+
+
+def test_student_reports_and_sprints_when_list_project_reports_returns_none() -> None:
+    instructor_headers = {"Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"}
+    course = client.post(
+        "/api/v1/courses",
+        json={"code": "CS498", "name": "Empty Reports", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor_headers,
+    )
+    assert course.status_code == 201
+    course_id = course.json()["id"]
+
+    student = client.post(
+        f"/api/v1/courses/{course_id}/students",
+        json={"email": "student.empty-reports@sprintsight.edu", "full_name": "Empty Reports User", "password": "temporary123"},
+        headers=instructor_headers,
+    )
+    assert student.status_code == 201
+    student_id = student.json()["id"]
+    student_headers = {"Authorization": f"Bearer {login('student.empty-reports@sprintsight.edu', 'temporary123')}"}
+
+    project = client.post(
+        f"/api/v1/courses/{course_id}/projects",
+        json={
+            "project_name": "Empty Reports Team",
+            "team_name": "Beta Team",
+            "description": "None reports regression",
+            "jira_email": "jira.owner@university.edu",
+            "jira_domain": "team.atlassian.net",
+            "jira_project_key": "CS204",
+            "jira_api_token": "project-jira-token",
+            "member_ids": [student_id],
+        },
+        headers=instructor_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    class NoneReportsRepo:
+        def list_project_reports(self, course_id: str, project_id: str):
+            return None
+
+    app.dependency_overrides[get_assessment_repository] = lambda: NoneReportsRepo()
+
+    sprints_response = client.get(f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers)
+    assert sprints_response.status_code == 200
+    assert sprints_response.json() == []
+
+    reports_response = client.get(f"/api/v1/students/projects/{project_id}/reports", headers=student_headers)
+    assert reports_response.status_code == 200
+    assert reports_response.json() == []

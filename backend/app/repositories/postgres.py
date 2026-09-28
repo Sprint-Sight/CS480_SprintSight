@@ -705,7 +705,17 @@ class PostgresAssessmentRepository(AssessmentRepository):
                 ORDER BY generated_at DESC""",
                 (UUID(course_id), UUID(project_id), sprint_id),
             ).fetchall()
-        return [self._report(row) for row in rows]
+        return [self._report(row) for row in rows or []]
+
+    def list_project_reports(self, course_id: str, project_id: str) -> list[AssessmentReport]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM assessment_reports
+                WHERE course_id = %s AND project_id = %s
+                ORDER BY generated_at DESC""",
+                (UUID(course_id), UUID(project_id)),
+            ).fetchall()
+        return [self._report(row) for row in rows or []]
 
     def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
         with self._pool.connection() as connection:

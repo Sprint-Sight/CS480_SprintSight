@@ -557,7 +557,7 @@ def list_student_project_reports(
 
     if assessment_repository is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
-    return assessment_repository.list_project_reports(project.course_id, project.id)
+    return assessment_repository.list_project_reports(project.course_id, project.id) or []
 
 
 @router.get("/students/projects/{project_id}/sprints", response_model=list[str])
@@ -579,7 +579,7 @@ def list_student_project_sprints(
 
     sprint_ids: set[str] = set()
     if assessment_repository is not None:
-        for report in assessment_repository.list_project_reports(project.course_id, project.id):
+        for report in assessment_repository.list_project_reports(project.course_id, project.id) or []:
             if report.sprint_id:
                 sprint_ids.add(report.sprint_id)
     for run in jira_runs_repo.list_project_runs(project_id):
