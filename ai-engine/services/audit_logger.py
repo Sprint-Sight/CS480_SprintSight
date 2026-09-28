@@ -7,7 +7,6 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-
 AUDIT_LOG_DIR = Path(os.getenv("LLM_AUDIT_LOG_DIR", "/app/audit_logs"))
 _write_lock = Lock()
 

@@ -3,7 +3,7 @@ schemas/expected_orders.py
 
 Encodes the two target orderings across the 5-fixture set:
 
-  GENERAL (code_quality, testing, documentation, requirements, and overall):
+    GENERAL (code_quality, testing, documentation, requirements, CICD, and overall):
       high_performing >= imbalanced_high_output > good_collab_low_output
                         > lone_contributor_poor_outcome > struggling
 
@@ -24,14 +24,15 @@ those -- by editing benchmark.py's scores or relaxing these specific links --
 before wiring this into validation_harness.py's compute_summary().
 """
 
-from typing import Literal, NamedTuple, Optional
+from typing import Literal, NamedTuple
+
 
 class OrderLink(NamedTuple):
     higher: str
     lower: str
     op: Literal[">", ">="]
 
-GENERAL_ORDER: list[OrderLink] = [ # General ordering for the other 4 dimensions
+GENERAL_ORDER: list[OrderLink] = [ # General ordering for general dimensions
     OrderLink("high_performing", "imbalanced_high_output", ">="),
     OrderLink("imbalanced_high_output", "good_collab_low_output", ">"),
     OrderLink("good_collab_low_output", "lone_contributor_poor_outcome", ">"),
@@ -49,7 +50,7 @@ COLLABORATION_ORDER: list[OrderLink] = [ # Genera ordering for COLLABORATION dim
 def check_order(
     scores: dict[str, float],
     order: list[OrderLink],
-    stdevs: Optional[dict[str, float]] = None,
+    stdevs: dict[str, float] | None = None,
 ) -> dict[str, dict]:
     """
     scores: {fixture_name: mean_score}
@@ -89,7 +90,7 @@ if __name__ == "__main__":
     # Point-value sanity check against benchmark.py's CURRENT reference scores.
     # Re-run this any time the reference grades or the ordering rule changes
     # it's what caught the 5 violations flagged in chat before this file existed.
-    reference_scores = {
+    reference_scores: dict[str, dict[str, float]] = {
         "code_quality":  {"high_performing": 9, "imbalanced_high_output": 8, "good_collab_low_output": 7, "lone_contributor_poor_outcome": 4, "struggling": 3},
         "testing":       {"high_performing": 9, "imbalanced_high_output": 8, "good_collab_low_output": 7, "lone_contributor_poor_outcome": 4, "struggling": 3},
         "documentation": {"high_performing": 10, "imbalanced_high_output": 8, "good_collab_low_output": 8, "lone_contributor_poor_outcome": 5, "struggling": 3},
@@ -101,6 +102,7 @@ if __name__ == "__main__":
     for dim, order in [
         ("code_quality", GENERAL_ORDER), ("testing", GENERAL_ORDER),
         ("documentation", GENERAL_ORDER), ("requirements", GENERAL_ORDER),
+        ("cicd", GENERAL_ORDER),
         ("collaboration", COLLABORATION_ORDER),
     ]:
         print(f"\n {dim} fixture ordering check:")

@@ -18,10 +18,12 @@ from app.repositories.postgres import (
     PostgresJiraIngestionRunRepository,
     PostgresManualTextRepository,
     PostgresProjectRepository,
+    PostgresRubricWeightsRepository,
     PostgresUserRepository,
     create_user_pool,
     ensure_assessment_schema,
     ensure_project_credential_schema,
+    ensure_rubric_weights_schema,
 )
 from app.schemas.auth import Role
 from uuid import uuid4
@@ -51,6 +53,7 @@ async def lifespan(app: FastAPI):
     pool.open(wait=True)
     ensure_project_credential_schema(pool)
     ensure_assessment_schema(pool)
+    ensure_rubric_weights_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
@@ -58,6 +61,7 @@ async def lifespan(app: FastAPI):
     app.state.jira_ingestion_repository = PostgresJiraIngestionRunRepository(pool)
     app.state.manual_text_repository = PostgresManualTextRepository(pool)
     app.state.assessment_repository = PostgresAssessmentRepository(pool)
+    app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
 
     user_repository = app.state.user_repository
     _bootstrap_user(user_repository, settings.bootstrap_admin_email, settings.bootstrap_admin_password, settings.bootstrap_admin_name, Role.ADMIN)

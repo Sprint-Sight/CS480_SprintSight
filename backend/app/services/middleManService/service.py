@@ -8,6 +8,7 @@ def build_assessment_payload(
     metrics: IngestionMetricBundle,
     document_signals: dict[str, float],
     manual_text: str | None,
+    jira_tickets: list[dict] | None = None,
 ) -> dict:
     return {
         "sprint_context": {
@@ -24,6 +25,7 @@ def build_assessment_payload(
             "completion_percent": metrics.completion_percent,
         },
         "commits": [commit.model_dump(mode="json") for commit in metrics.commits],
+        "jira_tickets": jira_tickets or [],
         "artifact_metrics": document_signals,
         "instructor_expectations": manual_text or "No instructor guidance provided.",
     }

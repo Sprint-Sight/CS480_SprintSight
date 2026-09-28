@@ -56,21 +56,28 @@ STILL UNCONFIRMED (flagging rather than guessing further):
     they're constructed in evaluator.py / assessment.py, not seen directly.
 """
 
-import argparse, asyncio, json, mlflow, os, statistics, time
+import argparse
+import asyncio
+import json
+import statistics
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any
+
+import mlflow
 from dotenv import load_dotenv
+
 import schemas.fixtures as fixtures_module
-from schemas.artifact_bundle import ArtifactBundle
-from schemas.expected_orders import GENERAL_ORDER, COLLABORATION_ORDER, check_order
-from services.evaluator import evaluate_sprint
 from llmops.mlflow_config import start_mlflow
+from schemas.artifact_bundle import ArtifactBundle
+from schemas.expected_orders import COLLABORATION_ORDER, GENERAL_ORDER, check_order
+from services.evaluator import evaluate_sprint
 
 load_dotenv()  # Load environment variables from .env file
 
-DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration"]
+DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
 
 # Tries factory-function naming (per README) first, then bare-instance naming
 # (per llm_client.py's own import) -- see "STILL UNCONFIRMED" above.
@@ -105,12 +112,12 @@ class RunResult: # Stores the result of a single (model, fixture, repeat) run
     success: bool                       # if assessment object was returned at all
     fully_succeeded: bool               # AND zero dimensions failed
     failed_dimensions: list             # dimensions that failed (all 5 if success=False)
-    overall_score: Optional[int]        # rounded int, as returned by evaluator.py
-    raw_average_score: Optional[float]  # recomputed float average from rubric_scores
-    rubric_scores: Optional[dict]       # {dimension: score}
-    evidence_citations: Optional[dict]  # {dimension: [citation, ...]}
-    error: Optional[str]
-    latency_seconds: Optional[float]
+    overall_score: float | None       # raw float, as returned by evaluator.py
+    raw_average_score: float | None  # recomputed float average from rubric_scores
+    rubric_scores: dict[str, int] | None       # {dimension: score}
+    evidence_citations: dict | None  # {dimension: [citation, ...]}
+    error: str | None
+    latency_seconds: float | None
 
 async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunResult:
     bundle = _load_fixture(fixture_name)
@@ -148,7 +155,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
             error=None,
             latency_seconds=latency,
         )
-    except Exception as e:  # evaluate_sprint raises only when ALL 5 dimensions fail
+    except Exception as e:  # noqa: BLE001 - evaluate_sprint raises when any required dimension fails
         latency = loop.time() - start
         return RunResult(
             model=model,
@@ -222,6 +229,10 @@ def _pearson(x: list[float], y: list[float]) -> float:
 #     return result
 
 # Aggregates all RunResults into a summary dictionary with metrics for each model and cross-model agreement.
+def _drop_none(values: dict[str, float | None]) -> dict[str, float]:
+    return {k: v for k, v in values.items() if v is not None}
+
+
 def compute_summary(results: list[RunResult]) -> dict:
     summary: dict = {"models": {}}
     models = sorted({r.model for r in results})
@@ -231,8 +242,7 @@ def compute_summary(results: list[RunResult]) -> dict:
         successful = [r for r in model_results if r.success]
  
         # 1. Structural validity, at DIMENSION granularity (not just run granularity).
-        # evaluate_sprint only raises when all 5 dimensions fail, so a failed run
-        # contributes 0/5; a successful run contributes (5 - len(failed_dimensions))/5.
+        # A failed run contributes 0/5; a successful run has all five dimensions.
         dim_attempts = len(model_results) * len(DIMENSIONS) # Total dimension calls attempted
         dim_successes = sum(len(DIMENSIONS) - len(r.failed_dimensions) for r in model_results)
         dimension_structural_validity_rate = round(dim_successes / dim_attempts, 3) if dim_attempts else 0.0
@@ -240,7 +250,8 @@ def compute_summary(results: list[RunResult]) -> dict:
  
         # 2 & 3: overall discriminative validity + reliability, using the RAW
         # (unrounded) average, not evaluator.py's rounded overall_score.
-        reliability, fixture_means = {}, {} # Reliability (stdev) and mean raw average score per fixture
+        reliability: dict[str, float | None] = {}
+        fixture_means: dict[str, float | None] = {} # Reliability (stdev) and mean raw average score per fixture
         for fixture_name in FIXTURE_CANDIDATES:
             scores = [
                 r.raw_average_score for r in successful
@@ -252,15 +263,16 @@ def compute_summary(results: list[RunResult]) -> dict:
         # Top-level (overall raw_average) check -- fixture_means/reliability
         # (computed just above) already give us real per-fixture stdevs, so
         # this gets the noise-band tolerance for free.
-        pairwise_discriminative_validity = check_order(fixture_means, GENERAL_ORDER, reliability)
+        pairwise_discriminative_validity = check_order(_drop_none(fixture_means), GENERAL_ORDER, _drop_none(reliability))
  
         # Per-dimension discriminative validity -- shows WHICH rubric dimensions
         # discriminate and which don't, using the dimension-appropriate order:
         # collaboration has its own chain (should NOT just track output volume),
         # the other four dimensions use GENERAL_ORDER.
-        dimension_breakdown = {}
+        dimension_breakdown: dict[str, dict[str, Any]] = {}
         for dim in DIMENSIONS:
-            dim_means, dim_stdevs = {}, {}
+            dim_means: dict[str, float | None] = {}
+            dim_stdevs: dict[str, float] = {}
             for fixture_name in FIXTURE_CANDIDATES:
                 dim_scores = [
                     r.rubric_scores[dim] for r in successful
@@ -273,7 +285,7 @@ def compute_summary(results: list[RunResult]) -> dict:
             dimension_breakdown[dim] = { # Store mean/stdev and pairwise discriminative validity for each dimension
                 "mean_score_by_fixture": dim_means,
                 "stdev_by_fixture": dim_stdevs,
-                "pairwise_discriminative_validity": check_order(dim_means, order, dim_stdevs),
+                "pairwise_discriminative_validity": check_order(_drop_none(dim_means), order, dim_stdevs),
             }
  
         # Kept as its own top-level key for backward compatibility with existing
@@ -310,7 +322,7 @@ def compute_summary(results: list[RunResult]) -> dict:
  
     # 4. Cross-model agreement: correlate each model pair's mean-score profile across fixtures
     if len(models) >= 2:
-        agreement = {}
+        agreement: dict[str, float | None] = {}
         for i, m1 in enumerate(models): # Compute Pearson correlation for each pair of models
             for m2 in models[i + 1:]: # Avoid double-counting pairs (m1, m2) and (m2, m1)
                 means1 = [summary["models"][m1]["mean_raw_average_score_by_fixture"][f] for f in FIXTURE_CANDIDATES]

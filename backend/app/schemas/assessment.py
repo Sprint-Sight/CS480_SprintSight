@@ -72,6 +72,7 @@ class JiraTicket(BaseModel):
     issue_type: str | None = None
     story_points: float | None = Field(default=None, ge=0)
     sprint_id: str | None = None
+    timestamp: datetime | None = None
 
 
 class JiraCleanedSnapshot(BaseModel):
@@ -144,6 +145,8 @@ class StudentScore(BaseModel):
 class TeamScore(BaseModel):
     score: float
     rationale: str
+    # Default "" keeps old DB rows (persisted before this field existed) valid.
+    overall_grade: str = ""
 
 
 class AssessmentReport(BaseModel):
@@ -181,6 +184,20 @@ class ManualAssessmentPatch(BaseModel):
     code_quality_justification: str = Field(min_length=1, max_length=500)
     documentation_justification: str = Field(min_length=1, max_length=500)
     collaboration_justification: str = Field(min_length=1, max_length=500)
+
+
+class RubricWeightsPayload(BaseModel):
+    """Body for setting a course's custom rubric dimension weights."""
+    weights: dict[str, float]
+
+
+class RubricWeightsResponse(BaseModel):
+    course_id: str
+    weights: dict[str, float]
+    # False when no faculty override exists yet and this is just the default.
+    is_custom: bool
+    updated_by: str | None = None
+    updated_at: datetime | None = None
 
 
 class OverrideRequest(BaseModel):

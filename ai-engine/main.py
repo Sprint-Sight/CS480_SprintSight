@@ -5,27 +5,36 @@ The FastAPI application. This is the HTTP front door of your AI Assessment Servi
  
 Endpoints:
     GET  /health          → Is the service up? Is Ollama reachable? Is the model ready?
-    POST /assess/sprint   → Submit an ArtifactBundle, receive a SprintAssessment
+    POST /assess/sprint/data → Submit ingested sprint data, receive a SprintAssessment
  
 This file is intentionally thin. All real logic lives in services/evaluator.py.
 """
 
-from __future__ import annotations # Allows forward references in type hints (e.g., a function returning its own class type)
+from __future__ import (
+    annotations,  # Allows forward references in type hints (e.g., a function returning its own class type)
+)
 
-import instructor, os, uvicorn, logging
+import logging
+import os
+from contextlib import (
+    asynccontextmanager,  # Allows async context managers for startup/shutdown events
+)
+
+import instructor
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager # Allows async context managers for startup/shutdown events
+
 from api import assessment
+from llmops.mlflow_config import start_mlflow
+from llmops.prompt_registry import register_all_dimension_prompts
 from services.llm_client import (
     check_ollama_health,
     create_llm_client,
-    pull_model_if_missing,
 )
-from llmops.mlflow_config import start_mlflow
 
 load_dotenv()
 
@@ -58,6 +67,14 @@ Analyze the following sprint bundle and output a score:
 """, 
         commit_message="Initial prompt bootstrap"
     )
+
+    try:
+        # Versions every rubric dimension's live prompt in MLflow before any
+        # grading request arrives. A registry outage here must not block
+        # startup -- grading always renders prompts locally regardless.
+        register_all_dimension_prompts()
+    except Exception:
+        log.exception("Failed to register dimension prompts in MLflow prompt registry.")
 
     global _llm_client
  

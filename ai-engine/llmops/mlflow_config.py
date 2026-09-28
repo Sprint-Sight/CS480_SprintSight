@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import os, logging, mlflow
-from mlflow.tracking import MlflowClient
-from mlflow.entities import AssessmentSource
-from mlflow.genai.scorers import Guidelines, ScorerSamplingConfig
-from typing import Optional
-from fastapi import FastAPI, Request, Query
-from pydantic import BaseModel
-from openai import OpenAI
-from contextlib import contextmanager
+import logging
+import os
+
+import mlflow
 from dotenv import load_dotenv
+
 load_dotenv()  # Load environment variables from .env file
 
 log = logging.getLogger(__name__)
@@ -28,7 +24,7 @@ BENCHMARK_EXPERIMENT = "sprintsight-benchmarks"
 # @mlflow.trace(name="Evaluate_Complete_Sprint")
 def start_mlflow(experiment_name, name: str | None = None,
                  template: str | None = None, commit_message: str | None = None,
-                 tags: Optional[dict] = None):
+                 tags: dict | None = None):
     # Call this once per process
 
     # 1. Setup tracking URI and experiment
@@ -47,10 +43,15 @@ def start_mlflow(experiment_name, name: str | None = None,
             tags = tags or {"author": "SprintSight"}
         )
 
-def register_prompt(name, template, commit_message="Initial commit", tags: Optional[dict] = None):
+def register_prompt(name, template, commit_message="Initial commit", tags: dict | None = None):
     return mlflow.genai.register_prompt( # Register prompt version in MLflow Prompt Registry
-        name=name,
-        template=template,
-        commit_message=commit_message,
+        name=name, # Name/unique ID for the prompt
+        template=template, # The actual prompt in itself
+        commit_message=commit_message, # Commit message for this version of the prompt
         tags=tags or {"author": "SprintSight"}
     )
+
+def format_prompt(name):
+    loaded = mlflow.genai.get_prompt(name) # Load the prompt template from MLflow Prompt Registry
+    prompt_filled = loaded.format()
+    return prompt_filled
