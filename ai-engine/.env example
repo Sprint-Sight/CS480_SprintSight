@@ -16,3 +16,7 @@ MLFLOW_EXPERIMENT_NAME="sprintsight"
 
 # Debug: print full ingested bundle on /assess/sprint/data
 LOG_BUNDLE_DISPLAY=false
+
+# LLM config
+LLM_COMMIT_BUDGET=30
+LLM_MAX_FILES_PER_COMMIT=20
