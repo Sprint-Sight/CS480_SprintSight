@@ -44,6 +44,16 @@ SLURM_JOB_NAME="${SLURM_JOB_NAME:-sprintsight-ollama}"
 OLLAMA_URL="http://localhost:${LOCAL_OLLAMA_PORT}"
 MODELS_DIR="$AI_ENGINE_DIR/models"
 
+# ── Detect Python (python3 on Linux/macOS, python on Windows) ──
+if command -v python3 &>/dev/null; then
+    PY=python3
+elif command -v python &>/dev/null; then
+    PY=python
+else
+    echo "ERROR: Python not found. Install Python 3 and ensure it is on PATH."
+    exit 1
+fi
+
 # ── Colours ──
 RED='\033[0;31m'; GRN='\033[0;32m'; YEL='\033[1;33m'; BLU='\033[0;34m'; NC='\033[0m'
 info()  { printf "${BLU}[info]${NC}  %s\n" "$*"; }
@@ -69,7 +79,6 @@ check_vpn() {
 }
 
 get_job_info() {
-    # Prints "JOBID NODE" for the first running sprintsight-ollama job, or empty
     ssh_hpc "squeue --me --name=${SLURM_JOB_NAME} --states=RUNNING --noheader -o '%i %N'" 2>/dev/null \
         | head -1 | tr -s ' '
 }
@@ -87,7 +96,6 @@ check_slurm() {
         return 0
     fi
     warn "No running Slurm job named '${SLURM_JOB_NAME}'"
-    # Check pending
     local pending
     pending=$(ssh_hpc "squeue --me --name=${SLURM_JOB_NAME} --states=PENDING --noheader -o '%i %T'" 2>/dev/null | head -1)
     if [[ -n "$pending" ]]; then
@@ -112,7 +120,7 @@ submit_job() {
 }
 
 check_tunnel() {
-    if curl -sf "${OLLAMA_URL}/api/tags" >/dev/null 2>&1; then
+    if curl -s --max-time 5 "${OLLAMA_URL}/api/tags" >/dev/null 2>&1; then
         ok "Ollama reachable at localhost:${LOCAL_OLLAMA_PORT}"
         return 0
     fi
@@ -134,17 +142,29 @@ open_tunnel() {
 }
 
 list_models() {
-    curl -sf "${OLLAMA_URL}/api/tags" 2>/dev/null | python3 -c "
+    local response
+    response=$(curl -s --max-time 10 "${OLLAMA_URL}/api/tags" 2>/dev/null) || {
+        echo "  (unreachable)"
+        return 0
+    }
+    if [[ -z "$response" ]]; then
+        echo "  (empty response)"
+        return 0
+    fi
+    echo "$response" | $PY -c "
 import sys, json
-data = json.load(sys.stdin)
-models = data.get('models', [])
-if models:
-    for m in models:
-        size_gb = m.get('size', 0) / 1e9
-        print(f\"  {m['name']:40s} {size_gb:6.1f} GB\")
-else:
-    print('  (none)')
-" 2>/dev/null || echo "  (unreachable)"
+try:
+    data = json.load(sys.stdin)
+    models = data.get('models', [])
+    if models:
+        for m in models:
+            size_gb = m.get('size', 0) / 1e9
+            print(f'  {m[\"name\"]:40s} {size_gb:6.1f} GB')
+    else:
+        print('  (none)')
+except Exception as e:
+    print(f'  (parse error: {e})')
+" || echo "  (python error)"
 }
 
 create_model_via_api() {
@@ -158,27 +178,50 @@ create_model_via_api() {
 
     # Check if alias already exists
     local existing
-    existing=$(curl -sf "${OLLAMA_URL}/api/tags" 2>/dev/null \
-        | python3 -c "import sys,json; [print(m['name']) for m in json.load(sys.stdin).get('models',[])]" 2>/dev/null || echo "")
+    existing=$(curl -s --max-time 10 "${OLLAMA_URL}/api/tags" 2>/dev/null \
+        | $PY -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    for m in data.get('models', []):
+        print(m['name'])
+except:
+    pass
+" 2>/dev/null) || existing=""
 
     if echo "$existing" | grep -q "^${alias}"; then
         ok "'${alias}' already exists — skipping"
         return 0
     fi
 
-    # Pull base model (idempotent — skips if already present)
+    # Pull base model (idempotent — fast if already present)
     info "Pulling base model '${base}' (may take several minutes on first run)..."
-    curl -sf "${OLLAMA_URL}/api/pull" -d "{\"name\": \"${base}\"}" --no-buffer \
-        | while IFS= read -r line; do
-            local st
-            st=$(echo "$line" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('status',''))" 2>/dev/null || true)
-            [[ -n "$st" ]] && printf "\r  %-60s" "$st"
-        done
-    echo ""
+    # Use Python for the pull request so streaming/JSON parsing works reliably on Windows
+    $PY -c "
+import json, sys, urllib.request
+
+url = sys.argv[1] + '/api/pull'
+data = json.dumps({'name': sys.argv[2]}).encode()
+req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+
+try:
+    with urllib.request.urlopen(req, timeout=1800) as resp:
+        for raw in resp:
+            try:
+                d = json.loads(raw)
+                st = d.get('status', '')
+                if st:
+                    print(f'  {st}', flush=True)
+            except json.JSONDecodeError:
+                pass
+except Exception as e:
+    print(f'  Error pulling model: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$OLLAMA_URL" "$base"
 
     # Create alias from Modelfile
     info "Creating '${alias}' from ${modelfile_name}..."
-    python3 -c "
+    $PY -c "
 import json, sys, urllib.request
 
 with open(sys.argv[1]) as f:
@@ -190,12 +233,20 @@ req = urllib.request.Request(
     data=data,
     headers={'Content-Type': 'application/json'},
 )
-with urllib.request.urlopen(req, timeout=600) as resp:
-    for raw in resp:
-        d = json.loads(raw)
-        st = d.get('status', '')
-        if st:
-            print(f'  {st}', flush=True)
+
+try:
+    with urllib.request.urlopen(req, timeout=600) as resp:
+        for raw in resp:
+            try:
+                d = json.loads(raw)
+                st = d.get('status', '')
+                if st:
+                    print(f'  {st}', flush=True)
+            except json.JSONDecodeError:
+                pass
+except Exception as e:
+    print(f'  Error creating model: {e}', file=sys.stderr)
+    sys.exit(1)
 " "$modelfile_path" "$alias" "$OLLAMA_URL"
 
     ok "'${alias}' created"
@@ -206,8 +257,8 @@ ensure_models() {
 
     info "Ensuring all SprintSight models exist on remote Ollama..."
     echo ""
-    create_model_via_api "sprintsight-llama"   "llama3.2"   "Modelfile.llama"
-    create_model_via_api "sprintsight-qwen"    "qwen3:8b"   "Modelfile.qwen"
+    create_model_via_api "sprintsight-llama"   "llama3.2"    "Modelfile.llama"
+    create_model_via_api "sprintsight-qwen"    "qwen3:8b"    "Modelfile.qwen"
     create_model_via_api "sprintsight-mistral" "mistral:7b"  "Modelfile.mistral"
     create_model_via_api "sprintsight-gemma"   "gemma4:12b"  "Modelfile.gemma"
     echo ""
@@ -244,14 +295,20 @@ start_docker() {
     while [[ $attempts -lt 20 ]]; do
         sleep 3
         local resp
-        resp=$(curl -sf http://localhost:8001/health 2>/dev/null || echo "")
+        resp=$(curl -s --max-time 5 http://localhost:8001/health 2>/dev/null) || resp=""
         if [[ -n "$resp" ]]; then
             local st
-            st=$(echo "$resp" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('status',''))" 2>/dev/null || echo "")
+            st=$(echo "$resp" | $PY -c "
+import sys, json
+try:
+    print(json.loads(sys.stdin.read()).get('status',''))
+except:
+    print('')
+" 2>/dev/null) || st=""
             case "$st" in
                 ok)       ok "Healthcheck: OK"; return 0 ;;
                 degraded) warn "Healthcheck: DEGRADED — models may still be loading"
-                          echo "$resp" | python3 -m json.tool 2>/dev/null
+                          echo "$resp" | $PY -m json.tool 2>/dev/null || echo "$resp"
                           return 0 ;;
             esac
         fi
@@ -263,9 +320,9 @@ start_docker() {
 
 show_status() {
     echo ""
-    echo "═══════════════════════════════════════"
-    echo "  SprintSight HPC Dev — Status"
-    echo "═══════════════════════════════════════"
+    echo "========================================="
+    echo "  SprintSight HPC Dev -- Status"
+    echo "========================================="
     echo ""
 
     # SSH
@@ -293,10 +350,10 @@ show_status() {
     # Health
     echo ""
     local resp
-    resp=$(curl -sf http://localhost:8001/health 2>/dev/null || echo "")
+    resp=$(curl -s --max-time 5 http://localhost:8001/health 2>/dev/null) || resp=""
     if [[ -n "$resp" ]]; then
         info "Healthcheck:"
-        echo "$resp" | python3 -m json.tool 2>/dev/null
+        echo "$resp" | $PY -m json.tool 2>/dev/null || echo "  $resp"
     else
         warn "sprintsight_ai not responding on localhost:8001"
     fi
@@ -319,9 +376,9 @@ cmd="${1:-full}"
 case "$cmd" in
     full)
         echo ""
-        echo "═══════════════════════════════════════"
-        echo "  SprintSight HPC Dev — Full Startup"
-        echo "═══════════════════════════════════════"
+        echo "========================================="
+        echo "  SprintSight HPC Dev -- Full Startup"
+        echo "========================================="
         echo ""
         info "Step 1/3: Verify tunnel"
         if ! check_tunnel; then
@@ -347,10 +404,10 @@ case "$cmd" in
         start_docker
 
         echo ""
-        echo "═══════════════════════════════════════"
+        echo "========================================="
         ok "Ready! API: http://localhost:8001"
         ok "MLflow: http://localhost:5000"
-        echo "═══════════════════════════════════════"
+        echo "========================================="
         ;;
 
     status)  show_status ;;
