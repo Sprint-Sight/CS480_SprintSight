@@ -88,6 +88,23 @@ _GENERIC_COMMIT_MESSAGES = {
     "commit", "stuff", "asdf", "test",
 }
 
+_COMMIT_BUDGET = int(os.getenv("LLM_COMMIT_BUDGET", "30"))
+
+_DIMENSION_FILE_PATTERNS: dict[str, list[str] | None] = {
+    "code_quality": None,
+    "testing": [
+        "test", "spec", "__test__", "_test.", ".test.", "coverage",
+    ],
+    "documentation": [
+        "readme", ".md", "docs/", "doc/", "changelog", "license",
+        "contributing",
+    ],
+    "cicd": [
+        ".github/", ".gitlab-ci", "dockerfile", "docker-compose",
+        "makefile", "deploy", "workflow",
+        "pipeline", "ci/", "terraform",
+    ],
+}
 
 _DIMENSION_ARTIFACT_FIELDS = {
     "code_quality": ("commits",),
@@ -103,7 +120,128 @@ _DIMENSION_ARTIFACT_FIELDS = {
 }
 
 
-def _dimension_bundle_data(bundle: ArtifactBundle, dimension_name: str) -> str:
+def _trim_commits(raw_commits: list[dict]) -> list[dict]:
+    return [
+        {
+            "sha": c["sha"],
+            "author": c["author"],
+            "message": c["message"],
+            "timestamp": c["timestamp"],
+            "lines_added": c["lines_added"],
+            "lines_deleted": c["lines_deleted"],
+            "files_changed": [fc["filename"] for fc in c["files_changed"]],
+        }
+        for c in raw_commits
+    ]
+
+
+def _commit_matches_patterns(commit: dict, patterns: list[str]) -> bool:
+    files = commit.get("files_changed", [])
+    return any(
+        any(p in fname.lower() for p in patterns) for fname in files
+    )
+
+
+def _select_representative_commits(
+    commits: list[dict],
+    dimension: str,
+    budget: int = _COMMIT_BUDGET,
+) -> list[dict]:
+    if len(commits) <= budget:
+        return commits
+
+    patterns = _DIMENSION_FILE_PATTERNS.get(dimension)
+    selected_shas: set[str] = set()
+    result: list[dict] = []
+
+    def _add(c: dict) -> bool:
+        if c["sha"] in selected_shas:
+            return False
+        selected_shas.add(c["sha"])
+        result.append(c)
+        return True
+
+    if patterns is not None:
+        matched = [c for c in commits if _commit_matches_patterns(c, patterns)]
+        unmatched = [c for c in commits if not _commit_matches_patterns(c, patterns)]
+        for c in matched[:budget]:
+            _add(c)
+        by_date = sorted(unmatched, key=lambda c: c.get("timestamp", ""), reverse=True)
+        for c in by_date:
+            if len(result) >= budget:
+                break
+            _add(c)
+    else:
+        by_churn = sorted(
+            commits,
+            key=lambda c: c.get("lines_added", 0) + c.get("lines_deleted", 0),
+            reverse=True,
+        )
+        by_date = sorted(commits, key=lambda c: c.get("timestamp", ""), reverse=True)
+        for c in by_date[: budget // 2]:
+            _add(c)
+        for c in by_churn:
+            if len(result) >= budget:
+                break
+            _add(c)
+
+    return sorted(result, key=lambda c: c.get("timestamp", ""))
+
+
+def _compute_jira_facts(tickets: list[dict]) -> str:
+    if not tickets:
+        return ""
+
+    by_status: dict[str, int] = Counter(t.get("status") or "Unknown" for t in tickets)
+    by_type: dict[str, int] = Counter(t.get("issue_type") or "Unknown" for t in tickets)
+
+    estimated = [t for t in tickets if t.get("story_points") is not None]
+    total_sp = sum(t["story_points"] for t in estimated)
+    done_sp = sum(
+        t["story_points"] for t in estimated if t.get("status") == "Done"
+    )
+    unestimated_count = len(tickets) - len(estimated)
+    sp_pct = (done_sp / total_sp * 100) if total_sp > 0 else 0
+
+    assignees: dict[str, dict] = {}
+    for t in tickets:
+        a = t.get("assignee") or "Unassigned"
+        if a not in assignees:
+            assignees[a] = {"done": 0, "total": 0, "sp_done": 0.0, "sp_total": 0.0}
+        assignees[a]["total"] += 1
+        sp = t.get("story_points") or 0
+        assignees[a]["sp_total"] += sp
+        if t.get("status") == "Done":
+            assignees[a]["done"] += 1
+            assignees[a]["sp_done"] += sp
+
+    status_str = ", ".join(f"{cnt} {st}" for st, cnt in sorted(by_status.items(), key=lambda x: -x[1]))
+    type_str = ", ".join(f"{cnt} {tp}" for tp, cnt in sorted(by_type.items(), key=lambda x: -x[1]))
+    assignee_parts = []
+    for name, d in sorted(assignees.items()):
+        assignee_parts.append(
+            f"{name} ({d['done']}/{d['total']} Done, {d['sp_done']:.0f}/{d['sp_total']:.0f} SP)"
+        )
+
+    lines = [
+        "Jira ticket facts (trust these over your own counting):",
+        f"- {len(tickets)} ticket(s) total: {status_str}.",
+        f"- Story points: {done_sp:.0f} of {total_sp:.0f} completed ({sp_pct:.1f}%).",
+        f"- By type: {type_str}.",
+        f"- Per-assignee: {'; '.join(assignee_parts)}.",
+    ]
+    if unestimated_count:
+        lines.append(
+            f"- {unestimated_count} ticket(s) have no story point estimate."
+        )
+    return "\n    ".join(lines)
+
+
+def _dimension_bundle_data(
+    bundle: ArtifactBundle,
+    dimension_name: str,
+    sampled_commits: list[dict] | None = None,
+) -> str:
     fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name)
     if fields is None:
         raise ValueError(f"Unknown rubric dimension: {dimension_name}")
@@ -116,18 +254,10 @@ def _dimension_bundle_data(bundle: ArtifactBundle, dimension_name: str) -> str:
     }
 
     if "commits" in fields:
-        bundle_data["commits"] = [
-            {
-                "sha": commit["sha"],
-                "author": commit["author"],
-                "message": commit["message"],
-                "timestamp": commit["timestamp"],
-                "lines_added": commit["lines_added"],
-                "lines_deleted": commit["lines_deleted"],
-                "files_changed": [file_change["filename"] for file_change in commit["files_changed"]],
-            }
-            for commit in full_bundle["commits"]
-        ]
+        if sampled_commits is not None:
+            bundle_data["commits"] = sampled_commits
+        else:
+            bundle_data["commits"] = _trim_commits(full_bundle["commits"])
 
     for field in fields:
         if field != "commits":
@@ -136,12 +266,11 @@ def _dimension_bundle_data(bundle: ArtifactBundle, dimension_name: str) -> str:
     return json.dumps(bundle_data, indent=2, ensure_ascii=True)
 
 
-def _compute_commit_facts(commits: list[dict]) -> str:
+def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> str:
     """
-    Precomputes objective facts about a dimension's commit list (active days,
-    line counts, share of generic messages) instead of asking a small model
-    to notice them unprompted while also composing a justification. Returns
-    "" when there are no commits so callers can skip the section entirely.
+    Precomputes objective facts about a dimension's commit list so the model
+    has the full statistical picture even when only a sample of commits is
+    included in the bundle.  Returns "" when there are no commits.
     """
     if not commits:
         return ""
@@ -152,10 +281,6 @@ def _compute_commit_facts(commits: list[dict]) -> str:
     lines_added_total = sum(commit.get("lines_added", 0) for commit in commits)
     lines_deleted_total = sum(commit.get("lines_deleted", 0) for commit in commits)
 
-    # Recompute "meaningful" lines added by excluding files with a low-signal
-    # extension, so bulk data/generated output doesn't masquerade as authored
-    # code volume. Falls back to the aggregate total when a commit carries no
-    # per-file breakdown.
     meaningful_lines_added = 0
     for commit in commits:
         files_changed = commit.get("files_changed") or []
@@ -164,10 +289,6 @@ def _compute_commit_facts(commits: list[dict]) -> str:
             continue
         for filename in files_changed:
             if PurePosixPath(filename).suffix.lower() not in _LOW_SIGNAL_EXTENSIONS:
-                # Per-file line counts aren't in the trimmed dimension bundle
-                # (only filenames are), so distribute proportionally isn't
-                # possible here — count the commit's lines once, keyed off
-                # whether it touched ANY non-low-signal file.
                 meaningful_lines_added += commit.get("lines_added", 0)
                 break
 
@@ -180,6 +301,37 @@ def _compute_commit_facts(commits: list[dict]) -> str:
     generic_examples = sorted(
         {message for message in message_counts if message in _GENERIC_COMMIT_MESSAGES}
     )[:3]
+
+    # ── Per-author breakdown ──
+    author_stats: dict[str, dict] = {}
+    for commit in commits:
+        a = commit.get("author") or "unknown"
+        if a not in author_stats:
+            author_stats[a] = {"commits": 0, "added": 0, "deleted": 0, "days": set()}
+        author_stats[a]["commits"] += 1
+        author_stats[a]["added"] += commit.get("lines_added", 0)
+        author_stats[a]["deleted"] += commit.get("lines_deleted", 0)
+        ts = commit.get("timestamp", "")
+        if ts:
+            author_stats[a]["days"].add(ts[:10])
+
+    author_lines = []
+    for name in sorted(author_stats, key=lambda n: -author_stats[n]["commits"]):
+        s = author_stats[name]
+        author_lines.append(
+            f"  {name}: {s['commits']} commits, "
+            f"+{s['added']}/-{s['deleted']} lines, "
+            f"{len(s['days'])} active day(s)"
+        )
+
+    # ── File change heatmap (top 10) ──
+    file_freq: Counter[str] = Counter()
+    for commit in commits:
+        for fname in commit.get("files_changed") or []:
+            file_freq[fname] += 1
+    heatmap_lines = [
+        f"  {fname}: {cnt} commit(s)" for fname, cnt in file_freq.most_common(10)
+    ]
 
     lines = [
         "Computed facts (trust these over your own counting):",
@@ -194,7 +346,20 @@ def _compute_commit_facts(commits: list[dict]) -> str:
         f"- {generic_count} of {len(commits)} commit message(s) are generic/low-detail "
         f"(e.g. {', '.join(repr(m) for m in generic_examples) or 'none'})." if generic_count
         else f"- 0 of {len(commits)} commit message(s) are generic/low-detail.",
+        "",
+        "Per-author breakdown:",
+        *author_lines,
+        "",
+        "Most-changed files (top 10):",
+        *(heatmap_lines or ["  (no file data)"]),
     ]
+
+    if len(commits) > budget:
+        lines.append(
+            f"\nNOTE: {len(commits)} total commits; the {budget} most representative "
+            f"are included below as citable evidence."
+        )
+
     return "\n    ".join(lines)
 
 
@@ -321,7 +486,31 @@ async def evaluate_dimension(
 ) -> RubricDimensionScore:
     # Evaluate a single rubric dimension.
     fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name, ())
-    bundle_data = _dimension_bundle_data(bundle, dimension_name)
+    full_bundle = bundle.model_dump(mode="json")
+
+    # ── Stats from ALL commits, then sample for the bundle ──
+    sampled_commits: list[dict] | None = None
+    if "commits" in fields:
+        all_trimmed = _trim_commits(full_bundle["commits"])
+        commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
+        sampled_commits = _select_representative_commits(
+            all_trimmed, dimension_name, _COMMIT_BUDGET,
+        )
+        log.info(
+            ">>> Dimension '%s': %d total commits -> %d sampled (budget=%d)",
+            dimension_name, len(all_trimmed), len(sampled_commits), _COMMIT_BUDGET,
+        )
+    else:
+        commit_facts = ""
+
+    jira_facts = (
+        _compute_jira_facts(full_bundle["jira_tickets"])
+        if "jira_tickets" in fields else ""
+    )
+
+    computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
+
+    bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
     bundle_hash = hashlib.sha256(
         bundle_data.encode("utf-8")
     ).hexdigest()
@@ -334,13 +523,14 @@ async def evaluate_dimension(
         approx_tokens,
     )
 
-    computed_facts = (
-        # Reuse the exact trimmed/filename-only commit list already built for
-        # bundle_data (not bundle.commits directly, whose files_changed is a
-        # list of FileDiff objects, not bare filenames).
-        _compute_commit_facts(json.loads(bundle_data).get("commits", []))
-        if "commits" in fields else ""
-    )
+    effective_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
+    if approx_tokens > effective_ctx * 0.85:
+        log.warning(
+            ">>> Dimension '%s': prompt (~%d tokens) approaches num_ctx (%d). "
+            "Output quality may degrade from silent truncation.",
+            dimension_name, approx_tokens, effective_ctx,
+        )
+
     prompt = render_dimension_prompt(dimension_name, dimention_prompt, bundle_data, computed_facts)
 
     client = create_llm_client()  # Create a new client for this model
