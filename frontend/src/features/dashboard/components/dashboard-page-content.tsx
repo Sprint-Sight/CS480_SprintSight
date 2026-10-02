@@ -8,13 +8,20 @@ import { DashboardHeader } from "@/features/dashboard/components/dashboard-heade
 import { DashboardMetrics } from "@/features/dashboard/components/dashboard-metrics";
 import { JiraWorkList } from "@/features/dashboard/components/jira-work-list";
 import { RecentGitEvidence } from "@/features/dashboard/components/recent-git-evidence";
+import { StudentDashboardSummary } from "@/features/dashboard/components/student-dashboard-summary";
 import { useDashboardData } from "@/features/dashboard/hooks/use-dashboard-data";
+import { useStudentProjectContext } from "@/features/student/hooks/use-student-project-context";
 
 export default function DashboardPageContent() {
   const router = useRouter();
   const dashboard = useDashboardData(router);
+  const studentContext = useStudentProjectContext(dashboard.role === "student");
 
   if (!dashboard.mounted) return null;
+
+  if (dashboard.role === "student") {
+    return <div className="mx-auto min-h-screen max-w-7xl space-y-8 bg-slate-50 p-8"><DashboardHeader role={dashboard.role} fullName={dashboard.fullName} /><StudentDashboardSummary project={studentContext.project} report={studentContext.report} isLoading={studentContext.isLoading} error={studentContext.error} /></div>;
+  }
 
   return (
     <div className="mx-auto min-h-screen max-w-7xl space-y-8 bg-slate-50 p-8">

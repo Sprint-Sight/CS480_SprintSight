@@ -165,7 +165,7 @@ export default function ArtifactViewerPageContent() {
   // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
   const [fullName, setFullName] = useState<string>("");
-  const { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
+  const { projectOptions, selectedProjectId, selectedSprintId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
 
   
   // Local state for documents to allow instant UI updates upon upload
@@ -220,12 +220,12 @@ export default function ArtifactViewerPageContent() {
           : "";
 
   useEffect(() => {
-    const persisted = getProjectIngestion(selectedProjectId);
+    const persisted = getProjectIngestion(selectedProjectId, selectedSprintId);
     const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
     setGitRuns(persistedGitRuns);
-    const latestGitRun = persistedGitRuns.at(-1) || null;
-    if (latestGitRun) {
-      setGitMetrics(latestGitRun);
+    const selectedGitRun = persistedGitRuns.find((run) => run.sprint_id === selectedSprintId) || null;
+    if (selectedGitRun) {
+      setGitMetrics(selectedGitRun);
       setGitSprintId(buildNextSprintId(persistedGitRuns.map((run) => run.sprint_id)));
     } else {
       setGitMetrics(null);
@@ -236,7 +236,7 @@ export default function ArtifactViewerPageContent() {
     } else {
       setJiraSnapshot(null);
     }
-  }, [selectedProjectId]);
+  }, [selectedProjectId, selectedSprintId]);
 
   useEffect(() => {
     async function loadDocuments() {
@@ -275,9 +275,11 @@ export default function ArtifactViewerPageContent() {
       try {
         const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`);
         setJiraRuns(runs);
-        const latestCompleted = runs.find((run) => run.processing_status === "completed");
-        if (latestCompleted) {
-          await loadCleanedRun(latestCompleted);
+        const selectedCompleted = runs.find((run) => run.sprint_id === selectedSprintId && run.processing_status === "completed");
+        if (selectedCompleted) {
+          await loadCleanedRun(selectedCompleted);
+        } else {
+          setJiraSnapshot(null);
         }
         setSprintId(buildNextSprintId(runs.map((run) => run.sprint_id)));
       } catch (error) {
@@ -288,7 +290,7 @@ export default function ArtifactViewerPageContent() {
     }
 
     loadProjectRuns();
-  }, [selectedProjectId]);
+  }, [selectedProjectId, selectedSprintId]);
 
   async function loadGitMetrics() {
     const sprint = gitSprintId.trim();

@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Shield,
   LogOut,
   UserPlus,
+  ClipboardList,
   Search,
   Filter,
   Edit3,
@@ -341,6 +343,13 @@ export function AdminPageContent() {
         </div>
         
         <div className="flex items-center gap-3 self-start md:self-auto">
+          <Link
+            href="/admin/audit-log"
+            className="inline-flex items-center gap-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
+          >
+            <ClipboardList className="w-4 h-4 text-slate-500" />
+            Audit Log
+          </Link>
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { apiRequest, isUuid } from "@/features/projects/components/projects-api";
 import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
+import { getStudentProjects } from "@/features/student/student-project-api";
 import type { DashboardProject, DashboardRole, GitMetrics, JiraRun, JiraSnapshot } from "@/features/dashboard/types";
 
 type DashboardState = {
@@ -48,18 +49,16 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
   useEffect(() => {
     if (!mounted) return;
     if (role === "student") {
-      const persisted = readIngestionState();
-      const firstGitRun = Object.values(persisted.gitBySprint)[0];
-      const firstJiraRun = Object.values(persisted.jiraBySprint)[0];
-      const projectId = persisted.selectedProjectId || firstGitRun?.project_id || firstJiraRun?.project_id;
-      const courseId = persisted.selectedCourseId || firstGitRun?.course_id || firstJiraRun?.course_id;
-      if (!projectId || !courseId) {
-        setLoadError("No synced project data is available for your account yet.");
+      void getStudentProjects().then((studentProjects) => {
+        const projects = studentProjects.map((project) => ({ id: project.id, courseId: "", label: `${project.team_name} - ${project.project_name}` }));
+        setProjects(projects);
+        setSelectedProjectId(projects[0]?.id || "");
+        setLoadError(projects.length ? "" : "You are not assigned to a project yet.");
         setIsLoading(false);
-        return;
-      }
-      setProjects([{ id: projectId, courseId, label: "My project" }]);
-      setSelectedProjectId(projectId);
+      }).catch((error) => {
+        setLoadError(error instanceof Error ? error.message : "Could not load your project.");
+        setIsLoading(false);
+      });
       return;
     }
 
@@ -107,10 +106,8 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
     const courseId = selectedProject.courseId;
     const currentSprintId = sprintId.trim();
     if (role === "student") {
-      const ingestion = getProjectIngestion(projectId, currentSprintId);
-      setGitMetrics(ingestion.git || null);
-      setJiraSnapshot(ingestion.jira || null);
-      setLoadError(ingestion.git || ingestion.jira ? "" : "No synced ingestion data is available for this sprint.");
+      setGitMetrics(null);
+      setJiraSnapshot(null);
       setIsLoading(false);
       return;
     }
