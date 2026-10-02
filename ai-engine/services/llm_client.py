@@ -80,6 +80,20 @@ _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 # extensions that are overwhelmingly non-code in this project's repos.
 _LOW_SIGNAL_EXTENSIONS = {".txt", ".json"}
 
+_NOISE_PATH_SEGMENTS = {
+    "node_modules/", "vendor/", "venv/", ".venv/", "env/",
+    "dist/", "build/", "out/", "__pycache__/", ".next/", ".nuxt/",
+    "target/", "bower_components/", ".gradle/", ".m2/", "Pods/",
+    "DerivedData/", ".terraform/", ".angular/", ".cache/",
+}
+_LOCKFILE_NAMES = {
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
+    "Pipfile.lock", "Cargo.lock", "go.sum", "composer.lock",
+    "Gemfile.lock", "shrinkwrap.yaml", "bun.lockb",
+}
+_GENERATED_EXTENSIONS = {".min.js", ".min.css", ".map", ".chunk.js", ".bundle.js"}
+_MAX_FILES_PER_COMMIT = int(os.getenv("LLM_MAX_FILES_PER_COMMIT", "20"))
+
 # Commit messages so generic they carry ~no information about what changed.
 # Compared after stripping whitespace and lowercasing.
 _GENERIC_COMMIT_MESSAGES = {
@@ -120,19 +134,33 @@ _DIMENSION_ARTIFACT_FIELDS = {
 }
 
 
+def _is_noise_file(path: str) -> bool:
+    lower = path.lower().replace("\\", "/")
+    if any(seg in lower for seg in _NOISE_PATH_SEGMENTS):
+        return True
+    basename = lower.rsplit("/", 1)[-1]
+    if basename in _LOCKFILE_NAMES:
+        return True
+    return any(basename.endswith(ext) for ext in _GENERATED_EXTENSIONS)
+
+
 def _trim_commits(raw_commits: list[dict]) -> list[dict]:
-    return [
-        {
+    result = []
+    for c in raw_commits:
+        files = [fc["filename"] for fc in c["files_changed"]]
+        files = [f for f in files if not _is_noise_file(f)]
+        if len(files) > _MAX_FILES_PER_COMMIT:
+            files = files[:_MAX_FILES_PER_COMMIT]
+        result.append({
             "sha": c["sha"],
             "author": c["author"],
             "message": c["message"],
             "timestamp": c["timestamp"],
             "lines_added": c["lines_added"],
             "lines_deleted": c["lines_deleted"],
-            "files_changed": [fc["filename"] for fc in c["files_changed"]],
-        }
-        for c in raw_commits
-    ]
+            "files_changed": files,
+        })
+    return result
 
 
 def _commit_matches_patterns(commit: dict, patterns: list[str]) -> bool:
