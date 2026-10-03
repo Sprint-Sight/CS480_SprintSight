@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.errors import UniqueViolation
 
 from app.dependencies.auth import (
+    get_assessment_repository,
+    get_jira_ingestion_repository,
     get_project_repository,
     get_user_repository,
     require_admin,
@@ -14,7 +16,9 @@ from app.dependencies.auth import (
     get_current_user,
 )
 from app.core.credential_crypto import encrypt_secret
-from app.repositories.interfaces import ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.schemas.assessment import AssessmentReport
+from app.services.auditLogService.service import append_action_audit
 from app.schemas.auth import Role, UserResponse
 from app.schemas.projects import (
     CourseCreate,
@@ -128,6 +132,19 @@ def create_course(
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
     course = repository.create_course(payload.code, payload.name, payload.section, payload.year, payload.term, current_user.id)
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="create_course",
+        target_type="course",
+        target_id=course.id,
+        details={
+            "code": course.code,
+            "section": course.section,
+            "year": course.year,
+            "term": course.term,
+        },
+    )
     return CourseResponse(
         id=course.id,
         code=course.code,
@@ -211,6 +228,14 @@ def update_course(
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
     updated = repository.update_course(course_id, code, payload.name or course.name, section, year, term)
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="update_course",
+        target_type="course",
+        target_id=course_id,
+        details={"code": code, "section": section, "year": year, "term": term},
+    )
     return CourseResponse(
         id=updated.id,
         code=updated.code,
@@ -233,6 +258,14 @@ def delete_course(
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an assigned instructor can manage this course.")
     repository.delete_course(course_id)
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="delete_course",
+        target_type="course",
+        target_id=course_id,
+        details={"code": course.code, "section": course.section, "year": course.year, "term": course.term},
+    )
     return CourseResponse(
         id=course.id,
         code=course.code,
@@ -420,6 +453,14 @@ def create_project(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A student is already assigned to another project in this course.") from exc
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name or project parameters conflict with existing records.") from exc
 
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="create_project",
+        target_type="project",
+        target_id=project.id,
+        details={"team_name": project.team_name, "course_id": course_id},
+    )
     return _project_response(project, repository, users)
 
 
@@ -437,6 +478,114 @@ def list_projects(
     elif not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this course.")
     return [_project_response(project, repository, users) for project in projects]
+
+
+@router.get("/students/courses", response_model=list[CourseResponse])
+def list_student_courses(
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+) -> list[CourseResponse]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+    courses = [course for course in repository.list_courses() if repository.is_student_enrolled(course.id, current_user.id)]
+    return [
+        CourseResponse(
+            id=course.id,
+            code=course.code,
+            name=course.name,
+            section=course.section,
+            year=course.year,
+            term=course.term,
+            created_by=course.created_by,
+            created_at=course.created_at,
+        )
+        for course in courses
+    ]
+
+
+@router.get("/students/projects", response_model=list[ProjectResponse])
+def list_student_projects(
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> list[ProjectResponse]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+
+    projects: list[ProjectRecord] = []
+    for course in repository.list_courses():
+        if not repository.is_student_enrolled(course.id, current_user.id):
+            continue
+        projects.extend(
+            project for project in repository.list_projects(course.id) if current_user.id in repository.list_member_ids(project.id)
+        )
+    return [_project_response(project, repository, users) for project in projects]
+
+
+@router.get("/students/projects/{project_id}", response_model=ProjectResponse)
+def get_student_project(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> ProjectResponse:
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+    if current_user.id not in repository.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+    return _project_response(project, repository, users)
+
+
+@router.get("/students/projects/{project_id}/reports", response_model=list[AssessmentReport])
+def list_student_project_reports(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+) -> list[AssessmentReport]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if current_user.id not in repository.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    if assessment_repository is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+    return assessment_repository.list_project_reports(project.course_id, project.id) or []
+
+
+@router.get("/students/projects/{project_id}/sprints", response_model=list[str])
+def list_student_project_sprints(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    jira_runs_repo: Annotated[object, Depends(get_jira_ingestion_repository)],
+) -> list[str]:
+    if current_user.role != Role.STUDENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This endpoint is for students only.")
+
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if current_user.id not in repository.list_member_ids(project_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    sprint_ids: set[str] = set()
+    if assessment_repository is not None:
+        for report in assessment_repository.list_project_reports(project.course_id, project.id) or []:
+            if report.sprint_id:
+                sprint_ids.add(report.sprint_id)
+    for run in jira_runs_repo.list_project_runs(project_id):
+        if run.sprint_id:
+            sprint_ids.add(run.sprint_id)
+    return sorted(sprint_ids)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
@@ -513,7 +662,48 @@ def update_project(
     except UniqueViolation as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project fields conflict with an existing project.") from exc
 
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="update_project",
+        target_type="project",
+        target_id=project_id,
+        details={
+            "project_name": project_name,
+            "team_name": team_name,
+            "course_id": project.course_id,
+            "jira_project_key": jira_key,
+        },
+    )
     return _project_response(updated, repository, users)
+
+
+@router.delete("/projects/{project_id}", response_model=ProjectResponse)
+def delete_project(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> ProjectResponse:
+    project = repository.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    if not _can_manage_course(current_user, project.course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    deleted = repository.delete_project(project_id)
+    if deleted is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="delete_project",
+        target_type="project",
+        target_id=project_id,
+        details={"team_name": project.team_name, "course_id": project.course_id},
+    )
+    return _project_response(project, repository, users)
 
 
 @router.post("/projects/{project_id}/members/{user_id}", response_model=ProjectResponse)
@@ -545,6 +735,14 @@ def add_member(
             status_code=status.HTTP_409_CONFLICT, detail="Student is already assigned to a project group in this course."
         ) from exc
 
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="add_project_member",
+        target_type="project_member",
+        target_id=user_id,
+        details={"project_id": project_id, "course_id": project.course_id},
+    )
     return _project_response(project, repository, users)
 
 
@@ -565,4 +763,12 @@ def remove_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not a member of this project.")
 
     repository.set_members(project_id, [m_id for m_id in current_members if m_id != user_id])
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="remove_project_member",
+        target_type="project_member",
+        target_id=user_id,
+        details={"project_id": project_id, "course_id": project.course_id},
+    )
     return _project_response(project, repository, users)  

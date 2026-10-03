@@ -164,6 +164,26 @@ class AssessmentReport(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     recommendations: list[str]
+    override: bool = False
+    requirements_score: float | None = Field(default=None, ge=0, le=100)
+    code_quality_score: float | None = Field(default=None, ge=0, le=100)
+    documentation_score: float | None = Field(default=None, ge=0, le=100)
+    collaboration_score: float | None = Field(default=None, ge=0, le=100)
+    requirements_justification: str | None = Field(default=None, max_length=500)
+    code_quality_justification: str | None = Field(default=None, max_length=500)
+    documentation_justification: str | None = Field(default=None, max_length=500)
+    collaboration_justification: str | None = Field(default=None, max_length=500)
+
+
+class ManualAssessmentPatch(BaseModel):
+    requirements_score: float = Field(ge=0, le=100)
+    code_quality_score: float = Field(ge=0, le=100)
+    documentation_score: float = Field(ge=0, le=100)
+    collaboration_score: float = Field(ge=0, le=100)
+    requirements_justification: str = Field(min_length=1, max_length=500)
+    code_quality_justification: str = Field(min_length=1, max_length=500)
+    documentation_justification: str = Field(min_length=1, max_length=500)
+    collaboration_justification: str = Field(min_length=1, max_length=500)
 
 
 class RubricWeightsPayload(BaseModel):
@@ -207,3 +227,14 @@ class AuditRecord(BaseModel):
     original_score: float
     new_score: float
     reason_comment: str
+
+
+class ActionAuditRecord(BaseModel):
+    audit_id: str
+    actor_id: str
+    actor_role: Literal["admin", "instructor", "student"]
+    action: str
+    target_type: str
+    target_id: str
+    details: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)

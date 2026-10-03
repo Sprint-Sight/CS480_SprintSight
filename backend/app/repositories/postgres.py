@@ -604,9 +604,66 @@ def ensure_assessment_schema(pool: ConnectionPool) -> None:
                 recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
                 rubric_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
                 strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
-                weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb
+                weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb,
+                override BOOLEAN NOT NULL DEFAULT FALSE,
+                requirements_score NUMERIC(5, 2) CHECK (requirements_score BETWEEN 0 AND 100),
+                code_quality_score NUMERIC(5, 2) CHECK (code_quality_score BETWEEN 0 AND 100),
+                documentation_score NUMERIC(5, 2) CHECK (documentation_score BETWEEN 0 AND 100),
+                collaboration_score NUMERIC(5, 2) CHECK (collaboration_score BETWEEN 0 AND 100),
+                requirements_justification VARCHAR(500),
+                code_quality_justification VARCHAR(500),
+                documentation_justification VARCHAR(500),
+                collaboration_justification VARCHAR(500),
+                CONSTRAINT assessment_reports_manual_fields_check CHECK (
+                    NOT override OR (
+                        requirements_score IS NOT NULL AND
+                        code_quality_score IS NOT NULL AND
+                        documentation_score IS NOT NULL AND
+                        collaboration_score IS NOT NULL AND
+                        requirements_justification IS NOT NULL AND
+                        code_quality_justification IS NOT NULL AND
+                        documentation_justification IS NOT NULL AND
+                        collaboration_justification IS NOT NULL
+                    )
+                )
             )"""
         )
+        for statement in (
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS override BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS requirements_score NUMERIC(5, 2)",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS code_quality_score NUMERIC(5, 2)",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS documentation_score NUMERIC(5, 2)",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS collaboration_score NUMERIC(5, 2)",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS requirements_justification VARCHAR(500)",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS code_quality_justification VARCHAR(500)",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS documentation_justification VARCHAR(500)",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS collaboration_justification VARCHAR(500)",
+        ):
+            connection.execute(statement)
+        connection.execute(
+            """DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'assessment_reports_manual_fields_check'
+                ) THEN
+                    ALTER TABLE assessment_reports
+                    ADD CONSTRAINT assessment_reports_manual_fields_check CHECK (
+                        NOT override OR (
+                            requirements_score IS NOT NULL AND
+                            code_quality_score IS NOT NULL AND
+                            documentation_score IS NOT NULL AND
+                            collaboration_score IS NOT NULL AND
+                            requirements_justification IS NOT NULL AND
+                            code_quality_justification IS NOT NULL AND
+                            documentation_justification IS NOT NULL AND
+                            collaboration_justification IS NOT NULL
+                        )
+                    );
+                END IF;
+            END $$"""
+        )
+        connection.execute("DROP TABLE IF EXISTS assessment_override")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC)")
 
 
@@ -663,6 +720,35 @@ class PostgresAssessmentRepository(AssessmentRepository):
             ).fetchone()
             return self._report(row) if row else None
 
+    def update_manual_assessment(self, report_id: str, patch: dict[str, object]) -> AssessmentReport | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE assessment_reports
+                SET override = TRUE,
+                    requirements_score = %s,
+                    code_quality_score = %s,
+                    documentation_score = %s,
+                    collaboration_score = %s,
+                    requirements_justification = %s,
+                    code_quality_justification = %s,
+                    documentation_justification = %s,
+                    collaboration_justification = %s
+                WHERE report_id = %s
+                RETURNING *""",
+                (
+                    patch["requirements_score"],
+                    patch["code_quality_score"],
+                    patch["documentation_score"],
+                    patch["collaboration_score"],
+                    patch["requirements_justification"],
+                    patch["code_quality_justification"],
+                    patch["documentation_justification"],
+                    patch["collaboration_justification"],
+                    UUID(report_id.replace("rpt-", "")),
+                ),
+            ).fetchone()
+        return self._report(row) if row else None
+
     def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]:
         with self._pool.connection() as connection:
             rows = connection.execute(
@@ -671,7 +757,17 @@ class PostgresAssessmentRepository(AssessmentRepository):
                 ORDER BY generated_at DESC""",
                 (UUID(course_id), UUID(project_id), sprint_id),
             ).fetchall()
-        return [self._report(row) for row in rows]
+        return [self._report(row) for row in rows or []]
+
+    def list_project_reports(self, course_id: str, project_id: str) -> list[AssessmentReport]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM assessment_reports
+                WHERE course_id = %s AND project_id = %s
+                ORDER BY generated_at DESC""",
+                (UUID(course_id), UUID(project_id)),
+            ).fetchall()
+        return [self._report(row) for row in rows or []]
 
     def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
         with self._pool.connection() as connection:
@@ -706,6 +802,15 @@ class PostgresAssessmentRepository(AssessmentRepository):
             rubric_scores=rubric_scores,
             strengths=row["strengths"],
             weaknesses=row["weaknesses"],
+            override=row.get("override", False),
+            requirements_score=float(row["requirements_score"]) if row.get("requirements_score") is not None else None,
+            code_quality_score=float(row["code_quality_score"]) if row.get("code_quality_score") is not None else None,
+            documentation_score=float(row["documentation_score"]) if row.get("documentation_score") is not None else None,
+            collaboration_score=float(row["collaboration_score"]) if row.get("collaboration_score") is not None else None,
+            requirements_justification=row.get("requirements_justification"),
+            code_quality_justification=row.get("code_quality_justification"),
+            documentation_justification=row.get("documentation_justification"),
+            collaboration_justification=row.get("collaboration_justification"),
         )
 
 
@@ -744,7 +849,14 @@ class PostgresMetricsRepository(MetricsRepository):
                          Json([file.model_dump() for file in commit.files_changed])),
                     )
 
-    def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None:
+    def get_metrics(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> IngestionMetricBundle | None:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """SELECT ir.course_id, ir.project_id, ir.sprint_id,
@@ -757,14 +869,24 @@ class PostgresMetricsRepository(MetricsRepository):
             ).fetchone()
             if not row:
                 return None
+            commit_filters = [
+                "ingestion_run_id = (SELECT ingestion_run_id FROM ingestion_runs "
+                "WHERE course_id = %s AND project_id = %s AND sprint_id = %s)"
+            ]
+            commit_params: list[object] = [UUID(course_id), UUID(project_id), sprint_id]
+            if start_datetime is not None:
+                commit_filters.append("timestamp >= %s")
+                commit_params.append(start_datetime)
+            if end_datetime is not None:
+                commit_filters.append("timestamp < %s")
+                commit_params.append(end_datetime)
             commit_rows = connection.execute(
                 """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
-                    FROM ingestion_commits WHERE ingestion_run_id = (
-                        SELECT ingestion_run_id FROM ingestion_runs
-                        WHERE course_id = %s AND project_id = %s AND sprint_id = %s
-                    ) ORDER BY timestamp, sha""",
-                (UUID(course_id), UUID(project_id), sprint_id),
+                    FROM ingestion_commits WHERE """
+                + " AND ".join(commit_filters)
+                + " ORDER BY timestamp, sha",
+                commit_params,
             ).fetchall()
         from app.schemas.assessment import CommitInfo
         return IngestionMetricBundle(
@@ -788,7 +910,16 @@ class PostgresMetricsRepository(MetricsRepository):
             captured_at=row["captured_at"],
         )
 
-    def get_metrics_page(self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int) -> tuple[IngestionMetricBundle | None, int]:
+    def get_metrics_page(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        limit: int,
+        offset: int,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> tuple[IngestionMetricBundle | None, int]:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """SELECT ir.course_id, ir.project_id, ir.sprint_id,
@@ -802,18 +933,27 @@ class PostgresMetricsRepository(MetricsRepository):
             ).fetchone()
             if not row:
                 return None, 0
+            commit_filters = ["ingestion_run_id = %s"]
+            commit_params: list[object] = [row["ingestion_run_id"]]
+            if start_datetime is not None:
+                commit_filters.append("timestamp >= %s")
+                commit_params.append(start_datetime)
+            if end_datetime is not None:
+                commit_filters.append("timestamp < %s")
+                commit_params.append(end_datetime)
             total = connection.execute(
-                "SELECT COUNT(*) AS total FROM ingestion_commits WHERE ingestion_run_id = %s",
-                (row["ingestion_run_id"],),
+                "SELECT COUNT(*) AS total FROM ingestion_commits WHERE "
+                + " AND ".join(commit_filters),
+                commit_params,
             ).fetchone()["total"]
             commit_rows = connection.execute(
                 """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
                     FROM ingestion_commits
-                    WHERE ingestion_run_id = %s
-                    ORDER BY timestamp, sha
-                    LIMIT %s OFFSET %s""",
-                (row["ingestion_run_id"], limit, offset),
+                    WHERE """
+                + " AND ".join(commit_filters)
+                + " ORDER BY timestamp, sha LIMIT %s OFFSET %s",
+                [*commit_params, limit, offset],
             ).fetchall()
         from app.schemas.assessment import CommitInfo
         return IngestionMetricBundle(

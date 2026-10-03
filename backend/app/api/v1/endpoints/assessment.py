@@ -6,10 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_student_or_faculty
+from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
 from app.repositories.in_memory import job_repo
 from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
-from app.schemas.assessment import AssessRequest, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
+from app.schemas.assessment import AssessRequest, AssessmentReport, ManualAssessmentPatch, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
     get_effective_rubric_weights,
@@ -18,6 +18,7 @@ from app.services.assessmentService.service import (
     override_student_score,
     run_assessment_job,
     set_rubric_weights,
+    update_manual_assessment,
 )
 from app.services.auditLogService.service import append_override_audit
 
@@ -166,6 +167,25 @@ def put_rubric_weights(
         is_custom=True,
         updated_by=record.updated_by,
         updated_at=record.updated_at,
+    )
+
+
+@router.patch("/reports/{report_id}")
+def patch_assessment_report(
+    report_id: str,
+    payload: ManualAssessmentPatch,
+    instructor_user: Annotated[object, Depends(require_instructor)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+) -> AssessmentReport:
+    if assessment_repository is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+    return update_manual_assessment(
+        report_id,
+        payload,
+        instructor_user.id,
+        assessment_repository,
+        projects,
     )
 
 

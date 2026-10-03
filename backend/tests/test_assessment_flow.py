@@ -10,6 +10,8 @@ from app.repositories.interfaces import ProjectRecord
 from app.services.assessmentService.service import convert_ai_result_to_assessment_report
 from app.services.middleManService.service import send_assessment_to_ai_engine
 from datetime import datetime, timezone
+from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
+from app.repositories.in_memory import assessment_repo
 
 
 client = TestClient(app)
@@ -118,6 +120,17 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         [],
     )
 
+
+    monkeypatch.setattr(
+        "app.services.assessmentService.service.send_assessment_to_ai_engine",
+        lambda *args, **kwargs: {
+            "overall_score": 8,
+            "executive_summary": "Strong sprint delivery.",
+            "key_recommendations": ["Improve test coverage."],
+            "member_contributions": [],
+        },
+    )
+
     token = faculty_token()
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -126,9 +139,27 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         json={"course_id": "cs480", "project_id": "proj-a", "sprint_id": "sp1"},
         headers=headers,
     )
-    assert assess_response.status_code == 200
+    assert assess_response.status_code == 202
 
-    report_id = assess_response.json()["report"]["report_id"]
+    report_id = "rpt-audit-1"
+    assessment_repo.save_report(
+        AssessmentReport(
+            report_id=report_id,
+            model_name="mock-rubric-v1",
+            mode="mock",
+            course_id="cs480",
+            project_id="proj-a",
+            sprint_id="sp1",
+            generated_at=datetime.now(timezone.utc),
+            rubric_weights={"delivery": 0.35, "collaboration": 0.30, "quality": 0.20, "documentation": 0.15},
+            team_score=TeamScore(score=80.0, rationale="Initial team assessment."),
+            individual_scores=[StudentScore(student_id="stu-001", score=80.0, rationale="Initial contribution.")],
+            recommendations=["Increase unit testing."],
+            rubric_scores={},
+            strengths=["Delivery"],
+            weaknesses=["Testing"],
+        )
+    )
 
     override_response = client.post(
         "/api/v1/assessments/override",
@@ -147,6 +178,139 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
     audit_list_response = client.get("/api/v1/audit/overrides", headers=headers)
     assert audit_list_response.status_code == 200
     assert len(audit_list_response.json()) >= 1
+
+
+def test_instructor_mutation_actions_are_logged() -> None:
+    token = faculty_token()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        "/api/v1/courses",
+        json={
+            "code": "CS499",
+            "name": "Instructor Audit Course",
+            "section": "A",
+            "year": 2026,
+            "term": "Fall",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201
+
+    audit_response = client.get("/api/v1/audit/actions", headers=headers)
+    assert audit_response.status_code == 200
+    payload = audit_response.json()
+    assert any(item.get("action") == "create_course" for item in payload)
+
+
+def test_admin_reset_password_is_logged() -> None:
+    admin_headers = {"Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'admin@sprintsight.edu', 'password': 'password123'}).json()['access_token']}"}
+    user_response = client.post(
+        "/api/v1/users",
+        json={
+            "email": "reset.audit.user@sprintsight.edu",
+            "full_name": "Reset Audit User",
+            "role": "student",
+            "password": "temporary123",
+        },
+        headers=admin_headers,
+    )
+    assert user_response.status_code == 201
+    user_id = user_response.json()["id"]
+
+    reset_response = client.post(
+        f"/api/v1/users/{user_id}/reset-password",
+        json={"password": "newPassword456"},
+        headers=admin_headers,
+    )
+    assert reset_response.status_code == 200
+
+    audit_response = client.get("/api/v1/audit/actions", headers=admin_headers)
+    assert audit_response.status_code == 200
+    payload = audit_response.json()
+    assert any(
+        item.get("action") == "reset_password"
+        and item.get("target_id") == user_id
+        and item.get("actor_role") == "admin"
+        for item in payload
+    )
+
+
+def test_audit_actions_are_scoped_to_actor_and_project_changes_are_logged() -> None:
+    instructor_headers = {"Authorization": f"Bearer {faculty_token()}"}
+    admin_headers = {"Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'admin@sprintsight.edu', 'password': 'password123'}).json()['access_token']}"}
+
+    course = client.post(
+        "/api/v1/courses",
+        json={
+            "code": "CS505",
+            "name": "Scoped Audit Course",
+            "section": "A",
+            "year": 2026,
+            "term": "Fall",
+        },
+        headers=instructor_headers,
+    )
+    assert course.status_code == 201
+
+    admin_user = client.post(
+        "/api/v1/users",
+        json={
+            "email": "audit.admin.check@sprintsight.edu",
+            "full_name": "Audit Admin Check",
+            "role": "admin",
+            "password": "temporary123",
+        },
+        headers=admin_headers,
+    )
+    assert admin_user.status_code == 201
+
+    instructor_audits = client.get("/api/v1/audit/actions", headers=instructor_headers)
+    assert instructor_audits.status_code == 200
+    instructor_payload = instructor_audits.json()
+    instructor_only = [item for item in instructor_payload if item.get("actor_id") == "u-faculty-1"]
+    assert instructor_only
+    assert all(item["actor_id"] == "u-faculty-1" for item in instructor_payload)
+
+    admin_audits = client.get("/api/v1/audit/actions", headers=admin_headers)
+    assert admin_audits.status_code == 200
+    admin_payload = admin_audits.json()
+    assert any(item["action"] == "create_course" for item in admin_payload)
+    assert any(item["action"] == "create_user" for item in admin_payload)
+
+    project = client.post(
+        f"/api/v1/courses/{course.json()['id']}/projects",
+        json={
+            "project_name": "Audit Project",
+            "team_name": "Audit Team",
+            "description": "Log project updates",
+            "course_id": course.json()["id"],
+            "member_ids": [],
+            "jira_email": "jira.owner@university.edu",
+            "jira_domain": "team.atlassian.net",
+            "jira_project_key": "JIRA",
+            "jira_api_token": "project-jira-token",
+        },
+        headers=instructor_headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    update_response = client.patch(
+        f"/api/v1/projects/{project_id}",
+        json={"project_name": "Updated Audit Project"},
+        headers=instructor_headers,
+    )
+    assert update_response.status_code == 200
+
+    delete_response = client.delete(f"/api/v1/projects/{project_id}", headers=instructor_headers)
+    assert delete_response.status_code == 200
+
+    final_audits = client.get("/api/v1/audit/actions", headers=instructor_headers)
+    assert final_audits.status_code == 200
+    actions = [item["action"] for item in final_audits.json()]
+    assert "update_project" in actions
+    assert "delete_project" in actions
 
 
 def test_assessment_job_contract_returns_accepted_and_job_id(monkeypatch, tmp_path: Path, override_user_repository) -> None:

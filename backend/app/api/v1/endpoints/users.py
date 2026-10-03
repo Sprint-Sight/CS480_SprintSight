@@ -23,6 +23,7 @@ from app.schemas.auth import (
     Role,
     UserResponse,
 )
+from app.services.auditLogService.service import append_action_audit
 from app.services.authService.deactivation import deactivate_user_cascade
 from app.services.authService.service import create_user, reset_password, user_response
 
@@ -92,9 +93,16 @@ def create_managed_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Instructors can only create student accounts.",
         )
-    return user_response(
-        create_user(repository, payload.email, payload.full_name, payload.role, payload.password)
+    created = create_user(repository, payload.email, payload.full_name, payload.role, payload.password)
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="create_user",
+        target_type="user",
+        target_id=created.id,
+        details={"email": created.email, "role": created.role.value},
     )
+    return user_response(created)
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -149,6 +157,14 @@ def update_managed_user(
         payload.role or user.role,
         payload.is_active if payload.is_active is not None else user.is_active,
     )
+    append_action_audit(
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="update_user",
+        target_type="user",
+        target_id=user_id,
+        details={"email": email, "role": (payload.role or user.role).value, "is_active": payload.is_active if payload.is_active is not None else user.is_active},
+    )
     return user_response(updated)
 
 
@@ -156,10 +172,23 @@ def update_managed_user(
 def reset_managed_user_password(
     user_id: str,
     payload: AdminPasswordReset,
-    _: Annotated[UserRecord, Depends(require_admin)],
+    current_admin: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UserResponse:
-    return user_response(reset_password(repository, user_id, payload.password, must_change_password=True))
+    user = repository.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    updated = reset_password(repository, user_id, payload.password, must_change_password=True)
+    append_action_audit(
+        actor_id=current_admin.id,
+        actor_role=current_admin.role.value,
+        action="reset_password",
+        target_type="user",
+        target_id=user_id,
+        details={"email": user.email, "role": user.role.value, "must_change_password": True},
+    )
+    return user_response(updated)
 
 
 @router.post("/change-password", response_model=UserResponse)
@@ -241,6 +270,14 @@ def deactivate_managed_user(
 
     # Soft-delete + cascade membership cleanup
     updated = deactivate_user_cascade(users, projects, user_id)
+    append_action_audit(
+        actor_id=current_admin.id,
+        actor_role=current_admin.role.value,
+        action="deactivate_user",
+        target_type="user",
+        target_id=user_id,
+        details={"email": updated.email, "role": updated.role.value},
+    )
     return user_response(updated)
 
 

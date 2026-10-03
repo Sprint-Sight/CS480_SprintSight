@@ -146,7 +146,11 @@ class AssessmentRepository(Protocol):
 
     def get_report(self, report_id: str) -> AssessmentReport | None: ...
 
+    def update_manual_assessment(self, report_id: str, patch: dict[str, object]) -> AssessmentReport | None: ...
+
     def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]: ...
+
+    def list_project_reports(self, course_id: str, project_id: str) -> list[AssessmentReport]: ...
 
     def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None: ...
 
@@ -198,6 +202,12 @@ class AuditRepository(Protocol):
     def list_audits(self) -> list[AuditRecord]: ...
 
 
+class ActionAuditRepository(Protocol):
+    def save_action_audit(self, record: object) -> None: ...
+
+    def list_action_audits(self) -> list[object]: ...
+
+
 @dataclass
 class IngestionMetricBundle:
     course_id: str
@@ -217,10 +227,24 @@ class IngestionMetricBundle:
 class MetricsRepository(Protocol):
     def save_metrics(self, metrics: IngestionMetricBundle) -> None: ...
 
-    def get_metrics(self, course_id: str, project_id: str, sprint_id: str) -> IngestionMetricBundle | None: ...
+    def get_metrics(
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> IngestionMetricBundle | None: ...
 
     def get_metrics_page(
-        self, course_id: str, project_id: str, sprint_id: str, limit: int, offset: int
+        self,
+        course_id: str,
+        project_id: str,
+        sprint_id: str,
+        limit: int,
+        offset: int,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
     ) -> tuple[IngestionMetricBundle | None, int]: ...
 
 
