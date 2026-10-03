@@ -12,7 +12,6 @@ from app.dependencies.auth import get_jira_ingestion_repository, get_metrics_rep
 from app.repositories.interfaces import JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
-from app.services.documentsService.service import collect_document_signals
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
@@ -253,9 +252,7 @@ def sync_repository_ingestion(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     github_metrics = ingest_github_metrics(payload, repository_path, metrics_repository, projects, users)
     jira_metrics = enrich_jira_metrics(payload)
-    document_signals = collect_document_signals(payload)
     return {
         "github_metrics": github_metrics,
         "jira_metrics": jira_metrics,
-        "document_signals": document_signals,
     }

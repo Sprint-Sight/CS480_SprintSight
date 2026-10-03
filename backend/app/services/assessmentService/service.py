@@ -17,7 +17,7 @@ from app.schemas.assessment import (
     StudentScore,
     TeamScore,
 )
-from app.services.documentsService.service import collect_document_signals, collect_project_context_documents
+from app.services.documentsService.service import collect_project_context_documents
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.service import enrich_jira_metrics
 from app.services.manualTextService.service import get_manual_text
@@ -259,7 +259,13 @@ def run_assessment_job(
         job_repo.update_job(job_id, status="collecting_data", progress=30, current_stage="collecting_data")
         metrics = ingest_github_metrics(payload, repository_path, metrics_repository)
         _ = enrich_jira_metrics(payload)
-        docs = collect_document_signals(payload)
+        # `artifact_metrics` is reserved for future numeric signals extracted
+        # from uploaded artifacts (demo completeness, documentation quality,
+        # etc.) and used by the rubric evaluator. Until a real extractor
+        # exists, send an empty dict rather than fabricated placeholder
+        # scores — uploaded files now flow to the model via
+        # `project_context_documents` below instead.
+        artifact_signals: dict[str, float] = {}
         manual_text = get_manual_text(manual_text_repository, payload.course_id, payload.project_id, payload.sprint_id)
         jira_tickets = []
         if jira_ingestion_repository:
@@ -271,9 +277,10 @@ def run_assessment_job(
 
         # Collect any faculty/student-uploaded context documents (project
         # briefs, requirements, design notes) so the LLM gets them as
-        # background context. This is intentionally separate from `docs`
-        # (the `artifact_metrics` signals above) and from the `documentation`
-        # rubric dimension — see build_assessment_payload for the contract.
+        # background context. This is intentionally separate from
+        # `artifact_signals` (reserved for future numeric scores on uploaded
+        # artifacts) and from the `documentation` rubric dimension — see
+        # build_assessment_payload for the contract.
         project_context_documents: list[dict] = []
         if document_repository is not None:
             try:
@@ -290,11 +297,18 @@ def run_assessment_job(
                     "continuing assessment without them.",
                     payload.project_id,
                 )
+        else:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "run_assessment_job: no document_repository passed for project %s; "
+                "no uploaded documents will reach the AI engine.",
+                payload.project_id,
+            )
 
         job_repo.update_job(job_id, status="building_payload", progress=50, current_stage="building_payload")
         job_repo.append_event(job_id, "progress", {"status": "building_payload", "progress": 50, "message": "Building AI payload."})
         middle_man_payload = build_assessment_payload(
-            metrics, docs, manual_text, jira_tickets, project_context_documents,
+            metrics, artifact_signals, manual_text, jira_tickets, project_context_documents,
         )
 
         job_repo.update_job(job_id, status="ai_evaluating", progress=70, current_stage="ai_evaluating")

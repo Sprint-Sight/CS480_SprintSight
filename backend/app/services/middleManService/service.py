@@ -6,7 +6,7 @@ from app.repositories.interfaces import IngestionMetricBundle
 
 def build_assessment_payload(
     metrics: IngestionMetricBundle,
-    document_signals: dict[str, float],
+    artifact_signals: dict[str, float],
     manual_text: str | None,
     jira_tickets: list[dict] | None = None,
     project_context_documents: list[dict] | None = None,
@@ -33,7 +33,7 @@ def build_assessment_payload(
         },
         "commits": [commit.model_dump(mode="json") for commit in metrics.commits],
         "jira_tickets": jira_tickets or [],
-        "artifact_metrics": document_signals,
+        "artifact_metrics": artifact_signals,
         "project_context_documents": project_context_documents or [],
         "instructor_expectations": manual_text or "No instructor guidance provided.",
     }

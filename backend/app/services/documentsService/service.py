@@ -189,12 +189,39 @@ def _extract_plaintext(content: bytes) -> str:
     return ""
 
 
-def extract_document_text(record: DocumentRecord, content: bytes) -> str:
-    """Return plain text extracted from a stored document, or '' if unsupported.
+def _extract_pdf_text(content: bytes) -> str:
+    """Pull plain text out of a PDF with pdfplumber.
 
-    PDFs are intentionally returned as empty: PDF text extraction is handled by
-    the ai-engine's existing pdfplumber-based pipeline, not here.
+    Imported lazily so the module still imports (for tests, scripts, etc.)
+    on environments where pdfplumber isn't installed; the AI engine already
+    ships with pdfplumber in its container, and the backend declares it in
+    pyproject.toml for production deployments.
     """
+    try:
+        import pdfplumber  # noqa: PLC0415 - lazy import, see docstring above
+    except ImportError:
+        log.warning(
+            "pdfplumber is not installed; cannot extract text from uploaded PDF. "
+            "Install it to feed PDF documents to the AI engine as background context."
+        )
+        return ""
+
+    try:
+        pages_text: list[str] = []
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            for index, page in enumerate(pdf.pages, start=1):
+                page_text = page.extract_text() or ""
+                page_text = page_text.strip()
+                if page_text:
+                    pages_text.append(f"[Page {index}]\n{page_text}")
+        return "\n\n".join(pages_text)
+    except Exception as exc:
+        log.warning("Failed to extract text from PDF for AI context: %s", exc)
+        return ""
+
+
+def extract_document_text(record: DocumentRecord, content: bytes) -> str:
+    """Return plain text extracted from a stored document, or '' if unsupported."""
     extension = PurePath(record.filename).suffix.lower()
     if extension in (".md", ".txt"):
         return _extract_plaintext(content)
@@ -202,6 +229,8 @@ def extract_document_text(record: DocumentRecord, content: bytes) -> str:
         return _extract_docx_text(content)
     if extension == ".doc":
         return _extract_doc_text(content)
+    if extension == ".pdf":
+        return _extract_pdf_text(content)
     return ""
 
 
@@ -226,22 +255,36 @@ def collect_project_context_documents(
     stay separated in the model's prompt as well.
     """
     documents: list[dict] = []
-    for record in repository.list_documents(project_id):
+    records = repository.list_documents(project_id)
+    log.info(
+        "Collecting project-context documents for project %s: %d record(s) in repository.",
+        project_id, len(records),
+    )
+    for record in records:
         try:
             content = storage.download(record.storage_bucket, record.storage_key)
         except Exception as exc:
             log.warning(
-                "Skipping project-context document %s/%s (download failed): %s",
-                project_id, record.id, exc,
+                "Skipping project-context document %s/%s (filename=%s, download failed): %s",
+                project_id, record.id, record.filename, exc,
             )
             continue
         text = extract_document_text(record, content)
         if not text:
             # PDFs and files we failed to parse are deliberately omitted here —
             # we don't want to send raw/garbled bytes as "context".
+            log.info(
+                "Skipping project-context document %s (mime=%s, bytes=%d): no text extracted. "
+                "PDFs and unsupported types are intentionally excluded here.",
+                record.filename, record.mime_type, len(content),
+            )
             continue
         if len(text) > _MAX_CONTEXT_CHARS_PER_DOCUMENT:
             text = text[:_MAX_CONTEXT_CHARS_PER_DOCUMENT] + "\n...[truncated for context window]"
+        log.info(
+            "Including project-context document %s (mime=%s, extracted %d chars).",
+            record.filename, record.mime_type, len(text),
+        )
         documents.append(
             {
                 "document_id": record.id,
@@ -250,11 +293,8 @@ def collect_project_context_documents(
                 "text": text,
             }
         )
+    log.info(
+        "Project %s: %d of %d document(s) carried into AI context.",
+        project_id, len(documents), len(records),
+    )
     return documents
-
-
-def collect_document_signals(payload) -> dict[str, float]:
-    return {
-        "documentation_quality": 82.0,
-        "demo_completeness": 78.0,
-    }
