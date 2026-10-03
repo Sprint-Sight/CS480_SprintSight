@@ -9,6 +9,7 @@ export function useSprintOverviewData() {
   const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
   const [ingestionVersion, setIngestionVersion] = useState(0);
   const liveIngestion = useMemo(() => { void ingestionVersion; return getProjectIngestion(selectedProjectId); }, [selectedProjectId, ingestionVersion]);
+  // This page intentionally aggregates every captured sprint for the selected project.
   const payload = useMemo<SprintOverviewPayload | null>(() => {
     if (!selectedProjectId) return null;
     const state = readIngestionState();

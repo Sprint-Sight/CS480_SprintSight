@@ -9,6 +9,7 @@ import {
   BarChart3,
   Bell,
   ChevronDown,
+  ClipboardList,
   Eye,
   FileText,
   FolderOpen,
@@ -58,6 +59,7 @@ const instructorNavItems: NavItem[] = [
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
   { label: "Instructor Review", href: "/instructor-review", icon: Pencil },
   { label: "Progress", href: "/progress", icon: GitCompare },
+  { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -69,6 +71,16 @@ const studentNavItems: NavItem[] = [
   { label: "Results & Feedback", href: "/assessment-report", icon: FileText },
   { label: "Progress", href: "/progress", icon: GitCompare },
 ];
+
+const instructorScopeRoutes = new Set([
+  "/",
+  "/sprint-overview",
+  "/artifact-viewer",
+  "/collaboration",
+  "/assessment-report",
+  "/instructor-review",
+  "/progress",
+]);
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") {
@@ -88,7 +100,9 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const isProjectsRoot = pathname === "/projects";
-  const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings";
+  const showsInstructorScope = instructorScopeRoutes.has(pathname);
+  const showsSprintScope = showsInstructorScope && pathname !== "/progress";
+  const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings" || pathname === "/audit-log";
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -392,7 +406,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 </div>
               </div>
 
-              {role === "instructor" && !isProjectsRoot && (
+              {role === "instructor" && showsInstructorScope && (
                 <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
                   <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600">
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
@@ -458,7 +472,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         </div>
                       )}
-                      {(pathname === "/" || pathname === "/assessment-report") && (
+                      {showsSprintScope && (
                         <div className="relative">
                           <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
                             {Array.from({ length: 10 }, (_, index) => `sprint-${index + 1}`).map((sprintId) => <option key={sprintId} value={sprintId}>{sprintId}</option>)}
