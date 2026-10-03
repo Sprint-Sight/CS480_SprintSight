@@ -51,7 +51,12 @@ async def upload_project_documents(
     try:
         records = upload_documents(project_id, current_user.id, uploaded_files, documents, storage, get_settings())
     except DocumentValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
+        # Starlette's constant is HTTP_413_REQUEST_ENTITY_TOO_LARGE (RFC 7231);
+        # some Starlette versions also expose the RFC 9110 synonym
+        # HTTP_413_CONTENT_TOO_LARGE. Prefer the stable constant.
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+        ) from exc
     return DocumentUploadResponse(documents=[_response(record) for record in records])
 
 

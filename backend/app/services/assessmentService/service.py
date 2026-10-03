@@ -4,8 +4,9 @@ from uuid import uuid4
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
+from app.core.storage import storage as default_storage
 from app.repositories.in_memory import assessment_repo, job_repo, metrics_repo, overrides_repo, rubric_weights_repo
-from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository
+from app.repositories.interfaces import AssessmentRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository
 from app.schemas.assessment import (
     AssessRequest,
     AssessmentReport,
@@ -16,7 +17,7 @@ from app.schemas.assessment import (
     StudentScore,
     TeamScore,
 )
-from app.services.documentsService.service import collect_document_signals
+from app.services.documentsService.service import collect_document_signals, collect_project_context_documents
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.service import enrich_jira_metrics
 from app.services.manualTextService.service import get_manual_text
@@ -238,6 +239,7 @@ def run_assessment_job(
     assessment_repository: AssessmentRepository | None = None,
     jira_ingestion_repository: JiraIngestionRunRepository | None = None,
     rubric_weights_repository: RubricWeightsRepository | None = None,
+    document_repository: DocumentRepository | None = None,
 ) -> None:
     """Background worker that collects the same input that the old synchronous endpoint used,
     sends the canonical payload to the AI engine, and then persists a report without
@@ -267,9 +269,33 @@ def run_assessment_job(
                 latest_run = max(processed_runs, key=lambda run: run.captured_at)
                 jira_tickets = [ticket.model_dump(mode="json") for ticket in latest_run.cleaned_snapshot.tickets]
 
+        # Collect any faculty/student-uploaded context documents (project
+        # briefs, requirements, design notes) so the LLM gets them as
+        # background context. This is intentionally separate from `docs`
+        # (the `artifact_metrics` signals above) and from the `documentation`
+        # rubric dimension — see build_assessment_payload for the contract.
+        project_context_documents: list[dict] = []
+        if document_repository is not None:
+            try:
+                project_context_documents = collect_project_context_documents(
+                    payload.project_id, document_repository, default_storage,
+                )
+            except Exception:
+                # A failure to load context documents must not fail the whole
+                # assessment — the evaluation flow worked before documents
+                # existed, and preserving that fallback is a requirement.
+                import logging as _logging
+                _logging.getLogger(__name__).exception(
+                    "Failed to collect project context documents for project %s; "
+                    "continuing assessment without them.",
+                    payload.project_id,
+                )
+
         job_repo.update_job(job_id, status="building_payload", progress=50, current_stage="building_payload")
         job_repo.append_event(job_id, "progress", {"status": "building_payload", "progress": 50, "message": "Building AI payload."})
-        middle_man_payload = build_assessment_payload(metrics, docs, manual_text, jira_tickets)
+        middle_man_payload = build_assessment_payload(
+            metrics, docs, manual_text, jira_tickets, project_context_documents,
+        )
 
         job_repo.update_job(job_id, status="ai_evaluating", progress=70, current_stage="ai_evaluating")
         job_repo.append_event(job_id, "progress", {"status": "ai_evaluating", "progress": 70, "message": "AI is evaluating the sprint."})

@@ -79,12 +79,33 @@ def test_non_member_cannot_upload(override_user_repository, monkeypatch) -> None
     assert response.status_code == 403
 
 
-def test_non_pdf_is_rejected(override_user_repository, monkeypatch) -> None:
+def test_unsupported_extension_is_rejected(override_user_repository, monkeypatch) -> None:
     setup_project(override_user_repository)
     monkeypatch.setattr(storage, "upload", lambda *args: (_ for _ in ()).throw(AssertionError()))
     response = client.post(
         "/api/v1/projects/project-documents/documents",
-        files=[("files", ("notes.txt", b"not a pdf", "text/plain"))],
+        files=[("files", ("notes.bin", b"binary blob", "application/octet-stream"))],
         headers={"Authorization": f"Bearer {token('faculty@sprintsight.edu')}"},
     )
     assert response.status_code == 413
+
+
+def test_text_based_documents_are_accepted(override_user_repository, monkeypatch) -> None:
+    setup_project(override_user_repository, ["u-student-1"])
+    objects: dict[str, bytes] = {}
+    monkeypatch.setattr(storage, "upload", lambda bucket, key, data, mime_type: objects.setdefault(key, data) and key)
+    monkeypatch.setattr(storage, "download", lambda bucket, key: objects[key])
+    monkeypatch.setattr(storage, "delete", lambda bucket, key: objects.pop(key, None))
+    headers = {"Authorization": f"Bearer {token('student@sprintsight.edu')}"}
+    files = [
+        ("files", ("brief.md", b"# Project brief\n\nAn example.", "text/markdown")),
+        ("files", ("notes.txt", b"Plain text notes.", "text/plain")),
+    ]
+
+    upload = client.post("/api/v1/projects/project-documents/documents", files=files, headers=headers)
+    assert upload.status_code == 201
+    records = upload.json()["documents"]
+    assert {record["filename"] for record in records} == {"brief.md", "notes.txt"}
+    mime_types = {record["filename"]: record["mime_type"] for record in records}
+    assert mime_types["brief.md"] == "text/markdown"
+    assert mime_types["notes.txt"] == "text/plain"

@@ -1,3 +1,8 @@
+import io
+import logging
+import re
+import xml.etree.ElementTree as ET
+import zipfile
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import PurePath
@@ -6,6 +11,8 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.repositories.interfaces import DocumentRecord, DocumentRepository
+
+log = logging.getLogger(__name__)
 
 
 class DocumentStorage(Protocol):
@@ -20,6 +27,67 @@ class DocumentValidationError(ValueError):
     pass
 
 
+# Supported file types for project context documents. These are uploaded as
+# BACKGROUND CONTEXT for the LLM when evaluating a project (project briefs,
+# requirements, design notes, etc.) and are intentionally kept separate from
+# the "documentation" rubric dimension — see collect_project_context_documents.
+#
+# PDF remains accepted for backwards compatibility with earlier uploads, but
+# text extraction for PDF is not implemented here; PDFs are stored but excluded
+# from the AI engine's background context by extract_document_text below.
+_ALLOWED_EXTENSIONS: dict[str, tuple[str, ...]] = {
+    ".md": ("text/markdown", "text/x-markdown", "text/plain", "application/octet-stream"),
+    ".txt": ("text/plain", "application/octet-stream"),
+    ".doc": ("application/msword", "application/octet-stream"),
+    ".docx": (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/octet-stream",
+    ),
+    ".pdf": ("application/pdf",),
+}
+
+# Canonical mime type persisted on the DocumentRecord per extension. Keeps the
+# stored mime_type stable even when browsers send the generic
+# application/octet-stream (common for .md on Windows).
+_CANONICAL_MIME: dict[str, str] = {
+    ".md": "text/markdown",
+    ".txt": "text/plain",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pdf": "application/pdf",
+}
+
+
+def _extension(filename: str) -> str:
+    return PurePath(filename).suffix.lower()
+
+
+def _validate_file(filename: str, content_type: str | None, content: bytes) -> str:
+    """Return the file's canonical mime type, or raise DocumentValidationError."""
+    extension = _extension(filename)
+    if extension not in _ALLOWED_EXTENSIONS:
+        raise DocumentValidationError(
+            "Unsupported document type. Allowed types: .md, .txt, .doc, .docx, .pdf."
+        )
+    allowed_mimes = _ALLOWED_EXTENSIONS[extension]
+    # Content-Type is advisory (browsers lie, especially for .md); accept the
+    # file as long as the extension matches and simple magic bytes line up.
+    if content_type and content_type not in allowed_mimes:
+        log.info(
+            "Document '%s' advertised content-type %r; accepting based on extension %s.",
+            filename, content_type, extension,
+        )
+    if extension == ".pdf" and not content.startswith(b"%PDF-"):
+        raise DocumentValidationError("Only valid PDF documents are accepted.")
+    if extension == ".docx" and not content.startswith(b"PK"):
+        # .docx is a ZIP container; non-PK magic means a different file was renamed.
+        raise DocumentValidationError("Uploaded .docx file is not a valid Word document.")
+    if extension == ".doc" and not content.startswith(b"\xd0\xcf\x11\xe0"):
+        # Legacy OLE compound-document magic. Guard rail only; parsing is best-effort.
+        raise DocumentValidationError("Uploaded .doc file is not a valid Word document.")
+    return _CANONICAL_MIME[extension]
+
+
 def upload_documents(
     project_id: str,
     uploader_id: str,
@@ -29,7 +97,7 @@ def upload_documents(
     settings: Settings,
 ) -> list[DocumentRecord]:
     if not files:
-        raise DocumentValidationError("At least one PDF document is required.")
+        raise DocumentValidationError("At least one document is required.")
     if sum(len(content) for _, _, content in files) > settings.document_max_request_size:
         raise DocumentValidationError("The total upload size exceeds the request limit.")
 
@@ -38,19 +106,19 @@ def upload_documents(
     try:
         for filename, content_type, content in files:
             if not content or len(content) > settings.document_max_file_size:
-                raise DocumentValidationError("Each PDF must be non-empty and within the file size limit.")
-            if content_type != "application/pdf" or not filename.lower().endswith(".pdf") or not content.startswith(b"%PDF-"):
-                raise DocumentValidationError("Only valid PDF documents are accepted.")
+                raise DocumentValidationError("Each document must be non-empty and within the file size limit.")
+            canonical_mime = _validate_file(filename, content_type, content)
             document_id = str(uuid4())
-            safe_filename = PurePath(filename).name or f"{document_id}.pdf"
+            extension = _extension(filename)
+            safe_filename = PurePath(filename).name or f"{document_id}{extension}"
             storage_key = f"projects/{project_id}/documents/{document_id}/{safe_filename}"
-            storage.upload(settings.minio_bucket_documents, storage_key, content, "application/pdf")
+            storage.upload(settings.minio_bucket_documents, storage_key, content, canonical_mime)
             uploaded_keys.append((settings.minio_bucket_documents, storage_key))
             record = DocumentRecord(
                 id=document_id,
                 project_id=project_id,
                 filename=safe_filename,
-                mime_type="application/pdf",
+                mime_type=canonical_mime,
                 byte_size=len(content),
                 checksum=sha256(content).hexdigest(),
                 storage_bucket=settings.minio_bucket_documents,
@@ -67,6 +135,122 @@ def upload_documents(
                 pass
         raise
     return created
+
+
+# Word's main document body lives at word/document.xml; <w:t> elements hold the
+# visible text runs, and <w:p> elements separate paragraphs. We walk the tree
+# with ElementTree rather than pulling in python-docx so there's no new
+# dependency to deploy for a parser that only needs plain-text output.
+_WORDPROCESSINGML_NAMESPACE = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _extract_docx_text(content: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            with archive.open("word/document.xml") as document_xml:
+                tree = ET.parse(document_xml)
+    except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
+        log.warning("Failed to parse .docx for AI context: %s", exc)
+        return ""
+
+    paragraphs: list[str] = []
+    for paragraph in tree.getroot().iter(f"{_WORDPROCESSINGML_NAMESPACE}p"):
+        texts = [node.text or "" for node in paragraph.iter(f"{_WORDPROCESSINGML_NAMESPACE}t")]
+        line = "".join(texts).strip()
+        if line:
+            paragraphs.append(line)
+    return "\n".join(paragraphs)
+
+
+# Legacy .doc (OLE compound binary) parsing without a C extension is lossy. We
+# strip to printable ASCII runs of at least four characters as a best-effort
+# fallback so faculty-provided .doc files aren't silently dropped from the
+# LLM's context. Teams who want full fidelity should re-save as .docx.
+_PRINTABLE_RUN = re.compile(rb"[\x20-\x7E\r\n\t]{4,}")
+
+
+def _extract_doc_text(content: bytes) -> str:
+    runs = _PRINTABLE_RUN.findall(content)
+    if not runs:
+        return ""
+    text = "\n".join(run.decode("ascii", errors="ignore") for run in runs)
+    return text.strip()
+
+
+def _extract_plaintext(content: bytes) -> str:
+    # UTF-8 covers Markdown and most .txt. Fall back to latin-1 (never raises)
+    # before dropping any content; the LLM tolerates a little garbled text
+    # better than an empty context block.
+    for encoding in ("utf-8", "utf-8-sig", "latin-1"):
+        try:
+            return content.decode(encoding).strip()
+        except UnicodeDecodeError:
+            continue
+    return ""
+
+
+def extract_document_text(record: DocumentRecord, content: bytes) -> str:
+    """Return plain text extracted from a stored document, or '' if unsupported.
+
+    PDFs are intentionally returned as empty: PDF text extraction is handled by
+    the ai-engine's existing pdfplumber-based pipeline, not here.
+    """
+    extension = PurePath(record.filename).suffix.lower()
+    if extension in (".md", ".txt"):
+        return _extract_plaintext(content)
+    if extension == ".docx":
+        return _extract_docx_text(content)
+    if extension == ".doc":
+        return _extract_doc_text(content)
+    return ""
+
+
+# Hard cap on per-document extracted text, in characters. Keeps a single
+# oversized upload from blowing out the LLM's context window; the dimension
+# evaluator in ai-engine still re-checks the overall prompt size.
+_MAX_CONTEXT_CHARS_PER_DOCUMENT = 50_000
+
+
+def collect_project_context_documents(
+    project_id: str,
+    repository: DocumentRepository,
+    storage: DocumentStorage,
+) -> list[dict]:
+    """Load every uploaded document for a project and return its extracted text.
+
+    This is BACKGROUND CONTEXT for the LLM — e.g. project briefs, requirements
+    documents, or design notes — distinct from the rubric's `documentation`
+    dimension, which scores documentation produced by the team inside the
+    repository (READMEs, docs/, changelogs, etc.). Callers must pass this
+    through to the AI engine as a separate payload field so the two concepts
+    stay separated in the model's prompt as well.
+    """
+    documents: list[dict] = []
+    for record in repository.list_documents(project_id):
+        try:
+            content = storage.download(record.storage_bucket, record.storage_key)
+        except Exception as exc:
+            log.warning(
+                "Skipping project-context document %s/%s (download failed): %s",
+                project_id, record.id, exc,
+            )
+            continue
+        text = extract_document_text(record, content)
+        if not text:
+            # PDFs and files we failed to parse are deliberately omitted here —
+            # we don't want to send raw/garbled bytes as "context".
+            continue
+        if len(text) > _MAX_CONTEXT_CHARS_PER_DOCUMENT:
+            text = text[:_MAX_CONTEXT_CHARS_PER_DOCUMENT] + "\n...[truncated for context window]"
+        documents.append(
+            {
+                "document_id": record.id,
+                "filename": record.filename,
+                "mime_type": record.mime_type,
+                "text": text,
+            }
+        )
+    return documents
 
 
 def collect_document_signals(payload) -> dict[str, float]:

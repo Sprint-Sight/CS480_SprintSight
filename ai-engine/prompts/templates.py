@@ -12,10 +12,50 @@ these functions only control what's sent going forward.
 """
 
 
-def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle_data: str, computed_facts: str = "") -> str:
+def _project_context_section(project_context: str) -> str:
+    """Render uploaded reference material as BACKGROUND CONTEXT only.
+
+    Uploaded context documents (project briefs, requirements, design notes)
+    are supplied via /api/v1/projects/{id}/documents and are passed to the
+    LLM to help it understand what the team is building. They are NOT
+    evidence for any rubric dimension — in particular, they must not be
+    treated as "the team produced documentation" for the `documentation`
+    rubric, which scores documentation produced inside the project itself
+    (README, docs/, code comments, changelog, etc.).
+    """
+    if not project_context:
+        return ""
+    return f"""
+    PROJECT BACKGROUND CONTEXT (reference material, NOT rubric evidence):
+    The following documents were uploaded as background information about
+    the project (project brief, requirements, design notes, etc.). Use them
+    ONLY to understand the project's goals, scope, and domain so you can
+    judge the Student Artifacts in context.
+    - Do NOT cite these documents as evidence_citations for ANY rubric
+      dimension — they are not student work; they are reference material.
+    - In particular, their mere existence does NOT satisfy the
+      `documentation` rubric. The `documentation` dimension scores
+      documentation produced inside the project itself (READMEs, docs/,
+      code comments, changelogs, etc.), which must come from the Student
+      Artifacts below.
+    - Information in these documents is reference-only and must not be
+      invented into Student Artifacts.
+
+    {project_context}
+    """
+
+
+def render_dimension_prompt(
+    dimension_name: str,
+    dimension_criteria: str,
+    bundle_data: str,
+    computed_facts: str = "",
+    project_context: str = "",
+) -> str:
     facts_section = f"""
     {computed_facts}
     """ if computed_facts else ""
+    context_section = _project_context_section(project_context)
     return f"""
     You are an expert software engineering professor.
     Return exactly one rubric assessment object for the dimension: {dimension_name}.
@@ -57,6 +97,8 @@ def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle
     2. `identifier` MUST be copied verbatim from Student Artifacts: a commit
         SHA, Jira ticket ID, filename, or supplied metric value. Never use
         placeholders such as "commit 1", and never invent an identifier.
+        Never cite a filename or passage from PROJECT BACKGROUND CONTEXT —
+        those documents are reference material, not Student Artifacts.
     3. `reason` MUST be at least 15 characters and explain why that specific
         identifier supports the score, referring to details that actually
         belong to THAT SPECIFIC record (its real commit message, its real
@@ -75,6 +117,7 @@ def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle
         work for this dimension. Never fabricate a citation just to avoid an
         empty list — a fabricated citation is a worse failure than an empty one.
     {facts_section}
+    {context_section}
     Student Artifacts:
     {bundle_data}
 
@@ -83,7 +126,14 @@ def render_dimension_prompt(dimension_name: str, dimension_criteria: str, bundle
     """
 
 
-def render_sprint_feedback_prompt(team_id: str, sprint_id: str, scores_data: str, instructor_expectations: str) -> str:
+def render_sprint_feedback_prompt(
+    team_id: str,
+    sprint_id: str,
+    scores_data: str,
+    instructor_expectations: str,
+    project_context: str = "",
+) -> str:
+    context_section = _project_context_section(project_context)
     return f"""
     You are an expert software engineering professor reviewing a complete sprint.
     Produce general project-level feedback, not feedback for individual rubric dimensions.
@@ -101,7 +151,7 @@ def render_sprint_feedback_prompt(team_id: str, sprint_id: str, scores_data: str
     results; if it names a specific priority or concern, reflect that in the
     strengths/weaknesses/recommendations where relevant):
     {instructor_expectations}
-
+    {context_section}
     Sprint context:
     team_id={team_id!r} sprint_id={sprint_id!r}
 

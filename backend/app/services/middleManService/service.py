@@ -9,7 +9,14 @@ def build_assessment_payload(
     document_signals: dict[str, float],
     manual_text: str | None,
     jira_tickets: list[dict] | None = None,
+    project_context_documents: list[dict] | None = None,
 ) -> dict:
+    # NOTE: `project_context_documents` carries extracted text from the files
+    # uploaded via /api/v1/projects/{id}/documents. It is BACKGROUND CONTEXT
+    # for the LLM about the project (project brief, requirements notes, etc.)
+    # and is deliberately a separate top-level field from `artifact_metrics`
+    # so the AI engine never conflates it with the `documentation` rubric
+    # dimension — see collect_project_context_documents.
     return {
         "sprint_context": {
             "course_id": metrics.course_id,
@@ -27,6 +34,7 @@ def build_assessment_payload(
         "commits": [commit.model_dump(mode="json") for commit in metrics.commits],
         "jira_tickets": jira_tickets or [],
         "artifact_metrics": document_signals,
+        "project_context_documents": project_context_documents or [],
         "instructor_expectations": manual_text or "No instructor guidance provided.",
     }
 

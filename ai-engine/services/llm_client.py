@@ -294,6 +294,29 @@ def _dimension_bundle_data(
     return json.dumps(bundle_data, indent=2, ensure_ascii=True)
 
 
+def _format_project_context_documents(bundle: ArtifactBundle) -> str:
+    """Render the uploaded reference documents as a plain-text block.
+
+    Kept out of the dimension JSON bundle on purpose: these are BACKGROUND
+    CONTEXT ONLY — never rubric evidence — so they ride alongside the bundle
+    as a labelled section, and the prompt template explicitly forbids citing
+    them as `evidence_citations`. See prompts/templates.py for that rule.
+    """
+    docs = bundle.project_context_documents or []
+    if not docs:
+        return ""
+    lines: list[str] = []
+    for index, doc in enumerate(docs, start=1):
+        filename = doc.get("filename") or f"document_{index}"
+        text = (doc.get("text") or "").strip()
+        if not text:
+            continue
+        lines.append(f"--- BEGIN CONTEXT DOCUMENT {index}: {filename} ---")
+        lines.append(text)
+        lines.append(f"--- END CONTEXT DOCUMENT {index}: {filename} ---")
+    return "\n".join(lines)
+
+
 def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> str:
     """
     Precomputes objective facts about a dimension's commit list so the model
@@ -559,7 +582,10 @@ async def evaluate_dimension(
             dimension_name, approx_tokens, effective_ctx,
         )
 
-    prompt = render_dimension_prompt(dimension_name, dimention_prompt, bundle_data, computed_facts)
+    project_context = _format_project_context_documents(bundle)
+    prompt = render_dimension_prompt(
+        dimension_name, dimention_prompt, bundle_data, computed_facts, project_context,
+    )
 
     client = create_llm_client()  # Create a new client for this model
 
@@ -658,8 +684,13 @@ async def generate_sprint_feedback(
 ) -> SprintFeedback:
     """Generate strengths, weaknesses, and recommendations for the whole sprint."""
     scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
+    project_context = _format_project_context_documents(bundle)
     prompt = render_sprint_feedback_prompt(
-        bundle.team_id, bundle.sprint_id, scores_data, bundle.instructor_expectations
+        bundle.team_id,
+        bundle.sprint_id,
+        scores_data,
+        bundle.instructor_expectations,
+        project_context,
     )
     audit_token = _audit_context.set(
         {
