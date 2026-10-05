@@ -1,13 +1,34 @@
 from datetime import datetime
 from uuid import UUID
-from uuid import uuid4
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import AssessmentRepository, CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository, UserRecord, UserRepository
-from app.schemas.assessment import AssessmentReport, JiraCleanedSnapshot, ManualTextPayload
+from app.repositories.interfaces import (
+    AssessmentRepository,
+    CourseRecord,
+    DocumentRecord,
+    DocumentRepository,
+    IngestionMetricBundle,
+    JiraIngestionRunRecord,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    ProjectRecord,
+    ProjectRepository,
+    RubricWeightsRecord,
+    RubricWeightsRepository,
+    UserRecord,
+    UserRepository,
+)
+from app.schemas.assessment import (
+    ActionAuditRecord,
+    AssessmentReport,
+    AuditRecord,
+    JiraCleanedSnapshot,
+    ManualTextPayload,
+)
 from app.schemas.auth import Role
 
 _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
@@ -78,6 +99,204 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
                 FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
             )"""
         )
+
+
+def ensure_audit_schema(pool: ConnectionPool) -> None:
+    statements = (
+        """CREATE TABLE IF NOT EXISTS action_audit_events (
+            audit_id TEXT PRIMARY KEY,
+            actor_id TEXT NOT NULL,
+            actor_role TEXT NOT NULL CHECK (actor_role IN ('admin', 'instructor', 'student')),
+            action TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            details JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS override_audit_events (
+            override_id TEXT PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL,
+            instructor_id TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            report_id TEXT NOT NULL,
+            original_score DOUBLE PRECISION NOT NULL,
+            new_score DOUBLE PRECISION NOT NULL,
+            reason_comment TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_action_audit_created_at "
+        "ON action_audit_events(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_action_audit_actor_created "
+        "ON action_audit_events(actor_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_override_audit_timestamp "
+        "ON override_audit_events(timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_override_audit_instructor_timestamp "
+        "ON override_audit_events(instructor_id, timestamp DESC)",
+        """CREATE OR REPLACE FUNCTION guard_audit_events_immutable()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            IF TG_OP = 'UPDATE'
+               OR current_setting('sprintsight.audit_retention', true) IS DISTINCT FROM 'on' THEN
+                RAISE EXCEPTION 'Audit rows are append-only; deletion is reserved for retention.';
+            END IF;
+            RETURN OLD;
+        END;
+        $$ LANGUAGE plpgsql""",
+        """DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'trg_action_audit_immutable'
+                  AND tgrelid = 'action_audit_events'::regclass
+            ) THEN
+                CREATE TRIGGER trg_action_audit_immutable
+                BEFORE UPDATE OR DELETE ON action_audit_events
+                FOR EACH ROW EXECUTE FUNCTION guard_audit_events_immutable();
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'trg_override_audit_immutable'
+                  AND tgrelid = 'override_audit_events'::regclass
+            ) THEN
+                CREATE TRIGGER trg_override_audit_immutable
+                BEFORE UPDATE OR DELETE ON override_audit_events
+                FOR EACH ROW EXECUTE FUNCTION guard_audit_events_immutable();
+            END IF;
+        END;
+        $$""",
+    )
+    with pool.connection() as connection:
+        for statement in statements:
+            connection.execute(statement)
+
+
+class PostgresAuditRepository:
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def save_audit(self, record: AuditRecord) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO override_audit_events
+                (override_id, timestamp, instructor_id, student_id, report_id,
+                 original_score, new_score, reason_comment)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (override_id) DO NOTHING""",
+                (
+                    record.override_id,
+                    record.timestamp,
+                    record.instructor_id,
+                    record.student_id,
+                    record.report_id,
+                    record.original_score,
+                    record.new_score,
+                    record.reason_comment,
+                ),
+            )
+
+    def list_audits(self) -> list[AuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT override_id, timestamp, instructor_id, student_id,
+                          report_id, original_score, new_score, reason_comment
+                   FROM override_audit_events ORDER BY timestamp DESC, override_id"""
+            ).fetchall()
+        return [
+            AuditRecord.model_validate(row)
+            for row in rows or []
+        ]
+
+    def list_audits_before(
+        self,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[AuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT override_id, timestamp, instructor_id, student_id,
+                          report_id, original_score, new_score, reason_comment
+                   FROM override_audit_events WHERE timestamp < %s
+                   ORDER BY timestamp, override_id LIMIT %s""",
+                (cutoff, limit),
+            ).fetchall()
+        return [AuditRecord.model_validate(row) for row in rows or []]
+
+    def delete_audits(self, override_ids: list[str]) -> int:
+        if not override_ids:
+            return 0
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                connection.execute(
+                    "SELECT set_config('sprintsight.audit_retention', 'on', true)"
+                )
+                cursor = connection.execute(
+                    "DELETE FROM override_audit_events WHERE override_id = ANY(%s)",
+                    (override_ids,),
+                )
+        return cursor.rowcount
+
+
+class PostgresActionAuditRepository:
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def save_action_audit(self, record: ActionAuditRecord) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO action_audit_events
+                (audit_id, actor_id, actor_role, action, target_type, target_id,
+                 details, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (audit_id) DO NOTHING""",
+                (
+                    record.audit_id,
+                    record.actor_id,
+                    record.actor_role,
+                    record.action,
+                    record.target_type,
+                    record.target_id,
+                    Json(record.details),
+                    record.created_at,
+                ),
+            )
+
+    def list_action_audits(self) -> list[ActionAuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT audit_id, actor_id, actor_role, action, target_type,
+                          target_id, details, created_at
+                   FROM action_audit_events
+                   ORDER BY created_at DESC, audit_id"""
+            ).fetchall()
+        return [ActionAuditRecord.model_validate(row) for row in rows or []]
+
+    def list_action_audits_before(
+        self,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[ActionAuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT audit_id, actor_id, actor_role, action, target_type,
+                          target_id, details, created_at
+                   FROM action_audit_events WHERE created_at < %s
+                   ORDER BY created_at, audit_id LIMIT %s""",
+                (cutoff, limit),
+            ).fetchall()
+        return [ActionAuditRecord.model_validate(row) for row in rows or []]
+
+    def delete_action_audits(self, audit_ids: list[str]) -> int:
+        if not audit_ids:
+            return 0
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                connection.execute(
+                    "SELECT set_config('sprintsight.audit_retention', 'on', true)"
+                )
+                cursor = connection.execute(
+                    "DELETE FROM action_audit_events WHERE audit_id = ANY(%s)",
+                    (audit_ids,),
+                )
+        return cursor.rowcount
 
 
 class PostgresUserRepository(UserRepository):

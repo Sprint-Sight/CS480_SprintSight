@@ -37,6 +37,21 @@ services:
       minio:
         condition: service_healthy
 
+  audit-retention:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sprintsight-audit-retention
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["python", "-m", "app.services.auditLogService.retention", "--loop"]
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
   db:
     image: pgvector/pgvector:pg16
     container_name: sprintsight-db

@@ -6,9 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_assessment_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
+from app.dependencies.auth import get_action_audit_repository, get_assessment_repository, get_audit_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import AssessmentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
+from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
 from app.schemas.assessment import AssessRequest, AssessmentReport, ManualAssessmentPatch, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
@@ -20,7 +20,7 @@ from app.services.assessmentService.service import (
     set_rubric_weights,
     update_manual_assessment,
 )
-from app.services.auditLogService.service import append_override_audit
+from app.services.auditLogService.service import append_action_audit, append_override_audit
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -44,8 +44,8 @@ def assess_sprint(
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> dict:
-    _ = faculty_user
     project = projects.get_project(payload.project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
@@ -69,6 +69,15 @@ def assess_sprint(
         assessment_repository,
         jira_ingestion_repository,
         rubric_weights_repository,
+    )
+    append_action_audit(
+        action_audits,
+        actor_id=faculty_user.id,
+        actor_role=faculty_user.role.value,
+        action="request_assessment",
+        target_type="assessment_job",
+        target_id=job.job_id,
+        details={"course_id": payload.course_id, "project_id": payload.project_id, "sprint_id": payload.sprint_id},
     )
 
     return {
@@ -159,8 +168,18 @@ def put_rubric_weights(
     payload: RubricWeightsPayload,
     faculty_user: Annotated[object, Depends(require_faculty)],
     rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> RubricWeightsResponse:
     record = set_rubric_weights(course_id, payload.weights, faculty_user.id, rubric_weights_repository)
+    append_action_audit(
+        action_audits,
+        actor_id=faculty_user.id,
+        actor_role=faculty_user.role.value,
+        action="update_rubric_weights",
+        target_type="course",
+        target_id=course_id,
+        details={"weights": record.weights},
+    )
     return RubricWeightsResponse(
         course_id=course_id,
         weights=record.weights,
@@ -177,25 +196,37 @@ def patch_assessment_report(
     instructor_user: Annotated[object, Depends(require_instructor)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> AssessmentReport:
     if assessment_repository is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
-    return update_manual_assessment(
+    report = update_manual_assessment(
         report_id,
         payload,
         instructor_user.id,
         assessment_repository,
         projects,
     )
+    append_action_audit(
+        action_audits,
+        actor_id=instructor_user.id,
+        actor_role=instructor_user.role.value,
+        action="update_assessment_report",
+        target_type="assessment_report",
+        target_id=report_id,
+        details={"updated_fields": sorted(payload.model_fields_set)},
+    )
+    return report
 
 
 @router.post("/override")
 def override_score(
     payload: OverrideRequest,
     faculty_user: Annotated[object, Depends(require_faculty)],
+    audit_repository: Annotated[AuditRepository, Depends(get_audit_repository)],
 ):
     override_record = override_student_score(payload, instructor_id=faculty_user.id)
-    audit = append_override_audit(override_record)
+    audit = append_override_audit(override_record, audit_repository)
     return {
         "override": override_record,
         "audit": audit,

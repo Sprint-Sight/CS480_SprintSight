@@ -12,7 +12,9 @@ from app.core.storage import storage
 from app.core.security import hash_password
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
+    PostgresActionAuditRepository,
     PostgresAssessmentRepository,
+    PostgresAuditRepository,
     PostgresMetricsRepository,
     PostgresDocumentRepository,
     PostgresJiraIngestionRunRepository,
@@ -22,6 +24,7 @@ from app.repositories.postgres import (
     PostgresUserRepository,
     create_user_pool,
     ensure_assessment_schema,
+    ensure_audit_schema,
     ensure_project_credential_schema,
     ensure_rubric_weights_schema,
 )
@@ -53,6 +56,7 @@ async def lifespan(app: FastAPI):
     pool.open(wait=True)
     ensure_project_credential_schema(pool)
     ensure_assessment_schema(pool)
+    ensure_audit_schema(pool)
     ensure_rubric_weights_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
@@ -61,6 +65,8 @@ async def lifespan(app: FastAPI):
     app.state.jira_ingestion_repository = PostgresJiraIngestionRunRepository(pool)
     app.state.manual_text_repository = PostgresManualTextRepository(pool)
     app.state.assessment_repository = PostgresAssessmentRepository(pool)
+    app.state.audit_repository = PostgresAuditRepository(pool)
+    app.state.action_audit_repository = PostgresActionAuditRepository(pool)
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
 
     user_repository = app.state.user_repository
