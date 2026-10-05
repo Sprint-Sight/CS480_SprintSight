@@ -37,12 +37,12 @@ jobs:
 
       - name: lint
         run: npm run lint
-        continue-on-error: true
 
       - name: typecheck
         run: npx tsc --noEmit
-        continue-on-error: true
+
+      - name: test
+        run: npm run test
 
       - name: build
         run: npm run build
-        continue-on-error: true
