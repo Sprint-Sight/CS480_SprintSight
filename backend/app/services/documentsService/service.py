@@ -20,6 +20,13 @@ class DocumentValidationError(ValueError):
     pass
 
 
+SUPPORTED_DOCUMENT_TYPES = {
+    ".pdf": ("application/pdf", b"%PDF-"),
+    ".docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK"),
+    ".pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", b"PK"),
+}
+
+
 def upload_documents(
     project_id: str,
     uploader_id: str,
@@ -29,7 +36,7 @@ def upload_documents(
     settings: Settings,
 ) -> list[DocumentRecord]:
     if not files:
-        raise DocumentValidationError("At least one PDF document is required.")
+        raise DocumentValidationError("At least one document is required.")
     if sum(len(content) for _, _, content in files) > settings.document_max_request_size:
         raise DocumentValidationError("The total upload size exceeds the request limit.")
 
@@ -38,19 +45,21 @@ def upload_documents(
     try:
         for filename, content_type, content in files:
             if not content or len(content) > settings.document_max_file_size:
-                raise DocumentValidationError("Each PDF must be non-empty and within the file size limit.")
-            if content_type != "application/pdf" or not filename.lower().endswith(".pdf") or not content.startswith(b"%PDF-"):
-                raise DocumentValidationError("Only valid PDF documents are accepted.")
+                raise DocumentValidationError("Each document must be non-empty and within the file size limit.")
+            extension = PurePath(filename).suffix.lower()
+            document_type = SUPPORTED_DOCUMENT_TYPES.get(extension)
+            if not document_type or content_type != document_type[0] or not content.startswith(document_type[1]):
+                raise DocumentValidationError("Only valid PDF, DOCX, and PPTX documents are accepted.")
             document_id = str(uuid4())
-            safe_filename = PurePath(filename).name or f"{document_id}.pdf"
+            safe_filename = PurePath(filename).name or f"{document_id}{extension}"
             storage_key = f"projects/{project_id}/documents/{document_id}/{safe_filename}"
-            storage.upload(settings.minio_bucket_documents, storage_key, content, "application/pdf")
+            storage.upload(settings.minio_bucket_documents, storage_key, content, document_type[0])
             uploaded_keys.append((settings.minio_bucket_documents, storage_key))
             record = DocumentRecord(
                 id=document_id,
                 project_id=project_id,
                 filename=safe_filename,
-                mime_type="application/pdf",
+                mime_type=document_type[0],
                 byte_size=len(content),
                 checksum=sha256(content).hexdigest(),
                 storage_bucket=settings.minio_bucket_documents,

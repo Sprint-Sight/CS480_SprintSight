@@ -88,3 +88,99 @@ def test_non_pdf_is_rejected(override_user_repository, monkeypatch) -> None:
         headers={"Authorization": f"Bearer {token('faculty@sprintsight.edu')}"},
     )
     assert response.status_code == 413
+
+
+def test_pdf_docx_and_pptx_are_accepted(override_user_repository, monkeypatch) -> None:
+    setup_project(override_user_repository, ["u-student-1"])
+    objects: dict[str, bytes] = {}
+    uploaded_types: dict[str, str] = {}
+
+    def upload(bucket, key, data, mime_type):
+        objects[key] = data
+        uploaded_types[key] = mime_type
+        return key
+
+    monkeypatch.setattr(storage, "upload", upload)
+    headers = {"Authorization": f"Bearer {token('student@sprintsight.edu')}"}
+    files = [
+        ("files", ("proposal.pdf", b"%PDF-1.7 proposal", "application/pdf")),
+        (
+            "files",
+            (
+                "requirements.docx",
+                b"PK\x03\x04 docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+        ),
+        (
+            "files",
+            (
+                "presentation.pptx",
+                b"PK\x03\x04 pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ),
+        ),
+    ]
+
+    response = client.post("/api/v1/projects/project-documents/documents", files=files, headers=headers)
+
+    assert response.status_code == 201
+    assert {document["mime_type"] for document in response.json()["documents"]} == {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }
+    assert set(uploaded_types.values()) == set(document["mime_type"] for document in response.json()["documents"])
+
+
+def test_unsupported_document_type_is_rejected(override_user_repository, monkeypatch) -> None:
+    setup_project(override_user_repository)
+    monkeypatch.setattr(storage, "upload", lambda *args: (_ for _ in ()).throw(AssertionError()))
+    response = client.post(
+        "/api/v1/projects/project-documents/documents",
+        files=[("files", ("notes.txt", b"not a supported document", "text/plain"))],
+        headers={"Authorization": f"Bearer {token('faculty@sprintsight.edu')}"},
+    )
+    assert response.status_code == 413
+
+
+def test_authorized_user_can_delete_document(override_user_repository, monkeypatch) -> None:
+    setup_project(override_user_repository, ["u-student-1"])
+    objects: dict[str, bytes] = {}
+    monkeypatch.setattr(storage, "upload", lambda bucket, key, data, mime_type: objects.setdefault(key, data) or key)
+    monkeypatch.setattr(storage, "delete", lambda bucket, key: objects.pop(key, None))
+    headers = {"Authorization": f"Bearer {token('student@sprintsight.edu')}"}
+
+    upload = client.post(
+        "/api/v1/projects/project-documents/documents",
+        files=[("files", ("proposal.pdf", b"%PDF-1.7 proposal", "application/pdf"))],
+        headers=headers,
+    )
+    document = upload.json()["documents"][0]
+
+    response = client.delete(
+        f"/api/v1/projects/project-documents/documents/{document['id']}",
+        headers=headers,
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert client.get("/api/v1/projects/project-documents/documents", headers=headers).json() == []
+    assert objects == {}
+
+
+def test_document_delete_requires_access_and_existing_document(override_user_repository, monkeypatch) -> None:
+    setup_project(override_user_repository, ["u-student-1"])
+    monkeypatch.setattr(storage, "upload", lambda bucket, key, data, mime_type: key)
+    headers = {"Authorization": f"Bearer {token('student@sprintsight.edu')}"}
+    missing = client.delete(
+        "/api/v1/projects/project-documents/documents/missing-document",
+        headers=headers,
+    )
+    assert missing.status_code == 404
+
+    unauthorized = client.delete(
+        "/api/v1/projects/project-documents/documents/missing-document",
+        headers={"Authorization": f"Bearer {token('admin@sprintsight.edu')}"},
+    )
+    assert unauthorized.status_code == 403

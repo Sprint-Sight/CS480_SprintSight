@@ -83,3 +83,20 @@ def download_project_document(
         media_type=document.mime_type,
         headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
     )
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project_document(
+    project_id: str,
+    document_id: str,
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    documents: Annotated[DocumentRepository, Depends(get_document_repository)],
+) -> Response:
+    _get_authorized_project(project_id, current_user, projects)
+    document = documents.get_document(project_id, document_id)
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    storage.delete(document.storage_bucket, document.storage_key)
+    documents.delete_document(project_id, document_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

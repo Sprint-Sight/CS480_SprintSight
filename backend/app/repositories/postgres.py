@@ -506,6 +506,17 @@ class PostgresDocumentRepository(DocumentRepository):
             ).fetchone()
         return self._document(row) if row else None
 
+    def delete_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """DELETE FROM project_documents
+                   WHERE project_id = %s AND document_id = %s
+                   RETURNING document_id, project_id, uploader_id, filename, mime_type,
+                             byte_size, checksum, storage_bucket, storage_key, created_at""",
+                (UUID(project_id), UUID(document_id)),
+            ).fetchone()
+        return self._document(row) if row else None
+
 
 class PostgresManualTextRepository(ManualTextRepository):
     def __init__(self, pool: ConnectionPool) -> None:

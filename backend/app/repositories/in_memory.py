@@ -282,6 +282,12 @@ class InMemoryDocumentRepository(DocumentRepository):
         document = self._documents.get(document_id)
         return document if document and document.project_id == project_id else None
 
+    def delete_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        document = self.get_document(project_id, document_id)
+        if document:
+            del self._documents[document_id]
+        return document
+
 
 class InMemoryAssessmentRepository(AssessmentRepository):
     def __init__(self) -> None:
