@@ -5,11 +5,12 @@ from fastapi.responses import Response
 
 from app.core.config import get_settings
 from app.core.storage import storage
-from app.dependencies.auth import get_current_user, get_document_repository, get_project_repository
-from app.repositories.interfaces import DocumentRepository, ProjectRepository, UserRecord
+from app.dependencies.auth import get_action_audit_repository, get_current_user, get_document_repository, get_project_repository
+from app.repositories.interfaces import ActionAuditRepository, DocumentRepository, ProjectRepository, UserRecord
 from app.schemas.auth import Role
 from app.schemas.documents import DocumentResponse, DocumentUploadResponse
 from app.services.documentsService.service import DocumentValidationError, upload_documents
+from app.services.auditLogService.service import append_action_audit
 
 router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"])
 
@@ -45,6 +46,7 @@ async def upload_project_documents(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     documents: Annotated[DocumentRepository, Depends(get_document_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> DocumentUploadResponse:
     _get_authorized_project(project_id, current_user, projects)
     uploaded_files = [(file.filename or "", file.content_type, await file.read()) for file in files]
@@ -52,6 +54,15 @@ async def upload_project_documents(
         records = upload_documents(project_id, current_user.id, uploaded_files, documents, storage, get_settings())
     except DocumentValidationError as exc:
         raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
+    append_action_audit(
+        action_audits,
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="upload_project_documents",
+        target_type="project",
+        target_id=project_id,
+        details={"document_ids": [record.id for record in records], "count": len(records)},
+    )
     return DocumentUploadResponse(documents=[_response(record) for record in records])
 
 

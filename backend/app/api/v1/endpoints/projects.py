@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.errors import UniqueViolation
 
 from app.dependencies.auth import (
+    get_action_audit_repository,
     get_assessment_repository,
     get_jira_ingestion_repository,
     get_project_repository,
@@ -16,7 +17,7 @@ from app.dependencies.auth import (
     get_current_user,
 )
 from app.core.credential_crypto import encrypt_secret
-from app.repositories.interfaces import AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.assessment import AssessmentReport
 from app.services.auditLogService.service import append_action_audit
 from app.schemas.auth import Role, UserResponse
@@ -122,6 +123,7 @@ def create_course(
     payload: CourseCreate,
     current_user: Annotated[UserRecord, Depends(require_instructor)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> CourseResponse:
     if any(
         course.code.lower() == payload.code.lower()
@@ -133,6 +135,7 @@ def create_course(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
     course = repository.create_course(payload.code, payload.name, payload.section, payload.year, payload.term, current_user.id)
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="create_course",
@@ -210,6 +213,7 @@ def update_course(
     payload: CourseUpdate,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> CourseResponse:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
@@ -229,6 +233,7 @@ def update_course(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course offering already exists.")
     updated = repository.update_course(course_id, code, payload.name or course.name, section, year, term)
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="update_course",
@@ -253,12 +258,14 @@ def delete_course(
     course_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> CourseResponse:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an assigned instructor can manage this course.")
     repository.delete_course(course_id)
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="delete_course",
@@ -298,6 +305,7 @@ def enroll_course_student(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> UserResponse:
     _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
@@ -319,6 +327,15 @@ def enroll_course_student(
             status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in a section for this course."
         ) from exc
 
+    append_action_audit(
+        action_audits,
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="enroll_course_student",
+        target_type="student",
+        target_id=user_id,
+        details={"course_id": course_id},
+    )
     return user_response(user)
 
 
@@ -328,12 +345,22 @@ def unenroll_course_student(
     user_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> None:
     _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can unenroll students.")
     if not repository.unenroll_student(course_id, user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not enrolled in this course.")
+    append_action_audit(
+        action_audits,
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="unenroll_course_student",
+        target_type="student",
+        target_id=user_id,
+        details={"course_id": course_id},
+    )
 
 
 @router.post("/courses/{course_id}/instructors/{user_id}", response_model=CourseInstructorResponse)
@@ -343,6 +370,7 @@ def assign_instructor(
     current_user: Annotated[UserRecord, Depends(require_instructor)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> CourseInstructorResponse:
     _course_or_404(repository, course_id)
     if not repository.is_instructor_assigned(course_id, current_user.id):
@@ -354,6 +382,15 @@ def assign_instructor(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot assign a disabled user account.")
     repository.assign_instructor(course_id, user_id)
+    append_action_audit(
+        action_audits,
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="assign_course_instructor",
+        target_type="instructor",
+        target_id=user_id,
+        details={"course_id": course_id},
+    )
     return CourseInstructorResponse(course_id=course_id, user_id=user_id, role=user.role)
 
 
@@ -364,12 +401,14 @@ def create_course_student(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> UserResponse:
     _course_or_404(repository, course_id)
     if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or TA is not assigned to this course.")
 
     existing_user = users.get_by_email(payload.email)
+    created_account = False
     if existing_user:
         if existing_user.role != Role.STUDENT:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.")
@@ -379,6 +418,7 @@ def create_course_student(
     else:
         try:
             student = create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password)
+            created_account = True
         except HTTPException as exc:
             if exc.status_code != status.HTTP_409_CONFLICT:
                 raise
@@ -394,6 +434,15 @@ def create_course_student(
 
     if not repository.enroll_student(course_id, student.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in this course section.")
+    append_action_audit(
+        action_audits,
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="create_course_student" if created_account else "enroll_course_student",
+        target_type="student",
+        target_id=student.id,
+        details={"course_id": course_id},
+    )
     return user_response(student)
 
 
@@ -408,6 +457,7 @@ def create_project(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> ProjectResponse:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
@@ -454,6 +504,7 @@ def create_project(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team name or project parameters conflict with existing records.") from exc
 
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="create_project",
@@ -612,6 +663,7 @@ def update_project(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     if not project:
@@ -663,6 +715,7 @@ def update_project(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project fields conflict with an existing project.") from exc
 
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="update_project",
@@ -684,6 +737,7 @@ def delete_project(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     if not project:
@@ -696,6 +750,7 @@ def delete_project(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="delete_project",
@@ -713,6 +768,7 @@ def add_member(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     member = users.get_by_id(user_id)
@@ -736,6 +792,7 @@ def add_member(
         ) from exc
 
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="add_project_member",
@@ -753,6 +810,7 @@ def remove_member(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     if not project or not _can_manage_course(current_user, project.course_id, repository):
@@ -764,6 +822,7 @@ def remove_member(
 
     repository.set_members(project_id, [m_id for m_id in current_members if m_id != user_id])
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="remove_project_member",
