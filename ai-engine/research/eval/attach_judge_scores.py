@@ -36,7 +36,8 @@ def attach(judge_csv: Path, run_id: str, cache_dir: str | Path = ".eval_cache") 
     if not found:
         raise FileNotFoundError(f"Run {run_id} has no per_example.jsonl artifact.")
 
-    rows = [json.loads(line) for line in Path(found).open("r", encoding="utf-8") if line.strip()]
+    with Path(found).open("r", encoding="utf-8") as fh:
+        rows = [json.loads(line) for line in fh if line.strip()]
     df = pd.DataFrame(rows)
 
     judge = pd.read_csv(judge_csv) if str(judge_csv).endswith(".csv") else pd.read_json(judge_csv, lines=True)

@@ -28,6 +28,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import platform
 import subprocess
@@ -61,7 +62,7 @@ def _git_sha() -> str | None:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
         ).decode().strip()
-    except Exception:
+    except (subprocess.CalledProcessError, OSError):
         return None
 
 
@@ -71,7 +72,7 @@ def _ollama_version() -> str | None:
         resp = httpx.get(f"{base}/api/version", timeout=5.0)
         resp.raise_for_status()
         return resp.json().get("version")
-    except Exception:
+    except (httpx.HTTPError, ValueError):
         return None
 
 
@@ -85,7 +86,7 @@ def _model_digest(model_name: str) -> str | None:
         resp.raise_for_status()
         digest = resp.json().get("digest") or resp.json().get("model_info", {}).get("general.digest")
         return (digest or "")[:16] or None
-    except Exception:
+    except (httpx.HTTPError, ValueError):
         return None
 
 
@@ -257,11 +258,9 @@ def run_evaluation(
         })
 
         all_rows: list[dict] = []
-        raw_outputs_dir = Path(mlflow.get_artifact_uri().replace("file:///", "").replace("file://", ""))
-        # mlflow.get_artifact_uri sometimes points at a URI we can't write
-        # to directly on Windows — fall back to local tmp directory and
-        # upload with log_artifact instead. Writing per-run outputs to a
-        # tmp dir and uploading is the portable path.
+        # The MLflow artifact URI isn't always directly writable on Windows,
+        # so write per-run outputs to a local tmp dir and upload with
+        # log_artifact instead.
         tmp_dir = Path(f".mlflow_run_tmp_{run.info.run_id}")
         tmp_dir.mkdir(exist_ok=True)
 
@@ -302,7 +301,7 @@ def run_evaluation(
                 mlflow.log_artifact(str(raw_file), artifact_path="raw_outputs")
 
             metrics = _aggregate(all_rows)
-            mlflow.log_metrics({k: v for k, v in metrics.items() if v == v})  # drop NaN
+            mlflow.log_metrics({k: v for k, v in metrics.items() if not math.isnan(v)})  # drop NaN
 
             log.info("Run %s complete. Aggregates: %s", run.info.run_id, metrics)
             return run.info.run_id
@@ -312,5 +311,5 @@ def run_evaluation(
                 for p in tmp_dir.glob("*"):
                     p.unlink()
                 tmp_dir.rmdir()
-            except Exception:
-                pass
+            except OSError:
+                log.warning("Could not clean up temp dir %s", tmp_dir, exc_info=True)
