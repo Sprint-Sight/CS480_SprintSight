@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from research.eval.analysis import DEFAULT_METRICS, pairwise_ci_table
+from research.eval.analysis import pairwise_ci_table
 
 log = logging.getLogger(__name__)
 

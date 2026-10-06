@@ -27,9 +27,9 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.benchmark_registry import FIXTURES

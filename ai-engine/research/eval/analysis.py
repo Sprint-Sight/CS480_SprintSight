@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import mlflow
 import numpy as np
@@ -177,7 +177,7 @@ def paired_bootstrap_diff(
         model_a=model_a,
         model_b=model_b,
         metric=metric,
-        n=int(len(diffs)),
+        n=len(diffs),
         mean_diff=float(diffs.mean()),
         ci_low=float(lo),
         ci_high=float(hi),

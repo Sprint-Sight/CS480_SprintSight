@@ -141,7 +141,7 @@ async def _run_one_example(item: DatasetItem, model: str) -> tuple[dict, Any, st
     assessment = None
     try:
         assessment = await evaluate_sprint(item.bundle, model)
-    except Exception as exc:  # noqa: BLE001 - the eval must survive a model failure
+    except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         log.exception("evaluate_sprint failed for example=%s model=%s", item.id, model)
     finally:
