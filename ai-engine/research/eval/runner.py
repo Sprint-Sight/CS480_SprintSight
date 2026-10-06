@@ -47,6 +47,7 @@ from prompts.templates import render_dimension_prompt
 from research.eval.datasets import DatasetItem, load_dataset
 from research.eval.metrics import summarise_example
 from services.evaluator import evaluate_sprint
+from services.llm_client import _token_accumulator, new_token_accumulator
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +127,15 @@ async def _run_one_example(item: DatasetItem, model: str) -> tuple[dict, Any, st
     the metric computation that follows. Latency numbers in the report
     should reflect what the production AI engine actually spends.
     """
+    # Enable inline token accumulation for THIS example only. The
+    # _capture_response hook in services.llm_client parses Ollama's `usage`
+    # on every chat-completions response and adds to the dict we set here.
+    # Instructor retries legitimately burn additional tokens, so summing
+    # across every HTTP call is the honest number — not just "the last
+    # successful completion's tokens".
+    accumulator = new_token_accumulator()
+    token_ctx = _token_accumulator.set(accumulator)
+
     t0 = time.perf_counter()
     error: str | None = None
     assessment = None
@@ -134,17 +144,17 @@ async def _run_one_example(item: DatasetItem, model: str) -> tuple[dict, Any, st
     except Exception as exc:  # noqa: BLE001 - the eval must survive a model failure
         error = f"{type(exc).__name__}: {exc}"
         log.exception("evaluate_sprint failed for example=%s model=%s", item.id, model)
+    finally:
+        _token_accumulator.reset(token_ctx)
     latency_s = time.perf_counter() - t0
 
     row = summarise_example(item.bundle, assessment, error)
     row["example_id"] = item.id
     row["latency_s"] = latency_s
-    # Token accounting is not currently surfaced by evaluator.py — fill in
-    # later from the audit logs if needed; keep the column so analysis
-    # schemas don't drift.
-    row["tokens_prompt"] = None
-    row["tokens_completion"] = None
-    row["tokens_total"] = None
+    row["tokens_prompt"] = int(accumulator["prompt"]) or None
+    row["tokens_completion"] = int(accumulator["completion"]) or None
+    row["tokens_total"] = int(accumulator["total"]) or None
+    row["llm_http_calls"] = int(accumulator["calls"])
 
     raw = assessment.model_dump(mode="json") if assessment is not None else None
     return row, raw, error
@@ -166,8 +176,11 @@ def _aggregate(rows: list[dict]) -> dict[str, float]:
     }
     # groundedness/overall_score skip-None aggregates so a totally-failed
     # run doesn't poison the metric column
-    for metric in ("groundedness_rate", "overall_score", "raw_rubric_average"):
-        values = df[metric].dropna()
+    for metric in ("groundedness_rate", "overall_score", "raw_rubric_average",
+                   "tokens_prompt", "tokens_completion", "tokens_total"):
+        if metric not in df:
+            continue
+        values = pd.to_numeric(df[metric], errors="coerce").dropna()
         out[f"{metric}_mean"] = float(values.mean()) if not values.empty else float("nan")
     return out
 

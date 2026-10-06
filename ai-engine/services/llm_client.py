@@ -73,6 +73,23 @@ _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
 )
 
+# Per-caller token accumulator. When a caller wants the token totals from a
+# full evaluate_sprint() (6 dimension calls), it sets this to a fresh dict
+# BEFORE calling and reads the sums AFTER. The _capture_response hook below
+# adds each OpenAI-compatible `usage` block to the accumulator in place.
+# Deliberately NOT the same ContextVar as _audit_context: audit is set/reset
+# per-dimension inside evaluate_dimension, so it would reset between
+# dimension calls; this one lives at whatever scope the caller sets it in.
+_token_accumulator: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "token_accumulator", default=None
+)
+
+
+def new_token_accumulator() -> dict:
+    """Fresh accumulator dict the caller sets on the ContextVar before the
+    evaluate_sprint call it wants token totals for."""
+    return {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
+
 # Extensions treated as data/generated output rather than authored logic when
 # computing the "meaningful lines changed" fact below — e.g. exported test
 # fixtures, logs, or generated JSON, which inflate line counts without
@@ -479,15 +496,34 @@ async def _capture_response(response: httpx.Response) -> None:
         if context is not None:
             body = await response.aread()
             started_at = context.get("request_started_at", time.perf_counter())
+            raw_body = body.decode("utf-8", errors="replace")
             write_audit_record(
                 {
                     **context,
                     "request": json.loads(context.get("request", "{}")),
-                    "raw_response": body.decode("utf-8", errors="replace"),
+                    "raw_response": raw_body,
                     "http_status": response.status_code,
                     "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
                 }
             )
+
+            # Opt-in token capture: only accumulates when the caller has
+            # set _token_accumulator for this ContextVar scope. Ollama's
+            # OpenAI-compat endpoint returns `usage` on the chat completion;
+            # instructor's retries each produce one response, so we sum
+            # across all of them (retries legitimately burn tokens too).
+            accumulator = _token_accumulator.get()
+            if accumulator is not None:
+                try:
+                    usage = (json.loads(raw_body).get("usage") or {})
+                    accumulator["prompt"] += int(usage.get("prompt_tokens") or 0)
+                    accumulator["completion"] += int(usage.get("completion_tokens") or 0)
+                    accumulator["total"] += int(usage.get("total_tokens") or 0)
+                    accumulator["calls"] += 1
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    # Non-JSON body (streaming leftover, error page, etc.)
+                    # — best-effort capture; skip without failing the call.
+                    pass
 
 
 def create_llm_client():
