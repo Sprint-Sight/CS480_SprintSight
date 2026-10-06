@@ -287,8 +287,48 @@ start_docker() {
     info "Starting db + mlflow_service..."
     docker compose up -d db mlflow_service
 
-    info "Building and starting sprintsight_ai (skipping ollama/model-init)..."
-    docker compose up -d --no-deps --build sprintsight_ai
+    # The school GPU server runs behind a VPN that blocks docker.io and PyPI,
+    # so `--build` fails there every time: `FROM python:3.13-slim` can't be
+    # pulled, and `pip install -r requirements.txt` can't reach PyPI. The
+    # fix is simple — build the image ONCE off-VPN (or via `rebuild_docker`
+    # below) and reuse it. REBUILD controls the behaviour:
+    #   REBUILD=auto (default) — rebuild only if the image doesn't exist yet
+    #   REBUILD=no             — never rebuild; fail if the image is missing
+    #   REBUILD=yes            — always rebuild (needs internet access)
+    local rebuild_mode="${REBUILD:-auto}"
+    local has_image="no"
+    if docker compose images sprintsight_ai 2>/dev/null | awk 'NR>1 {print $2}' | grep -q .; then
+        has_image="yes"
+    fi
+
+    local do_build=""
+    case "$rebuild_mode" in
+        yes)
+            info "REBUILD=yes — forcing docker build (requires internet)."
+            do_build="--build"
+            ;;
+        no)
+            if [[ "$has_image" != "yes" ]]; then
+                fail "REBUILD=no but no sprintsight_ai image exists. Build it off-VPN first (REBUILD=yes) or load a prebuilt tarball via 'docker load -i sprintsight_ai.tar'."
+                return 1
+            fi
+            info "REBUILD=no — using the existing sprintsight_ai image (no network needed)."
+            ;;
+        auto|*)
+            if [[ "$has_image" == "yes" ]]; then
+                info "Existing sprintsight_ai image found; skipping build. Set REBUILD=yes to force a rebuild."
+            else
+                info "No sprintsight_ai image yet — attempting one-time build. Expect this to fail on the VPN."
+                do_build="--build"
+            fi
+            ;;
+    esac
+
+    info "Starting sprintsight_ai (skipping ollama/model-init)..."
+    if ! docker compose up -d --no-deps $do_build sprintsight_ai; then
+        fail "sprintsight_ai failed to start. If the error mentions 'failed to resolve source metadata for docker.io' or 'Could not fetch URL https://pypi.org', the VPN is blocking the build. Build the image off-VPN with: REBUILD=yes bash $0 docker"
+        return 1
+    fi
 
     info "Waiting for healthcheck..."
     local attempts=0
@@ -369,6 +409,58 @@ stop_all() {
     info "To close the SSH tunnel, press Ctrl+C in the tunnel terminal."
 }
 
+watch_gpu() {
+    # The GPU lives on the Slurm compute node (e.g. "toga") where the
+    # sprintsight-ollama job is running. On a managed HPC you do NOT have
+    # a login/password for compute nodes directly — they're only reachable
+    # through the scheduler. So the correct way to run nvidia-smi there is
+    # to piggyback a new step on the already-running Slurm job via
+    # `srun --jobid=<id> --overlap`, from the login node. `--overlap`
+    # lets the new step share resources with the parent job instead of
+    # blocking on a fresh allocation.
+    check_vpn || return 1
+    check_slurm || { fail "No running Slurm GPU job. Submit one first: bash hpc/hpc-dev.sh submit"; return 1; }
+
+    local line jobid
+    line=$(get_job_info)
+    jobid=$(echo "$line" | awk '{print $1}')
+    if [[ -z "$jobid" ]]; then
+        fail "Could not resolve the Slurm job ID for '${SLURM_JOB_NAME}'."
+        return 1
+    fi
+
+    local mode="${1:-once}"
+    local nvidia_cmd
+    case "$mode" in
+        --watch|watch)
+            # --loop=2 streams a fresh snapshot every 2s and plays nicely
+            # over SSH (no screen-clear flicker like `watch -n 1`).
+            nvidia_cmd="nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used,memory.total,power.draw --format=csv --loop=2"
+            info "Streaming GPU usage from job ${jobid} on ${COMPUTE_NODE} every 2s. Ctrl+C to stop."
+            ;;
+        --processes|processes)
+            # Which PIDs are holding VRAM — handy to confirm it's Ollama
+            # (and only Ollama) using the GPU.
+            nvidia_cmd="nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv"
+            info "Listing GPU processes on job ${jobid} / ${COMPUTE_NODE}..."
+            ;;
+        *)
+            nvidia_cmd="nvidia-smi"
+            info "GPU snapshot from job ${jobid} on ${COMPUTE_NODE}..."
+            ;;
+    esac
+
+    # srun lands the command inside the existing job's cgroup/namespace,
+    # so no second password prompt and no SSH key on the compute node.
+    # --jobid pins it to our running job; --overlap avoids "resources
+    # already allocated" rejection. `ssh -t` forces SSH to allocate a
+    # pseudo-terminal so srun can honour --pty for line-by-line streaming
+    # (otherwise srun prints a harmless "disregarding --pty" warning).
+    ssh -t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new \
+        "${HPC_USER}@${HPC_LOGIN_HOST}" \
+        "srun --jobid=${jobid} --overlap --pty ${nvidia_cmd}"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 cmd="${1:-full}"
@@ -416,17 +508,21 @@ case "$cmd" in
     submit)  submit_job ;;
     tunnel)  open_tunnel ;;
     stop)    stop_all ;;
+    gpu)     watch_gpu "${2:-once}" ;;
     *)
-        echo "Usage: bash hpc/hpc-dev.sh {full|status|models|docker|submit|tunnel|stop}"
+        echo "Usage: bash hpc/hpc-dev.sh {full|status|models|docker|submit|tunnel|stop|gpu}"
         echo ""
         echo "Commands:"
-        echo "  full     Check tunnel, create models, start Docker (default)"
-        echo "  status   Show cluster job, tunnel, models, Docker health"
-        echo "  models   Create/verify sprintsight-* models on remote Ollama"
-        echo "  docker   Start local db + mlflow + sprintsight_ai"
-        echo "  submit   Submit the Slurm GPU job on the cluster"
-        echo "  tunnel   Open SSH tunnel to the Slurm job's compute node"
-        echo "  stop     Stop Docker and show tunnel teardown instructions"
+        echo "  full          Check tunnel, create models, start Docker (default)"
+        echo "  status        Show cluster job, tunnel, models, Docker health"
+        echo "  models        Create/verify sprintsight-* models on remote Ollama"
+        echo "  docker        Start local db + mlflow + sprintsight_ai"
+        echo "  submit        Submit the Slurm GPU job on the cluster"
+        echo "  tunnel        Open SSH tunnel to the Slurm job's compute node"
+        echo "  stop          Stop Docker and show tunnel teardown instructions"
+        echo "  gpu           One snapshot of nvidia-smi on the GPU compute node"
+        echo "  gpu --watch   Stream GPU utilisation every 2s (Ctrl+C to stop)"
+        echo "  gpu --processes  List PIDs/processes holding VRAM on the GPU"
         exit 1
         ;;
 esac
