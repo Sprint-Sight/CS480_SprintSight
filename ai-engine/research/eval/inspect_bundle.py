@@ -33,8 +33,8 @@ import argparse
 import json
 import logging
 import sys
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from prompts.templates import render_dimension_prompt
