@@ -33,6 +33,7 @@ import argparse
 import json
 import logging
 import sys
+from typing import Any
 from pathlib import Path
 
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
@@ -77,7 +78,7 @@ def inspect(dataset_name: str, example_id: str, dimensions: list[str], out_dir: 
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    summary = {
+    summary: dict[str, Any] = {
         "dataset": dataset_name,
         "dataset_hash": ds_hash,
         "example_id": example_id,

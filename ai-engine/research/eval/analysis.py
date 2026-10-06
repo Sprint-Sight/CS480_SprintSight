@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,7 +106,7 @@ def comparison_table(df: pd.DataFrame, metrics: Iterable[MetricSpec] = tuple(DEF
     """
     out_rows = []
     for model, group in df.groupby("model"):
-        row = {"model": model, "n_examples": group["example_id"].nunique()}
+        row: dict[str, Any] = {"model": model, "n_examples": group["example_id"].nunique()}
         for spec in metrics:
             if spec.column not in group:
                 row[f"{spec.label} mean"] = None
