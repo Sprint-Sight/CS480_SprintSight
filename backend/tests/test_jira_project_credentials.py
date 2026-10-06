@@ -1,5 +1,6 @@
 import json
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -92,3 +93,94 @@ def test_patch_without_token_keeps_configured_flag_and_empty_token_clears_it() -
     )
     assert cleared.status_code == 200
     assert cleared.json()["jira_token_configured"] is False
+
+
+def test_patch_replaces_token_only_after_jira_validation(monkeypatch) -> None:
+    captured_requests: list[httpx.Request] = []
+    replacement = "replacement-jira-token-do-not-echo"
+    original_client = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(200, json={"account_id": "123"})
+
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(
+        "app.services.jiraService.service.httpx.Client",
+        lambda **kwargs: original_client(transport=transport, **kwargs),
+    )
+    instructor = headers(token("faculty@sprintsight.edu"))
+    course = client.post(
+        "/api/v1/courses",
+        json={"code": "JIRA3", "name": "Jira Validation", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor,
+    ).json()
+    project = client.post(
+        f"/api/v1/courses/{course['id']}/projects",
+        json={
+            "project_name": "Validation Project",
+            "team_name": "Validation Team",
+            "jira_email": "instructor@university.edu",
+            "jira_domain": "team.atlassian.net",
+            "jira_project_key": "TEAM",
+            "jira_api_token": SECRET_TOKEN,
+        },
+        headers=instructor,
+    ).json()
+
+    updated = client.patch(
+        f"/api/v1/projects/{project['id']}",
+        json={"jira_api_token": replacement},
+        headers=instructor,
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert len(captured_requests) == 1
+    assert captured_requests[0].url == "https://team.atlassian.net/rest/api/3/search/jql"
+    assert captured_requests[0].headers["Authorization"].startswith("Basic ")
+    assert replacement not in json.dumps(updated.json())
+    assert SECRET_TOKEN not in json.dumps(updated.json())
+
+
+def test_patch_rejects_invalid_token_without_overwriting_existing_token(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"errorMessages": ["Invalid token"]})
+
+    original_client = httpx.Client
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(
+        "app.services.jiraService.service.httpx.Client",
+        lambda **kwargs: original_client(transport=transport, **kwargs),
+    )
+    instructor = headers(token("faculty@sprintsight.edu"))
+    course = client.post(
+        "/api/v1/courses",
+        json={"code": "JIRA4", "name": "Jira Rejection", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor,
+    ).json()
+    project = client.post(
+        f"/api/v1/courses/{course['id']}/projects",
+        json={
+            "project_name": "Rejection Project",
+            "team_name": "Rejection Team",
+            "jira_email": "instructor@university.edu",
+            "jira_domain": "team.atlassian.net",
+            "jira_project_key": "TEAM",
+            "jira_api_token": SECRET_TOKEN,
+        },
+        headers=instructor,
+    ).json()
+
+    rejected = client.patch(
+        f"/api/v1/projects/{project['id']}",
+        json={"jira_api_token": "invalid-token"},
+        headers=instructor,
+    )
+
+    assert rejected.status_code == 400
+    assert rejected.json()["detail"] == "Jira rejected the credentials or project access."
+    assert "invalid-token" not in json.dumps(rejected.json())
+
+    fetched = client.get(f"/api/v1/projects/{project['id']}", headers=instructor)
+    assert fetched.status_code == 200
+    assert fetched.json()["jira_token_configured"] is True

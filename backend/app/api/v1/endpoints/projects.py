@@ -20,6 +20,7 @@ from app.core.credential_crypto import encrypt_secret
 from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
 from app.schemas.assessment import AssessmentReport
 from app.services.auditLogService.service import append_action_audit
+from app.services.jiraService.service import validate_jira_credentials
 from app.schemas.auth import Role, UserResponse
 from app.schemas.projects import (
     CourseCreate,
@@ -691,6 +692,15 @@ def update_project(
     jira_email = str(payload.jira_email) if "jira_email" in sent and payload.jira_email else _resolve("jira_email", project.jira_email)
     jira_domain = _resolve("jira_domain", project.jira_domain)
     jira_key = _resolve("jira_project_key", project.jira_project_key)
+
+    replacement_token = payload.jira_api_token if "jira_api_token" in sent else None
+    if replacement_token:
+        validate_jira_credentials(
+            jira_domain or "",
+            jira_email,
+            replacement_token,
+            jira_key,
+        )
 
     new_encrypted_token = _encrypted_jira_token(
         payload.jira_api_token,
