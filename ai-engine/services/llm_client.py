@@ -1,24 +1,14 @@
-import contextvars
-import hashlib
-import json
-import logging
-import os
-import time
+import contextvars, hashlib, json, logging, os, time, httpx, instructor, mlflow
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-import httpx
-import instructor
-import mlflow
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
 from llmops.prompt_registry import (
-    DIMENSION_PLACEHOLDERS,
-    get_dimension_prompt,
     load_dimension_prompt,
     register_dimension_prompt,
 )
@@ -503,7 +493,7 @@ async def _capture_response(response: httpx.Response) -> None:
             )
 
 
-def create_llm_client():
+def create_llm_client(provider="ollama"):
     """
     Creates the instructor-wrapped Ollama client.
 
@@ -521,12 +511,21 @@ def create_llm_client():
             "response": [_capture_response], # Capture the response after receiving it from Ollama
         }
     )
-    raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
-        base_url=OLLAMA_BASE_URL,
-        api_key=OLLAMA_API_KEY,
-        timeout=OLLAMA_TIMEOUT,
-        http_client=transport, # Use the custom transport to capture requests and responses
-    )
+
+    if provider == "ollama":
+        raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+            base_url=OLLAMA_BASE_URL,
+            api_key=OLLAMA_API_KEY,
+            timeout=OLLAMA_TIMEOUT,
+            http_client=transport, # Use the custom transport to capture requests and responses
+        )
+    if provider == "openai":
+        raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+            base_url=OLLAMA_BASE_URL,
+            api_key=OLLAMA_API_KEY,
+            timeout=OLLAMA_TIMEOUT,
+            http_client=transport, # Use the custom transport to capture requests and responses
+        )
 
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client, # The raw OpenAI-compatible client pointing at Ollama
