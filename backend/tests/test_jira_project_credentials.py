@@ -178,7 +178,7 @@ def test_patch_rejects_invalid_token_without_overwriting_existing_token(monkeypa
     )
 
     assert rejected.status_code == 400
-    assert rejected.json()["detail"] == "Jira rejected the credentials or project access."
+    assert rejected.json()["error"]["message"] == "Jira rejected the credentials or project access."
     assert "invalid-token" not in json.dumps(rejected.json())
 
     fetched = client.get(f"/api/v1/projects/{project['id']}", headers=instructor)
