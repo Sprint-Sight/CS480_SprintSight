@@ -18,11 +18,16 @@ type Project = { id: string; team_name: string; project_name: string; jira_proje
 export function useArtifactProjectScope(role: "student" | "instructor" | null) {
   const [projectOptions, setProjectOptions] = useState<ArtifactProjectOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
+  const [selectedSprintId, setSelectedSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [projectLoadError, setProjectLoadError] = useState("");
 
   useEffect(() => {
-    const refreshScope = () => setSelectedProjectId(readIngestionState().selectedProjectId || "");
+    const refreshScope = () => {
+      const state = readIngestionState();
+      setSelectedProjectId(state.selectedProjectId || "");
+      setSelectedSprintId(state.selectedSprintId || "sprint-1");
+    };
     window.addEventListener("sprintsight-ingestion-updated", refreshScope);
     return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope);
   }, []);
@@ -54,5 +59,5 @@ export function useArtifactProjectScope(role: "student" | "instructor" | null) {
     void loadProjects();
   }, [role]);
 
-  return { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError };
+  return { projectOptions, selectedProjectId, selectedSprintId, isLoadingProjects, projectLoadError };
 }

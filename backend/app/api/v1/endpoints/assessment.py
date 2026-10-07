@@ -45,6 +45,7 @@ def assess_sprint(
     jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    document_repository: Annotated[DocumentRepository, Depends(get_document_repository)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
     if not project:
@@ -69,6 +70,7 @@ def assess_sprint(
         assessment_repository,
         jira_ingestion_repository,
         rubric_weights_repository,
+        document_repository,
     )
     append_action_audit(
         action_audits,

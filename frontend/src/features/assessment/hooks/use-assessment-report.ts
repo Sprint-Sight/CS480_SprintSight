@@ -11,17 +11,18 @@ type AssessmentProjectOption = { id: string; courseId?: string; courseLabel?: st
 type BackendReport = { project_id: string; sprint_id: string; generated_at: string; team_score: { score: number; rationale: string }; rubric_scores: Record<string, { score: number; justification?: string | null; evidence_citations?: string[] }>; strengths: string[]; weaknesses: string[]; recommendations: string[] };
 type JobEvent = { status?: string; progress?: number; message?: string; error_message?: string };
 
-const labels: Record<string, string> = { requirements: "Requirements", code_quality: "Code Quality", testing: "Testing", documentation: "Documentation", collaboration: "Collaboration", delivery: "Delivery", quality: "Quality" };
+const labels: Record<string, string> = { requirements: "Requirements", code_quality: "Code Quality", testing: "Testing", documentation: "Documentation", collaboration: "Collaboration", cicd: "CI/CD", delivery: "Delivery", quality: "Quality" };
 const formatLabel = (key: string) => labels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const normalizeRubricScore = (score: number) => score >= 0 && score <= 10 ? score * 10 : score;
 const emptyReport = (projectId = "", sprintId = ""): SprintAssessmentReport => ({ projectId, sprintId, sprintLabel: sprintId || "No sprint selected", teamLabel: "No project selected", projectLabel: "No assessment report", generatedAt: "", overallScore: 0, overallGrade: "", overallSummary: "No assessment data is available for the selected course, project, and sprint.", rubricScores: [], strengths: [], weaknesses: [], recommendations: [], narrativeFeedback: [] });
+export const toSprintAssessmentReport = (data: BackendReport, teamLabel = "Project team", projectLabel = "Project") => ({ projectId: data.project_id, sprintId: data.sprint_id, sprintLabel: data.sprint_id, teamLabel, projectLabel, generatedAt: new Date(data.generated_at).toLocaleString(), overallScore: Math.round(data.team_score.score), overallGrade: data.team_score.score >= 85 ? "A" : data.team_score.score >= 75 ? "B" : "C", overallSummary: data.team_score.rationale, rubricScores: Object.entries(data.rubric_scores || {}).map(([category, detail]) => ({ category: formatLabel(category), score: Math.round(normalizeRubricScore(detail.score)), justification: detail.justification || "No justification provided.", evidenceCitations: detail.evidence_citations || [] })), strengths: data.strengths || [], weaknesses: data.weaknesses || [], recommendations: data.recommendations || [], narrativeFeedback: [] });
 
 export function useAssessmentReport() {
   const [projectOptions, setProjectOptions] = useState<AssessmentProjectOption[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
-  const [selectedCourseId, setSelectedCourseId] = useState(() => readIngestionState().selectedCourseId || "");
-  const [sprintId, setSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
-  const [report, setReport] = useState(() => emptyReport(readIngestionState().selectedProjectId || "", readIngestionState().selectedSprintId || ""));
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedCourseId, setSelectedCourseId] = useState("");
+  const [sprintId, setSprintId] = useState("sprint-1");
+  const [report, setReport] = useState(() => emptyReport());
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [assessmentProgress, setAssessmentProgress] = useState(0);
@@ -43,7 +44,7 @@ export function useAssessmentReport() {
     setIsLoadingReport(true); setAssessmentError("");
     try {
       const data = await apiRequest<BackendReport>(`/assessments/latest?course_id=${encodeURIComponent(scope.courseId)}&project_id=${encodeURIComponent(scope.projectId)}&sprint_id=${encodeURIComponent(scope.sprintId)}`);
-      setReport({ projectId: data.project_id, sprintId: data.sprint_id, sprintLabel: data.sprint_id, teamLabel: scope.projectLabel.split(" - ")[0] || "Project team", projectLabel: scope.projectLabel.split(" - ").slice(1).join(" - ") || scope.projectLabel, generatedAt: new Date(data.generated_at).toLocaleString(), overallScore: Math.round(data.team_score.score), overallGrade: data.team_score.score >= 85 ? "A" : data.team_score.score >= 75 ? "B" : "C", overallSummary: data.team_score.rationale, rubricScores: Object.entries(data.rubric_scores || {}).map(([category, detail]) => ({ category: formatLabel(category), score: Math.round(normalizeRubricScore(detail.score)), justification: detail.justification || "No justification provided.", evidenceCitations: detail.evidence_citations || [] })), strengths: data.strengths || [], weaknesses: data.weaknesses || [], recommendations: data.recommendations || [], narrativeFeedback: [] });
+      setReport(toSprintAssessmentReport(data, scope.projectLabel.split(" - ")[0] || "Project team", scope.projectLabel.split(" - ").slice(1).join(" - ") || scope.projectLabel));
     } catch (error) { clearLiveReport(scope.projectId, scope.sprintId); setAssessmentError(error instanceof Error ? error.message : "Failed to load the latest assessment."); }
     finally { setIsLoadingReport(false); }
   }
@@ -66,9 +67,9 @@ export function useAssessmentReport() {
   }
 
   useEffect(() => setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | "admin" | null) || "student"), []);
-  useEffect(() => { const refreshScope = () => { const state = readIngestionState(); setSelectedCourseId(state.selectedCourseId || ""); setSelectedProjectId(state.selectedProjectId || ""); setSprintId(state.selectedSprintId || "sprint-1"); }; window.addEventListener("sprintsight-ingestion-updated", refreshScope); return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope); }, []);
-  useEffect(() => { async function loadProjects() { try { const courses = await apiRequest<Array<{ id: string; code: string; name: string; section: string }>>("/courses"); const groups = await Promise.all(courses.map(async (course) => ({ course, projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`) }))); const options = groups.flatMap(({ course, projects }) => projects.map((project) => ({ id: project.id, courseId: course.id, courseLabel: `${course.code} - ${course.name} - ${course.section}`, label: `${project.team_name} - ${project.project_name}` }))); setProjectOptions(options); } catch (error) { setProjectOptions([]); setAssessmentError(error instanceof Error ? error.message : "Could not load assessment projects."); } } loadProjects(); }, []);
-  useEffect(() => { if (selectedProjectId) void loadLatestReport(); }, [selectedProjectId, sprintId, projectOptions]);
+  useEffect(() => { if (role === "student") return; const refreshScope = () => { const state = readIngestionState(); setSelectedCourseId(state.selectedCourseId || ""); setSelectedProjectId(state.selectedProjectId || ""); setSprintId(state.selectedSprintId || "sprint-1"); }; refreshScope(); window.addEventListener("sprintsight-ingestion-updated", refreshScope); return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope); }, [role]);
+  useEffect(() => { if (!role || role === "student") return; async function loadProjects() { try { const courses = await apiRequest<Array<{ id: string; code: string; name: string; section: string }>>("/courses"); const groups = await Promise.all(courses.map(async (course) => ({ course, projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`) }))); const options = groups.flatMap(({ course, projects }) => projects.map((project) => ({ id: project.id, courseId: course.id, courseLabel: `${course.code} - ${course.name} - ${course.section}`, label: `${project.team_name} - ${project.project_name}` }))); setProjectOptions(options); } catch (error) { setProjectOptions([]); setAssessmentError(error instanceof Error ? error.message : "Could not load assessment projects."); } } void loadProjects(); }, [role]);
+  useEffect(() => { if (role !== "student" && selectedProjectId) void loadLatestReport(); }, [role, selectedProjectId, sprintId, projectOptions]);
   const scope = resolveScope();
   return { report, role, isLoadingReport, isGenerating, assessmentProgress, assessmentMessage, assessmentError, scope, loadLatestReport, generateAssessment };
 }

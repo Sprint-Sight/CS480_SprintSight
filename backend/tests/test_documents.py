@@ -79,12 +79,12 @@ def test_non_member_cannot_upload(override_user_repository, monkeypatch) -> None
     assert response.status_code == 403
 
 
-def test_non_pdf_is_rejected(override_user_repository, monkeypatch) -> None:
+def test_unsupported_extension_is_rejected(override_user_repository, monkeypatch) -> None:
     setup_project(override_user_repository)
     monkeypatch.setattr(storage, "upload", lambda *args: (_ for _ in ()).throw(AssertionError()))
     response = client.post(
         "/api/v1/projects/project-documents/documents",
-        files=[("files", ("notes.txt", b"not a pdf", "text/plain"))],
+        files=[("files", ("notes.bin", b"binary blob", "application/octet-stream"))],
         headers={"Authorization": f"Bearer {token('faculty@sprintsight.edu')}"},
     )
     assert response.status_code == 413

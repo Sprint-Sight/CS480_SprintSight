@@ -55,6 +55,7 @@ class BackendAssessmentPayload(BaseModel):
     jira_tickets: list[JiraTicket] = Field(default_factory=list)
     peer_evaluations: list[PeerEvaluation] = Field(default_factory=list)
     artifact_metrics: dict[str, Any] = Field(default_factory=dict)
+    project_context_documents: list[dict[str, Any]] = Field(default_factory=list)
     instructor_expectations: str = "No instructor guidance provided."
 
 
@@ -73,6 +74,7 @@ async def assess_backend_data_endpoint(
             peer_evaluations=payload.peer_evaluations,
             collaboration_metrics=payload.collaboration_metrics.model_dump(),
             artifact_metrics=payload.artifact_metrics,
+            project_context_documents=payload.project_context_documents,
             instructor_expectations=payload.instructor_expectations,
         )
         if LOG_BUNDLE_DISPLAY:
