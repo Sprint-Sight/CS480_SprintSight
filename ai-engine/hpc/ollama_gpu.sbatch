@@ -28,6 +28,7 @@ echo "  ssh -L 11434:$(hostname):11434 <netid>@origami.smu.edu.sg"
 srun enroot start --rw \
   --rc "$REPO_DIR/ai-engine/hpc/ollama-entrypoint.sh" \
   --env OLLAMA_HOST=0.0.0.0:11434 \
+  --env OLLAMA_MODELS=/root/.ollama/models \
   --mount "$DATA_DIR:/root/.ollama" \
   --mount "$MODELS_DIR:/mnt/models" \
   ollama

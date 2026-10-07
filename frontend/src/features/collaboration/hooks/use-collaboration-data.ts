@@ -9,13 +9,14 @@ type LiveCollaboration = Pick<CollaborationDataset, "commitsByMember" | "workloa
 
 export function useCollaborationData() {
   const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
+  const [selectedSprintId, setSelectedSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
   const [ingestionVersion, setIngestionVersion] = useState(0);
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
 
   const liveIngestion = useMemo(() => {
     void ingestionVersion;
-    return getProjectIngestion(selectedProjectId);
-  }, [selectedProjectId, ingestionVersion]);
+    return getProjectIngestion(selectedProjectId, selectedSprintId);
+  }, [selectedProjectId, selectedSprintId, ingestionVersion]);
 
   const liveCollaborationData = useMemo<LiveCollaboration | null>(() => {
     if (!liveIngestion.git && !liveIngestion.jira) return null;
@@ -48,10 +49,15 @@ export function useCollaborationData() {
 
   useEffect(() => setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null) ?? "student"), []);
   useEffect(() => {
-    const refresh = () => { setSelectedProjectId(readIngestionState().selectedProjectId || ""); setIngestionVersion((version) => version + 1); };
+    const refresh = () => {
+      const state = readIngestionState();
+      setSelectedProjectId(state.selectedProjectId || "");
+      setSelectedSprintId(state.selectedSprintId || "sprint-1");
+      setIngestionVersion((version) => version + 1);
+    };
     window.addEventListener("sprintsight-ingestion-updated", refresh);
     return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
   }, []);
 
-  return { role, selectedProjectId, setSelectedProjectId, collaborationData, liveIngestion };
+  return { role, selectedProjectId, selectedSprintId, setSelectedProjectId, collaborationData, liveIngestion };
 }

@@ -12,7 +12,6 @@ from app.dependencies.auth import get_action_audit_repository, get_jira_ingestio
 from app.repositories.interfaces import ActionAuditRepository, JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
-from app.services.documentsService.service import collect_document_signals
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
@@ -277,5 +276,4 @@ def sync_repository_ingestion(
     return {
         "github_metrics": github_metrics,
         "jira_metrics": jira_metrics,
-        "document_signals": document_signals,
     }

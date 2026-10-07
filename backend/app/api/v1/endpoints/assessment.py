@@ -6,9 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_action_audit_repository, get_assessment_repository, get_audit_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
+from app.dependencies.auth import get_action_audit_repository, get_assessment_repository, get_audit_repository, get_document_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
+from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
 from app.schemas.assessment import AssessRequest, AssessmentReport, ManualAssessmentPatch, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
@@ -45,6 +45,7 @@ def assess_sprint(
     jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    document_repository: Annotated[DocumentRepository, Depends(get_document_repository)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
     if not project:
@@ -69,6 +70,7 @@ def assess_sprint(
         assessment_repository,
         jira_ingestion_repository,
         rubric_weights_repository,
+        document_repository,
     )
     append_action_audit(
         action_audits,

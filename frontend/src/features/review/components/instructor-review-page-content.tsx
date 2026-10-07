@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { INITIAL_AUDIT_HISTORY, INITIAL_REVIEW_CRITERIA } from "@/features/review/data";
 import type { ReviewAuditEvent, ReviewAuditEvent as AuditEvent, ReviewCriterion } from "@/features/review/types";
 import { apiRequest } from "@/features/projects/components/projects-api";
-import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
+import { readIngestionState } from "@/features/ingestion/state";
 import { useReviewScoring } from "@/features/review/hooks/use-review-scoring";
 
 type ManualOverrideRecord = {
@@ -59,11 +59,10 @@ export default function InstructorReviewPageContent() {
   const [isSubmittingOverride, setIsSubmittingOverride] = useState(false);
   const [projectContext, setProjectContext] = useState(() => {
     const state = readIngestionState();
-    const ingestion = state.selectedProjectId ? getProjectIngestion(state.selectedProjectId) : { git: undefined, jira: undefined };
     return {
       projectId: state.selectedProjectId || "",
-      courseId: state.selectedCourseId || ingestion.git?.course_id || ingestion.jira?.course_id || "",
-      sprintId: ingestion.git?.sprint_id || ingestion.jira?.sprint_id || "sprint-1",
+      courseId: state.selectedCourseId || "",
+      sprintId: state.selectedSprintId || "sprint-1",
     };
   });
 
@@ -72,6 +71,19 @@ export default function InstructorReviewPageContent() {
     if (savedRole === "student" || savedRole === "instructor") {
       setRole(savedRole);
     }
+  }, []);
+
+  useEffect(() => {
+    const refreshScope = () => {
+      const state = readIngestionState();
+      setProjectContext({
+        projectId: state.selectedProjectId || "",
+        courseId: state.selectedCourseId || "",
+        sprintId: state.selectedSprintId || "sprint-1",
+      });
+    };
+    window.addEventListener("sprintsight-ingestion-updated", refreshScope);
+    return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope);
   }, []);
 
   useEffect(() => {

@@ -6,14 +6,22 @@ import {
   AssessmentFeedbackSections,
   AssessmentScoreVisuals,
 } from "@/features/assessment/components/assessment-report-sections";
-import { useAssessmentReport } from "@/features/assessment/hooks/use-assessment-report";
+import { toSprintAssessmentReport, useAssessmentReport } from "@/features/assessment/hooks/use-assessment-report";
 import { InstructorAiFeedbackModal } from "@/features/instructor-feedback/components/instructor-ai-feedback-modal";
+import { StudentAssessmentReport } from "@/features/assessment/components/student-assessment-report";
+import { useStudentProjectContext } from "@/features/student/hooks/use-student-project-context";
 
 export default function AssessmentReportPageContent() {
   const assessment = useAssessmentReport();
   const instructor = assessment.role !== "student";
+  const studentContext = useStudentProjectContext(assessment.role === "student");
   const scope = assessment.scope;
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+
+  if (assessment.role === "student") {
+    const report = studentContext.report ? toSprintAssessmentReport(studentContext.report, studentContext.project?.team_name, studentContext.project?.project_name) : null;
+    return <div className="space-y-5 p-8"><StudentAssessmentReport report={report} projectLabel={studentContext.project ? `${studentContext.project.team_name} - ${studentContext.project.project_name}` : "My project"} isLoading={studentContext.isLoading} error={studentContext.error} /></div>;
+  }
 
   return (
     <div className="space-y-5 p-8">
@@ -23,6 +31,7 @@ export default function AssessmentReportPageContent() {
           <p className="mt-1 text-sm text-slate-500">
             {assessment.report.teamLabel} - {assessment.report.projectLabel} - {assessment.report.sprintLabel}
           </p>
+          {assessment.report.generatedAt && <p className="mt-1 text-xs font-medium text-slate-400">Generated: {assessment.report.generatedAt}</p>}
         </div>
         <div className="flex flex-wrap justify-end gap-3">
           {instructor && (
