@@ -1,6 +1,7 @@
 export type RubricCategory = string;
 
 export type RubricScore = {
+  categoryKey?: string;
   category: RubricCategory;
   score: number;
   justification: string;
@@ -8,6 +9,7 @@ export type RubricScore = {
 };
 
 export type SprintAssessmentReport = {
+  reportId?: string;
   projectId: string;
   sprintId: string;
   sprintLabel: string;

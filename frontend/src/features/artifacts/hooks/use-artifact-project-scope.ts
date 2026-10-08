@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 
 import { readIngestionState } from "@/features/ingestion/state";
 import { apiRequest } from "@/features/projects/components/projects-api";
+import { getStudentProjects } from "@/features/student/student-project-api";
 
 export type ArtifactProjectOption = {
   id: string;
-  courseId: string;
+  courseId?: string;
   jiraProjectKey?: string | null;
   label: string;
 };
@@ -17,40 +18,62 @@ type Project = { id: string; team_name: string; project_name: string; jira_proje
 
 export function useArtifactProjectScope(role: "student" | "instructor" | null) {
   const [projectOptions, setProjectOptions] = useState<ArtifactProjectOption[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
-  const [selectedSprintId, setSelectedSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
-  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedSprintId, setSelectedSprintId] = useState("sprint-1");
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [projectLoadError, setProjectLoadError] = useState("");
 
   useEffect(() => {
+    if (role !== "instructor") return;
     const refreshScope = () => {
       const state = readIngestionState();
       setSelectedProjectId(state.selectedProjectId || "");
       setSelectedSprintId(state.selectedSprintId || "sprint-1");
     };
+    refreshScope();
     window.addEventListener("sprintsight-ingestion-updated", refreshScope);
     return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope);
-  }, []);
+  }, [role]);
 
   useEffect(() => {
-    if (role !== "instructor") return;
+    if (!role) return;
     async function loadProjects() {
       setIsLoadingProjects(true);
       setProjectLoadError("");
       try {
+        if (role === "student") {
+          const projects = await getStudentProjects();
+          const options = projects.map((project) => ({
+            id: project.id,
+            label: `${project.team_name} - ${project.project_name}`,
+          }));
+          setProjectOptions(options);
+          setSelectedProjectId(options[0]?.id || "");
+          setSelectedSprintId("sprint-1");
+          return;
+        }
+
         const courses = await apiRequest<Course[]>("/courses");
         const groups = await Promise.all(courses.map(async (course) => ({
           courseId: course.id,
           projects: await apiRequest<Project[]>(`/courses/${course.id}/projects`),
         })));
-        setProjectOptions(groups.flatMap(({ courseId, projects }) => projects.map((project) => ({
+        const options = groups.flatMap(({ courseId, projects }) => projects.map((project) => ({
           id: project.id,
           courseId,
           jiraProjectKey: project.jira_project_key,
           label: `${project.team_name} - ${project.project_name}`,
-        }))));
+        })));
+        setProjectOptions(options);
+        const persisted = readIngestionState();
+        const savedProjectId = persisted.selectedProjectId || "";
+        setSelectedProjectId(options.some((project) => project.id === savedProjectId)
+          ? savedProjectId
+          : options[0]?.id || "");
+        setSelectedSprintId(persisted.selectedSprintId || "sprint-1");
       } catch (error) {
         setProjectOptions([]);
+        if (role === "student") setSelectedProjectId("");
         setProjectLoadError(error instanceof Error ? error.message : "Could not load backend projects.");
       } finally {
         setIsLoadingProjects(false);

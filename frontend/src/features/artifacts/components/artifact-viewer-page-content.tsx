@@ -9,6 +9,7 @@ import {
   Upload,
   RefreshCw,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,6 +19,7 @@ import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
+import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -152,7 +154,7 @@ function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
   return {
     id: document.id,
     fileName: document.filename,
-    fileType: "PDF",
+    fileType: getDocumentFileType(document.filename),
     uploadedBy: document.uploaded_by,
     uploadedAt: new Date(document.created_at).toLocaleDateString(),
     size: formatBytes(document.byte_size),
@@ -218,6 +220,7 @@ export default function ArtifactViewerPageContent() {
         : !selectedBackendProject
           ? "Select a real backend project before starting ingestion."
           : "";
+  const displayedTab = role === "student" ? "documents" : activeTab;
 
   useEffect(() => {
     const persisted = getProjectIngestion(selectedProjectId, selectedSprintId);
@@ -241,6 +244,10 @@ export default function ArtifactViewerPageContent() {
   useEffect(() => {
     async function loadDocuments() {
       setDocumentError("");
+      if (!role || (role === "student" && isLoadingProjects)) {
+        setLocalDocuments([]);
+        return;
+      }
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
         setLocalDocuments([]);
         return;
@@ -260,9 +267,14 @@ export default function ArtifactViewerPageContent() {
     }
 
     loadDocuments();
-  }, [selectedProjectId]);
+  }, [role, selectedProjectId, isLoadingProjects]);
 
   useEffect(() => {
+    if (role !== "instructor") {
+      setJiraRuns([]);
+      setJiraSnapshot(null);
+      return;
+    }
     if (!isUuid(selectedProjectId)) {
       setJiraRuns([]);
       setJiraSnapshot(null);
@@ -290,7 +302,7 @@ export default function ArtifactViewerPageContent() {
     }
 
     loadProjectRuns();
-  }, [selectedProjectId, selectedSprintId]);
+  }, [role, selectedProjectId, selectedSprintId]);
 
   async function loadGitMetrics() {
     const sprint = gitSprintId.trim();
@@ -421,12 +433,7 @@ export default function ArtifactViewerPageContent() {
   }
 
   // Filter tabs dynamically based on user role
-  const visibleTabs = useMemo(() => {
-    if (role === "student") {
-      return tabs.filter((tab) => tab.id !== "peer-evaluation");
-    }
-    return tabs;
-  }, [role]);
+  const visibleTabs = tabs;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
@@ -436,20 +443,7 @@ export default function ArtifactViewerPageContent() {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
         throw new Error("Select a backend project before uploading documents.");
       }
-      if (files.some((file) => !file.name.toLowerCase().endsWith(".pdf") || file.type !== "application/pdf")) {
-        throw new Error("Only PDF files with application/pdf MIME type are allowed.");
-      }
-      if (files.some((file) => file.size > 25 * 1024 * 1024)) {
-        throw new Error("Each PDF must be 25 MB or smaller.");
-      }
-      if (files.reduce((total, file) => total + file.size, 0) > 100 * 1024 * 1024) {
-        throw new Error("The total upload size must be 100 MB or smaller.");
-      }
-
-      for (const file of files) {
-        const header = new TextDecoder().decode(await file.slice(0, 5).arrayBuffer());
-        if (header !== "%PDF-") throw new Error(`${file.name} is not a valid PDF file.`);
-      }
+      await validateDocumentFiles(files);
 
       const formData = new FormData();
       files.forEach((file) => formData.append("files", file));
@@ -491,8 +485,14 @@ export default function ArtifactViewerPageContent() {
     <div className="space-y-5 p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Artifact Viewer</h1>
-          <p className="mt-1 text-base text-slate-500">{projectOptions.find((option) => option.id === selectedProjectId)?.label} - Raw evidence used for AI assessment</p>
+          <h1 className="text-4xl font-bold tracking-tight text-blue-950">
+            {role === "student" ? "My Project Documents" : "Artifact Viewer"}
+          </h1>
+          <p className="mt-1 text-base text-slate-500">
+            {role === "student"
+              ? "Upload and review documents for your project."
+              : `${projectOptions.find((option) => option.id === selectedProjectId)?.label || "Select a project"} - Raw evidence used for AI assessment`}
+          </p>
         </div>
 
         <div className="w-full max-w-sm">
@@ -500,13 +500,18 @@ export default function ArtifactViewerPageContent() {
           <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
             {isLoadingProjects ? "Loading selected project..." : projectOptions.find((option) => option.id === selectedProjectId)?.label || "No project selected"}
           </div>
+          {role === "student" && projectLoadError && (
+            <p className="mt-1 text-sm text-rose-600">{projectLoadError}</p>
+          )}
         </div>
       </div>
 
-      <ArtifactTabs tabs={tabs} visibleTabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
+      {role === "instructor" && (
+        <ArtifactTabs tabs={tabs} visibleTabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
+      )}
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        {activeTab === "github" && (
+        {role === "instructor" && displayedTab === "github" && (
           <>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -582,7 +587,7 @@ export default function ArtifactViewerPageContent() {
           </>
         )}
 
-        {activeTab === "jira" && (
+        {role === "instructor" && displayedTab === "jira" && (
           <>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -632,17 +637,19 @@ export default function ArtifactViewerPageContent() {
           </>
         )}
 
-        {activeTab === "documents" && (
+        {displayedTab === "documents" && (role === "student" || role === "instructor") && (
           <>
             <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-semibold text-blue-950">Uploaded Documents</h2>
+              <h2 className="text-3xl font-semibold text-blue-950">
+                {role === "student" ? "Your Uploaded Documents" : "Uploaded Documents"}
+              </h2>
               
               <input 
                 type="file" 
                 ref={fileInputRef} 
                 onChange={handleFileUpload}
                 className="hidden" 
-                accept="application/pdf,.pdf"
+                accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 multiple
               />
               <button
@@ -652,9 +659,10 @@ export default function ArtifactViewerPageContent() {
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 <Upload className="h-4 w-4" />
-                {isUploading ? "Uploading..." : "Upload PDF"}
+                {isUploading ? "Uploading..." : "Upload Document"}
               </button>
             </div>
+            <p className="text-sm text-slate-500">Accepted formats: PDF, DOCX, and PPTX.</p>
 
             {documentError && <p className="text-sm text-rose-600">{documentError}</p>}
             {isLoadingDocuments && <p className="text-sm text-slate-500">Loading documents...</p>}
@@ -675,6 +683,15 @@ export default function ArtifactViewerPageContent() {
                   >
                     Download {doc.fileType}
                   </button>
+                  <button
+                    type="button"
+                    disabled
+                    title="Document deletion will be available after the backend endpoint is added."
+                    className="inline-flex cursor-not-allowed items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete (coming soon)
+                  </button>
                 </div>
               </article>
             ))}
@@ -687,14 +704,14 @@ export default function ArtifactViewerPageContent() {
           </>
         )}
 
-        {activeTab === "communication" && (
+        {role === "instructor" && displayedTab === "communication" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Communication Artifacts</h2>
             <p className="text-sm text-slate-500">No communication artifacts are available for the selected project.</p>
           </>
         )}
 
-        {activeTab === "peer-evaluation" && role !== "student" && (
+        {role === "instructor" && displayedTab === "peer-evaluation" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Peer Evaluation Inputs</h2>
             <p className="text-sm text-slate-500">No peer evaluation data is available for the selected project and sprint.</p>
@@ -702,7 +719,7 @@ export default function ArtifactViewerPageContent() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      {role === "instructor" && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-900">Structured raw inputs for AI evaluation</h2>
         <p className="mt-1 text-sm text-slate-500">Normalized ingestion metadata used by scoring and feedback pipelines.</p>
 
@@ -735,7 +752,7 @@ export default function ArtifactViewerPageContent() {
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
     </div>
   );
 }
