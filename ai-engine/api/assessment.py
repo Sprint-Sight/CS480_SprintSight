@@ -62,7 +62,9 @@ class BackendAssessmentPayload(BaseModel):
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
     payload: BackendAssessmentPayload,
-    modelname: Annotated[ModelName, Query(description="Select the model to use for assessment")],
+    modelname: ModelName = Query(..., description="Select the model to use for assessment"),
+    #modelname: Annotated[ModelName, Query(description="Select the model to use for assessment")],
+    experiment_name: str = "SprintSight Evaluations",
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
     try:
@@ -80,7 +82,7 @@ async def assess_backend_data_endpoint(
         if LOG_BUNDLE_DISPLAY:
             print("\nBundle display: ", bundle)
             print()
-        assessment = await evaluate_sprint(bundle, modelname)
+        assessment = await evaluate_sprint(bundle, modelname, experiment_name)
         return assessment
     except Exception as exc:
         log.exception("AI-engine backend assessment failed.")

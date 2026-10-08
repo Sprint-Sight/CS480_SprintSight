@@ -53,6 +53,13 @@ Return your JudgeVerdict now.
 PROMPT_NAME, PROMPT_ALIAS = "SprintSight_Judge_Grounding_Actionability", "production"
 
 def ensure_judge_prompt_registered() -> None:
+    # prompt = mlflow.genai.register_prompt(
+    #     name=PROMPT_NAME,
+    #     template=JUDGE_USER_PROMPT_TEMPLATE,
+    #     commit_message="SprintSight LLM-judge prompt (grounding + recommendation actionability)",
+    #     tags={"author": "SprintSight", "component": "llm-judge"},
+    # )
+    # mlflow.genai.set_prompt_alias(PROMPT_NAME, PROMPT_ALIAS, prompt.version)
     # Idempotent: skips re-registering when "production" already points at
     # this exact template, so repeated calls (e.g. once per judge run) don't
     # clutter the registry with identical versions.

@@ -1,18 +1,17 @@
-import contextvars
-import hashlib
-import json
-import logging
-import os
-import time
+import contextvars, hashlib, json, logging, os, time, httpx, instructor, mlflow
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-import httpx
-import instructor
-import mlflow
+from mlflow.entities import SpanType
+from openai import AsyncOpenAI
+
+from llmops.prompt_registry import (
+    load_dimension_prompt,
+    register_dimension_prompt,
+)
 from dotenv import load_dotenv
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
@@ -65,6 +64,33 @@ OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 # server rejects it.
 _INSTRUCTOR_MODES = {"json": instructor.Mode.JSON, "json_schema": instructor.Mode.JSON_SCHEMA}
 _STRUCTURED_OUTPUT_MODE = os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").strip().lower()
+
+CODE_DIMENSIONS = {"code_quality", "testing"}
+DOCUMENTATION_DIMENSIONS = {"documentation"}
+
+def _with_line_numbers(content: str) -> str:
+    return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
+
+def _bundle_data_for_dimension(bundle: ArtifactBundle, dimension_name: str) -> str:
+    """Dimension-scoped view of the bundle -- keeps prompts smaller for
+    dimensions that don't need source content, and surfaces Java/README
+    content (with line numbers, for citation grounding) for the ones that do."""
+    payload: dict = {
+        "team_id": bundle.team_id,
+        "sprint_id": bundle.sprint_id,
+        "commits": [c.model_dump(mode="json") for c in bundle.commits],
+        "jira_tickets": [t.model_dump(mode="json") for t in bundle.jira_tickets],
+        "peer_evaluations": [p.model_dump(mode="json") for p in bundle.peer_evaluations],
+    }
+    if dimension_name in CODE_DIMENSIONS:
+        payload["code_files"] = [
+            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.code_files
+        ]
+    if dimension_name in DOCUMENTATION_DIMENSIONS:
+        payload["documents"] = [
+            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.documents
+        ]
+    return json.dumps(payload, indent=2, default=str)
 
 def _with_line_numbers(content: str) -> str:
     return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
@@ -490,7 +516,7 @@ async def _capture_response(response: httpx.Response) -> None:
             )
 
 
-def create_llm_client():
+def create_llm_client(provider="ollama"):
     """
     Creates the instructor-wrapped Ollama client.
 
@@ -508,23 +534,42 @@ def create_llm_client():
             "response": [_capture_response], # Capture the response after receiving it from Ollama
         }
     )
-    raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
-        base_url=OLLAMA_BASE_URL,
-        api_key=OLLAMA_API_KEY,
-        timeout=OLLAMA_TIMEOUT,
-        http_client=transport, # Use the custom transport to capture requests and responses
-    )
+
+    if provider == "ollama":
+        raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+            base_url=OLLAMA_BASE_URL,
+            api_key=OLLAMA_API_KEY,
+            timeout=OLLAMA_TIMEOUT,
+            http_client=transport, # Use the custom transport to capture requests and responses
+        )
+    if provider == "openai":
+        raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+            base_url=OLLAMA_BASE_URL,
+            api_key=OLLAMA_API_KEY,
+            timeout=OLLAMA_TIMEOUT,
+            http_client=transport, # Use the custom transport to capture requests and responses
+        )
 
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client, # The raw OpenAI-compatible client pointing at Ollama
-        # Actually honor LLM_STRUCTURED_OUTPUT_MODE instead of always using
-        # JSON mode -- JSON mode only describes the schema in the prompt, so
-        # weak models can literally echo the schema back as their "answer"
-        # instead of an instance of it. JSON_SCHEMA mode constrains Ollama's
-        # decoding to the real schema and avoids that failure mode.
-        mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
+        mode=instructor.Mode.JSON, # ensures that the response is parsed as JSON, returned as a Pydantic model
     )
     return client
+
+# # Each child span of the parent span (Evaluate_Complete_Sprint)
+# @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
+# async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
+#     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
+#     # bundle_data = bundle.model_dump_json(indent=2) # json representation of the bundle for logging and debugging
+#         raw_client,
+#         # Actually honor LLM_STRUCTURED_OUTPUT_MODE instead of always using
+#         # JSON mode -- JSON mode only describes the schema in the prompt, so
+#         # weak models can literally echo the schema back as their "answer"
+#         # instead of an instance of it. JSON_SCHEMA mode constrains Ollama's
+#         # decoding to the real schema and avoids that failure mode.
+#         mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
+#     )
+#     return client
 
 # Each child span of the parent span (Evaluate_Complete_Sprint)
 @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
