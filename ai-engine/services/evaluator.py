@@ -61,9 +61,14 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     run_num_ctx = select_run_num_ctx(bundle, model_name, DIMENSIONS)
 
     with mlflow.start_run(run_name=f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}", nested=True):
-        with mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN):
+        with mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN) as root:
             start_time = time.time() # Start time for entire evaluation process
             mlflow.openai.autolog() # Logs everything, will create child AsyncCompletions span under LLM span
+
+            mlflow.update_current_trace(
+                request_preview=f"{model_name} evaluation of sprint {bundle.sprint_id} for team {bundle.team_id}",
+                tags={"model": model_name, "team_id": bundle.team_id}
+            )
 
             # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
             # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
@@ -153,19 +158,23 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             recommendations = feedback.recommendations if feedback else []
             if failed_dimensions:
                 recommendations.append("Re-run the failed rubric dimensions before relying on this report.")
-    
-        final_assessment = SprintAssessment(
-            team_id=bundle.team_id,
-            sprint_id=bundle.sprint_id,
-            prompt_version="v1.0",
-            rubric_scores=rubric_scores,
-            overall_score=round(average_score, 2),
-            executive_summary=" ".join(summary_parts),
-            strengths=strengths,
-            weaknesses=weaknesses,
-            key_recommendations=recommendations,
-            # failed_dimensions=failed_dimensions,
-        )
+
+            final_assessment = SprintAssessment(
+                team_id=bundle.team_id,
+                sprint_id=bundle.sprint_id,
+                prompt_version="v1.0",
+                rubric_scores=rubric_scores,
+                overall_score=round(average_score, 2),
+                executive_summary=" ".join(summary_parts),
+                strengths=strengths,
+                weaknesses=weaknesses,
+                key_recommendations=recommendations,
+                # failed_dimensions=failed_dimensions,
+            )
+            root.set_inputs({"team_id": bundle.team_id, "sprint_id": bundle.sprint_id, "model_name": model_name})
+            root.set_outputs(final_assessment.model_dump(mode="json"))  # Store the final assessment in the root span outputs for traceability
+            mlflow.update_current_trace(response_preview=f"Average score: {average_score}, failed dimensions: {list(failed_dimensions.keys())}")
+
     log.info("Evaluation by model %s completed in %.2f seconds.", model_name, time.time() - start_time)
     print(f"Evaluation by model {model_name} completed in {time.time() - start_time:.2f} seconds.")
     return final_assessment

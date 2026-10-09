@@ -96,6 +96,7 @@ class RubricDimensionScore(ModelOutput):
     # marks a synthesized placeholder used to guarantee all rubric dimensions are
     # always present, so callers can still distinguish it from a real score.
     evaluation_failed: bool = False
+    citations_dropped: int = 0  # how many citations were dropped because they were duplicates or too long (max 3 kept)
     # Human-curated only (e.g. schemas/benchmark.py's gold reference data) --
     # never asked of the model, same reasoning as ModelOutput's docstring above.
     strengths: list[str] = Field(default_factory=list)

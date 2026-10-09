@@ -7,6 +7,7 @@ class ModelName(str, Enum):
     SPRINTSIGHT_QWEN = "sprintsight-qwen"
     SPRINTSIGHT_MISTRAL = "sprintsight-mistral"
     SPRINTSIGHT_GEMMA = "sprintsight-gemma"
+    SPRINTSIGHT_JUDGE_PHI = "sprintsight-judge-phi"
     GEMMA4_12B = "gemma4:12b"
     QWEN3_6 = "qwen3.6:latest"
     LLAMA2_7B_CHAT = "llama2:7b-chat"
@@ -20,4 +21,5 @@ MODEL_NUM_CTX: dict[str, int] = {
     ModelName.SPRINTSIGHT_QWEN.value: 49152,     # models/Modelfile.qwen
     ModelName.SPRINTSIGHT_MISTRAL.value: 49152,  # models/Modelfile.mistral
     ModelName.SPRINTSIGHT_GEMMA.value: 49152,    # models/Modelfile.gemma
+    ModelName.SPRINTSIGHT_JUDGE_PHI.value: 49152, # models/Modelfile.phi
 }
