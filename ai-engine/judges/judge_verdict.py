@@ -36,10 +36,9 @@ and its own error source for something arithmetic can do exactly.
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
-DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration"]
+DIMENSIONS = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
 
 GroundingLabel = Literal["grounded", "partially_grounded", "hallucinated"]
-
 
 class CitationVerdict(BaseModel):
     citation: str = Field(description="The evidence_citations string being judged, verbatim.")
@@ -61,7 +60,7 @@ class CitationVerdict(BaseModel):
 
 
 class DimensionGroundingVerdict(BaseModel):
-    dimension: Literal["code_quality", "testing", "documentation", "requirements", "collaboration"]
+    dimension: Literal["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
     citation_verdicts: list[CitationVerdict]
 
     @property
@@ -107,8 +106,6 @@ class JudgeVerdict(BaseModel):
         if len(seen) != len(value):
             raise ValueError("dimension_grounding has duplicate dimension entries")
         return value
-
-    # --- Derived, code-computed metrics (never trust the LLM to self-report these) ---
 
     @property
     def total_citations(self) -> int:
