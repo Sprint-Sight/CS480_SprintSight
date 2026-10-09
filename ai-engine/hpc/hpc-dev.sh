@@ -261,6 +261,7 @@ ensure_models() {
     create_model_via_api "sprintsight-qwen"    "qwen3:8b"    "Modelfile.qwen"
     create_model_via_api "sprintsight-mistral" "mistral:7b"  "Modelfile.mistral"
     create_model_via_api "sprintsight-gemma"   "gemma4:12b"  "Modelfile.gemma"
+    create_model_via_api "sprintsight-judge-phi"   "phi4:14b"  "Modelfile.phi"
     echo ""
     info "Remote models:"
     list_models

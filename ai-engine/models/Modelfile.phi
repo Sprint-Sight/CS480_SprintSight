@@ -1,0 +1,4 @@
+FROM phi4:14b
+
+PARAMETER temperature 0.1
+PARAMETER num_ctx 49152

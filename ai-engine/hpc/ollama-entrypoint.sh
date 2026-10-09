@@ -15,7 +15,8 @@ for entry in \
   "sprintsight-llama|llama3.2|Modelfile.llama" \
   "sprintsight-qwen|qwen3:8b|Modelfile.qwen" \
   "sprintsight-mistral|mistral:7b|Modelfile.mistral" \
-  "sprintsight-gemma|gemma4:12b|Modelfile.gemma"
+  "sprintsight-gemma|gemma4:12b|Modelfile.gemma" \
+  "sprintsight-judge-phi|phi4:14b|Modelfile.phi"
 do
   alias=$(echo "$entry" | cut -d'|' -f1)
   base=$(echo "$entry" | cut -d'|' -f2)
