@@ -120,7 +120,7 @@ class RunConfig:
 
 # ---------- The runner ------------------------------------------------------
 
-async def _run_one_example(item: DatasetItem, model: str) -> tuple[dict, Any, str | None]:
+async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) -> tuple[dict, Any, str | None]:
     """Evaluate ONE example on the given model. Returns (per_example_row,
     raw_assessment_json_or_None, error_or_None).
 
@@ -141,7 +141,7 @@ async def _run_one_example(item: DatasetItem, model: str) -> tuple[dict, Any, st
     error: str | None = None
     assessment = None
     try:
-        assessment = await evaluate_sprint(item.bundle, model)
+        assessment = await evaluate_sprint(item.bundle, model, experiment_name)
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         log.exception("evaluate_sprint failed for example=%s model=%s", item.id, model)
@@ -269,7 +269,7 @@ def run_evaluation(
                 log.info(">>> model=%s dataset=%s repeat=%d/%d", model, dataset_name, repeat_index + 1, repeats)
                 for item_index, item in enumerate(items):
                     log.info("    [%d/%d] example=%s", item_index + 1, len(items), item.id)
-                    row, raw, _ = asyncio.run(_run_one_example(item, model))
+                    row, raw, _ = asyncio.run(_run_one_example(item, model, experiment))
                     row["repeat_index"] = repeat_index
                     row["model"] = model
                     row["dataset_name"] = dataset_name
