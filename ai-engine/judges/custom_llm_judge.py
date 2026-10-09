@@ -1,21 +1,25 @@
-import asyncio
-import os
-
-import mlflow
+import asyncio, os, mlflow
 from dotenv import load_dotenv
-from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
 from mlflow.genai.scorers import scorer
+from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
 
 from judges.judge_verdict import JudgeVerdict
 from llmops.prompt_registry import register_prompt_if_changed
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.benchmark_registry import FIXTURES
 from schemas.sprint_assessment import SprintAssessment
-from services.llm_client import create_llm_client
+from schemas.modelname import MODEL_NUM_CTX
+from services.llm_client import create_llm_client, request_extra_body
+
+'''
+Custom LLM Judge for evaluating the grounding and actionability of AI-generated assessments.
+AssesementSource object is used to track the source of the feedback, which is the LLM judge in this case.
+AssessmentSourceType.LLM_JUDGE is used to indicate that the feedback comes from an LLM judge.
+'''
 
 load_dotenv()  # Load environment variables from .env file
 
-DEFAULT_JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "qwen3:8b")
+DEFAULT_JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
 
 JUDGE_SYSTEM_PROMPT = """
 You are a strict, skeptical auditor of an AI teaching assistant's grading work.
@@ -23,7 +27,7 @@ You are NOT grading the student team. You are grading whether ANOTHER AI model
 (the "candidate") graded the student team honestly and usefully.
 
 You will be given:
-  1. RAW_BUNDLE -- actual Git commits, Jira tickets, and peer evaluations.
+  1. RAW_BUNDLE -- actual Git commits, Jira tickets, and peer evalua tions.
   2. CANDIDATE_ASSESSMENT -- candidate model's full SprintAssessment.
   3. GOLD_REFERENCE -- human-authored reference assessment.
 
@@ -71,6 +75,13 @@ def ensure_judge_prompt_registered() -> None:
         tags={"author": "SprintSight", "component": "llm-judge"},
     )
 
+def verdict_to_feedback(verdict: JudgeVerdict, source: AssessmentSource) -> list[Feedback]:
+    return [
+        Feedback(name="citation_hallucination_rate", value=verdict.hallucination_rate, source=source),
+        Feedback(name="recommendation_actionability_rate", value=verdict.actionable_and_targeted_rate, source=source),
+        Feedback(name="judge_verdict_raw", value=verdict.model_dump_json(), source=source),
+    ]
+
 @mlflow.trace(name="LLM_Judge_Verdict", span_type=SpanType.LLM)
 async def run_judge(
     bundle: ArtifactBundle,
@@ -78,9 +89,13 @@ async def run_judge(
     candidate_model_name: str,
     gold: SprintAssessment,
     judge_model: str,
+    judge_provider: str
 ) -> JudgeVerdict:
-    client = create_llm_client()
-    ensure_judge_prompt_registered()  # Guarantees the "production" alias exists before loading it below.
+    
+    client = create_llm_client(provider=judge_provider)
+
+    ensure_judge_prompt_registered()  # Guarantees the "PRODUCTION" alias exists before loading it below.
+    
     loaded = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@{PROMPT_ALIAS}")
     filled_user_prompt = loaded.format(
         candidate_model_name=candidate_model_name,
@@ -91,18 +106,24 @@ async def run_judge(
         gold_json=gold.model_dump_json(indent=2),
     )
 
-    return await client.chat.completions.create(
+    verdict = await client.chat.completions.create(
         model=judge_model,
         response_model=JudgeVerdict,
         messages=[
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {"role": "user", "content": filled_user_prompt},
         ],
+        temperature=0,
         max_retries=5,
+        extra_body=request_extra_body(MODEL_NUM_CTX.get(judge_model)),
     )
 
-def _run_judge_sync(bundle, candidate, model_name, gold, judge_model):
-    return asyncio.run(run_judge(bundle=bundle, candidate=candidate, candidate_model_name=model_name, gold=gold, judge_model=judge_model))
+    judge_source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
+
+    return verdict, verdict_to_feedback(verdict, judge_source)
+
+def _run_judge_sync(bundle, candidate, model_name, gold, judge_model, judge_provider):
+    return asyncio.run(run_judge(bundle=bundle, candidate=candidate, candidate_model_name=model_name, gold=gold, judge_model=judge_model, judge_provider=judge_provider))
 
 @scorer(name="llm_judge_grounding_and_actionability")
 def llm_judge_grounding_and_actionability(inputs: dict, outputs: dict, expectations: dict) -> list[Feedback]:
@@ -118,6 +139,7 @@ def llm_judge_grounding_and_actionability(inputs: dict, outputs: dict, expectati
             model_name=inputs["model_name"],
             gold=SprintAssessment(**expectations["gold"]),
             judge_model=DEFAULT_JUDGE_MODEL,
+            judge_provider="openai",
         )
     except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
         return [Feedback(name="citation_hallucination_rate", error=e, rationale=f"LLM judge call failed: {e}", source=judge_source)]
