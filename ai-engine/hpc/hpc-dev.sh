@@ -261,6 +261,11 @@ ensure_models() {
     create_model_via_api "sprintsight-qwen"    "qwen3:8b"    "Modelfile.qwen"
     create_model_via_api "sprintsight-mistral" "mistral:7b"  "Modelfile.mistral"
     create_model_via_api "sprintsight-gemma"   "gemma4:12b"  "Modelfile.gemma"
+    # Round-2 benchmark models (8B baseline + three 32B; the 32B base pulls are ~20GB each)
+    create_model_via_api "sprintsight-llama31"     "llama3.1:8b"       "Modelfile.llama31"
+    create_model_via_api "sprintsight-qwen25-32b"  "qwen2.5:32b"       "Modelfile.qwen25-32b"
+    create_model_via_api "sprintsight-r1-32b"      "deepseek-r1:32b"   "Modelfile.deepseek-r1"
+    create_model_via_api "sprintsight-coder-32b"   "qwen2.5-coder:32b" "Modelfile.qwen25-coder"
     echo ""
     info "Remote models:"
     list_models
