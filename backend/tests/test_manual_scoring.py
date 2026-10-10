@@ -114,7 +114,17 @@ def test_patch_persists_all_report_content_edits(override_user_repository) -> No
                 "score": 95,
                 "justification": "Updated criterion feedback",
                 "evidence_citations": ["commit:abc123"],
-            }
+            },
+            "testing": {
+                "score": 88,
+                "justification": "Regression coverage is strong.",
+                "evidence_citations": ["tests/test_api.py"],
+            },
+            "cicd": {
+                "score": 76,
+                "justification": "Pipeline is configured but lacks deployment checks.",
+                "evidence_citations": [".github/workflows/ci.yml"],
+            },
         },
         "strengths": ["Strong delivery"],
         "weaknesses": ["Needs more tests"],
@@ -139,11 +149,23 @@ def test_patch_persists_all_report_content_edits(override_user_repository) -> No
     assert result["requirements_score"] == 80
     assert result["rubric_scores"]["requirements"]["score"] == 95
     assert result["rubric_scores"]["requirements"]["justification"] == "Updated criterion feedback"
+    assert result["rubric_scores"]["testing"]["score"] == 88
+    assert result["rubric_scores"]["testing"]["justification"] == "Regression coverage is strong."
+    assert result["rubric_scores"]["cicd"]["score"] == 76
+    assert result["rubric_scores"]["cicd"]["justification"] == "Pipeline is configured but lacks deployment checks."
 
-    persisted = assessment_repository.get_report("rpt-manual-1")
-    assert persisted is not None
-    assert persisted.team_score.rationale == "Updated overall rationale"
-    assert persisted.recommendations == ["Add regression tests"]
+    reloaded = client.get(
+        "/api/v1/assessments/latest?course_id=manual-course&project_id=manual-project&sprint_id=sprint-1",
+        headers=headers("faculty@sprintsight.edu"),
+    )
+    assert reloaded.status_code == 200, reloaded.text
+    reloaded_report = reloaded.json()
+    assert reloaded_report["team_score"]["rationale"] == "Updated overall rationale"
+    assert reloaded_report["rubric_scores"]["testing"]["justification"] == "Regression coverage is strong."
+    assert reloaded_report["rubric_scores"]["cicd"]["score"] == 76
+    assert reloaded_report["strengths"] == ["Strong delivery"]
+    assert reloaded_report["weaknesses"] == ["Needs more tests"]
+    assert reloaded_report["recommendations"] == ["Add regression tests"]
 
 
 def test_unassigned_instructor_cannot_patch_assessment_report(override_user_repository) -> None:
