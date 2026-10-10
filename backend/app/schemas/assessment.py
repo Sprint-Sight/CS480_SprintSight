@@ -184,6 +184,13 @@ class ManualAssessmentPatch(BaseModel):
     code_quality_justification: str = Field(min_length=1, max_length=500)
     documentation_justification: str = Field(min_length=1, max_length=500)
     collaboration_justification: str = Field(min_length=1, max_length=500)
+    rubric_weights: dict[str, float] | None = None
+    team_score: TeamScore | None = None
+    individual_scores: list[StudentScore] | None = None
+    rubric_scores: dict[str, RubricDimensionScoreDetail] | None = None
+    strengths: list[str] | None = None
+    weaknesses: list[str] | None = None
+    recommendations: list[str] | None = None
 
 
 class RubricWeightsPayload(BaseModel):

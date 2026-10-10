@@ -303,7 +303,9 @@ class InMemoryAssessmentRepository(AssessmentRepository):
         report = self._reports.get(report_id)
         if not report:
             return None
-        updated = report.model_copy(update={"override": True, **patch})
+        updated = AssessmentReport.model_validate(
+            {**report.model_dump(), "override": True, **patch}
+        )
         self._reports[report_id] = updated
         return updated
 
