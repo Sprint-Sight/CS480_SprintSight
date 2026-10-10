@@ -45,6 +45,7 @@ def test_normalizes_screenshot_ticket_fields_and_sorts_tickets() -> None:
         "issue_type": "Story",
         "story_points": 5.0,
         "sprint_id": "sprint-2",
+        "timestamp": None,
     }
     assert result.normalization_version == "jira-ticket-v1"
 
