@@ -5,12 +5,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies.auth import (
+    get_action_audit_repository,
     get_project_repository,
     get_user_repository,
     require_admin,
     require_faculty,
 )
 from app.repositories.interfaces import (
+    ActionAuditRepository,
     ProjectRepository,
     UserRecord,
     UserRepository,
@@ -83,6 +85,7 @@ def create_managed_user(
     payload: AdminUserCreate,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> UserResponse:
     """
     Admin creates any account type (instructor / student / admin).
@@ -95,6 +98,7 @@ def create_managed_user(
         )
     created = create_user(repository, payload.email, payload.full_name, payload.role, payload.password)
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="create_user",
@@ -111,6 +115,7 @@ def update_managed_user(
     payload: AdminUserUpdate,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
@@ -158,6 +163,7 @@ def update_managed_user(
         payload.is_active if payload.is_active is not None else user.is_active,
     )
     append_action_audit(
+        action_audits,
         actor_id=current_user.id,
         actor_role=current_user.role.value,
         action="update_user",
@@ -174,6 +180,7 @@ def reset_managed_user_password(
     payload: AdminPasswordReset,
     current_admin: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
@@ -181,6 +188,7 @@ def reset_managed_user_password(
 
     updated = reset_password(repository, user_id, payload.password, must_change_password=True)
     append_action_audit(
+        action_audits,
         actor_id=current_admin.id,
         actor_role=current_admin.role.value,
         action="reset_password",
@@ -220,6 +228,7 @@ def deactivate_managed_user(
     current_admin: Annotated[UserRecord, Depends(require_admin)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> UserResponse:
     """
     Soft-deletes a user by setting is_active = False and cleaning up all
@@ -271,6 +280,7 @@ def deactivate_managed_user(
     # Soft-delete + cascade membership cleanup
     updated = deactivate_user_cascade(users, projects, user_id)
     append_action_audit(
+        action_audits,
         actor_id=current_admin.id,
         actor_role=current_admin.role.value,
         action="deactivate_user",
@@ -284,8 +294,9 @@ def deactivate_managed_user(
 @router.post("/{user_id}/activate", response_model=UserResponse)
 def activate_managed_user(
     user_id: str,
-    _: Annotated[UserRecord, Depends(require_admin)],
+    current_admin: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
@@ -303,5 +314,14 @@ def activate_managed_user(
         user.full_name,
         user.role,
         True,
+    )
+    append_action_audit(
+        action_audits,
+        actor_id=current_admin.id,
+        actor_role=current_admin.role.value,
+        action="activate_user",
+        target_type="user",
+        target_id=user_id,
+        details={"email": updated.email, "role": updated.role.value},
     )
     return user_response(updated)

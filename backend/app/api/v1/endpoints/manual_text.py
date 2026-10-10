@@ -2,11 +2,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies.auth import get_manual_text_repository, get_project_repository, require_instructor
-from app.repositories.interfaces import ManualTextRepository, ProjectRepository, UserRecord
+from app.dependencies.auth import get_action_audit_repository, get_manual_text_repository, get_project_repository, require_instructor
+from app.repositories.interfaces import ActionAuditRepository, ManualTextRepository, ProjectRepository, UserRecord
 from app.schemas.auth import Role
 from app.schemas.assessment import ManualTextPayload
 from app.services.manualTextService.service import get_manual_text, upsert_manual_text
+from app.services.auditLogService.service import append_action_audit
 
 router = APIRouter(prefix="/manual-text", tags=["manual-text"])
 
@@ -26,11 +27,21 @@ def post_manual_text(
     current_user: Annotated[UserRecord, Depends(require_instructor)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     repository: Annotated[ManualTextRepository, Depends(get_manual_text_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> dict[str, str]:
     project = _authorized_project(payload.project_id, current_user, projects)
     if project.course_id != payload.course_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to the specified course.")
     upsert_manual_text(repository, payload, updated_by=current_user.id)
+    append_action_audit(
+        action_audits,
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="update_manual_sprint_text",
+        target_type="sprint_expectations",
+        target_id=f"{payload.project_id}:{payload.sprint_id}",
+        details={"course_id": payload.course_id, "project_id": payload.project_id, "sprint_id": payload.sprint_id},
+    )
     return {"status": "saved"}
 
 
