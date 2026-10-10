@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -13,7 +13,7 @@ _write_lock = Lock()
 
 def write_audit_record(record: dict[str, Any]) -> None:
     """Write one complete LLM request/response record to a readable text file."""
-    logged_at = datetime.now(timezone.utc)
+    logged_at = datetime.now(UTC)
     request_id = str(record.get("request_id", "unknown"))
     dimension = str(record.get("dimension", "unknown"))
     safe_request_id = request_id.replace("-", "")[:12]

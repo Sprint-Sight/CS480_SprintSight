@@ -34,7 +34,7 @@ import platform
 import subprocess
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -276,7 +276,7 @@ def run_evaluation(
                     row["dataset_hash"] = ds_hash
                     row["prompt_version"] = prompt_version
                     row["seed"] = seed
-                    row["timestamp_utc"] = datetime.now(timezone.utc).isoformat()
+                    row["timestamp_utc"] = datetime.now(UTC).isoformat()
                     all_rows.append(row)
 
                     if raw is not None:
