@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import type { TextareaHTMLAttributes } from "react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip } from "recharts";
 import { getSupportedDimension } from "@/features/assessment/assessment-api";
 import type { RubricScore } from "@/features/assessment/types";
@@ -21,6 +23,33 @@ function scoreBarColor(score: number) {
   if (score >= 85) return "bg-[#2F5B85]";
   if (score >= 75) return "bg-[#4F89B3]";
   return "bg-[#78B5D9]";
+}
+
+function resizeTextarea(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function AutoResizeTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { className, onChange, ...textareaProps } = props;
+
+  useEffect(() => {
+    if (textareaRef.current) resizeTextarea(textareaRef.current);
+  }, [textareaProps.value]);
+
+  return (
+    <textarea
+      {...textareaProps}
+      ref={textareaRef}
+      onChange={(event) => {
+        resizeTextarea(event.currentTarget);
+        onChange?.(event);
+      }}
+      className={className}
+      style={{ ...textareaProps.style, overflowY: "hidden" }}
+    />
+  );
 }
 
 export function CircularScore({ score }: { score: number }) {
@@ -127,11 +156,11 @@ export function AssessmentFeedbackSections({
                     </label>
                     <label className="text-xs font-semibold text-slate-600">
                       Feedback
-                      <textarea
+                      <AutoResizeTextarea
                         aria-label={`${item.category} feedback`}
                         value={item.justification}
                         onChange={(event) => onRubricScoreChange?.(categoryKey, { justification: event.currentTarget.value })}
-                        rows={3}
+                        rows={1}
                         maxLength={500}
                         className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
                       />
@@ -151,11 +180,11 @@ export function AssessmentFeedbackSections({
                     </label>
                     <label className="text-xs font-semibold text-slate-600">
                       Feedback
-                      <textarea
+                      <AutoResizeTextarea
                         aria-label={`${item.category} feedback`}
                         value={item.justification}
                         disabled
-                        rows={3}
+                        rows={1}
                         className="mt-1 w-full rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-normal text-slate-600"
                       />
                     </label>
@@ -189,12 +218,12 @@ export function AssessmentFeedbackSections({
             <h2 className={`text-2xl font-semibold text-${tone}-700`}>{title}</h2>
             {editMode ? (
               <>
-                <textarea
+                <AutoResizeTextarea
                   aria-label={title}
                   value={items.join("\n")}
                   disabled
-                  rows={Math.max(3, Math.min(items.length, 8))}
-                  className="mt-3 w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  rows={1}
+                  className="mt-3 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 disabled:cursor-not-allowed disabled:bg-slate-100"
                 />
                 <p className="mt-2 text-xs font-medium text-slate-500">
                   Read-only: the existing report endpoint does not persist {title.toLowerCase()}.

@@ -20,6 +20,7 @@ import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
+import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -176,6 +177,13 @@ export default function ArtifactViewerPageContent() {
   const [documentError, setDocumentError] = useState("");
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const documentDeletion = useDocumentDeletion((projectId, documentId) => {
+    setLocalDocuments((previous) => {
+      const updated = previous.filter((document) => document.id !== documentId);
+      if (projectId === selectedProjectId) saveDocumentCount(projectId, updated.length);
+      return updated;
+    });
+  });
   const [sprintId, setSprintId] = useState("");
   const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
@@ -452,7 +460,11 @@ export default function ArtifactViewerPageContent() {
         method: "POST",
         body: formData,
       });
-      setLocalDocuments((previous) => [...response.documents.map(toDocumentArtifact), ...previous]);
+      setLocalDocuments((previous) => {
+        const updated = [...response.documents.map(toDocumentArtifact), ...previous];
+        saveDocumentCount(selectedProjectId, updated.length);
+        return updated;
+      });
     } catch (error) {
       setDocumentError(error instanceof Error ? error.message : "Failed to upload documents.");
     } finally {
@@ -641,7 +653,7 @@ export default function ArtifactViewerPageContent() {
           <>
             <div className="flex items-center justify-between">
               <h2 className="text-3xl font-semibold text-blue-950">
-                {role === "student" ? "Your Uploaded Documents" : "Uploaded Documents"}
+                {role === "student" ? "Your Uploaded Documents" : "Uploaded Documents"} ({localDocuments.length})
               </h2>
               
               <input 
@@ -667,34 +679,41 @@ export default function ArtifactViewerPageContent() {
             {documentError && <p className="text-sm text-rose-600">{documentError}</p>}
             {isLoadingDocuments && <p className="text-sm text-slate-500">Loading documents...</p>}
 
-            {localDocuments.map((doc) => (
-              <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{doc.fileName}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {doc.uploadedBy} - {doc.uploadedAt} - {doc.size}
-                    </p>
+            {localDocuments.map((doc) => {
+              const isDeleting = documentDeletion.deletingDocumentIds.has(doc.id);
+              return (
+                <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{doc.fileName}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {doc.uploadedBy} - {doc.uploadedAt} - {doc.size}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDocument(doc.id, doc.fileName)}
+                      className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                    >
+                      Download {doc.fileType}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void documentDeletion.deleteDocument(selectedProjectId, doc.id, doc.fileName)}
+                      disabled={isDeleting}
+                      aria-label={`Delete ${doc.fileName}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadDocument(doc.id, doc.fileName)}
-                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                  >
-                    Download {doc.fileType}
-                  </button>
-                  <button
-                    type="button"
-                    disabled
-                    title="Document deletion will be available after the backend endpoint is added."
-                    className="inline-flex cursor-not-allowed items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete (coming soon)
-                  </button>
-                </div>
-              </article>
-            ))}
+                  {documentDeletion.deleteErrors[doc.id] && (
+                    <p className="mt-2 text-sm text-rose-700" role="alert">{documentDeletion.deleteErrors[doc.id]}</p>
+                  )}
+                </article>
+              );
+            })}
             
             {localDocuments.length === 0 && (
               <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
