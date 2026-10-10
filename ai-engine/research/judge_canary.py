@@ -1,6 +1,12 @@
-import asyncio, copy, random, re, sys
-from judges.citation_ground_custom_judge import collect_citations, run_grounding_judge
+import asyncio
+import random
+import re
+import sys
+
 from schemas.cs203_groundtruth import CS203G6_BUNDLE, CS203G6_GOLD
+
+from judges.citation_ground_custom_judge import collect_citations, run_grounding_judge
+
 
 def mutate(text: str) -> str:
     if re.search(r"\d+", text):   # change a number, e.g. +105 -> +950

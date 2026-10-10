@@ -1,10 +1,15 @@
+import logging
+
 from mlflow.entities import Trace
+from pydantic import ValidationError
 
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import ModelOutput, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
 from services.grounding import find_ungrounded_citations
+
+log = logging.getLogger(__name__)
 
 
 def read_candidate(trace: Trace, bundle: ArtifactBundle | None = None) -> tuple[RubricsScore, int]:
@@ -28,8 +33,11 @@ def read_candidate(trace: Trace, bundle: ArtifactBundle | None = None) -> tuple[
             continue
         try:
             mo = ModelOutput.model_validate_json(s.outputs["choices"][0]["message"]["content"])
-        except Exception:
-            continue                          # an attempt that failed validation and was retried
+        except (ValidationError, KeyError, IndexError, TypeError) as exc:
+            # An attempt that failed schema validation, or whose trace payload was
+            # malformed; it was retried, so skip it and let a later valid attempt win.
+            log.debug("Skipping dimension attempt in span %s: %s", s.span_id, exc)
+            continue
         final[parent.name.removeprefix("Evaluate_Dimension_")] = mo   # a later valid attempt overwrites
 
     bundle_json = bundle.model_dump_json() if bundle else None
