@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-import logging, os, mlflow, threading
+import logging
+import os
+import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
+
+import mlflow
+from dotenv import load_dotenv
 from mlflow import MlflowClient
 from mlflow.entities import SpanType
 from mlflow.entities.trace_location import MlflowExperimentLocation
-from dotenv import load_dotenv
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -46,11 +50,11 @@ def get_experiment_id(experiment_name: str):
         if experiment is None: # If the experiment doesn't exist, create it
             try:
                 experiment_id = client.create_experiment(experiment_name) # Create a new experiment
-            except mlflow.exceptions.MlfowException: # Lost creation race with another process
-                experience = client.get_experiment_by_name(experiment_name) # Try to get the experiment again
-                if experience is None: # If it still doesn't exist, raise an error
+            except mlflow.exceptions.MlflowException: # Lost creation race with another process
+                experiment = client.get_experiment_by_name(experiment_name) # Try to get the experiment again
+                if experiment is None: # If it still doesn't exist, raise an error
                     raise RuntimeError(f"Failed to create or retrieve experiment '{experiment_name}'")
-                experiment_id = experience.experiment_id # Use the existing experiment ID
+                experiment_id = experiment.experiment_id # Use the existing experiment ID
         else: # If the experiment exists, check if it's deleted
             if experiment.lifecycle_stage == "deleted": # If the experiment is deleted, raise an error
                 raise RuntimeError(f"Experiment '{experiment_name}' is deleted")
@@ -63,16 +67,21 @@ def experiment_run(experiment_name, run_name, root_span_name, *, tags: dict[str,
 
     experiment_id = get_experiment_id(experiment_name) # Get the experiment ID for the given name
     client = MlflowClient()
+    run_tags = dict(tags or {})
     parent = mlflow.active_run() # Get the current active run to set as parent
-    if parent is not None: # If there is a parent run, set it as the
-        tags["mlflow.parentRunId"] = parent.info.run_id # Set the parent run ID in the tags
+    if parent is not None: # If there is a parent run, set it as the parent
+        run_tags["mlflow.parentRunId"] = parent.info.run_id # Set the parent run ID in the tags
     
-    run_id = client.create_run(experiment_id, run_name=run_name, tags=tags or {}).info.run_id # Create a new run in the experiment
+    run_id = client.create_run(experiment_id, run_name=run_name, tags=run_tags).info.run_id # Create a new run in the experiment
     status = "FINISHED"
     try:
         with mlflow.start_span(name=root_span_name, run_id=run_id, span_type=span_type,
-                               trace_destination=MlflowExperimentLocation(experiment_id)) as span: # Start a new span for tracing
-            yield mlflow.active_run() # Yield the active run to the caller
+                               trace_destination=MlflowExperimentLocation(experiment_id)): # Start a new span for tracing
+            active_run = mlflow.active_run()
+            if active_run is None:
+                raise RuntimeError("No active MLflow run found inside experiment_run")
+
+            yield active_run
     except BaseException as e: # If an exception occurs, mark the run as failed
         status = "FAILED"
         client.set_tag(run_id, "mlflow.runStatus", f"{type(e).__name__}: {e}"[:250]) # Set the run status to FAILED

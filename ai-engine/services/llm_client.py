@@ -1,17 +1,18 @@
-import contextvars, hashlib, json, logging, os, time, httpx, instructor, mlflow
+import contextvars
+import hashlib
+import json
+import logging
+import os
+import time
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-from mlflow.entities import SpanType
-from openai import AsyncOpenAI
-
-from llmops.prompt_registry import (
-    load_dimension_prompt,
-    register_dimension_prompt,
-)
+import httpx
+import instructor
+import mlflow
 from dotenv import load_dotenv
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
@@ -65,39 +66,26 @@ OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 _INSTRUCTOR_MODES = {"json": instructor.Mode.JSON, "json_schema": instructor.Mode.JSON_SCHEMA}
 _STRUCTURED_OUTPUT_MODE = os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").strip().lower()
 
-CODE_DIMENSIONS = {"code_quality", "testing"}
-DOCUMENTATION_DIMENSIONS = {"documentation"}
-
-def _with_line_numbers(content: str) -> str:
-    return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
-
-def _bundle_data_for_dimension(bundle: ArtifactBundle, dimension_name: str) -> str:
-    """Dimension-scoped view of the bundle -- keeps prompts smaller for
-    dimensions that don't need source content, and surfaces Java/README
-    content (with line numbers, for citation grounding) for the ones that do."""
-    payload: dict = {
-        "team_id": bundle.team_id,
-        "sprint_id": bundle.sprint_id,
-        "commits": [c.model_dump(mode="json") for c in bundle.commits],
-        "jira_tickets": [t.model_dump(mode="json") for t in bundle.jira_tickets],
-        "peer_evaluations": [p.model_dump(mode="json") for p in bundle.peer_evaluations],
-    }
-    if dimension_name in CODE_DIMENSIONS:
-        payload["code_files"] = [
-            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.code_files
-        ]
-    if dimension_name in DOCUMENTATION_DIMENSIONS:
-        payload["documents"] = [
-            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.documents
-        ]
-    return json.dumps(payload, indent=2, default=str)
-
-def _with_line_numbers(content: str) -> str:
-    return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
-
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
 )
+
+# Per-caller token accumulator. When a caller wants the token totals from a
+# full evaluate_sprint() (6 dimension calls), it sets this to a fresh dict
+# BEFORE calling and reads the sums AFTER. The _capture_response hook below
+# adds each OpenAI-compatible `usage` block to the accumulator in place.
+# Deliberately NOT the same ContextVar as _audit_context: audit is set/reset
+# per-dimension inside evaluate_dimension, so it would reset between
+# dimension calls; this one lives at whatever scope the caller sets it in.
+_token_accumulator: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "token_accumulator", default=None
+)
+
+
+def new_token_accumulator() -> dict:
+    """Fresh accumulator dict the caller sets on the ContextVar before the
+    evaluate_sprint call it wants token totals for."""
+    return {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
 
 # Extensions treated as data/generated output rather than authored logic when
 # computing the "meaningful lines changed" fact below — e.g. exported test
@@ -505,15 +493,34 @@ async def _capture_response(response: httpx.Response) -> None:
         if context is not None:
             body = await response.aread()
             started_at = context.get("request_started_at", time.perf_counter())
+            raw_body = body.decode("utf-8", errors="replace")
             write_audit_record(
                 {
                     **context,
                     "request": json.loads(context.get("request", "{}")),
-                    "raw_response": body.decode("utf-8", errors="replace"),
+                    "raw_response": raw_body,
                     "http_status": response.status_code,
                     "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
                 }
             )
+
+            # Opt-in token capture: only accumulates when the caller has
+            # set _token_accumulator for this ContextVar scope. Ollama's
+            # OpenAI-compat endpoint returns `usage` on the chat completion;
+            # instructor's retries each produce one response, so we sum
+            # across all of them (retries legitimately burn tokens too).
+            accumulator = _token_accumulator.get()
+            if accumulator is not None:
+                try:
+                    usage = (json.loads(raw_body).get("usage") or {})
+                    accumulator["prompt"] += int(usage.get("prompt_tokens") or 0)
+                    accumulator["completion"] += int(usage.get("completion_tokens") or 0)
+                    accumulator["total"] += int(usage.get("total_tokens") or 0)
+                    accumulator["calls"] += 1
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    # Non-JSON body (streaming leftover, error page, etc.)
+                    # — best-effort capture; skip without failing the call.
+                    pass
 
 
 def create_llm_client(provider="ollama"):

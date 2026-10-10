@@ -62,8 +62,10 @@ class BackendAssessmentPayload(BaseModel):
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
     payload: BackendAssessmentPayload,
-    modelname: ModelName = Query(..., description="Select the model to use for assessment"),
-    #modelname: Annotated[ModelName, Query(description="Select the model to use for assessment")],
+    modelname: Annotated[
+        ModelName,
+        Query(description="Select the model to use for assessment"),
+    ],
     experiment_name: str = "SprintSight Evaluations",
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""

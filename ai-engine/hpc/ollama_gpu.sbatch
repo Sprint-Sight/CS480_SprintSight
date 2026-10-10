@@ -29,6 +29,8 @@ srun enroot start --rw \
   --rc "$REPO_DIR/ai-engine/hpc/ollama-entrypoint.sh" \
   --env OLLAMA_HOST=0.0.0.0:11434 \
   --env OLLAMA_MODELS=/root/.ollama/models \
+  --env OLLAMA_FLASH_ATTENTION=1 \
+  --env OLLAMA_KV_CACHE_TYPE=q4_0 \
   --mount "$DATA_DIR:/root/.ollama" \
   --mount "$MODELS_DIR:/mnt/models" \
   ollama

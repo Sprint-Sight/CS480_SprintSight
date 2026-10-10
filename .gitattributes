@@ -1,0 +1,36 @@
+# Force LF line endings for files that are executed on Linux, regardless of
+# the committer's platform (git-on-Windows otherwise auto-converts to CRLF
+# on checkout, which silently breaks bash parsing on the HPC/Docker).
+#
+# After editing this file for the first time in an existing clone, run:
+#     git add --renormalize .
+# to re-normalise anything that's already stored with the wrong endings.
+
+* text=auto eol=lf
+
+# Explicitly LF — these are executed on Linux and MUST stay LF.
+*.sh            text eol=lf
+*.bash          text eol=lf
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+*.Dockerfile    text eol=lf
+*.sbatch        text eol=lf
+Makefile        text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.py            text eol=lf
+*.sql           text eol=lf
+.env*           text eol=lf
+
+# Binary files — never munge these.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.zip           binary
+*.tar           binary
+*.gz            binary
+*.pyc           binary
+*.whl           binary

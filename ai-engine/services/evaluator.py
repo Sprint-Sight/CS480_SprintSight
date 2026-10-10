@@ -1,8 +1,13 @@
-import asyncio, logging, os, time, mlflow
+import asyncio
+import logging
+import os
+import time
+
+import mlflow
 from mlflow.entities import SpanType
 
-from llmops.mlflow_config import start_mlflow
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
+from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
@@ -12,7 +17,6 @@ from services.llm_client import (
     generate_sprint_feedback,
     select_run_num_ctx,
 )
-from schemas.allDimensionsFailedError import AllDimensionsFailedError
 
 '''
 Receives a bundle, evaluates each rubric dimension serially, generates general
@@ -21,7 +25,7 @@ sprint feedback, and returns a SprintAssessment.
 #start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
 log = logging.getLogger("sprintsight.evaluator")
 
-async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
+async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int | None) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
     dimension_start = time.perf_counter()
     log.info("Starting rubric dimension '%s'", dim)
     try:
@@ -89,7 +93,8 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
                 #     else:
                 #         rubric_scores.append(result)
 
-                scores_by_dim, failed_dimensions = {}, {}
+                scores_by_dim: dict[str, RubricDimensionScore] = {}
+                failed_dimensions: dict[str, str] = {}
 
                 for dim, result in zip(DIMENSIONS, results):
                     if isinstance(result, BaseException):

@@ -62,7 +62,7 @@ import json
 import statistics
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -124,7 +124,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
     loop = asyncio.get_event_loop() # Get the current event loop to measure latency
     start = loop.time()
     try:
-        assessment = await evaluate_sprint(bundle, model)
+        assessment = await evaluate_sprint(bundle, model, "SprintSight-Research")
         latency = loop.time() - start # Measure latency after evaluation
  
         # rubric_scores = {r.dimension: r.score for r in assessment.rubric_scores}
@@ -144,7 +144,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
             model=model,
             fixture=fixture_name,
             repeat_index=repeat_index,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             success=True,
             fully_succeeded=(len(failed) == 0),
             failed_dimensions=failed,
@@ -161,7 +161,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
             model=model,
             fixture=fixture_name,
             repeat_index=repeat_index,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             success=False,
             fully_succeeded=False,
             failed_dimensions=list(DIMENSIONS),
@@ -351,7 +351,7 @@ def main() -> None:
  
     out_dir = Path(args.out_dir) # Create output directory if it doesn't exist
     out_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
  
     total = len(args.models) * len(FIXTURE_CANDIDATES) * args.repeats # Total no. of evaluations to be run
     print(f"Running {len(args.models)} models x {len(FIXTURE_CANDIDATES)} fixtures x {args.repeats} repeats = {total} evaluations")

@@ -1,15 +1,18 @@
-import asyncio, os, mlflow
+import asyncio
+import os
+
+import mlflow
 from dotenv import load_dotenv
-from mlflow.genai.scorers import scorer
 from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
+from mlflow.genai.scorers import scorer
 
 from judges.judge_verdict import JudgeVerdict
 from llmops.prompt_registry import register_prompt_if_changed
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.benchmark_registry import FIXTURES
-from schemas.sprint_assessment import SprintAssessment
 from schemas.modelname import MODEL_NUM_CTX
-from services.llm_client import create_llm_client, request_extra_body
+from schemas.sprint_assessment import SprintAssessment
+from services.llm_client import _request_extra_body, create_llm_client
 
 '''
 Custom LLM Judge for evaluating the grounding and actionability of AI-generated assessments.
@@ -90,7 +93,7 @@ async def run_judge(
     gold: SprintAssessment,
     judge_model: str,
     judge_provider: str
-) -> JudgeVerdict:
+) -> tuple[JudgeVerdict, list[Feedback]]:
     
     client = create_llm_client(provider=judge_provider)
 
@@ -115,7 +118,7 @@ async def run_judge(
         ],
         temperature=0,
         max_retries=5,
-        extra_body=request_extra_body(MODEL_NUM_CTX.get(judge_model)),
+        extra_body=_request_extra_body(MODEL_NUM_CTX.get(judge_model)),
     )
 
     judge_source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
