@@ -66,36 +66,6 @@ OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 _INSTRUCTOR_MODES = {"json": instructor.Mode.JSON, "json_schema": instructor.Mode.JSON_SCHEMA}
 _STRUCTURED_OUTPUT_MODE = os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").strip().lower()
 
-CODE_DIMENSIONS = {"code_quality", "testing"}
-DOCUMENTATION_DIMENSIONS = {"documentation"}
-
-def _with_line_numbers(content: str) -> str:
-    return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
-
-def _bundle_data_for_dimension(bundle: ArtifactBundle, dimension_name: str) -> str:
-    """Dimension-scoped view of the bundle -- keeps prompts smaller for
-    dimensions that don't need source content, and surfaces Java/README
-    content (with line numbers, for citation grounding) for the ones that do."""
-    payload: dict = {
-        "team_id": bundle.team_id,
-        "sprint_id": bundle.sprint_id,
-        "commits": [c.model_dump(mode="json") for c in bundle.commits],
-        "jira_tickets": [t.model_dump(mode="json") for t in bundle.jira_tickets],
-        "peer_evaluations": [p.model_dump(mode="json") for p in bundle.peer_evaluations],
-    }
-    if dimension_name in CODE_DIMENSIONS:
-        payload["code_files"] = [
-            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.code_files
-        ]
-    if dimension_name in DOCUMENTATION_DIMENSIONS:
-        payload["documents"] = [
-            {"filename": f.filename, "content": _with_line_numbers(f.content)} for f in bundle.documents
-        ]
-    return json.dumps(payload, indent=2, default=str)
-
-def _with_line_numbers(content: str) -> str:
-    return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
-
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
 )

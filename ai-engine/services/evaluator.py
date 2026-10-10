@@ -25,7 +25,7 @@ sprint feedback, and returns a SprintAssessment.
 #start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
 log = logging.getLogger("sprintsight.evaluator")
 
-async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
+async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int | None) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
     dimension_start = time.perf_counter()
     log.info("Starting rubric dimension '%s'", dim)
     try:
@@ -93,7 +93,8 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
                 #     else:
                 #         rubric_scores.append(result)
 
-                scores_by_dim, failed_dimensions = {}, {}
+                scores_by_dim: dict[str, RubricDimensionScore] = {}
+                failed_dimensions: dict[str, str] = {}
 
                 for dim, result in zip(DIMENSIONS, results):
                     if isinstance(result, BaseException):

@@ -12,7 +12,7 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.benchmark_registry import FIXTURES
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.sprint_assessment import SprintAssessment
-from services.llm_client import create_llm_client, request_extra_body
+from services.llm_client import _request_extra_body, create_llm_client
 
 '''
 Custom LLM Judge for evaluating the grounding and actionability of AI-generated assessments.
@@ -93,7 +93,7 @@ async def run_judge(
     gold: SprintAssessment,
     judge_model: str,
     judge_provider: str
-) -> JudgeVerdict:
+) -> tuple[JudgeVerdict, list[Feedback]]:
     
     client = create_llm_client(provider=judge_provider)
 
@@ -118,7 +118,7 @@ async def run_judge(
         ],
         temperature=0,
         max_retries=5,
-        extra_body=request_extra_body(MODEL_NUM_CTX.get(judge_model)),
+        extra_body=_request_extra_body(MODEL_NUM_CTX.get(judge_model)),
     )
 
     judge_source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")

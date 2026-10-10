@@ -124,7 +124,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
     loop = asyncio.get_event_loop() # Get the current event loop to measure latency
     start = loop.time()
     try:
-        assessment = await evaluate_sprint(bundle, model)
+        assessment = await evaluate_sprint(bundle, model, "SprintSight-Research")
         latency = loop.time() - start # Measure latency after evaluation
  
         # rubric_scores = {r.dimension: r.score for r in assessment.rubric_scores}

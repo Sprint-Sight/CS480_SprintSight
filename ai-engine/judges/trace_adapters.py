@@ -1,10 +1,15 @@
 import logging
+from typing import cast
 
 from mlflow.entities import Trace
 from pydantic import ValidationError
 
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.rubrics_dimension_score import ModelOutput, RubricDimensionScore
+from schemas.rubrics_dimension_score import (
+    DimensionName,
+    ModelOutput,
+    RubricDimensionScore,
+)
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
 from services.grounding import find_ungrounded_citations
@@ -28,7 +33,7 @@ def read_candidate(trace: Trace, bundle: ArtifactBundle | None = None) -> tuple[
     by_id = {s.span_id: s for s in spans}
     final: dict[str, ModelOutput] = {}
     for s in spans:
-        parent = by_id.get(s.parent_id)
+        parent = by_id.get(s.parent_id) if s.parent_id is not None else None
         if s.name != "AsyncCompletions" or parent is None or not parent.name.startswith("Evaluate_Dimension_"):
             continue
         try:
@@ -48,5 +53,5 @@ def read_candidate(trace: Trace, bundle: ArtifactBundle | None = None) -> tuple[
             bad = find_ungrounded_citations(bundle_json, mo.evidence_citations)
             dropped += len(bad)
             data["evidence_citations"] = [c.model_dump() for c in mo.evidence_citations if c not in bad]
-        scores[dim] = RubricDimensionScore(dimension=dim, **data)
+        scores[dim] = RubricDimensionScore(dimension=cast(DimensionName, dim), **data)
     return RubricsScore(**scores), dropped
