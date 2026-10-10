@@ -27,6 +27,7 @@ ENV/
 htmlcov/
 *.log
 *.eval_cache
+eval_report/
 
 # ==========================================
 # 3. Node.js / React (Frontend)
