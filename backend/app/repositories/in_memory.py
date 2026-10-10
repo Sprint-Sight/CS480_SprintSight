@@ -282,6 +282,12 @@ class InMemoryDocumentRepository(DocumentRepository):
         document = self._documents.get(document_id)
         return document if document and document.project_id == project_id else None
 
+    def delete_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        document = self.get_document(project_id, document_id)
+        if document:
+            del self._documents[document_id]
+        return document
+
 
 class InMemoryAssessmentRepository(AssessmentRepository):
     def __init__(self) -> None:
@@ -408,10 +414,23 @@ class InMemoryAuditRepository(AuditRepository):
         self._audits: list[AuditRecord] = []
 
     def save_audit(self, record: AuditRecord) -> None:
-        self._audits.append(record)
+        if not any(existing.override_id == record.override_id for existing in self._audits):
+            self._audits.append(record)
 
     def list_audits(self) -> list[AuditRecord]:
         return list(self._audits)
+
+    def list_audits_before(self, cutoff: datetime, limit: int) -> list[AuditRecord]:
+        return sorted(
+            (record for record in self._audits if record.timestamp < cutoff),
+            key=lambda record: (record.timestamp, record.override_id),
+        )[:limit]
+
+    def delete_audits(self, override_ids: list[str]) -> int:
+        ids = set(override_ids)
+        original_count = len(self._audits)
+        self._audits = [record for record in self._audits if record.override_id not in ids]
+        return original_count - len(self._audits)
 
 
 class InMemoryActionAuditRepository:
@@ -419,10 +438,23 @@ class InMemoryActionAuditRepository:
         self._audit_actions: list[ActionAuditRecord] = []
 
     def save_action_audit(self, record: ActionAuditRecord) -> None:
-        self._audit_actions.append(record)
+        if not any(existing.audit_id == record.audit_id for existing in self._audit_actions):
+            self._audit_actions.append(record)
 
     def list_action_audits(self) -> list[ActionAuditRecord]:
         return list(self._audit_actions)
+
+    def list_action_audits_before(self, cutoff: datetime, limit: int) -> list[ActionAuditRecord]:
+        return sorted(
+            (record for record in self._audit_actions if record.created_at < cutoff),
+            key=lambda record: (record.created_at, record.audit_id),
+        )[:limit]
+
+    def delete_action_audits(self, audit_ids: list[str]) -> int:
+        ids = set(audit_ids)
+        original_count = len(self._audit_actions)
+        self._audit_actions = [record for record in self._audit_actions if record.audit_id not in ids]
+        return original_count - len(self._audit_actions)
 
 
 class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):

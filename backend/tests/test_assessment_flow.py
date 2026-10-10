@@ -89,7 +89,6 @@ def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_t
 
 
 def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_user_repository) -> None:
-    audit_file = tmp_path / "audit.log"
     repository_root = tmp_path / "repos"
     repository_path = repository_root / "cs-203-project"
     repository_path.mkdir(parents=True)
@@ -101,7 +100,6 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         check=True,
         capture_output=True,
     )
-    monkeypatch.setenv("AUDIT_LOG_PATH", str(audit_file))
     monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(repository_root))
     get_settings.cache_clear()
     override_user_repository.create_project(
@@ -172,9 +170,6 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         headers=headers,
     )
     assert override_response.status_code == 200
-    assert audit_file.exists()
-    assert "reason_comment" in audit_file.read_text(encoding="utf-8")
-
     audit_list_response = client.get("/api/v1/audit/overrides", headers=headers)
     assert audit_list_response.status_code == 200
     assert len(audit_list_response.json()) >= 1
@@ -232,7 +227,22 @@ def test_admin_reset_password_is_logged() -> None:
         item.get("action") == "reset_password"
         and item.get("target_id") == user_id
         and item.get("actor_role") == "admin"
+        and "password" not in item.get("details", {})
         for item in payload
+    )
+
+    deactivate_response = client.delete(f"/api/v1/users/{user_id}", headers=admin_headers)
+    assert deactivate_response.status_code == 200
+    activate_response = client.post(f"/api/v1/users/{user_id}/activate", headers=admin_headers)
+    assert activate_response.status_code == 200
+
+    updated_audit_response = client.get("/api/v1/audit/actions", headers=admin_headers)
+    assert updated_audit_response.status_code == 200
+    assert any(
+        item.get("action") == "activate_user"
+        and item.get("target_id") == user_id
+        and item.get("actor_role") == "admin"
+        for item in updated_audit_response.json()
     )
 
 

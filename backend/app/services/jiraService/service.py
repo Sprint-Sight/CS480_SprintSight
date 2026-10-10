@@ -76,6 +76,57 @@ def _resolve_jira_auth(project: ProjectRecord) -> tuple[str, str, str]:
     )
 
 
+def validate_jira_credentials(
+    domain: str,
+    email: str,
+    api_token: str,
+    project_key: str | None = None,
+) -> None:
+    """Validate Jira credentials without returning or logging the token."""
+    settings = get_settings()
+    normalized_domain = normalize_jira_domain(domain)
+    if not normalized_domain or not email or not api_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Jira email, domain, and API token are required.",
+        )
+
+    try:
+        with httpx.Client(
+            base_url=f"https://{normalized_domain}",
+            auth=(email, api_token),
+            timeout=settings.jira_timeout_seconds,
+            headers={"Accept": "application/json"},
+        ) as client:
+            if project_key:
+                response = client.post(
+                    "/rest/api/3/search/jql",
+                    json={
+                        "jql": f'project = "{project_key}"',
+                        "maxResults": 1,
+                        "fields": ["id"],
+                    },
+                )
+            else:
+                response = client.get("/rest/api/3/myself")
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403, 404):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Jira rejected the credentials or project access.",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_jira_status_error_detail(exc),
+        ) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not validate Jira credentials.",
+        ) from exc
+
+
 def _normalize_jira_sprint_value(sprint_id: str | None) -> str | None:
     if sprint_id is None:
         return None

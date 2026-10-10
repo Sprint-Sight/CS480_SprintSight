@@ -27,65 +27,11 @@ class DocumentValidationError(ValueError):
     pass
 
 
-# Supported file types for project context documents. These are uploaded as
-# BACKGROUND CONTEXT for the LLM when evaluating a project (project briefs,
-# requirements, design notes, etc.) and are intentionally kept separate from
-# the "documentation" rubric dimension — see collect_project_context_documents.
-#
-# PDF remains accepted for backwards compatibility with earlier uploads, but
-# text extraction for PDF is not implemented here; PDFs are stored but excluded
-# from the AI engine's background context by extract_document_text below.
-_ALLOWED_EXTENSIONS: dict[str, tuple[str, ...]] = {
-    ".md": ("text/markdown", "text/x-markdown", "text/plain", "application/octet-stream"),
-    ".txt": ("text/plain", "application/octet-stream"),
-    ".doc": ("application/msword", "application/octet-stream"),
-    ".docx": (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/octet-stream",
-    ),
-    ".pdf": ("application/pdf",),
+SUPPORTED_DOCUMENT_TYPES = {
+    ".pdf": ("application/pdf", b"%PDF-"),
+    ".docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK"),
+    ".pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", b"PK"),
 }
-
-# Canonical mime type persisted on the DocumentRecord per extension. Keeps the
-# stored mime_type stable even when browsers send the generic
-# application/octet-stream (common for .md on Windows).
-_CANONICAL_MIME: dict[str, str] = {
-    ".md": "text/markdown",
-    ".txt": "text/plain",
-    ".doc": "application/msword",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".pdf": "application/pdf",
-}
-
-
-def _extension(filename: str) -> str:
-    return PurePath(filename).suffix.lower()
-
-
-def _validate_file(filename: str, content_type: str | None, content: bytes) -> str:
-    """Return the file's canonical mime type, or raise DocumentValidationError."""
-    extension = _extension(filename)
-    if extension not in _ALLOWED_EXTENSIONS:
-        raise DocumentValidationError(
-            "Unsupported document type. Allowed types: .md, .txt, .doc, .docx, .pdf."
-        )
-    allowed_mimes = _ALLOWED_EXTENSIONS[extension]
-    # Content-Type is advisory (browsers lie, especially for .md); accept the
-    # file as long as the extension matches and simple magic bytes line up.
-    if content_type and content_type not in allowed_mimes:
-        log.info(
-            "Document '%s' advertised content-type %r; accepting based on extension %s.",
-            filename, content_type, extension,
-        )
-    if extension == ".pdf" and not content.startswith(b"%PDF-"):
-        raise DocumentValidationError("Only valid PDF documents are accepted.")
-    if extension == ".docx" and not content.startswith(b"PK"):
-        # .docx is a ZIP container; non-PK magic means a different file was renamed.
-        raise DocumentValidationError("Uploaded .docx file is not a valid Word document.")
-    if extension == ".doc" and not content.startswith(b"\xd0\xcf\x11\xe0"):
-        # Legacy OLE compound-document magic. Guard rail only; parsing is best-effort.
-        raise DocumentValidationError("Uploaded .doc file is not a valid Word document.")
-    return _CANONICAL_MIME[extension]
 
 
 def upload_documents(
@@ -107,18 +53,20 @@ def upload_documents(
         for filename, content_type, content in files:
             if not content or len(content) > settings.document_max_file_size:
                 raise DocumentValidationError("Each document must be non-empty and within the file size limit.")
-            canonical_mime = _validate_file(filename, content_type, content)
+            extension = PurePath(filename).suffix.lower()
+            document_type = SUPPORTED_DOCUMENT_TYPES.get(extension)
+            if not document_type or content_type != document_type[0] or not content.startswith(document_type[1]):
+                raise DocumentValidationError("Only valid PDF, DOCX, and PPTX documents are accepted.")
             document_id = str(uuid4())
-            extension = _extension(filename)
             safe_filename = PurePath(filename).name or f"{document_id}{extension}"
             storage_key = f"projects/{project_id}/documents/{document_id}/{safe_filename}"
-            storage.upload(settings.minio_bucket_documents, storage_key, content, canonical_mime)
+            storage.upload(settings.minio_bucket_documents, storage_key, content, document_type[0])
             uploaded_keys.append((settings.minio_bucket_documents, storage_key))
             record = DocumentRecord(
                 id=document_id,
                 project_id=project_id,
                 filename=safe_filename,
-                mime_type=canonical_mime,
+                mime_type=document_type[0],
                 byte_size=len(content),
                 checksum=sha256(content).hexdigest(),
                 storage_bucket=settings.minio_bucket_documents,

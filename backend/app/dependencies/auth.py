@@ -5,8 +5,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.in_memory import InMemoryDocumentRepository, jira_ingestion_repo, manual_text_repo, metrics_repo, rubric_weights_repo
-from app.repositories.interfaces import AssessmentRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository, UserRepository
+from app.repositories.in_memory import InMemoryDocumentRepository, audit_action_repo, audit_repo, jira_ingestion_repo, manual_text_repo, metrics_repo, rubric_weights_repo
+from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository, UserRepository
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
 
@@ -39,6 +39,14 @@ def get_manual_text_repository(request: Request) -> ManualTextRepository:
 
 def get_assessment_repository(request: Request) -> AssessmentRepository:
     return getattr(request.app.state, "assessment_repository", None)
+
+
+def get_audit_repository(request: Request) -> AuditRepository:
+    return getattr(request.app.state, "audit_repository", audit_repo)
+
+
+def get_action_audit_repository(request: Request) -> ActionAuditRepository:
+    return getattr(request.app.state, "action_audit_repository", audit_action_repo)
 
 
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:

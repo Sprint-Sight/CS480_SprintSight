@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     ai_engine_timeout_seconds: float = Field(default=600.0, alias="AI_ENGINE_TIMEOUT_SECONDS")
 
     audit_log_path: str = Field(default="logs/audit.log", alias="AUDIT_LOG_PATH")
+    audit_hot_retention_days: int = Field(default=168, alias="AUDIT_HOT_RETENTION_DAYS", ge=1)
+    audit_action_archive_retention_days: int = Field(default=365, alias="AUDIT_ACTION_ARCHIVE_RETENTION_DAYS", ge=1)
+    audit_override_archive_retention_days: int = Field(default=365, alias="AUDIT_OVERRIDE_ARCHIVE_RETENTION_DAYS", ge=1)
+    audit_archive_batch_size: int = Field(default=500, alias="AUDIT_ARCHIVE_BATCH_SIZE", ge=1, le=10000)
+    minio_bucket_audit_archive: str = Field(default="audit-archive", alias="MINIO_BUCKET_AUDIT_ARCHIVE")
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
