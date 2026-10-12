@@ -366,10 +366,33 @@ def update_manual_assessment(
             detail="Instructor is not assigned to this course.",
         )
 
-    updated = assessment_repository.update_manual_assessment(
-        report_id,
-        payload.model_dump(),
-    )
+    patch = payload.model_dump(exclude_unset=True)
+    rubric_scores = {
+        key: detail.model_dump()
+        for key, detail in report.rubric_scores.items()
+    }
+    supplied_rubric_scores = patch.get("rubric_scores") or {}
+    rubric_scores.update(supplied_rubric_scores)
+    for dimension in ("requirements", "code_quality", "documentation", "collaboration"):
+        score_key = f"{dimension}_score"
+        justification_key = f"{dimension}_justification"
+        if dimension in supplied_rubric_scores:
+            continue
+        if score_key not in patch and justification_key not in patch:
+            continue
+        existing = rubric_scores.get(dimension, {})
+        rubric_scores[dimension] = {
+            **existing,
+            "score": patch.get(score_key, existing.get("score", 0)),
+            "justification": patch.get(
+                justification_key,
+                existing.get("justification"),
+            ),
+        }
+    if rubric_scores:
+        patch["rubric_scores"] = rubric_scores
+
+    updated = assessment_repository.update_manual_assessment(report_id, patch)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found.")
     return updated

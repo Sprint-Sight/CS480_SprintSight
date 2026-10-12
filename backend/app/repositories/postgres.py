@@ -951,31 +951,46 @@ class PostgresAssessmentRepository(AssessmentRepository):
             return self._report(row) if row else None
 
     def update_manual_assessment(self, report_id: str, patch: dict[str, object]) -> AssessmentReport | None:
+        columns = {
+            "requirements_score": "requirements_score",
+            "code_quality_score": "code_quality_score",
+            "documentation_score": "documentation_score",
+            "collaboration_score": "collaboration_score",
+            "requirements_justification": "requirements_justification",
+            "code_quality_justification": "code_quality_justification",
+            "documentation_justification": "documentation_justification",
+            "collaboration_justification": "collaboration_justification",
+            "rubric_weights": "rubric_weights",
+            "team_score": "team_score",
+            "individual_scores": "individual_scores",
+            "rubric_scores": "rubric_scores",
+            "strengths": "strengths",
+            "weaknesses": "weaknesses",
+            "recommendations": "recommendations",
+        }
+        json_columns = {
+            "rubric_weights",
+            "team_score",
+            "individual_scores",
+            "rubric_scores",
+            "strengths",
+            "weaknesses",
+            "recommendations",
+        }
+        assignments = ["override = TRUE"]
+        values = []
+        for key, value in patch.items():
+            column = columns.get(key)
+            if column is None:
+                continue
+            assignments.append(f"{column} = %s")
+            values.append(Json(value) if column in json_columns else value)
+
         with self._pool.connection() as connection:
             row = connection.execute(
-                """UPDATE assessment_reports
-                SET override = TRUE,
-                    requirements_score = %s,
-                    code_quality_score = %s,
-                    documentation_score = %s,
-                    collaboration_score = %s,
-                    requirements_justification = %s,
-                    code_quality_justification = %s,
-                    documentation_justification = %s,
-                    collaboration_justification = %s
-                WHERE report_id = %s
-                RETURNING *""",
-                (
-                    patch["requirements_score"],
-                    patch["code_quality_score"],
-                    patch["documentation_score"],
-                    patch["collaboration_score"],
-                    patch["requirements_justification"],
-                    patch["code_quality_justification"],
-                    patch["documentation_justification"],
-                    patch["collaboration_justification"],
-                    UUID(report_id.replace("rpt-", "")),
-                ),
+                f"UPDATE assessment_reports SET {', '.join(assignments)} "
+                "WHERE report_id = %s RETURNING *",
+                (*values, UUID(report_id.replace("rpt-", ""))),
             ).fetchone()
         return self._report(row) if row else None
 
