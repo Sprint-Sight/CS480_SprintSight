@@ -10,8 +10,10 @@ from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
 from llmops.prompt_registry import (
-    load_dimension_prompt,
-    register_dimension_prompt,
+    dimension_prompt_name,
+    SPRINT_FEEDBACK_PROMPT_NAME,
+    prompt_trace_attrs,
+    link_prompt_to_trace,
 )
 from dotenv import load_dotenv
 from mlflow.entities import SpanType
@@ -210,7 +212,6 @@ def _commit_matches_patterns(commit: dict, patterns: list[str]) -> bool:
     return any(
         any(p in fname.lower() for p in patterns) for fname in files
     )
-
 
 def _select_representative_commits(
     commits: list[dict],
@@ -569,15 +570,15 @@ async def evaluate_dimension(
     bundle: ArtifactBundle,
     dimension_name: DimensionName,
     model_name: str,
-    dimention_prompt,
+    dimension_prompt,
     num_ctx: int | None = None,
 ) -> RubricDimensionScore:
-    with mlflow.start_span(name=f"Evaluate_Dimension_{dimension_name}", span_type=SpanType.LLM):
+    with mlflow.start_span(name=f"Evaluate_Dimension_{dimension_name}", span_type=SpanType.LLM) as span:
         # Evaluate a single rubric dimension.
         fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name, ())
         full_bundle = bundle.model_dump(mode="json")
 
-        # ── Stats from ALL commits, then sample for the bundle ──
+        # Stats from ALL commits, then sample for the bundle
         sampled_commits: list[dict] | None = None
         if "commits" in fields:
             all_trimmed = _trim_commits(full_bundle["commits"])
@@ -620,7 +621,11 @@ async def evaluate_dimension(
                 dimension_name, approx_tokens, effective_ctx,
             )
 
-        prompt = render_dimension_prompt(dimension_name, dimention_prompt, bundle_data, computed_facts)
+        # Prompt Registry: Register dimension prompt if not already registered, and log the version used for this evaluation
+        prompt_name = dimension_prompt_name(dimension_name)
+        prompt_attrs = prompt_trace_attrs(prompt_name) # in-memory, no registry call
+        span.set_attributes(prompt_attrs)
+        link_prompt_to_trace(prompt_name)
 
         client = create_llm_client()  # Only LLM grader will call evaluate_dimension to call this method, hence provider is always ollama
 
@@ -644,7 +649,7 @@ async def evaluate_dimension(
             model_output = await client.chat.completions.create(
                 model=model_name,
                 response_model=ModelOutput,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": prompt_name}],
                 temperature=0,
                 max_retries=3,
                 extra_body=request_extra_body(num_ctx),
@@ -655,6 +660,7 @@ async def evaluate_dimension(
             # given the chance to answer it.
             result = RubricDimensionScore(
                 dimension=dimension_name,
+                prompt_version=prompt_attrs.get("prompt_version"),
                 **model_output.model_dump(),
             )
 
@@ -694,6 +700,26 @@ async def evaluate_dimension(
                     if citation not in ungrounded
                 ]
 
+                mlflow.log_feedback(
+                    trace_id=mlflow.get_current_active_span().trace_id,
+                    name='citation_grounding',
+                    value=False,
+                    rationale=f"Dropped {len(ungrounded)} ungrounded citation(s) from dimension '{dimension_name}'",
+                    span_id=span.span_id,
+                )
+
+            span.set_inputs({
+                "dimension": dimension_name,
+                "model": model_name,
+                "num_ctx": effective_ctx,
+                "bundle_hash": bundle_hash,
+                "approx_prompt_tokens": approx_tokens,
+            })
+            span.set_outputs({
+                **result.model_dump(mode="json"),
+                "ungrounded_citations_dropped": len(ungrounded),
+            })
+
             return result
 
         except Exception as error:
@@ -710,44 +736,44 @@ async def evaluate_dimension(
         finally:
             _audit_context.reset(audit_token)
 
-
-async def generate_sprint_feedback(
+async def generate_sprint_feedback( # Generate strengths, weakenesses, & recommendations for whole sprint
     bundle: ArtifactBundle,
     rubric_scores: dict[str, dict],
     model_name: str,
     num_ctx: int | None = None,
 ) -> SprintFeedback:
-    """Generate strengths, weaknesses, and recommendations for the whole sprint."""
-    scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
-    prompt = render_sprint_feedback_prompt(
-        bundle.team_id, bundle.sprint_id, scores_data, bundle.instructor_expectations
-    )
-    audit_token = _audit_context.set(
-        {
-            "request_id": str(uuid4()),
-            "team_id": bundle.team_id,
-            "sprint_id": bundle.sprint_id,
-            "dimension": "sprint_feedback",
-            "model": model_name,
-        }
-    )
-    try:
-        client = create_llm_client()
-        full_prompt_chars = len(prompt)
-        log.info(
-            ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
-            "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
+    with mlflow.start_span(name="Generate_Sprint_Feedback", span_type=SpanType.LLM) as span:
+        scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
+        prompt = render_sprint_feedback_prompt(
+            bundle.team_id, bundle.sprint_id, scores_data, bundle.instructor_expectations
         )
-        return await client.chat.completions.create(
-            model=model_name,
-            response_model=SprintFeedback,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_retries=3,
-            extra_body=request_extra_body(num_ctx),
+        span.set_attributes(prompt_trace_attrs(SPRINT_FEEDBACK_PROMPT_NAME))
+        audit_token = _audit_context.set(
+            {
+                "request_id": str(uuid4()),
+                "team_id": bundle.team_id,
+                "sprint_id": bundle.sprint_id,
+                "dimension": "sprint_feedback",
+                "model": model_name,
+            }
         )
-    finally:
-        _audit_context.reset(audit_token)
+        try:
+            client = create_llm_client()
+            full_prompt_chars = len(prompt)
+            log.info(
+                ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
+                "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
+            )
+            return await client.chat.completions.create(
+                model=model_name,
+                response_model=SprintFeedback,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_retries=3,
+                extra_body=request_extra_body(num_ctx),
+            )
+        finally:
+            _audit_context.reset(audit_token)
 
 
 async def check_ollama_health(model_name: str) -> dict:

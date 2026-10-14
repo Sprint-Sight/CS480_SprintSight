@@ -101,3 +101,4 @@ class RubricDimensionScore(ModelOutput):
     # never asked of the model, same reasoning as ModelOutput's docstring above.
     strengths: list[str] = Field(default_factory=list)
     areas_for_improvement: list[str] = Field(default_factory=list)
+    prompt_version: str | None = None

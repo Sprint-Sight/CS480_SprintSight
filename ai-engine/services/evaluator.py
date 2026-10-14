@@ -1,8 +1,8 @@
 import asyncio, logging, os, time, mlflow
 from mlflow.entities import SpanType
-
-from llmops.mlflow_config import start_mlflow
-from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
+from llmops.review_queue import add_to_review_queue
+from llmops.prompt_registry import load_dimension_prompt, load_sprint_feedback_prompt, SPRINT_FEEDBACK_PROMPT_NAME, prompt_trace_attrs, ensure_prompts_registered, dimension_prompt_name
+from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS#, WORSE_DIMENSION_PROMPTS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
@@ -18,6 +18,7 @@ from schemas.allDimensionsFailedError import AllDimensionsFailedError
 Receives a bundle, evaluates each rubric dimension serially, generates general
 sprint feedback, and returns a SprintAssessment.
 '''
+MAX_CONCURRENCY = 6  # Limit the number of concurrent calls to the LLM service to avoid overwhelming it. Adjust as needed based on your system's capabilities.
 #start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
 log = logging.getLogger("sprintsight.evaluator")
 
@@ -26,6 +27,7 @@ async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_na
     log.info("Starting rubric dimension '%s'", dim)
     try:
         result = await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPTS[dim], num_ctx=run_num_ctx)
+        #result = await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPTS[dim], num_ctx=run_num_ctx)
     except Exception:
         log.exception(
             "Rubric dimension '%s' failed after %.2f seconds.",
@@ -50,6 +52,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     # Start Mlflow experiment
     mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
     mlflow.set_experiment(experiment_name)
+    ensure_prompts_registered()
      
     # if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
     #     mlflow.end_run()
@@ -59,20 +62,29 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     # whenever num_ctx changes between requests, so varying it per-dimension
     # would force a reload before nearly every one of the ~6-7 calls here.
     run_num_ctx = select_run_num_ctx(bundle, model_name, DIMENSIONS)
-
-    with mlflow.start_run(run_name=f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}", nested=True):
+    run_name = f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}"
+    with mlflow.start_run(run_name=run_name, nested=True):
         with mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN) as root:
             start_time = time.time() # Start time for entire evaluation process
             mlflow.openai.autolog() # Logs everything, will create child AsyncCompletions span under LLM span
+            mlflow.log_params({
+                "model_name": model_name,
+                "num_ctx": run_num_ctx,
+            })
+            mlflow.set_tags({
+                "team_id": bundle.team_id,
+                "sprint_id": bundle.sprint_id,
+            })
 
             mlflow.update_current_trace(
                 request_preview=f"{model_name} evaluation of sprint {bundle.sprint_id} for team {bundle.team_id}",
                 tags={"model": model_name, "team_id": bundle.team_id}
             )
+            root.set_inputs({"team_id": bundle.team_id, "sprint_id": bundle.sprint_id, "model_name": model_name})
 
             # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
             # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
-            semaphore = asyncio.Semaphore(5)
+            semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
             async with semaphore:
                 # 2. Create a list of asynchronous tasks (one for each dimension)
@@ -124,7 +136,11 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
                 # mlflow.set_tag("error", str(e))
                 raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
 
+            queue_name = f"review_queue_{bundle.team_id}_{bundle.sprint_id}" # Standby review queue for each team's sprint being evaluated in case trace needs to be flagged for review
             if len(failed_dimensions) == len(DIMENSIONS):
+                # Create and add trace to review queue for manual review if all dimensions failed
+                mlflow.update_current_trace(tags={"Flagged for review": "All dimensions failed to evaluate."})
+                add_to_review_queue(queue_name, [root.trace_id])
                 raise AllDimensionsFailedError(failed_dimensions)
 
             rubric_scores = RubricsScore(**scores_by_dim)
@@ -133,12 +149,14 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
 
             summary_parts = []
             if failed_dimensions:
+                add_to_review_queue(queue_name, [root.trace_id]) # Create and add trace to review queue for manual review if any dimensions failed
                 failure_details = "; ".join(
                     f"{dimension}: {error}" for dimension, error in failed_dimensions.items()
                 )
                 summary_parts.append(
                     f"The assessment is incomplete. Failed dimensions: {failure_details}"
                 )
+                mlflow.update_current_trace(tags={"Flagged for review": failure_details})
             else:
                 summary_parts.append("All rubric dimensions were evaluated successfully.")
         
@@ -146,7 +164,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             try:
                 feedback = await generate_sprint_feedback(
                     bundle,
-                    {dimension: score.model_dump() for dimension, score in scores_by_dim.items()},
+                    {dimension: score.model_dump(exclude={"prompt_version"}) for dimension, score in scores_by_dim.items()},
                     model_name,
                     num_ctx=run_num_ctx,
                 )
@@ -162,7 +180,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             final_assessment = SprintAssessment(
                 team_id=bundle.team_id,
                 sprint_id=bundle.sprint_id,
-                prompt_version="v1.0",
+                prompt_version=prompt_trace_attrs(SPRINT_FEEDBACK_PROMPT_NAME)["prompt_version"],
                 rubric_scores=rubric_scores,
                 overall_score=round(average_score, 2),
                 executive_summary=" ".join(summary_parts),
@@ -171,8 +189,19 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
                 key_recommendations=recommendations,
                 # failed_dimensions=failed_dimensions,
             )
-            root.set_inputs({"team_id": bundle.team_id, "sprint_id": bundle.sprint_id, "model_name": model_name})
+            mlflow.log_metric("overall_score", average_score)
+            for dim, score in scores_by_dim.items():
+                if not score.evaluation_failed:
+                    mlflow.log_metric(f"{dim}_score", score.score)
+            mlflow.log_metric("failed_dimensions_count", len(failed_dimensions))
+            mlflow.log_metric("evaluation_duration_seconds", time.time() - start_time)
             root.set_outputs(final_assessment.model_dump(mode="json"))  # Store the final assessment in the root span outputs for traceability
+            # Store the prompt versions used for each dimension & the sprint feedback prompt in the root span attributes for traceability
+            root.set_attributes({"prompt_versions": {
+                "dimension_prompts": {dim: prompt_trace_attrs(dimension_prompt_name(dim))["prompt_version"] for dim in DIMENSIONS},
+                "sprint_feedback_prompt": final_assessment.prompt_version,
+            }})
+
             mlflow.update_current_trace(response_preview=f"Average score: {average_score}, failed dimensions: {list(failed_dimensions.keys())}")
 
     log.info("Evaluation by model %s completed in %.2f seconds.", model_name, time.time() - start_time)
