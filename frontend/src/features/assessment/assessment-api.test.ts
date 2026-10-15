@@ -21,6 +21,7 @@ const baseReport: SprintAssessmentReport = {
     { categoryKey: "documentation", category: "Documentation", score: 70, justification: "Updated documentation justification." },
     { categoryKey: "collaboration", category: "Collaboration", score: 60, justification: "Updated collaboration justification." },
     { categoryKey: "cicd", category: "CI/CD", score: 10, justification: "Uneditable CI/CD justification.", evidenceCitations: ["commit abc"] },
+    { categoryKey: "testing", category: "Testing", score: 100, justification: "Current testing justification.", evidenceCitations: ["test report"] },
   ],
   strengths: ["Strength"],
   weaknesses: ["Weakness"],
@@ -35,7 +36,10 @@ const backendReport: BackendAssessmentReport = {
   generated_at: "2026-01-01T00:00:00Z",
   override: false,
   team_score: { score: 80, rationale: "Summary" },
-  rubric_scores: {},
+  rubric_scores: {
+    cicd: { score: 1, justification: "Uneditable CI/CD justification.", evidence_citations: ["commit abc"] },
+    testing: { score: 10, justification: "Current testing justification.", evidence_citations: ["test report"] },
+  },
   strengths: ["Strength"],
   weaknesses: ["Weakness"],
   recommendations: ["Recommendation"],
@@ -50,7 +54,7 @@ const backendReport: BackendAssessmentReport = {
 };
 
 describe("assessment report API mapping", () => {
-  it("maps only supported rubric overrides to the existing endpoint contract", () => {
+  it("builds the confirmed PATCH contract with fixed dimensions, dynamic rubrics, summaries, and citations", () => {
     expect(buildManualAssessmentPatch(baseReport, backendReport)).toEqual({
       requirements_score: 90,
       requirements_justification: "Updated requirement justification.",
@@ -60,11 +64,43 @@ describe("assessment report API mapping", () => {
       documentation_justification: "Updated documentation justification.",
       collaboration_score: 60,
       collaboration_justification: "Updated collaboration justification.",
+      rubric_scores: {
+        cicd: {
+          score: 1,
+          justification: "Uneditable CI/CD justification.",
+          evidence_citations: ["commit abc"],
+        },
+        testing: {
+          score: 10,
+          justification: "Current testing justification.",
+          evidence_citations: ["test report"],
+        },
+      },
+      strengths: ["Strength"],
+      weaknesses: ["Weakness"],
+      recommendations: ["Recommendation"],
     });
     expect(baseReport.rubricScores[4].evidenceCitations).toEqual(["commit abc"]);
   });
 
-  it("refuses to build a request when any required backend field is missing", () => {
+  it("includes changed dynamic category values while preserving evidence citations", () => {
+    const editedReport = {
+      ...baseReport,
+      rubricScores: baseReport.rubricScores.map((item) =>
+        item.categoryKey === "cicd"
+          ? { ...item, score: 70, justification: "Updated CI/CD feedback." }
+          : item,
+      ),
+    };
+
+    expect(buildManualAssessmentPatch(editedReport, backendReport)?.rubric_scores.cicd).toEqual({
+      score: 7,
+      justification: "Updated CI/CD feedback.",
+      evidence_citations: ["commit abc"],
+    });
+  });
+
+  it("refuses to build a request when any required fixed backend field is missing", () => {
     const reportWithoutCollaboration = {
       ...baseReport,
       rubricScores: baseReport.rubricScores.filter((item) => item.categoryKey !== "collaboration"),
@@ -82,9 +118,13 @@ describe("assessment report API mapping", () => {
       override: true,
       requirements_score: 96,
       requirements_justification: "Instructor-saved rationale.",
+      strengths: ["Saved strength"],
+      weaknesses: ["Saved weakness"],
+      recommendations: ["Saved recommendation"],
       rubric_scores: {
         requirements: { score: 8, justification: "AI rationale.", evidence_citations: ["ticket TYH-16"] },
-        cicd: { score: 1, justification: "Original CI/CD rationale.", evidence_citations: ["commit abc"] },
+        cicd: { score: 7, justification: "Updated CI/CD rationale.", evidence_citations: ["commit abc"] },
+        testing: { score: 9, justification: "Updated testing rationale.", evidence_citations: ["test report"] },
       },
     });
 
@@ -96,9 +136,20 @@ describe("assessment report API mapping", () => {
     });
     expect(savedReport.rubricScores[1]).toMatchObject({
       category: "CI/CD",
-      score: 10,
-      justification: "Original CI/CD rationale.",
+      score: 70,
+      justification: "Updated CI/CD rationale.",
       evidenceCitations: ["commit abc"],
+    });
+    expect(savedReport.rubricScores[2]).toMatchObject({
+      category: "Testing",
+      score: 90,
+      justification: "Updated testing rationale.",
+      evidenceCitations: ["test report"],
+    });
+    expect(savedReport).toMatchObject({
+      strengths: ["Saved strength"],
+      weaknesses: ["Saved weakness"],
+      recommendations: ["Saved recommendation"],
     });
   });
 });

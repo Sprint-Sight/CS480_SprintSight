@@ -134,6 +134,7 @@ export default function AssessmentReportPageContent() {
         report={editor.isEditing ? editor.draft : assessment.report}
         editMode={instructor && editor.isEditing}
         onRubricScoreChange={editor.updateRubricScore}
+        onSummaryChange={editor.updateSummary}
       />
       <InstructorAiFeedbackModal isOpen={isFeedbackModalOpen} scope={scope} onClose={() => setIsFeedbackModalOpen(false)} />
     </div>

@@ -37,6 +37,10 @@ export type ManualAssessmentPatch = {
   code_quality_justification: string;
   documentation_justification: string;
   collaboration_justification: string;
+  rubric_scores: Record<string, BackendRubricScore>;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
 };
 
 type SupportedDimension = {
@@ -117,6 +121,23 @@ export function buildManualAssessmentPatch(
   const collaboration = readDimension(supportedAssessmentDimensions[3]);
   if (!requirements || !codeQuality || !documentation || !collaboration) return null;
 
+  const rubricScores: Record<string, BackendRubricScore> = {};
+  for (const item of report.rubricScores) {
+    const categoryKey = item.categoryKey || item.category;
+    if (getSupportedDimension(categoryKey)) continue;
+    if (!Number.isFinite(item.score) || item.score < 0 || item.score > 100) return null;
+
+    const currentDetail = backendReport.rubric_scores[categoryKey];
+    rubricScores[categoryKey] = {
+      score:
+        typeof currentDetail?.score === "number" && currentDetail.score <= 10
+          ? item.score / 10
+          : item.score,
+      justification: item.justification,
+      evidence_citations: item.evidenceCitations ?? currentDetail?.evidence_citations ?? [],
+    };
+  }
+
   return {
     requirements_score: requirements.score,
     requirements_justification: requirements.justification,
@@ -126,6 +147,10 @@ export function buildManualAssessmentPatch(
     documentation_justification: documentation.justification,
     collaboration_score: collaboration.score,
     collaboration_justification: collaboration.justification,
+    rubric_scores: rubricScores,
+    strengths: report.strengths,
+    weaknesses: report.weaknesses,
+    recommendations: report.recommendations,
   };
 }
 

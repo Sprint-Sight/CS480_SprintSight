@@ -35,27 +35,31 @@ const report: SprintAssessmentReport = {
 };
 
 describe("AssessmentFeedbackSections editing", () => {
-  it("allows edits for endpoint-supported rubric dimensions and keeps citations read-only", () => {
+  it("allows edits for dynamic rubric dimensions and keeps evidence citations read-only", () => {
     const onRubricScoreChange = vi.fn();
     render(<AssessmentFeedbackSections report={report} editMode onRubricScoreChange={onRubricScoreChange} />);
 
-    fireEvent.change(screen.getByLabelText("Requirements score"), { target: { value: "85" } });
-    fireEvent.change(screen.getByLabelText("Requirements feedback"), { target: { value: "Updated rationale." } });
+    fireEvent.change(screen.getByLabelText("CI/CD score"), { target: { value: "75" } });
+    fireEvent.change(screen.getByLabelText("CI/CD feedback"), { target: { value: "Updated CI/CD rationale." } });
 
-    expect(onRubricScoreChange).toHaveBeenNthCalledWith(1, "requirements", { score: 85 });
-    expect(onRubricScoreChange).toHaveBeenNthCalledWith(2, "requirements", { justification: "Updated rationale." });
+    expect(onRubricScoreChange).toHaveBeenNthCalledWith(1, "cicd", { score: 75 });
+    expect(onRubricScoreChange).toHaveBeenNthCalledWith(2, "cicd", { justification: "Updated CI/CD rationale." });
     expect(screen.getByText("Evidence: commit abc")).toBeInTheDocument();
-    expect(screen.getByLabelText("CI/CD score")).toBeDisabled();
-    expect(screen.getByLabelText("Testing feedback")).toBeDisabled();
-    expect(screen.getAllByText(/this category cannot be persisted/i)).toHaveLength(2);
+    expect(screen.getByLabelText("Testing score")).toBeEnabled();
+    expect(screen.getByLabelText("Testing feedback")).toBeEnabled();
   });
 
-  it("shows summary fields as disabled because the existing endpoint cannot save them", () => {
-    render(<AssessmentFeedbackSections report={report} editMode />);
+  it("allows editing each summary field as newline-separated items", () => {
+    const onSummaryChange = vi.fn();
+    render(<AssessmentFeedbackSections report={report} editMode onSummaryChange={onSummaryChange} />);
 
-    expect(screen.getByLabelText("Strengths")).toBeDisabled();
-    expect(screen.getByLabelText("Weaknesses")).toBeDisabled();
-    expect(screen.getByLabelText("Recommendations")).toBeDisabled();
+    for (const field of ["Strengths", "Weaknesses", "Recommendations"]) {
+      expect(screen.getByLabelText(field)).toBeEnabled();
+    }
+    fireEvent.change(screen.getByLabelText("Strengths"), {
+      target: { value: "Reliable tests\nClear ownership" },
+    });
+    expect(onSummaryChange).toHaveBeenCalledWith("strengths", "Reliable tests\nClear ownership");
   });
 
   it("sizes editable feedback for its initial content and after edits", async () => {
@@ -96,7 +100,7 @@ describe("AssessmentFeedbackSections editing", () => {
     expect(feedback).toHaveStyle({ overflowY: "hidden" });
   });
 
-  it("auto-sizes long read-only rubric feedback without enabling editing", async () => {
+  it("auto-sizes long rubric feedback while editing", async () => {
     const longFeedback = "Read-only assessment feedback. ".repeat(14);
     const longReport = {
       ...report,
@@ -107,7 +111,7 @@ describe("AssessmentFeedbackSections editing", () => {
     render(<AssessmentFeedbackSections report={longReport} editMode />);
 
     const feedback = screen.getByLabelText("CI/CD feedback") as HTMLTextAreaElement;
-    expect(feedback).toBeDisabled();
+    expect(feedback).toBeEnabled();
     await waitFor(() => expect(feedback).toHaveStyle({ height: `${longFeedback.length * 2}px` }));
   });
 
