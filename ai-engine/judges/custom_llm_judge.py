@@ -12,7 +12,7 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.benchmark_registry import FIXTURES
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.sprint_assessment import SprintAssessment
-from services.llm_client import _request_extra_body, create_llm_client
+from services.llm_client import LLM_TEMPERATURE, _request_extra_body, create_llm_client
 
 '''
 Custom LLM Judge for evaluating the grounding and actionability of AI-generated assessments.
@@ -116,7 +116,7 @@ async def run_judge(
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {"role": "user", "content": filled_user_prompt},
         ],
-        temperature=0,
+        temperature=LLM_TEMPERATURE,
         max_retries=5,
         extra_body=_request_extra_body(MODEL_NUM_CTX.get(judge_model)),
     )

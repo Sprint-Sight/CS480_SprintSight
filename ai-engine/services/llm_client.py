@@ -55,6 +55,15 @@ OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, b
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
 OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 
+# Single source of truth for decoding temperature across every LLM call in
+# the app (both grading dimensions and the judges import this). Default 0 =
+# greedy/deterministic decoding, which is what the grading task wants for
+# reproducibility. Override with the LLM_TEMPERATURE env var to run a
+# temperature ablation without touching code. The Modelfiles' own
+# `PARAMETER temperature` is only a fallback for standalone `ollama run`;
+# this request-level value overrides it whenever the app makes the call.
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0"))
+
 # json_schema constrains Ollama's decoding to the exact schema (no more
 # invented field names, no need for _normalize_citation in the long run) but
 # requires both `instructor` and the Ollama server to support OpenAI's
@@ -662,7 +671,7 @@ async def evaluate_dimension(
             model=model_name,
             response_model=ModelOutput,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            temperature=LLM_TEMPERATURE,
             max_retries=3,
             extra_body=_request_extra_body(num_ctx),
         )
@@ -764,7 +773,7 @@ async def generate_sprint_feedback(
             model=model_name,
             response_model=SprintFeedback,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            temperature=LLM_TEMPERATURE,
             max_retries=3,
             extra_body=_request_extra_body(num_ctx),
         )
