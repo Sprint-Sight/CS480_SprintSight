@@ -263,7 +263,6 @@ def sync_repository_ingestion(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     github_metrics = ingest_github_metrics(payload, repository_path, metrics_repository, projects, users)
     jira_metrics = enrich_jira_metrics(payload)
-    document_signals = collect_document_signals(payload)
     append_action_audit(
         action_audits,
         actor_id=faculty_user.id,
