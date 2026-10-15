@@ -71,7 +71,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
 
             # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
             # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
-            semaphore = asyncio.Semaphore(5)
+            semaphore = asyncio.Semaphore(3)
 
             async with semaphore:
                 # 2. Create a list of asynchronous tasks (one for each dimension)
