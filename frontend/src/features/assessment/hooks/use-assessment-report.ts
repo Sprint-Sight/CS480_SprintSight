@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import {
+  clearActiveAssessmentJob,
+  readActiveAssessmentJob,
+  saveActiveAssessmentJob,
+  type ActiveAssessmentJob,
+} from "@/features/assessment/active-assessment-job";
 import { resolveAssessmentScope } from "@/features/assessment/assessment-scope";
 import {
   getSupportedDimension,
@@ -105,15 +111,37 @@ export function useAssessmentReport() {
     try {
       const modelName = localStorage.getItem("sprintsight-selected-model") || "sprintsight-llama";
       const job = await apiRequest<{ job_id: string }>("/assessments/assess", { method: "POST", body: JSON.stringify({ course_id: scope.courseId, project_id: scope.projectId, sprint_id: scope.sprintId, model_name: modelName }) });
+      saveActiveAssessmentJob({ jobId: job.job_id, courseId: scope.courseId, projectId: scope.projectId, sprintId: scope.sprintId });
+      await monitorJob(job);
+    } catch (error) { setAssessmentError(error instanceof Error ? error.message : "Assessment generation failed."); }
+    finally { clearActiveAssessmentJob(); setIsGenerating(false); }
+  }
+
+  async function monitorJob(job: { job_id: string }) {
       const token = getAuthToken(); if (!token) throw new Error("Your session has expired. Please log in again.");
       const response = await fetch(`${API_BASE_URL}/assessments/jobs/${job.job_id}/events`, { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok || !response.body) throw new Error("Could not monitor assessment progress.");
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; let finished = false;
       while (!finished) { const chunk = await reader.read(); if (chunk.done) break; buffer += decoder.decode(chunk.value, { stream: true }); const events = buffer.split("\n\n"); buffer = events.pop() || ""; for (const event of events) { const line = event.split("\n").find((item) => item.startsWith("data: ")); if (!line) continue; const data = JSON.parse(line.slice(6)) as JobEvent; setAssessmentProgress(data.progress ?? 0); setAssessmentMessage(data.message || data.status || "Assessment in progress..."); if (data.status === "failed") throw new Error(data.error_message || "Assessment failed."); if (data.status === "completed") finished = true; } }
       await loadLatestReport();
-    } catch (error) { setAssessmentError(error instanceof Error ? error.message : "Assessment generation failed."); }
-    finally { setIsGenerating(false); }
   }
+
+  async function resumeActiveJob(stored: ActiveAssessmentJob) {
+    setAssessmentError(""); setIsGenerating(true); setAssessmentMessage("Resuming assessment...");
+    try { await monitorJob({ job_id: stored.jobId }); }
+    catch (error) { const message = error instanceof Error ? error.message : "Assessment generation failed."; if (!/Could not monitor/.test(message)) setAssessmentError(message); }
+    finally { clearActiveAssessmentJob(); setIsGenerating(false); }
+  }
+
+  const resumedJobRef = useRef(false);
+  useEffect(() => {
+    if (!role || role === "student" || resumedJobRef.current || !selectedProjectId || projectOptions.length === 0) return;
+    const scope = resolveScope();
+    const stored = readActiveAssessmentJob();
+    if (!stored || !scope || stored.projectId !== scope.projectId || stored.sprintId !== scope.sprintId) return;
+    resumedJobRef.current = true;
+    void resumeActiveJob(stored);
+  }, [role, selectedProjectId, sprintId, projectOptions]);
 
   useEffect(() => setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | "admin" | null) || "student"), []);
   useEffect(() => { if (role === "student") return; const refreshScope = () => { const state = readIngestionState(); setSelectedCourseId(state.selectedCourseId || ""); setSelectedProjectId(state.selectedProjectId || ""); setSprintId(state.selectedSprintId || "sprint-1"); }; refreshScope(); window.addEventListener("sprintsight-ingestion-updated", refreshScope); return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope); }, [role]);

@@ -16,6 +16,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
 import { getProjectGitMetrics, getProjectIngestion, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
+import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
+import { useArtifactTab } from "@/features/artifacts/hooks/use-artifact-tab";
 import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
@@ -163,7 +165,7 @@ function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
 }
 
 export default function ArtifactViewerPageContent() {
-  const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
+  const { activeTab, setActiveTab } = useArtifactTab();
   
   // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
@@ -232,22 +234,57 @@ export default function ArtifactViewerPageContent() {
 
   useEffect(() => {
     const persisted = getProjectIngestion(selectedProjectId, selectedSprintId);
-    const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
-    setGitRuns(persistedGitRuns);
-    const selectedGitRun = persistedGitRuns.find((run) => run.sprint_id === selectedSprintId) || null;
-    if (selectedGitRun) {
-      setGitMetrics(selectedGitRun);
-      setGitSprintId(buildNextSprintId(persistedGitRuns.map((run) => run.sprint_id)));
-    } else {
-      setGitMetrics(null);
-      setGitSprintId(buildNextSprintId([]));
-    }
     if (persisted.jira) {
       setJiraSnapshot(persisted.jira);
     } else {
       setJiraSnapshot(null);
     }
   }, [selectedProjectId, selectedSprintId]);
+
+  const selectedCourseId = projectOptions.find((project) => project.id === selectedProjectId)?.courseId ?? "";
+
+  useEffect(() => {
+    let cancelled = false;
+    const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
+    const applyRuns = (runs: RepoIngestionData[]) => {
+      setGitRuns(runs);
+      const selectedGitRun = runs.find((run) => run.sprint_id === selectedSprintId) || null;
+      setGitMetrics(selectedGitRun);
+      setGitSprintId(selectedGitRun ? selectedGitRun.sprint_id : buildNextSprintId(runs.map((run) => run.sprint_id)));
+    };
+    applyRuns(persistedGitRuns);
+
+    if (role !== "instructor" || !isUuid(selectedProjectId) || !selectedCourseId) return;
+    setIsLoadingGit(true);
+    setGitError("");
+    fetchProjectGitRuns<RepoIngestionData>(selectedProjectId, selectedCourseId, persistedGitRuns.map((run) => run.sprint_id))
+      .then((runs) => {
+        if (cancelled) return;
+        runs.forEach(saveGitMetrics);
+        applyRuns(runs);
+      })
+      .catch((error) => {
+        if (!cancelled) setGitError(error instanceof Error ? error.message : "Failed to load Git ingestion runs.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingGit(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, selectedProjectId, selectedCourseId, selectedSprintId]);
+
+  const gitSprintOptions = useMemo(() => {
+    const existing = gitRuns.map((run) => run.sprint_id);
+    const next = buildNextSprintId(existing);
+    return [...existing, ...(existing.includes(next) ? [] : [next])];
+  }, [gitRuns]);
+
+  function selectGitSprint(sprint: string) {
+    setGitSprintId(sprint);
+    setGitMetrics(gitRuns.find((run) => run.sprint_id === sprint) ?? null);
+    setGitError("");
+  }
 
   useEffect(() => {
     async function loadDocuments() {
@@ -428,7 +465,7 @@ export default function ArtifactViewerPageContent() {
       saveGitMetrics(metrics);
       const updatedRuns = [...gitRuns.filter((run) => run.sprint_id !== sprint), metrics];
       setGitRuns(updatedRuns);
-      setGitSprintId(buildNextSprintId(updatedRuns.map((run) => run.sprint_id)));
+      setGitSprintId(sprint);
     } catch (error) {
       setGitError(error instanceof Error ? error.message : "Git ingestion failed.");
     } finally {
@@ -545,9 +582,19 @@ export default function ArtifactViewerPageContent() {
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[220px] flex-1 space-y-1">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</span>
-                <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700">
-                  {gitSprintId || "sprint-1"}
-                </div>
+                <select
+                  aria-label="Git sprint"
+                  value={gitSprintId}
+                  onChange={(event) => selectGitSprint(event.target.value)}
+                  disabled={isSyncingGit || isLoadingGit}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+                >
+                  {gitSprintOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {gitRuns.some((run) => run.sprint_id === option) ? option : `${option} (new)`}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
