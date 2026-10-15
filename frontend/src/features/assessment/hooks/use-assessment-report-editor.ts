@@ -48,6 +48,18 @@ export function useAssessmentReportEditor({
     setSaveMessage("");
   }
 
+  function updateSummary(
+    field: "strengths" | "weaknesses" | "recommendations",
+    value: string,
+  ) {
+    setDraft((current) => ({
+      ...current,
+      [field]: value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+    }));
+    setSaveError("");
+    setSaveMessage("");
+  }
+
   function beginEditing() {
     setDraft(report);
     setIsEditing(true);
@@ -77,7 +89,7 @@ export function useAssessmentReportEditor({
       const updated = await patchAssessmentReport(report.reportId, payload);
       onSaved(updated);
       setIsEditing(false);
-      setSaveMessage("Supported rubric changes saved.");
+      setSaveMessage("Assessment report changes saved.");
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Could not save the assessment report.");
     } finally {
@@ -97,5 +109,6 @@ export function useAssessmentReportEditor({
     cancelEditing,
     saveChanges,
     updateRubricScore,
+    updateSummary,
   };
 }
