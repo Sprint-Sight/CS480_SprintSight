@@ -103,7 +103,7 @@ export function useAssessmentReport() {
     if (!scope || !isUuid(scope.projectId)) { setAssessmentError("The selected course, project, and sprint must refer to the same project scope."); return; }
     setAssessmentError(""); setIsGenerating(true); setAssessmentProgress(0); setAssessmentMessage("Starting assessment...");
     try {
-      const modelName = localStorage.getItem("sprintsight-selected-model") || "sprintsight-qwen";
+      const modelName = localStorage.getItem("sprintsight-selected-model") || "sprintsight-qwen25-32b";
       const job = await apiRequest<{ job_id: string }>("/assessments/assess", { method: "POST", body: JSON.stringify({ course_id: scope.courseId, project_id: scope.projectId, sprint_id: scope.sprintId, model_name: modelName }) });
       const token = getAuthToken(); if (!token) throw new Error("Your session has expired. Please log in again.");
       const response = await fetch(`${API_BASE_URL}/assessments/jobs/${job.job_id}/events`, { headers: { Authorization: `Bearer ${token}` } });
