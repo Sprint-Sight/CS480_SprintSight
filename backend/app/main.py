@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,17 +9,17 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_middleware
-from app.core.storage import storage
 from app.core.security import hash_password
+from app.core.storage import storage
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresActionAuditRepository,
     PostgresAssessmentRepository,
     PostgresAuditRepository,
-    PostgresMetricsRepository,
     PostgresDocumentRepository,
     PostgresJiraIngestionRunRepository,
     PostgresManualTextRepository,
+    PostgresMetricsRepository,
     PostgresProjectRepository,
     PostgresRubricWeightsRepository,
     PostgresUserRepository,
@@ -29,7 +30,7 @@ from app.repositories.postgres import (
     ensure_rubric_weights_schema,
 )
 from app.schemas.auth import Role
-from uuid import uuid4
+from app.services.notificationService.service import SMTPNotificationService
 
 settings = get_settings()
 configure_logging()
@@ -90,6 +91,7 @@ app = FastAPI(
     title=settings.project_name,
     lifespan=lifespan,
 )
+app.state.notification_service = SMTPNotificationService(settings)
 
 app.openapi_version = "3.0.3"
 

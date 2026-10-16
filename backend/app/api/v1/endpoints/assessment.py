@@ -1,15 +1,48 @@
-from typing import Annotated
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_action_audit_repository, get_assessment_repository, get_audit_repository, get_document_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
+from app.dependencies.auth import (
+    get_action_audit_repository,
+    get_assessment_repository,
+    get_audit_repository,
+    get_document_repository,
+    get_jira_ingestion_repository,
+    get_manual_text_repository,
+    get_metrics_repository,
+    get_notification_service,
+    get_project_repository,
+    get_rubric_weights_repository,
+    get_user_repository,
+    require_faculty,
+    require_instructor,
+    require_student_or_faculty,
+)
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
-from app.schemas.assessment import AssessRequest, AssessmentReport, ManualAssessmentPatch, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    AssessmentRepository,
+    AuditRepository,
+    DocumentRepository,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    ProjectRepository,
+    RubricWeightsRepository,
+    UserRepository,
+)
+from app.schemas.assessment import (
+    AssessmentReport,
+    AssessRequest,
+    ManualAssessmentPatch,
+    OverrideRequest,
+    RubricWeightsPayload,
+    RubricWeightsResponse,
+)
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
     get_effective_rubric_weights,
@@ -21,6 +54,7 @@ from app.services.assessmentService.service import (
     update_manual_assessment,
 )
 from app.services.auditLogService.service import append_action_audit, append_override_audit
+from app.services.notificationService.service import SMTPNotificationService
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -46,6 +80,8 @@ def assess_sprint(
     rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     document_repository: Annotated[DocumentRepository, Depends(get_document_repository)],
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
     if not project:
@@ -71,6 +107,9 @@ def assess_sprint(
         jira_ingestion_repository,
         rubric_weights_repository,
         document_repository,
+        user_repository=user_repository,
+        project_repository=projects,
+        notification_service=notification_service,
     )
     append_action_audit(
         action_audits,

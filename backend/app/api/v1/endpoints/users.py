@@ -1,11 +1,11 @@
-# app/routers/users.py
-
-from app.core.security import hash_password
+import logging
 from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies.auth import (
     get_action_audit_repository,
+    get_notification_service,
     get_project_repository,
     get_user_repository,
     require_admin,
@@ -21,15 +21,37 @@ from app.schemas.auth import (
     AdminPasswordReset,
     AdminUserCreate,
     AdminUserUpdate,
-    PasswordChangeRequest, #for reset password unsafe
     Role,
     UserResponse,
 )
 from app.services.auditLogService.service import append_action_audit
 from app.services.authService.deactivation import deactivate_user_cascade
+from app.services.authService.email_tokens import create_email_action_token, email_action_message
 from app.services.authService.service import create_user, reset_password, user_response
+from app.services.notificationService.service import (
+    NotificationConfigurationError,
+    NotificationDeliveryError,
+    SMTPNotificationService,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
+logger = logging.getLogger(__name__)
+
+
+def _send_password_setup_email(user: UserRecord, notification_service: SMTPNotificationService) -> None:
+    if not notification_service.is_configured:
+        logger.warning(
+            "Password setup email was not sent to user %s because email delivery is not configured.",
+            user.id,
+        )
+        return
+
+    token = create_email_action_token(user, "first_time_password")
+    subject, body = email_action_message(token, "first_time_password")
+    try:
+        notification_service.send_email(user.email, subject, body)
+    except (NotificationConfigurationError, NotificationDeliveryError):
+        logger.exception("Password setup email could not be delivered to user %s.", user.id)
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +108,7 @@ def create_managed_user(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
 ) -> UserResponse:
     """
     Admin creates any account type (instructor / student / admin).
@@ -106,6 +129,7 @@ def create_managed_user(
         target_id=created.id,
         details={"email": created.email, "role": created.role.value},
     )
+    _send_password_setup_email(created, notification_service)
     return user_response(created)
 
 
@@ -181,6 +205,7 @@ def reset_managed_user_password(
     current_admin: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
@@ -196,29 +221,7 @@ def reset_managed_user_password(
         target_id=user_id,
         details={"email": user.email, "role": user.role.value, "must_change_password": True},
     )
-    return user_response(updated)
-
-
-@router.post("/change-password", response_model=UserResponse)
-def change_own_password(
-    payload: PasswordChangeRequest,
-    repository: Annotated[UserRepository, Depends(get_user_repository)],
-) -> UserResponse:
-    """
-    Self-service password change/reset (forgot-password flow).
-    Identifies the account by email instead of user_id, since a user
-    who forgot their password only knows their email, not their
-    internal user_id. This also matches the future OTP flow, where
-    email is the natural first input (OTP gets sent there).
-    """
-    user = repository.get_by_email(payload.email)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-
-    updated = repository.update_password(user.id, hash_password(payload.password), False)
-    if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-
+    _send_password_setup_email(updated, notification_service)
     return user_response(updated)
 
 

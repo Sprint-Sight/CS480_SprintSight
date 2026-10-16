@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -5,11 +6,27 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.core.storage import storage as default_storage
-from app.repositories.in_memory import assessment_repo, job_repo, metrics_repo, overrides_repo, rubric_weights_repo
-from app.repositories.interfaces import AssessmentRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository
+from app.repositories.in_memory import (
+    assessment_repo,
+    job_repo,
+    metrics_repo,
+    overrides_repo,
+    rubric_weights_repo,
+)
+from app.repositories.interfaces import (
+    AssessmentRepository,
+    DocumentRepository,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    ProjectRepository,
+    RubricWeightsRecord,
+    RubricWeightsRepository,
+    UserRepository,
+)
 from app.schemas.assessment import (
-    AssessRequest,
     AssessmentReport,
+    AssessRequest,
     ManualAssessmentPatch,
     OverrideRequest,
     OverrideResponse,
@@ -21,7 +38,13 @@ from app.services.documentsService.service import collect_project_context_docume
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.service import enrich_jira_metrics
 from app.services.manualTextService.service import get_manual_text
-from app.services.middleManService.service import build_assessment_payload, send_assessment_to_ai_engine
+from app.services.middleManService.service import (
+    build_assessment_payload,
+    send_assessment_to_ai_engine,
+)
+from app.services.notificationService.service import SMTPNotificationService
+
+logger = logging.getLogger(__name__)
 
 # Minimum /100 score (inclusive) required for each letter grade, highest first.
 GRADE_BOUNDARIES: list[tuple[float, str]] = [
@@ -240,6 +263,9 @@ def run_assessment_job(
     jira_ingestion_repository: JiraIngestionRunRepository | None = None,
     rubric_weights_repository: RubricWeightsRepository | None = None,
     document_repository: DocumentRepository | None = None,
+    user_repository: UserRepository | None = None,
+    project_repository: ProjectRepository | None = None,
+    notification_service: SMTPNotificationService | None = None,
 ) -> None:
     """Background worker that collects the same input that the old synchronous endpoint used,
     sends the canonical payload to the AI engine, and then persists a report without
@@ -327,10 +353,79 @@ def run_assessment_job(
 
         job_repo.update_job(job_id, status="completed", progress=100, current_stage="completed", report_id=report.report_id)
         job_repo.append_event(job_id, "completed", {"status": "completed", "progress": 100, "report_id": report.report_id})
+        if user_repository and project_repository and notification_service:
+            _notify_instructors_report_completed(
+                report,
+                project,
+                user_repository,
+                project_repository,
+                notification_service,
+                job_id,
+            )
     except Exception as exc:
         error_message = str(exc)
         job_repo.update_job(job_id, status="failed", progress=100, current_stage="failed", error_message=error_message)
         job_repo.append_event(job_id, "failed", {"status": "failed", "message": "The assessment failed.", "error_message": error_message})
+
+
+def _notify_instructors_report_completed(
+    report: AssessmentReport,
+    project,
+    user_repository: UserRepository,
+    project_repository: ProjectRepository,
+    notification_service: SMTPNotificationService,
+    job_id: str,
+) -> None:
+    try:
+        instructors = [
+            user
+            for user in user_repository.list_users()
+            if user.is_active
+            and user.role.value == "instructor"
+            and project_repository.is_instructor_assigned(report.course_id, user.id)
+        ]
+    except Exception:
+        logger.exception("Could not identify instructors for completed assessment job %s.", job_id)
+        job_repo.append_event(
+            job_id,
+            "notification_failed",
+            {"message": "The report is ready, but instructor email recipients could not be loaded."},
+        )
+        return
+
+    if not instructors:
+        logger.warning("No assigned active instructors found for completed assessment job %s.", job_id)
+        return
+
+    subject = f"SprintSight assessment report completed: {project.project_name}"
+    body = (
+        "The LLM assessment report has been completed.\n\n"
+        f"Course: {report.course_id}\n"
+        f"Project: {project.project_name}\n"
+        f"Sprint: {report.sprint_id}\n"
+        f"Report ID: {report.report_id}\n"
+        f"Team score: {report.team_score.score}\n"
+    )
+    for instructor in instructors:
+        try:
+            notification_service.send_email(instructor.email, subject, body)
+        except Exception:
+            logger.exception(
+                "Could not email instructor %s for completed assessment job %s.",
+                instructor.id,
+                job_id,
+            )
+            job_repo.append_event(
+                job_id,
+                "notification_failed",
+                {"message": "The report is ready, but an instructor notification could not be delivered."},
+            )
+            continue
+        job_repo.append_event(
+            job_id,
+            "notification_sent",
+            {"message": "Report completion email sent to an assigned instructor."},
+        )
 
 
 def list_assessment_reports(course_id: str, project_id: str, sprint_id: str, assessment_repository: AssessmentRepository | None = None) -> list[AssessmentReport]:

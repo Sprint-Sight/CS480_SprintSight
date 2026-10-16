@@ -4,17 +4,46 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.config import get_settings
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.in_memory import InMemoryDocumentRepository, audit_action_repo, audit_repo, jira_ingestion_repo, manual_text_repo, metrics_repo, rubric_weights_repo
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository, UserRepository
+from app.repositories.in_memory import (
+    InMemoryDocumentRepository,
+    audit_action_repo,
+    audit_repo,
+    jira_ingestion_repo,
+    manual_text_repo,
+    metrics_repo,
+    rubric_weights_repo,
+)
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    AssessmentRepository,
+    AuditRepository,
+    DocumentRepository,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    ProjectRepository,
+    RubricWeightsRepository,
+    UserRepository,
+)
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
+from app.services.notificationService.service import SMTPNotificationService
 
 oauth2_scheme = HTTPBearer()
 
 
 def get_user_repository(request: Request) -> UserRepository:
     return request.app.state.user_repository
+
+
+def get_notification_service(request: Request) -> SMTPNotificationService:
+    service = getattr(request.app.state, "notification_service", None)
+    if service is None:
+        service = SMTPNotificationService(get_settings())
+        request.app.state.notification_service = service
+    return service
 
 
 def get_project_repository(request: Request) -> ProjectRepository:
