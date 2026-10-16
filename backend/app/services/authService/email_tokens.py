@@ -1,9 +1,10 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from jose import JWTError, jwt
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.security import TokenPayloadError
 from app.repositories.interfaces import UserRecord
 
@@ -13,9 +14,7 @@ def create_email_action_token(user: UserRecord, purpose: str) -> str:
         raise ValueError("Unsupported email action.")
 
     settings = get_settings()
-    expires_at = datetime.now(UTC) + timedelta(
-        minutes=settings.email_action_token_expire_minutes,
-    )
+    expires_at = datetime.now(UTC) + timedelta(minutes=_token_expiry_minutes(settings, purpose))
     payload: dict[str, Any] = {
         "sub": user.id,
         "token_version": user.token_version,
@@ -41,29 +40,36 @@ def decode_email_action_token(token: str, expected_purpose: str) -> dict[str, An
     return payload
 
 
+def _token_expiry_minutes(settings: Settings, purpose: str) -> int:
+    if purpose == "first_time_password":
+        return settings.email_first_time_token_expire_minutes
+    if purpose == "password_reset":
+        return settings.email_password_reset_token_expire_minutes
+    raise ValueError("Unsupported email action.")
+
+
 def email_action_message(token: str, purpose: str) -> tuple[str, str]:
     settings = get_settings()
     if purpose == "first_time_password":
         subject = "Set your SprintSight password"
-        endpoint = "first-time-password"
-        instruction = "Use this one-time token to set your initial password."
+        purpose_label = "first-time-password"
+        instruction = "Click this one-time link to set your initial password."
     elif purpose == "password_reset":
         subject = "Reset your SprintSight password"
-        endpoint = "password-reset"
-        instruction = "Use this one-time token to choose a new password."
+        purpose_label = "password-reset"
+        instruction = "Click this one-time link to choose a new password."
     else:
         raise ValueError("Unsupported email action.")
 
-    url = (
-        f"{settings.email_api_base_url.rstrip('/')}"
-        f"{settings.api_v1_prefix}/auth/{endpoint}/complete"
+    expiry_minutes = _token_expiry_minutes(settings, purpose)
+    link = (
+        f"{settings.email_frontend_base_url.rstrip('/')}/set-password?"
+        f"{urlencode({'token': token, 'purpose': purpose_label})}"
     )
     body = (
         f"{instruction}\n\n"
-        f"Token (expires in {settings.email_action_token_expire_minutes} minutes):\n"
-        f"{token}\n\n"
-        f"Complete the request by POSTing JSON to {url}:\n"
-        '{"token":"<token from this email>","new_password":"<your new password>"}\n\n'
+        f"{link}\n\n"
+        f"This link expires in {expiry_minutes} minutes and can only be used once.\n\n"
         "If you did not request this, ignore this email."
     )
     return subject, body

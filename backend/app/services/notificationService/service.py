@@ -1,5 +1,6 @@
 import smtplib
 from email.message import EmailMessage
+from html import escape
 
 from app.core.config import Settings
 
@@ -41,6 +42,22 @@ class SMTPNotificationService:
         )
         message["To"] = recipient
         message.set_content(body)
+        links = [
+            line
+            for line in body.splitlines()
+            if line.startswith(("http://", "https://"))
+        ]
+        html_body = escape(body).replace("\n", "<br>\n")
+        for link in links:
+            safe_link = escape(link, quote=True)
+            html_body = html_body.replace(
+                safe_link,
+                f'<a href="{safe_link}">{escape(link)}</a>',
+            )
+        message.add_alternative(
+            f"<html><body>{html_body}</body></html>",
+            subtype="html",
+        )
 
         try:
             if self._settings.email_smtp_use_ssl:

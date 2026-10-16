@@ -14,14 +14,23 @@ in `backend/.env` (the file is local and gitignored):
 | `EMAIL_FROM_NAME` | Friendly sender name; defaults to `SprintSight` |
 | `EMAIL_SMTP_USE_TLS` | `true` for STARTTLS, normally used with port `587` |
 | `EMAIL_SMTP_USE_SSL` | `true` for implicit SSL, normally used with port `465` |
-| `EMAIL_API_BASE_URL` | Public backend base URL used in emailed API instructions |
-| `EMAIL_ACTION_TOKEN_EXPIRE_MINUTES` | Password-action token lifetime; defaults to 30 |
+| `EMAIL_FRONTEND_BASE_URL` | Public frontend base URL used for clickable password links |
+| `EMAIL_FIRST_TIME_TOKEN_EXPIRE_MINUTES` | First-time password link lifetime; defaults to 1440 (24 hours) |
+| `EMAIL_PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | Password-reset link lifetime; defaults to 30 |
 
 The provider's **SMTP/API key goes in `EMAIL_SMTP_PASSWORD`** in
 `backend/.env`. Do not put it in `EMAIL_FROM_ADDRESS`; that must be a verified
 sender email address. The variables and placeholders are also listed in
 [`backend/.env.example`](./.env.example). Never commit the actual `.env` file
 or share its credentials.
+
+For local Docker Compose testing, `EMAIL_FRONTEND_BASE_URL=http://localhost:3000`
+works when the recipient opens the message on the same computer. For deployed
+use, set it to the public HTTPS frontend URL so recipients can open the link.
+Replace any old `EMAIL_API_BASE_URL` setting with `EMAIL_FRONTEND_BASE_URL`.
+When frontend routes change, rebuild the Compose frontend so the running image
+includes the new route: from `backend/`, run
+`docker compose up -d --build frontend`.
 
 ## Password setup and reset API
 
@@ -33,13 +42,14 @@ setup email or a password-reset email:
 - `POST /api/v1/auth/password-reset/request` with `{"email":"user@example.com"}`
 
 Both return a generic `202` response to avoid disclosing whether an account is
-registered. The email contains a short-lived, single-use token. Complete the
-requested action by POSTing `{"token":"<email token>","new_password":"..."}` to
-the corresponding `/complete` endpoint. Password changes invalidate the token
-and existing access tokens. The older authenticated `/auth/change-password`
-route remains available for the current frontend; no frontend files were
-changed. The unauthenticated `/users/change-password` route was removed
-because it allowed password changes with only an email address.
+registered. The email contains a clickable, single-use link to the frontend
+password form. First-time setup links expire after 24 hours by default, while
+reset links expire after 30 minutes; set the respective variables above to
+change either lifetime. Password changes invalidate the token and existing
+access tokens. The authenticated `/auth/change-password` route remains
+available for temporary-password login; the unauthenticated
+`/users/change-password` route was removed because it allowed password changes
+with only an email address.
 
 ## Assessment completion notifications
 
