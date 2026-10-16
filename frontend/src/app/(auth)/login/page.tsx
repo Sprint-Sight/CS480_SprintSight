@@ -220,6 +220,11 @@ export default function LoginPage() {
           >
             {isLoading ? "Signing in..." : "Sign In"}
           </button>
+          <div className="text-center">
+            <Link href="/forgot-password" className="text-sm text-blue-700 hover:underline">
+              Forgot your password?
+            </Link>
+          </div>
         </form>
         )}
       </div>
