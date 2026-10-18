@@ -4,6 +4,8 @@ from uuid import uuid4
 from app.core.security import hash_password
 from app.repositories.interfaces import (
     AssessmentRepository,
+    AuditRetentionConfig,
+    AuditRetentionConfigRepository,
     AuditRepository,
     DocumentRecord,
     DocumentRepository,
@@ -457,6 +459,41 @@ class InMemoryActionAuditRepository:
         original_count = len(self._audit_actions)
         self._audit_actions = [record for record in self._audit_actions if record.audit_id not in ids]
         return original_count - len(self._audit_actions)
+
+
+class InMemoryAuditRetentionConfigRepository(AuditRetentionConfigRepository):
+    def __init__(
+        self,
+        hot_retention_days: int = 168,
+        action_archive_retention_days: int = 365,
+        override_archive_retention_days: int = 365,
+    ) -> None:
+        self._config = AuditRetentionConfig(
+            hot_retention_days=hot_retention_days,
+            action_archive_retention_days=action_archive_retention_days,
+            override_archive_retention_days=override_archive_retention_days,
+            updated_at=datetime.now(timezone.utc),
+            updated_by=None,
+        )
+
+    def get_config(self) -> AuditRetentionConfig:
+        return self._config
+
+    def update_config(
+        self,
+        hot_retention_days: int,
+        action_archive_retention_days: int,
+        override_archive_retention_days: int,
+        updated_by: str,
+    ) -> AuditRetentionConfig:
+        self._config = AuditRetentionConfig(
+            hot_retention_days=hot_retention_days,
+            action_archive_retention_days=action_archive_retention_days,
+            override_archive_retention_days=override_archive_retention_days,
+            updated_at=datetime.now(timezone.utc),
+            updated_by=updated_by,
+        )
+        return self._config
 
 
 class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):

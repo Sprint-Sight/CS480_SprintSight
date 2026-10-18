@@ -219,6 +219,27 @@ class ActionAuditRepository(Protocol):
 
 
 @dataclass
+class AuditRetentionConfig:
+    hot_retention_days: int
+    action_archive_retention_days: int
+    override_archive_retention_days: int
+    updated_at: datetime
+    updated_by: str | None
+
+
+class AuditRetentionConfigRepository(Protocol):
+    def get_config(self) -> AuditRetentionConfig: ...
+
+    def update_config(
+        self,
+        hot_retention_days: int,
+        action_archive_retention_days: int,
+        override_archive_retention_days: int,
+        updated_by: str,
+    ) -> AuditRetentionConfig: ...
+
+
+@dataclass
 class IngestionMetricBundle:
     course_id: str
     project_id: str

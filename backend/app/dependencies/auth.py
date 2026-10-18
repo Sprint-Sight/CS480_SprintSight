@@ -18,6 +18,7 @@ from app.repositories.in_memory import (
 from app.repositories.interfaces import (
     ActionAuditRepository,
     AssessmentRepository,
+    AuditRetentionConfigRepository,
     AuditRepository,
     DocumentRepository,
     JiraIngestionRunRepository,
@@ -76,6 +77,10 @@ def get_audit_repository(request: Request) -> AuditRepository:
 
 def get_action_audit_repository(request: Request) -> ActionAuditRepository:
     return getattr(request.app.state, "action_audit_repository", audit_action_repo)
+
+
+def get_audit_retention_config_repository(request: Request) -> AuditRetentionConfigRepository:
+    return request.app.state.audit_retention_config_repository
 
 
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:

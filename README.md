@@ -18,10 +18,15 @@ Audit events are stored in PostgreSQL for 168 days (24 weeks). The Compose
 `audit-retention` worker runs the archive job immediately at startup and every
 24 hours after that. It writes gzip NDJSON archives and JSON manifests to the
 MinIO `audit-archive` bucket. Routine action and score-override archives both
-expire after 365 days. Set `AUDIT_HOT_RETENTION_DAYS`,
-`AUDIT_ACTION_ARCHIVE_RETENTION_DAYS`, `AUDIT_OVERRIDE_ARCHIVE_RETENTION_DAYS`,
-`AUDIT_ARCHIVE_BATCH_SIZE`, or `MINIO_BUCKET_AUDIT_ARCHIVE` in `backend/.env` to
-override these defaults.
+expire after 365 days by default. Admins can change the live-database period
+and each archive lifetime with the admin-only `PUT /api/v1/audit/retention`
+endpoint. The values are stored in PostgreSQL and read by the scheduled worker
+each time it runs, so updates take effect on its next run (within 24 hours).
+The `AUDIT_HOT_RETENTION_DAYS`, `AUDIT_ACTION_ARCHIVE_RETENTION_DAYS`, and
+`AUDIT_OVERRIDE_ARCHIVE_RETENTION_DAYS` environment values seed the database
+configuration on first startup; they do not override later admin changes.
+`AUDIT_ARCHIVE_BATCH_SIZE` and `MINIO_BUCKET_AUDIT_ARCHIVE` remain environment
+settings.
 
 ### Migrate existing JSONL logs
 
@@ -47,9 +52,12 @@ The audit APIs are:
 
 - `GET http://localhost:8000/api/v1/audit/actions`
 - `GET http://localhost:8000/api/v1/audit/overrides`
+- `GET http://localhost:8000/api/v1/audit/retention` (admin only)
+- `PUT http://localhost:8000/api/v1/audit/retention` (admin only)
 
-Both require a bearer token. Instructors see only their own events; admins see
-all events; students receive `403`.
+All require a bearer token. Instructors can read only their own action and
+override events; admins can read all audit events and manage retention; students
+receive `403`.
 
 In Postman, create `base_url = http://localhost:8000/api/v1`. Log in with
 `POST {{base_url}}/auth/login` and body `{"email":"...","password":"..."}`.
@@ -58,6 +66,27 @@ set Authorization to Bearer Token `{{instructor_token}}` or
 `{{admin_token}}`. Use `/docs` for the exact request bodies and prerequisites.
 Run each mutation successfully, then call `/audit/actions` and check the event
 name, actor ID/role, target ID, and relevant non-sensitive details.
+
+To configure log retention in Postman, select the admin bearer token, send
+`PUT {{base_url}}/audit/retention` with JSON body:
+
+```json
+{
+  "hot_retention_days": 30,
+  "action_archive_retention_days": 180,
+  "override_archive_retention_days": 180
+}
+```
+
+`hot_retention_days` is how long audit records remain in PostgreSQL before
+archiving. The other two values control how long the action and score-override
+archives remain in MinIO after they are created. Values must be positive
+integer days. Expect `200` and the saved values in the response; call
+`GET {{base_url}}/audit/retention` to confirm. Repeat the PUT using the
+instructor token and expect `403`; submit `0` for any period as admin and
+expect `422`. Retention deletion is performed by the scheduled worker, so use
+the existing development-database procedure under “Verify retention” to verify
+actual archival and expiry rather than waiting for a live log to age.
 
 Instructor/course event routes include:
 
@@ -91,10 +120,11 @@ JSONL, failed uploads, failed archive verification, and restoring an archived
 month. Run them from `backend/` with `python -m pytest tests/test_audit_retention.py -q`.
 
 For an end-to-end deletion check, use a development database only. Insert one
-synthetic old action row and capture the returned ID and month:
+synthetic action row older than the currently configured hot-retention period
+and capture the returned ID and month:
 
 ```powershell
-docker compose exec -T db psql -U postgres -d sprintsight -c "INSERT INTO action_audit_events (audit_id, actor_id, actor_role, action, target_type, target_id, details, created_at) VALUES ('retention-smoke-' || gen_random_uuid()::text, 'retention-smoke-actor', 'instructor', 'retention_smoke', 'test', 'retention-smoke-target', jsonb_build_object('synthetic', TRUE), NOW() - INTERVAL '169 days') RETURNING audit_id, to_char(created_at, 'YYYY-MM');"
+docker compose exec -T db psql -U postgres -d sprintsight -c "INSERT INTO action_audit_events (audit_id, actor_id, actor_role, action, target_type, target_id, details, created_at) VALUES ('retention-smoke-' || gen_random_uuid()::text, 'retention-smoke-actor', 'instructor', 'retention_smoke', 'test', 'retention-smoke-target', jsonb_build_object('synthetic', TRUE), NOW() - make_interval(days => (SELECT hot_retention_days + 1 FROM audit_retention_config WHERE config_id = 1))) RETURNING audit_id, to_char(created_at, 'YYYY-MM');"
 ```
 
 Run the worker once; the Postgres advisory lock makes this safe if the daily
@@ -118,16 +148,23 @@ SHA-256 checksums, and row count before writing restored NDJSON. Confirm the
 synthetic ID is present in `restored-smoke.jsonl`.
 
 After a successful daily run, this query should show `over_retention = 0` for
-both categories:
+both categories, using the configured hot-retention period:
 
 ```sql
+WITH retention AS (
+    SELECT hot_retention_days FROM audit_retention_config WHERE config_id = 1
+)
 SELECT 'actions' AS category, COUNT(*) AS total,
-	   COUNT(*) FILTER (WHERE created_at < NOW() - INTERVAL '168 days') AS over_retention
-FROM action_audit_events
+       COUNT(*) FILTER (
+           WHERE created_at < NOW() - make_interval(days => retention.hot_retention_days)
+       ) AS over_retention
+FROM action_audit_events CROSS JOIN retention
 UNION ALL
 SELECT 'overrides', COUNT(*),
-	   COUNT(*) FILTER (WHERE timestamp < NOW() - INTERVAL '168 days')
-FROM override_audit_events;
+       COUNT(*) FILTER (
+           WHERE timestamp < NOW() - make_interval(days => retention.hot_retention_days)
+       )
+FROM override_audit_events CROSS JOIN retention;
 ```
 
 Inspect gzip objects and `.manifest.json` files in MinIO's `audit-archive`

@@ -7,6 +7,8 @@ from psycopg_pool import ConnectionPool
 
 from app.repositories.interfaces import (
     AssessmentRepository,
+    AuditRetentionConfig,
+    AuditRetentionConfigRepository,
     CourseRecord,
     DocumentRecord,
     DocumentRepository,
@@ -167,6 +169,94 @@ def ensure_audit_schema(pool: ConnectionPool) -> None:
     with pool.connection() as connection:
         for statement in statements:
             connection.execute(statement)
+
+
+def ensure_audit_retention_config_schema(
+    pool: ConnectionPool,
+    hot_retention_days: int,
+    action_archive_retention_days: int,
+    override_archive_retention_days: int,
+) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS audit_retention_config (
+                config_id SMALLINT PRIMARY KEY CHECK (config_id = 1),
+                hot_retention_days INTEGER NOT NULL CHECK (hot_retention_days >= 1),
+                action_archive_retention_days INTEGER NOT NULL
+                    CHECK (action_archive_retention_days >= 1),
+                override_archive_retention_days INTEGER NOT NULL
+                    CHECK (override_archive_retention_days >= 1),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT
+            )"""
+        )
+        connection.execute(
+            """INSERT INTO audit_retention_config (
+                config_id, hot_retention_days, action_archive_retention_days,
+                override_archive_retention_days
+            ) VALUES (1, %s, %s, %s)
+            ON CONFLICT (config_id) DO NOTHING""",
+            (
+                hot_retention_days,
+                action_archive_retention_days,
+                override_archive_retention_days,
+            ),
+        )
+
+
+class PostgresAuditRetentionConfigRepository(AuditRetentionConfigRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _config(row: dict) -> AuditRetentionConfig:
+        return AuditRetentionConfig(
+            hot_retention_days=row["hot_retention_days"],
+            action_archive_retention_days=row["action_archive_retention_days"],
+            override_archive_retention_days=row["override_archive_retention_days"],
+            updated_at=row["updated_at"],
+            updated_by=row["updated_by"],
+        )
+
+    def get_config(self) -> AuditRetentionConfig:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT hot_retention_days, action_archive_retention_days,
+                          override_archive_retention_days, updated_at, updated_by
+                   FROM audit_retention_config WHERE config_id = 1"""
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Audit retention configuration has not been initialized.")
+        return self._config(row)
+
+    def update_config(
+        self,
+        hot_retention_days: int,
+        action_archive_retention_days: int,
+        override_archive_retention_days: int,
+        updated_by: str,
+    ) -> AuditRetentionConfig:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE audit_retention_config
+                   SET hot_retention_days = %s,
+                       action_archive_retention_days = %s,
+                       override_archive_retention_days = %s,
+                       updated_at = CURRENT_TIMESTAMP,
+                       updated_by = %s
+                   WHERE config_id = 1
+                   RETURNING hot_retention_days, action_archive_retention_days,
+                             override_archive_retention_days, updated_at, updated_by""",
+                (
+                    hot_retention_days,
+                    action_archive_retention_days,
+                    override_archive_retention_days,
+                    updated_by,
+                ),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Audit retention configuration has not been initialized.")
+        return self._config(row)
 
 
 class PostgresAuditRepository:
