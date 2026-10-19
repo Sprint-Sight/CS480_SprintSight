@@ -5,8 +5,8 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.core.storage import storage as default_storage
-from app.repositories.in_memory import assessment_repo, job_repo, metrics_repo, overrides_repo, rubric_weights_repo
-from app.repositories.interfaces import AssessmentRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository
+from app.repositories.in_memory import assessment_repo, instructor_model_selection_repo, job_repo, metrics_repo, overrides_repo, rubric_weights_repo
+from app.repositories.interfaces import AssessmentRepository, DocumentRepository, InstructorModelSelectionRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository
 from app.schemas.assessment import (
     AssessRequest,
     AssessmentReport,
@@ -228,6 +228,32 @@ def set_rubric_weights(
     _validate_rubric_weights(weights)
     repository = rubric_weights_repository or rubric_weights_repo
     return repository.set_weights(course_id, weights, updated_by)
+
+
+def get_effective_model_name(
+    requested_model: str | None,
+    user_id: str | None,
+    selection_repository: InstructorModelSelectionRepository | None = None,
+) -> str:
+    """Resolve the model to use for an assessment, with a guaranteed fallback.
+
+    Order of precedence:
+      1. an explicit model on the request,
+      2. the instructor's saved per-user selection,
+      3. the global default (DEFAULT_MODEL_NAME).
+
+    Always returns a non-empty string so an assessment is never blocked by a
+    missing model. The middleman still applies the default again as a final
+    safety net.
+    """
+    if requested_model:
+        return requested_model
+    if user_id:
+        repository = selection_repository or instructor_model_selection_repo
+        record = repository.get_selection(user_id)
+        if record and record.model_id:
+            return record.model_id
+    return get_settings().default_model_name
 
 
 def run_assessment_job(

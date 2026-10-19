@@ -6,12 +6,13 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_action_audit_repository, get_assessment_repository, get_audit_repository, get_document_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
+from app.dependencies.auth import get_action_audit_repository, get_assessment_repository, get_audit_repository, get_document_repository, get_instructor_model_selection_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
+from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, InstructorModelSelectionRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
 from app.schemas.assessment import AssessRequest, AssessmentReport, ManualAssessmentPatch, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
+    get_effective_model_name,
     get_effective_rubric_weights,
     get_latest_assessment,
     list_assessment_reports,
@@ -46,6 +47,7 @@ def assess_sprint(
     rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     document_repository: Annotated[DocumentRepository, Depends(get_document_repository)],
+    selection_repository: Annotated[InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
     if not project:
@@ -54,6 +56,12 @@ def assess_sprint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course.")
     if not project.local_repo_path:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project has no local repository configured.")
+
+    # Resolve the model before the job is created/persisted so the stored job
+    # and the saved report reflect what actually runs. Order: explicit request
+    # > the instructor's saved selection > global default. Never empty, so a
+    # missing selection can never fail the assessment.
+    payload.model_name = get_effective_model_name(payload.model_name, faculty_user.id, selection_repository)
 
     job = job_repo.create_job(payload)
     job_repo.append_event(job.job_id, "started", {"status": "started", "message": "Assessment has started."})

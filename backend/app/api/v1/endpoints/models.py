@@ -12,13 +12,23 @@ That is the value the frontend persists as the selected model and sends in the
 tags that are actually built from ai-engine/models/Modelfile.*.
 """
 
+from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict
 
 from app.core.config import get_settings
-from app.dependencies.auth import require_faculty
+from app.dependencies.auth import (
+    get_action_audit_repository,
+    get_instructor_model_selection_repository,
+    require_faculty,
+)
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    InstructorModelSelectionRepository,
+)
+from app.services.auditLogService.service import append_action_audit
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -77,4 +87,86 @@ def list_models(
     return ModelCatalogResponse(
         models=_MODEL_CATALOG,
         default_model_id=get_settings().default_model_name,
+    )
+
+
+_VALID_MODEL_IDS = {option.id for option in _MODEL_CATALOG}
+
+
+class ModelSelectionResponse(BaseModel):
+    # `model_id` collides with pydantic's protected "model_" namespace; allow it.
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: str          # The instructor's chosen model, or the default below.
+    is_custom: bool        # True once the instructor has set a selection.
+    default_model_id: str  # Fallback when the instructor has not chosen (DEFAULT_MODEL_NAME).
+    updated_at: datetime | None = None
+
+
+class ModelSelectionPayload(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: str
+
+
+@router.get("/selection", response_model=ModelSelectionResponse)
+def get_model_selection(
+    faculty_user: Annotated[object, Depends(require_faculty)],
+    selection_repository: Annotated[
+        InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)
+    ],
+) -> ModelSelectionResponse:
+    """The calling instructor's chosen model, or the configured default.
+
+    Per instructor (the user is taken from the auth token), so no scope
+    parameter. `is_custom` distinguishes a real choice from the default.
+    """
+    default_model_id = get_settings().default_model_name
+    record = selection_repository.get_selection(faculty_user.id)
+    if record:
+        return ModelSelectionResponse(
+            model_id=record.model_id,
+            is_custom=True,
+            default_model_id=default_model_id,
+            updated_at=record.updated_at,
+        )
+    return ModelSelectionResponse(
+        model_id=default_model_id,
+        is_custom=False,
+        default_model_id=default_model_id,
+    )
+
+
+@router.put("/selection", response_model=ModelSelectionResponse)
+def put_model_selection(
+    payload: ModelSelectionPayload,
+    faculty_user: Annotated[object, Depends(require_faculty)],
+    selection_repository: Annotated[
+        InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)
+    ],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+) -> ModelSelectionResponse:
+    """Set the calling instructor's default model. Rejects ids not in the
+    catalogue so a selection can never persist a value the AI engine cannot
+    serve."""
+    if payload.model_id not in _VALID_MODEL_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown model id '{payload.model_id}'. Choose one of: {sorted(_VALID_MODEL_IDS)}.",
+        )
+    record = selection_repository.set_selection(faculty_user.id, payload.model_id)
+    append_action_audit(
+        action_audits,
+        actor_id=faculty_user.id,
+        actor_role=faculty_user.role.value,
+        action="update_model_selection",
+        target_type="user",
+        target_id=faculty_user.id,
+        details={"model_id": record.model_id},
+    )
+    return ModelSelectionResponse(
+        model_id=record.model_id,
+        is_custom=True,
+        default_model_id=get_settings().default_model_name,
+        updated_at=record.updated_at,
     )

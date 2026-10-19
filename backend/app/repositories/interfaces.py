@@ -192,6 +192,22 @@ class RubricWeightsRepository(Protocol):
     def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord: ...
 
 
+@dataclass
+class InstructorModelSelectionRecord:
+    # The AI model an instructor has chosen as their default. Keyed per
+    # instructor (user_id), not per course. `model_id` is the value sent to
+    # the AI engine as model_name.
+    user_id: str
+    model_id: str
+    updated_at: datetime
+
+
+class InstructorModelSelectionRepository(Protocol):
+    def get_selection(self, user_id: str) -> InstructorModelSelectionRecord | None: ...
+
+    def set_selection(self, user_id: str, model_id: str) -> InstructorModelSelectionRecord: ...
+
+
 class OverrideRepository(Protocol):
     def save_override(self, record: OverrideResponse) -> None: ...
 
