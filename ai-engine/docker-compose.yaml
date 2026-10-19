@@ -51,6 +51,24 @@ services: # Seperate containers to run
             ollama pull gemma4:12b &&
             ollama create sprintsight-gemma -f /ai-engine/models/Modelfile.gemma
           fi
+          if ! ollama list | grep -q sprintsight-llama31; then
+            ollama pull llama3.1:8b &&
+            ollama create sprintsight-llama31 -f /ai-engine/models/Modelfile.llama31
+          fi
+          # The three 32B models below need a ~24 GB GPU and are large (~20 GB
+          # each). Comment them out if you are not running the comparison study.
+          if ! ollama list | grep -q sprintsight-qwen25-32b; then
+            ollama pull qwen2.5:32b &&
+            ollama create sprintsight-qwen25-32b -f /ai-engine/models/Modelfile.qwen25-32b
+          fi
+          if ! ollama list | grep -q sprintsight-r1-32b; then
+            ollama pull deepseek-r1:32b &&
+            ollama create sprintsight-r1-32b -f /ai-engine/models/Modelfile.deepseek-r1
+          fi
+          if ! ollama list | grep -q sprintsight-coder-32b; then
+            ollama pull qwen2.5-coder:32b &&
+            ollama create sprintsight-coder-32b -f /ai-engine/models/Modelfile.qwen25-coder
+          fi
       restart: "no"
 
     sprintsight_ai:

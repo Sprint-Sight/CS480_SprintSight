@@ -134,7 +134,7 @@ def process_jira_run(
         snapshot = normalize_jira_envelope(envelope, story_points_field=get_settings().jira_story_points_field or None)
     except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
         runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(timezone.utc), None, str(exc), None)
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Jira raw data could not be normalized.") from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Jira raw data could not be normalized.") from exc
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Jira raw data could not be retrieved from storage.") from exc
     updated = runs.update_processed_run(project_id, sprint_id, run_id, "completed", datetime.now(timezone.utc), snapshot.normalization_version, None, snapshot)
@@ -183,18 +183,18 @@ def get_repo_ingestion_data(
 
     if pagination and (limit is None or offset is None):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="limit and offset are required when pagination is enabled.",
         )
     if not pagination and (limit is not None or offset is not None):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="limit and offset must be omitted when pagination is disabled.",
         )
 
     if (start_date is None) != (end_date is None):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="start_date and end_date must be provided together.",
         )
     start_datetime = datetime.combine(start_date, time.min, tzinfo=timezone.utc) if start_date else None
@@ -205,7 +205,7 @@ def get_repo_ingestion_data(
     )
     if start_datetime and end_datetime and start_datetime >= end_datetime:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="start_date must be before or equal to end_date.",
         )
 
@@ -263,7 +263,6 @@ def sync_repository_ingestion(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     github_metrics = ingest_github_metrics(payload, repository_path, metrics_repository, projects, users)
     jira_metrics = enrich_jira_metrics(payload)
-    document_signals = collect_document_signals(payload)
     append_action_audit(
         action_audits,
         actor_id=faculty_user.id,

@@ -15,7 +15,6 @@ import {
   FolderOpen,
   GitCompare,
   LayoutDashboard,
-  Pencil,
   Search,
   Settings,
   User,
@@ -66,7 +65,6 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
-  { label: "Instructor Review", href: "/instructor-review", icon: Pencil },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -87,7 +85,6 @@ const instructorScopeRoutes = new Set([
   "/artifact-viewer",
   "/collaboration",
   "/assessment-report",
-  "/instructor-review",
   "/progress",
 ]);
 

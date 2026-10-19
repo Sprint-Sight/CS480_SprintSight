@@ -21,6 +21,8 @@ from app.repositories.interfaces import (
     NotificationRepository,
     ProjectRecord,
     ProjectRepository,
+    InstructorModelSelectionRecord,
+    InstructorModelSelectionRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
@@ -998,6 +1000,54 @@ class PostgresRubricWeightsRepository(RubricWeightsRepository):
             course_id=str(row["course_id"]),
             weights=row["weights"],
             updated_by=str(row["updated_by"]),
+            updated_at=row["updated_at"],
+        )
+
+
+def ensure_instructor_model_selection_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS instructor_model_selections (
+                user_id UUID PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                model_id VARCHAR(255) NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+
+
+class PostgresInstructorModelSelectionRepository(InstructorModelSelectionRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def get_selection(self, user_id: str) -> InstructorModelSelectionRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT user_id, model_id, updated_at
+                FROM instructor_model_selections WHERE user_id = %s""",
+                (UUID(user_id),),
+            ).fetchone()
+        if not row:
+            return None
+        return InstructorModelSelectionRecord(
+            user_id=str(row["user_id"]),
+            model_id=row["model_id"],
+            updated_at=row["updated_at"],
+        )
+
+    def set_selection(self, user_id: str, model_id: str) -> InstructorModelSelectionRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO instructor_model_selections (user_id, model_id)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id)
+                DO UPDATE SET model_id = EXCLUDED.model_id,
+                              updated_at = CURRENT_TIMESTAMP
+                RETURNING user_id, model_id, updated_at""",
+                (UUID(user_id), model_id),
+            ).fetchone()
+        return InstructorModelSelectionRecord(
+            user_id=str(row["user_id"]),
+            model_id=row["model_id"],
             updated_at=row["updated_at"],
         )
 

@@ -55,6 +55,15 @@ OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, b
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
 OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 
+# Single source of truth for decoding temperature across every LLM call in
+# the app (both grading dimensions and the judges import this). Default 0 =
+# greedy/deterministic decoding, which is what the grading task wants for
+# reproducibility. Override with the LLM_TEMPERATURE env var to run a
+# temperature ablation without touching code. The Modelfiles' own
+# `PARAMETER temperature` is only a fallback for standalone `ollama run`;
+# this request-level value overrides it whenever the app makes the call.
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0"))
+
 # json_schema constrains Ollama's decoding to the exact schema (no more
 # invented field names, no need for _normalize_citation in the long run) but
 # requires both `instructor` and the Ollama server to support OpenAI's
@@ -66,12 +75,26 @@ OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
 _INSTRUCTOR_MODES = {"json": instructor.Mode.JSON, "json_schema": instructor.Mode.JSON_SCHEMA}
 _STRUCTURED_OUTPUT_MODE = os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "json_schema").strip().lower()
 
-def _with_line_numbers(content: str) -> str:
-    return "\n".join(f"{i+1}: {line}" for i, line in enumerate(content.splitlines()))
-
 _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
 )
+
+# Per-caller token accumulator. When a caller wants the token totals from a
+# full evaluate_sprint() (6 dimension calls), it sets this to a fresh dict
+# BEFORE calling and reads the sums AFTER. The _capture_response hook below
+# adds each OpenAI-compatible `usage` block to the accumulator in place.
+# Deliberately NOT the same ContextVar as _audit_context: audit is set/reset
+# per-dimension inside evaluate_dimension, so it would reset between
+# dimension calls; this one lives at whatever scope the caller sets it in.
+_token_accumulator: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "token_accumulator", default=None
+)
+
+
+def new_token_accumulator() -> dict:
+    """Fresh accumulator dict the caller sets on the ContextVar before the
+    evaluate_sprint call it wants token totals for."""
+    return {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
 
 # Extensions treated as data/generated output rather than authored logic when
 # computing the "meaningful lines changed" fact below — e.g. exported test
@@ -479,18 +502,37 @@ async def _capture_response(response: httpx.Response) -> None:
         if context is not None:
             body = await response.aread()
             started_at = context.get("request_started_at", time.perf_counter())
+            raw_body = body.decode("utf-8", errors="replace")
             write_audit_record(
                 {
                     **context,
                     "request": json.loads(context.get("request", "{}")),
-                    "raw_response": body.decode("utf-8", errors="replace"),
+                    "raw_response": raw_body,
                     "http_status": response.status_code,
                     "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
                 }
             )
 
+            # Opt-in token capture: only accumulates when the caller has
+            # set _token_accumulator for this ContextVar scope. Ollama's
+            # OpenAI-compat endpoint returns `usage` on the chat completion;
+            # instructor's retries each produce one response, so we sum
+            # across all of them (retries legitimately burn tokens too).
+            accumulator = _token_accumulator.get()
+            if accumulator is not None:
+                try:
+                    usage = (json.loads(raw_body).get("usage") or {})
+                    accumulator["prompt"] += int(usage.get("prompt_tokens") or 0)
+                    accumulator["completion"] += int(usage.get("completion_tokens") or 0)
+                    accumulator["total"] += int(usage.get("total_tokens") or 0)
+                    accumulator["calls"] += 1
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    # Non-JSON body (streaming leftover, error page, etc.)
+                    # — best-effort capture; skip without failing the call.
+                    pass
 
-def create_llm_client():
+
+def create_llm_client(provider="ollama"):
     """
     Creates the instructor-wrapped Ollama client.
 
@@ -508,23 +550,42 @@ def create_llm_client():
             "response": [_capture_response], # Capture the response after receiving it from Ollama
         }
     )
-    raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
-        base_url=OLLAMA_BASE_URL,
-        api_key=OLLAMA_API_KEY,
-        timeout=OLLAMA_TIMEOUT,
-        http_client=transport, # Use the custom transport to capture requests and responses
-    )
+
+    if provider == "ollama":
+        raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+            base_url=OLLAMA_BASE_URL,
+            api_key=OLLAMA_API_KEY,
+            timeout=OLLAMA_TIMEOUT,
+            http_client=transport, # Use the custom transport to capture requests and responses
+        )
+    if provider == "openai":
+        raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+            base_url=OLLAMA_BASE_URL,
+            api_key=OLLAMA_API_KEY,
+            timeout=OLLAMA_TIMEOUT,
+            http_client=transport, # Use the custom transport to capture requests and responses
+        )
 
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client, # The raw OpenAI-compatible client pointing at Ollama
-        # Actually honor LLM_STRUCTURED_OUTPUT_MODE instead of always using
-        # JSON mode -- JSON mode only describes the schema in the prompt, so
-        # weak models can literally echo the schema back as their "answer"
-        # instead of an instance of it. JSON_SCHEMA mode constrains Ollama's
-        # decoding to the real schema and avoids that failure mode.
-        mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
+        mode=instructor.Mode.JSON, # ensures that the response is parsed as JSON, returned as a Pydantic model
     )
     return client
+
+# # Each child span of the parent span (Evaluate_Complete_Sprint)
+# @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
+# async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
+#     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
+#     # bundle_data = bundle.model_dump_json(indent=2) # json representation of the bundle for logging and debugging
+#         raw_client,
+#         # Actually honor LLM_STRUCTURED_OUTPUT_MODE instead of always using
+#         # JSON mode -- JSON mode only describes the schema in the prompt, so
+#         # weak models can literally echo the schema back as their "answer"
+#         # instead of an instance of it. JSON_SCHEMA mode constrains Ollama's
+#         # decoding to the real schema and avoids that failure mode.
+#         mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
+#     )
+#     return client
 
 # Each child span of the parent span (Evaluate_Complete_Sprint)
 @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
@@ -610,7 +671,7 @@ async def evaluate_dimension(
             model=model_name,
             response_model=ModelOutput,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            temperature=LLM_TEMPERATURE,
             max_retries=3,
             extra_body=_request_extra_body(num_ctx),
         )
@@ -712,7 +773,7 @@ async def generate_sprint_feedback(
             model=model_name,
             response_model=SprintFeedback,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            temperature=LLM_TEMPERATURE,
             max_retries=3,
             extra_body=_request_extra_body(num_ctx),
         )

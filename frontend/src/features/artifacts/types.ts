@@ -23,7 +23,7 @@ export type JiraTaskArtifact = {
 export type DocumentArtifact = {
   id: string;
   fileName: string;
-  fileType: "PDF" | "DOCX" | "MD";
+  fileType: "PDF" | "DOCX" | "PPTX" | "DOC" | "TXT" | "MD" | "Document";
   uploadedBy: string;
   uploadedAt: string;
   size: string;

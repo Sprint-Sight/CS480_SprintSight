@@ -98,15 +98,25 @@ def llm_response_time_good(trace: Trace) -> Feedback: # Check if LLM response ti
 
 # Can ask AI create expectation_eval_data_list for fixtures & eventually the cs203 repos
 
-@scorer # Grade based on presence of keywords in the LLM output, as specified in the expectations.
-def keyword_presence_scorer(outputs: str, expectations: dict[str, Any]) -> Feedback:
+@scorer  # Grade based on presence of keywords in the LLM output
+def keyword_presence_scorer(
+    outputs: str | dict[str, Any],
+    expectations: dict[str, Any],
+) -> Feedback:
     expected_keywords = expectations.get("expected_keywords")
-    print(expected_keywords)
+
     if expected_keywords is None:
-        return Feedback(value="yes", rationale="No keywords were expected in the response.")
+        return Feedback(
+            value="yes",
+            rationale="No keywords were expected in the response.",
+        )
 
     # Safely stringify dictionary outputs from SprintAssessment
-    output_text = json.dumps(outputs) if isinstance(outputs, dict) else str(outputs)
+    output_text = (
+        json.dumps(outputs)
+        if isinstance(outputs, dict)
+        else str(outputs)
+    )
 
     missing_keywords = []
     for keyword in expected_keywords:
@@ -114,13 +124,12 @@ def keyword_presence_scorer(outputs: str, expectations: dict[str, Any]) -> Feedb
             missing_keywords.append(keyword)
 
     if not missing_keywords:
-        return Feedback(value="yes", rationale="All expected keywords are present in the response.")
-    else:
-        return Feedback(value="no", rationale=f"Missing keywords: {', '.join(missing_keywords)}.")
+        return Feedback(
+            value="yes",
+            rationale="All expected keywords are present in the response.",
+        )
 
-# keyword_presence_eval_results = mlflow.genai.evaluate(
-#     data=expectations_eval_dataset_list,
-#     predict_fn=sample_app,  # sample_app is from the prerequisite section
-#     scorers=[keyword_presence_scorer],
-# )
-
+    return Feedback(
+        value="no",
+        rationale=f"Missing keywords: {', '.join(missing_keywords)}.",
+    )

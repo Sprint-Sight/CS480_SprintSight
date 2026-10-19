@@ -10,6 +10,7 @@ import { ProjectModal } from "@/features/projects/components/project-modal";
 import { RosterModal } from "@/features/projects/components/roster-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
+import { notifyProjectsUpdated } from "@/features/projects/projects-events";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 
@@ -308,6 +309,7 @@ export default function ProjectsPageContent() {
           body: JSON.stringify(updatePayload),
         });
         await loadProjects();
+        notifyProjectsUpdated();
         window.alert("Project updated.");
       } else {
         await apiRequest(`/courses/${selectedCourseId}/projects`, {
@@ -315,6 +317,7 @@ export default function ProjectsPageContent() {
           body: JSON.stringify(projectPayload),
         });
         await loadProjects();
+        notifyProjectsUpdated();
         window.alert("Project created.");
       }
       setIsProjectModalOpen(false);
@@ -472,6 +475,7 @@ export default function ProjectsPageContent() {
     try {
       await apiRequest(`/projects/${projectForMemberSelection.id}/members/${selectedProjectMemberId}`, { method: "POST" });
       await loadProjects();
+      notifyProjectsUpdated();
       setProjectForMemberSelection(null);
       setSelectedProjectMemberId("");
       window.alert("Student added to the project.");

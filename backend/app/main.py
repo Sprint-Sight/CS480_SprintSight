@@ -18,6 +18,7 @@ from app.repositories.postgres import (
     PostgresAuditRepository,
     PostgresAuditRetentionConfigRepository,
     PostgresDocumentRepository,
+    PostgresInstructorModelSelectionRepository,
     PostgresJiraIngestionRunRepository,
     PostgresManualTextRepository,
     PostgresMetricsRepository,
@@ -30,6 +31,7 @@ from app.repositories.postgres import (
     ensure_audit_retention_config_schema,
     ensure_audit_schema,
     ensure_notification_schema,
+    ensure_instructor_model_selection_schema,
     ensure_project_credential_schema,
     ensure_rubric_weights_schema,
 )
@@ -70,6 +72,7 @@ async def lifespan(app: FastAPI):
         settings.audit_override_archive_retention_days,
     )
     ensure_rubric_weights_schema(pool)
+    ensure_instructor_model_selection_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
@@ -82,6 +85,7 @@ async def lifespan(app: FastAPI):
     app.state.action_audit_repository = PostgresActionAuditRepository(pool)
     app.state.audit_retention_config_repository = PostgresAuditRetentionConfigRepository(pool)
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
+    app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(pool)
 
     user_repository = app.state.user_repository
     _bootstrap_user(user_repository, settings.bootstrap_admin_email, settings.bootstrap_admin_password, settings.bootstrap_admin_name, Role.ADMIN)

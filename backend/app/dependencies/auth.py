@@ -10,6 +10,7 @@ from app.repositories.in_memory import (
     InMemoryDocumentRepository,
     audit_action_repo,
     audit_repo,
+    instructor_model_selection_repo,
     jira_ingestion_repo,
     manual_text_repo,
     metrics_repo,
@@ -21,6 +22,7 @@ from app.repositories.interfaces import (
     AuditRepository,
     AuditRetentionConfigRepository,
     DocumentRepository,
+    InstructorModelSelectionRepository,
     JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
@@ -90,6 +92,10 @@ def get_audit_retention_config_repository(request: Request) -> AuditRetentionCon
 
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:
     return getattr(request.app.state, "rubric_weights_repository", rubric_weights_repo)
+
+
+def get_instructor_model_selection_repository(request: Request) -> InstructorModelSelectionRepository:
+    return getattr(request.app.state, "instructor_model_selection_repository", instructor_model_selection_repo)
 
 
 def get_current_user(

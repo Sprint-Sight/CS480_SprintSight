@@ -9,15 +9,20 @@ import {
   Upload,
   RefreshCw,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
 import { getProjectGitMetrics, getProjectIngestion, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
+import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
+import { useArtifactTab } from "@/features/artifacts/hooks/use-artifact-tab";
 import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
+import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
+import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -152,7 +157,7 @@ function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
   return {
     id: document.id,
     fileName: document.filename,
-    fileType: "PDF",
+    fileType: getDocumentFileType(document.filename),
     uploadedBy: document.uploaded_by,
     uploadedAt: new Date(document.created_at).toLocaleDateString(),
     size: formatBytes(document.byte_size),
@@ -160,7 +165,7 @@ function toDocumentArtifact(document: BackendDocument): DocumentArtifact {
 }
 
 export default function ArtifactViewerPageContent() {
-  const [activeTab, setActiveTab] = useState<ArtifactTab>("github");
+  const { activeTab, setActiveTab } = useArtifactTab();
   
   // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
@@ -174,6 +179,13 @@ export default function ArtifactViewerPageContent() {
   const [documentError, setDocumentError] = useState("");
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const documentDeletion = useDocumentDeletion((projectId, documentId) => {
+    setLocalDocuments((previous) => {
+      const updated = previous.filter((document) => document.id !== documentId);
+      if (projectId === selectedProjectId) saveDocumentCount(projectId, updated.length);
+      return updated;
+    });
+  });
   const [sprintId, setSprintId] = useState("");
   const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
@@ -218,19 +230,10 @@ export default function ArtifactViewerPageContent() {
         : !selectedBackendProject
           ? "Select a real backend project before starting ingestion."
           : "";
+  const displayedTab = role === "student" ? "documents" : activeTab;
 
   useEffect(() => {
     const persisted = getProjectIngestion(selectedProjectId, selectedSprintId);
-    const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
-    setGitRuns(persistedGitRuns);
-    const selectedGitRun = persistedGitRuns.find((run) => run.sprint_id === selectedSprintId) || null;
-    if (selectedGitRun) {
-      setGitMetrics(selectedGitRun);
-      setGitSprintId(buildNextSprintId(persistedGitRuns.map((run) => run.sprint_id)));
-    } else {
-      setGitMetrics(null);
-      setGitSprintId(buildNextSprintId([]));
-    }
     if (persisted.jira) {
       setJiraSnapshot(persisted.jira);
     } else {
@@ -238,9 +241,58 @@ export default function ArtifactViewerPageContent() {
     }
   }, [selectedProjectId, selectedSprintId]);
 
+  const selectedCourseId = projectOptions.find((project) => project.id === selectedProjectId)?.courseId ?? "";
+
+  useEffect(() => {
+    let cancelled = false;
+    const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
+    const applyRuns = (runs: RepoIngestionData[]) => {
+      setGitRuns(runs);
+      const selectedGitRun = runs.find((run) => run.sprint_id === selectedSprintId) || null;
+      setGitMetrics(selectedGitRun);
+      setGitSprintId(selectedGitRun ? selectedGitRun.sprint_id : buildNextSprintId(runs.map((run) => run.sprint_id)));
+    };
+    applyRuns(persistedGitRuns);
+
+    if (role !== "instructor" || !isUuid(selectedProjectId) || !selectedCourseId) return;
+    setIsLoadingGit(true);
+    setGitError("");
+    fetchProjectGitRuns<RepoIngestionData>(selectedProjectId, selectedCourseId, persistedGitRuns.map((run) => run.sprint_id))
+      .then((runs) => {
+        if (cancelled) return;
+        runs.forEach(saveGitMetrics);
+        applyRuns(runs);
+      })
+      .catch((error) => {
+        if (!cancelled) setGitError(error instanceof Error ? error.message : "Failed to load Git ingestion runs.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingGit(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, selectedProjectId, selectedCourseId, selectedSprintId]);
+
+  const gitSprintOptions = useMemo(() => {
+    const existing = gitRuns.map((run) => run.sprint_id);
+    const next = buildNextSprintId(existing);
+    return [...existing, ...(existing.includes(next) ? [] : [next])];
+  }, [gitRuns]);
+
+  function selectGitSprint(sprint: string) {
+    setGitSprintId(sprint);
+    setGitMetrics(gitRuns.find((run) => run.sprint_id === sprint) ?? null);
+    setGitError("");
+  }
+
   useEffect(() => {
     async function loadDocuments() {
       setDocumentError("");
+      if (!role || (role === "student" && isLoadingProjects)) {
+        setLocalDocuments([]);
+        return;
+      }
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
         setLocalDocuments([]);
         return;
@@ -260,9 +312,14 @@ export default function ArtifactViewerPageContent() {
     }
 
     loadDocuments();
-  }, [selectedProjectId]);
+  }, [role, selectedProjectId, isLoadingProjects]);
 
   useEffect(() => {
+    if (role !== "instructor") {
+      setJiraRuns([]);
+      setJiraSnapshot(null);
+      return;
+    }
     if (!isUuid(selectedProjectId)) {
       setJiraRuns([]);
       setJiraSnapshot(null);
@@ -290,7 +347,7 @@ export default function ArtifactViewerPageContent() {
     }
 
     loadProjectRuns();
-  }, [selectedProjectId, selectedSprintId]);
+  }, [role, selectedProjectId, selectedSprintId]);
 
   async function loadGitMetrics() {
     const sprint = gitSprintId.trim();
@@ -408,7 +465,7 @@ export default function ArtifactViewerPageContent() {
       saveGitMetrics(metrics);
       const updatedRuns = [...gitRuns.filter((run) => run.sprint_id !== sprint), metrics];
       setGitRuns(updatedRuns);
-      setGitSprintId(buildNextSprintId(updatedRuns.map((run) => run.sprint_id)));
+      setGitSprintId(sprint);
     } catch (error) {
       setGitError(error instanceof Error ? error.message : "Git ingestion failed.");
     } finally {
@@ -421,12 +478,7 @@ export default function ArtifactViewerPageContent() {
   }
 
   // Filter tabs dynamically based on user role
-  const visibleTabs = useMemo(() => {
-    if (role === "student") {
-      return tabs.filter((tab) => tab.id !== "peer-evaluation");
-    }
-    return tabs;
-  }, [role]);
+  const visibleTabs = tabs;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
@@ -436,20 +488,7 @@ export default function ArtifactViewerPageContent() {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)) {
         throw new Error("Select a backend project before uploading documents.");
       }
-      if (files.some((file) => !file.name.toLowerCase().endsWith(".pdf") || file.type !== "application/pdf")) {
-        throw new Error("Only PDF files with application/pdf MIME type are allowed.");
-      }
-      if (files.some((file) => file.size > 25 * 1024 * 1024)) {
-        throw new Error("Each PDF must be 25 MB or smaller.");
-      }
-      if (files.reduce((total, file) => total + file.size, 0) > 100 * 1024 * 1024) {
-        throw new Error("The total upload size must be 100 MB or smaller.");
-      }
-
-      for (const file of files) {
-        const header = new TextDecoder().decode(await file.slice(0, 5).arrayBuffer());
-        if (header !== "%PDF-") throw new Error(`${file.name} is not a valid PDF file.`);
-      }
+      await validateDocumentFiles(files);
 
       const formData = new FormData();
       files.forEach((file) => formData.append("files", file));
@@ -458,7 +497,11 @@ export default function ArtifactViewerPageContent() {
         method: "POST",
         body: formData,
       });
-      setLocalDocuments((previous) => [...response.documents.map(toDocumentArtifact), ...previous]);
+      setLocalDocuments((previous) => {
+        const updated = [...response.documents.map(toDocumentArtifact), ...previous];
+        saveDocumentCount(selectedProjectId, updated.length);
+        return updated;
+      });
     } catch (error) {
       setDocumentError(error instanceof Error ? error.message : "Failed to upload documents.");
     } finally {
@@ -491,8 +534,14 @@ export default function ArtifactViewerPageContent() {
     <div className="space-y-5 p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Artifact Viewer</h1>
-          <p className="mt-1 text-base text-slate-500">{projectOptions.find((option) => option.id === selectedProjectId)?.label} - Raw evidence used for AI assessment</p>
+          <h1 className="text-4xl font-bold tracking-tight text-blue-950">
+            {role === "student" ? "My Project Documents" : "Artifact Viewer"}
+          </h1>
+          <p className="mt-1 text-base text-slate-500">
+            {role === "student"
+              ? "Upload and review documents for your project."
+              : `${projectOptions.find((option) => option.id === selectedProjectId)?.label || "Select a project"} - Raw evidence used for AI assessment`}
+          </p>
         </div>
 
         <div className="w-full max-w-sm">
@@ -500,13 +549,18 @@ export default function ArtifactViewerPageContent() {
           <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
             {isLoadingProjects ? "Loading selected project..." : projectOptions.find((option) => option.id === selectedProjectId)?.label || "No project selected"}
           </div>
+          {role === "student" && projectLoadError && (
+            <p className="mt-1 text-sm text-rose-600">{projectLoadError}</p>
+          )}
         </div>
       </div>
 
-      <ArtifactTabs tabs={tabs} visibleTabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
+      {role === "instructor" && (
+        <ArtifactTabs tabs={tabs} visibleTabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
+      )}
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        {activeTab === "github" && (
+        {role === "instructor" && displayedTab === "github" && (
           <>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -528,9 +582,19 @@ export default function ArtifactViewerPageContent() {
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[220px] flex-1 space-y-1">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</span>
-                <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700">
-                  {gitSprintId || "sprint-1"}
-                </div>
+                <select
+                  aria-label="Git sprint"
+                  value={gitSprintId}
+                  onChange={(event) => selectGitSprint(event.target.value)}
+                  disabled={isSyncingGit || isLoadingGit}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700"
+                >
+                  {gitSprintOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {gitRuns.some((run) => run.sprint_id === option) ? option : `${option} (new)`}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -582,7 +646,7 @@ export default function ArtifactViewerPageContent() {
           </>
         )}
 
-        {activeTab === "jira" && (
+        {role === "instructor" && displayedTab === "jira" && (
           <>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -632,17 +696,19 @@ export default function ArtifactViewerPageContent() {
           </>
         )}
 
-        {activeTab === "documents" && (
+        {displayedTab === "documents" && (role === "student" || role === "instructor") && (
           <>
             <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-semibold text-blue-950">Uploaded Documents</h2>
+              <h2 className="text-3xl font-semibold text-blue-950">
+                {role === "student" ? "Your Uploaded Documents" : "Uploaded Documents"} ({localDocuments.length})
+              </h2>
               
               <input 
                 type="file" 
                 ref={fileInputRef} 
                 onChange={handleFileUpload}
                 className="hidden" 
-                accept="application/pdf,.pdf"
+                accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 multiple
               />
               <button
@@ -652,32 +718,49 @@ export default function ArtifactViewerPageContent() {
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 <Upload className="h-4 w-4" />
-                {isUploading ? "Uploading..." : "Upload PDF"}
+                {isUploading ? "Uploading..." : "Upload Document"}
               </button>
             </div>
+            <p className="text-sm text-slate-500">Accepted formats: PDF, DOCX, and PPTX.</p>
 
             {documentError && <p className="text-sm text-rose-600">{documentError}</p>}
             {isLoadingDocuments && <p className="text-sm text-slate-500">Loading documents...</p>}
 
-            {localDocuments.map((doc) => (
-              <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{doc.fileName}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {doc.uploadedBy} - {doc.uploadedAt} - {doc.size}
-                    </p>
+            {localDocuments.map((doc) => {
+              const isDeleting = documentDeletion.deletingDocumentIds.has(doc.id);
+              return (
+                <article key={doc.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{doc.fileName}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {doc.uploadedBy} - {doc.uploadedAt} - {doc.size}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadDocument(doc.id, doc.fileName)}
+                      className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                    >
+                      Download {doc.fileType}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void documentDeletion.deleteDocument(selectedProjectId, doc.id, doc.fileName)}
+                      disabled={isDeleting}
+                      aria-label={`Delete ${doc.fileName}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadDocument(doc.id, doc.fileName)}
-                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                  >
-                    Download {doc.fileType}
-                  </button>
-                </div>
-              </article>
-            ))}
+                  {documentDeletion.deleteErrors[doc.id] && (
+                    <p className="mt-2 text-sm text-rose-700" role="alert">{documentDeletion.deleteErrors[doc.id]}</p>
+                  )}
+                </article>
+              );
+            })}
             
             {localDocuments.length === 0 && (
               <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
@@ -687,14 +770,14 @@ export default function ArtifactViewerPageContent() {
           </>
         )}
 
-        {activeTab === "communication" && (
+        {role === "instructor" && displayedTab === "communication" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Communication Artifacts</h2>
             <p className="text-sm text-slate-500">No communication artifacts are available for the selected project.</p>
           </>
         )}
 
-        {activeTab === "peer-evaluation" && role !== "student" && (
+        {role === "instructor" && displayedTab === "peer-evaluation" && (
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Peer Evaluation Inputs</h2>
             <p className="text-sm text-slate-500">No peer evaluation data is available for the selected project and sprint.</p>
@@ -702,7 +785,7 @@ export default function ArtifactViewerPageContent() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      {role === "instructor" && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-900">Structured raw inputs for AI evaluation</h2>
         <p className="mt-1 text-sm text-slate-500">Normalized ingestion metadata used by scoring and feedback pipelines.</p>
 
@@ -735,7 +818,7 @@ export default function ArtifactViewerPageContent() {
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
     </div>
   );
 }
