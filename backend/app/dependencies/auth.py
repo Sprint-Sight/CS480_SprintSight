@@ -5,8 +5,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.in_memory import InMemoryDocumentRepository, audit_action_repo, audit_repo, jira_ingestion_repo, manual_text_repo, metrics_repo, rubric_weights_repo
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository, UserRepository
+from app.repositories.in_memory import InMemoryDocumentRepository, audit_action_repo, audit_repo, instructor_model_selection_repo, jira_ingestion_repo, manual_text_repo, metrics_repo, rubric_weights_repo
+from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, InstructorModelSelectionRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository, UserRepository
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
 
@@ -51,6 +51,10 @@ def get_action_audit_repository(request: Request) -> ActionAuditRepository:
 
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:
     return getattr(request.app.state, "rubric_weights_repository", rubric_weights_repo)
+
+
+def get_instructor_model_selection_repository(request: Request) -> InstructorModelSelectionRepository:
+    return getattr(request.app.state, "instructor_model_selection_repository", instructor_model_selection_repo)
 
 
 def get_current_user(

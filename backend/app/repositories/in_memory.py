@@ -13,6 +13,8 @@ from app.repositories.interfaces import (
     ManualTextRepository,
     MetricsRepository,
     OverrideRepository,
+    InstructorModelSelectionRecord,
+    InstructorModelSelectionRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
@@ -262,6 +264,26 @@ class InMemoryRubricWeightsRepository(RubricWeightsRepository):
 
 
 rubric_weights_repo = InMemoryRubricWeightsRepository()
+
+
+class InMemoryInstructorModelSelectionRepository(InstructorModelSelectionRepository):
+    def __init__(self) -> None:
+        self._selections: dict[str, InstructorModelSelectionRecord] = {}
+
+    def get_selection(self, user_id: str) -> InstructorModelSelectionRecord | None:
+        return self._selections.get(user_id)
+
+    def set_selection(self, user_id: str, model_id: str) -> InstructorModelSelectionRecord:
+        record = InstructorModelSelectionRecord(
+            user_id=user_id,
+            model_id=model_id,
+            updated_at=datetime.now(timezone.utc),
+        )
+        self._selections[user_id] = record
+        return record
+
+
+instructor_model_selection_repo = InMemoryInstructorModelSelectionRepository()
 
 
 class InMemoryDocumentRepository(DocumentRepository):
