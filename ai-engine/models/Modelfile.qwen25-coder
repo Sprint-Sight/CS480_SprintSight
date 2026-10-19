@@ -5,7 +5,7 @@ FROM qwen2.5-coder:32b
 # (~20 GB) only leaves ~4 GB for the KV cache on a 24 GB GPU, so this context
 # needs KV-cache quantization: set OLLAMA_KV_CACHE_TYPE=q8_0 (tight) or q4_0
 # (safe). Verify with `ollama ps` (see ai-engine/hpc/README.md).
-PARAMETER temperature 0.1
+PARAMETER temperature 0
 PARAMETER num_ctx 16384
 
 SYSTEM """

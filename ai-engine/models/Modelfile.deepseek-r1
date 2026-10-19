@@ -6,7 +6,7 @@ FROM deepseek-r1:32b
 # assumption. num_ctx 16384 covers the measured real prompts (~11.5k tokens)
 # plus reasoning output. A 32B model at Q4_K_M (~20 GB) needs KV-cache
 # quantization for this context on a 24 GB GPU: OLLAMA_KV_CACHE_TYPE=q8_0/q4_0.
-PARAMETER temperature 0.1
+PARAMETER temperature 0
 PARAMETER num_ctx 16384
 
 SYSTEM """

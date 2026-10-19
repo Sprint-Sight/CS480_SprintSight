@@ -25,28 +25,32 @@ sprint feedback, and returns a SprintAssessment.
 #start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
 log = logging.getLogger("sprintsight.evaluator")
 
-async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int | None) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
-    dimension_start = time.perf_counter()
-    log.info("Starting rubric dimension '%s'", dim)
-    try:
-        result = await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPTS[dim], num_ctx=run_num_ctx)
-    except Exception:
-        log.exception(
-            "Rubric dimension '%s' failed after %.2f seconds.",
+async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int | None, semaphore: asyncio.Semaphore) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
+    # Acquire the semaphore HERE, around the actual LLM call, so it genuinely
+    # caps how many dimensions hit Ollama at once. (Wrapping task *creation*
+    # instead does nothing — creating a coroutine runs no code.)
+    async with semaphore:
+        dimension_start = time.perf_counter()
+        log.info("Starting rubric dimension '%s'", dim)
+        try:
+            result = await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPTS[dim], num_ctx=run_num_ctx)
+        except Exception:
+            log.exception(
+                "Rubric dimension '%s' failed after %.2f seconds.",
+                dim,
+                time.perf_counter() - dimension_start,
+            )
+            raise
+        log.info( # Log the result of the dimension evaluation
+            "Completed rubric dimension '%s' with score %s in %.2f seconds. "
+            "Justification: %s | Evidence: %s",
             dim,
+            result.score,
             time.perf_counter() - dimension_start,
+            result.justification,
+            result.evidence_citations,
         )
-        raise
-    log.info( # Log the result of the dimension evaluation
-        "Completed rubric dimension '%s' with score %s in %.2f seconds. "
-        "Justification: %s | Evidence: %s",
-        dim,
-        result.score,
-        time.perf_counter() - dimension_start,
-        result.justification,
-        result.evidence_citations,
-    )
-    return result
+        return result
 
 # Evaluates each rubric dimension, then generates project-level sprint feedback.
 async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str) -> SprintAssessment:
@@ -71,18 +75,17 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
 
             # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
             # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
-            semaphore = asyncio.Semaphore(5)
+            semaphore = asyncio.Semaphore(1)
 
-            async with semaphore:
-                # 2. Create a list of asynchronous tasks (one for each dimension)
-                tasks = [_bounded_evaluate(dim, bundle, model_name, run_num_ctx) for dim in DIMENSIONS] # For running with a semaphore to limit concurrency
-                # tasks = [evaluate_dimension(bundle, dim, model_name) for dim in DIMENSIONS] # For concurrency
-            
-            # 3. Execute all tasks concurrently (If one takes 5 seconds, all 5 take 5 seconds total, not 25 seconds
-            # It will only run concurrently if you remove the semaphore portion above. Else it will run 1 by 1 instead
-            # rubric_scores: list[RubricDimensionScore] = []
-            # failed_dimensions: list[str] = []
-            
+            # 2. Create one task per dimension. Each task acquires the semaphore
+            #    itself (inside _bounded_evaluate), so at most `semaphore` value
+            #    dimensions call the LLM concurrently — the rest wait their turn.
+            tasks = [_bounded_evaluate(dim, bundle, model_name, run_num_ctx, semaphore) for dim in DIMENSIONS]
+
+            # 3. Schedule all tasks at once; the semaphore (not gather) is what
+            #    limits real concurrency. With a cap of N, wall-clock is roughly
+            #    ceil(6 / N) sequential batches of dimension calls.
+
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
