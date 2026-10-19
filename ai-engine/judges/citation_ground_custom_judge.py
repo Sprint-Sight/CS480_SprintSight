@@ -13,7 +13,12 @@ from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
-from services.llm_client import LLM_TEMPERATURE, audit_scope, create_llm_client, request_extra_body
+from services.llm_client import (
+    LLM_TEMPERATURE,
+    audit_scope,
+    create_llm_client,
+    request_extra_body,
+)
 
 GROUNDING_PROMPT_VERSION = "grounding-v1"
 
