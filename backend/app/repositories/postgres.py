@@ -17,6 +17,8 @@ from app.repositories.interfaces import (
     JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
+    NotificationRecord,
+    NotificationRepository,
     ProjectRecord,
     ProjectRepository,
     RubricWeightsRecord,
@@ -101,6 +103,99 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
                 FOREIGN KEY (project_id, course_id) REFERENCES projects(project_id, course_id) ON DELETE CASCADE
             )"""
         )
+
+
+def ensure_notification_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS user_notifications (
+                notification_id UUID PRIMARY KEY,
+                recipient_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                event_type VARCHAR(80) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                read_at TIMESTAMPTZ
+            )"""
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS idx_user_notifications_recipient_created
+               ON user_notifications(recipient_id, created_at DESC)"""
+        )
+
+
+class PostgresNotificationRepository(NotificationRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _notification(row: dict) -> NotificationRecord:
+        return NotificationRecord(
+            id=str(row["notification_id"]),
+            recipient_id=str(row["recipient_id"]),
+            event_type=row["event_type"],
+            title=row["title"],
+            message=row["message"],
+            created_at=row["created_at"],
+            read_at=row["read_at"],
+        )
+
+    def create_notification(self, notification: NotificationRecord) -> NotificationRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO user_notifications
+                   (notification_id, recipient_id, event_type, title, message, created_at, read_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   RETURNING notification_id, recipient_id, event_type, title, message,
+                             created_at, read_at""",
+                (
+                    UUID(notification.id),
+                    UUID(notification.recipient_id),
+                    notification.event_type,
+                    notification.title,
+                    notification.message,
+                    notification.created_at,
+                    notification.read_at,
+                ),
+            ).fetchone()
+        return self._notification(row)
+
+    def list_notifications(self, recipient_id: str, limit: int = 50) -> list[NotificationRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT notification_id, recipient_id, event_type, title, message,
+                          created_at, read_at
+                   FROM user_notifications
+                   WHERE recipient_id = %s
+                   ORDER BY created_at DESC, notification_id DESC
+                   LIMIT %s""",
+                (UUID(recipient_id), limit),
+            ).fetchall()
+        return [self._notification(row) for row in rows]
+
+    def count_unread_notifications(self, recipient_id: str) -> int:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT COUNT(*) AS unread_count
+                   FROM user_notifications
+                   WHERE recipient_id = %s AND read_at IS NULL""",
+                (UUID(recipient_id),),
+            ).fetchone()
+        return int(row["unread_count"])
+
+    def mark_notification_read(
+        self, notification_id: str, recipient_id: str
+    ) -> NotificationRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE user_notifications
+                   SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+                   WHERE notification_id = %s AND recipient_id = %s
+                   RETURNING notification_id, recipient_id, event_type, title, message,
+                             created_at, read_at""",
+                (UUID(notification_id), UUID(recipient_id)),
+            ).fetchone()
+        return self._notification(row) if row else None
 
 
 def ensure_audit_schema(pool: ConnectionPool) -> None:
@@ -1116,7 +1211,7 @@ class PostgresAssessmentRepository(AssessmentRepository):
 
     @staticmethod
     def _report(row: dict) -> AssessmentReport:
-        from app.schemas.assessment import TeamScore, StudentScore, RubricDimensionScoreDetail
+        from app.schemas.assessment import RubricDimensionScoreDetail, StudentScore, TeamScore
         rubric_scores = {}
         if row.get("rubric_scores"):
             for key, value in row["rubric_scores"].items():

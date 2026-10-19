@@ -4,9 +4,10 @@ from uuid import uuid4
 from app.core.security import hash_password
 from app.repositories.interfaces import (
     AssessmentRepository,
+    AuditRepository,
     AuditRetentionConfig,
     AuditRetentionConfigRepository,
-    AuditRepository,
+    CourseRecord,
     DocumentRecord,
     DocumentRepository,
     IngestionMetricBundle,
@@ -14,21 +15,22 @@ from app.repositories.interfaces import (
     JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
+    NotificationRecord,
+    NotificationRepository,
     OverrideRepository,
+    ProjectRecord,
+    ProjectRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
     UserRepository,
-    CourseRecord,
-    ProjectRecord,
-    ProjectRepository,
 )
 from app.schemas.assessment import (
     ActionAuditRecord,
-    AssessRequest,
     AssessmentJobEvent,
     AssessmentJobRecord,
     AssessmentReport,
+    AssessRequest,
     AuditRecord,
     JiraCleanedSnapshot,
     ManualTextPayload,
@@ -289,6 +291,39 @@ class InMemoryDocumentRepository(DocumentRepository):
         if document:
             del self._documents[document_id]
         return document
+
+
+class InMemoryNotificationRepository(NotificationRepository):
+    def __init__(self) -> None:
+        self._notifications: dict[str, NotificationRecord] = {}
+
+    def create_notification(self, notification: NotificationRecord) -> NotificationRecord:
+        self._notifications[notification.id] = notification
+        return notification
+
+    def list_notifications(self, recipient_id: str, limit: int = 50) -> list[NotificationRecord]:
+        matching = [
+            notification
+            for notification in self._notifications.values()
+            if notification.recipient_id == recipient_id
+        ]
+        return sorted(matching, key=lambda item: (item.created_at, item.id), reverse=True)[:limit]
+
+    def count_unread_notifications(self, recipient_id: str) -> int:
+        return sum(
+            notification.recipient_id == recipient_id and notification.read_at is None
+            for notification in self._notifications.values()
+        )
+
+    def mark_notification_read(
+        self, notification_id: str, recipient_id: str
+    ) -> NotificationRecord | None:
+        notification = self._notifications.get(notification_id)
+        if not notification or notification.recipient_id != recipient_id:
+            return None
+        if notification.read_at is None:
+            notification.read_at = now_utc()
+        return notification
 
 
 class InMemoryAssessmentRepository(AssessmentRepository):

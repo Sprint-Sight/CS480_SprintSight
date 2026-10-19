@@ -55,6 +55,19 @@ with only an email address.
 
 After the assessment report has been saved, each active instructor assigned to
 its course receives a completion email with the project, sprint, report ID, and
-team score. A mail-delivery failure is logged and recorded as a
+team score. Each active student included in the report also receives an email
+with their own score. When an instructor changes an individual score or
+manually updates a report, the affected student(s) receive an update email.
+A mail-delivery failure is logged and recorded as a
 `notification_failed` assessment-job event; it does not change the completed
 report's status.
+
+## Local in-app notifications
+
+The backend stores in-app notifications in PostgreSQL and serves them from the
+local API at `http://localhost:8000/api/v1/notifications`. The dashboard bell
+refreshes the signed-in user's feed every 30 seconds. Students are notified
+when enrolled in a course/class or added to a project; assigned instructors
+are notified when a student uploads one or more project documents. Feed items
+are private to their recipient and can be marked read with
+`PATCH /api/v1/notifications/{notification_id}/read`.

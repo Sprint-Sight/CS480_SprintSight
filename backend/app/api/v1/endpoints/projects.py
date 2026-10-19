@@ -1,26 +1,33 @@
-from typing import Annotated
 from datetime import datetime, timezone
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.errors import UniqueViolation
 
+from app.core.credential_crypto import encrypt_secret
 from app.dependencies.auth import (
     get_action_audit_repository,
     get_assessment_repository,
+    get_current_user,
     get_jira_ingestion_repository,
+    get_notification_repository,
     get_project_repository,
     get_user_repository,
     require_admin,
     require_faculty,
     require_instructor,
-    get_current_user,
 )
-from app.core.credential_crypto import encrypt_secret
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    AssessmentRepository,
+    NotificationRepository,
+    ProjectRecord,
+    ProjectRepository,
+    UserRecord,
+    UserRepository,
+)
 from app.schemas.assessment import AssessmentReport
-from app.services.auditLogService.service import append_action_audit
-from app.services.jiraService.service import validate_jira_credentials
 from app.schemas.auth import Role, UserResponse
 from app.schemas.projects import (
     CourseCreate,
@@ -32,7 +39,10 @@ from app.schemas.projects import (
     ProjectResponse,
     ProjectUpdate,
 )
+from app.services.auditLogService.service import append_action_audit
 from app.services.authService.service import create_user, user_response
+from app.services.jiraService.service import validate_jira_credentials
+from app.services.notificationService.in_app import create_in_app_notification
 
 router = APIRouter(tags=["courses", "projects"])
 
@@ -113,6 +123,35 @@ def _validate_student_project_assignment(repository: ProjectRepository, course_i
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Student is already assigned to group '{project.team_name}' in this course.",
             )
+
+
+def _notify_course_enrollment(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    course,
+) -> None:
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "course_enrollment",
+        "Added to a course",
+        f"You have been added to {course.code} {course.name}, section {course.section} "
+        f"({course.term} {course.year}).",
+    )
+
+
+def _notify_project_membership(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    project: ProjectRecord,
+) -> None:
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "project_membership",
+        "Added to a project",
+        f"You have been added to {project.team_name} ({project.project_name}).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -307,8 +346,9 @@ def enroll_course_student(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> UserResponse:
-    _course_or_404(repository, course_id)
+    course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can enroll students.")
     user = users.get_by_id(user_id)
@@ -337,6 +377,7 @@ def enroll_course_student(
         target_id=user_id,
         details={"course_id": course_id},
     )
+    _notify_course_enrollment(notifications, user, course)
     return user_response(user)
 
 
@@ -403,8 +444,9 @@ def create_course_student(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> UserResponse:
-    _course_or_404(repository, course_id)
+    course = _course_or_404(repository, course_id)
     if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or TA is not assigned to this course.")
 
@@ -444,6 +486,7 @@ def create_course_student(
         target_id=student.id,
         details={"course_id": course_id},
     )
+    _notify_course_enrollment(notifications, student, course)
     return user_response(student)
 
 
@@ -459,6 +502,7 @@ def create_project(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
@@ -513,6 +557,10 @@ def create_project(
         target_id=project.id,
         details={"team_name": project.team_name, "course_id": course_id},
     )
+    for member_id in members:
+        member = users.get_by_id(member_id)
+        if member:
+            _notify_project_membership(notifications, member, project)
     return _project_response(project, repository, users)
 
 
@@ -779,6 +827,7 @@ def add_member(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     member = users.get_by_id(user_id)
@@ -810,6 +859,7 @@ def add_member(
         target_id=user_id,
         details={"project_id": project_id, "course_id": project.course_id},
     )
+    _notify_project_membership(notifications, member, project)
     return _project_response(project, repository, users)
 
 

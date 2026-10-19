@@ -18,12 +18,13 @@ from app.repositories.in_memory import (
 from app.repositories.interfaces import (
     ActionAuditRepository,
     AssessmentRepository,
-    AuditRetentionConfigRepository,
     AuditRepository,
+    AuditRetentionConfigRepository,
     DocumentRepository,
     JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
+    NotificationRepository,
     ProjectRepository,
     RubricWeightsRepository,
     UserRepository,
@@ -45,6 +46,10 @@ def get_notification_service(request: Request) -> SMTPNotificationService:
         service = SMTPNotificationService(get_settings())
         request.app.state.notification_service = service
     return service
+
+
+def get_notification_repository(request: Request) -> NotificationRepository:
+    return request.app.state.notification_repository
 
 
 def get_project_repository(request: Request) -> ProjectRepository:

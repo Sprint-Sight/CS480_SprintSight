@@ -21,13 +21,15 @@ from app.repositories.postgres import (
     PostgresJiraIngestionRunRepository,
     PostgresManualTextRepository,
     PostgresMetricsRepository,
+    PostgresNotificationRepository,
     PostgresProjectRepository,
     PostgresRubricWeightsRepository,
     PostgresUserRepository,
     create_user_pool,
     ensure_assessment_schema,
-    ensure_audit_schema,
     ensure_audit_retention_config_schema,
+    ensure_audit_schema,
+    ensure_notification_schema,
     ensure_project_credential_schema,
     ensure_rubric_weights_schema,
 )
@@ -58,6 +60,7 @@ async def lifespan(app: FastAPI):
     pool = create_user_pool(settings.database_connection_string())
     pool.open(wait=True)
     ensure_project_credential_schema(pool)
+    ensure_notification_schema(pool)
     ensure_assessment_schema(pool)
     ensure_audit_schema(pool)
     ensure_audit_retention_config_schema(
@@ -71,6 +74,7 @@ async def lifespan(app: FastAPI):
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
     app.state.document_repository = PostgresDocumentRepository(pool)
+    app.state.notification_repository = PostgresNotificationRepository(pool)
     app.state.jira_ingestion_repository = PostgresJiraIngestionRunRepository(pool)
     app.state.manual_text_repository = PostgresManualTextRepository(pool)
     app.state.assessment_repository = PostgresAssessmentRepository(pool)

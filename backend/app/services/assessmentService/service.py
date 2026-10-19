@@ -362,6 +362,14 @@ def run_assessment_job(
                 notification_service,
                 job_id,
             )
+            _notify_students_report_completed(
+                report,
+                project,
+                user_repository,
+                notification_service,
+                job_id,
+                project_repository,
+            )
     except Exception as exc:
         error_message = str(exc)
         job_repo.update_job(job_id, status="failed", progress=100, current_stage="failed", error_message=error_message)
@@ -426,6 +434,137 @@ def _notify_instructors_report_completed(
             "notification_sent",
             {"message": "Report completion email sent to an assigned instructor."},
         )
+
+
+def _notify_students_report_completed(
+    report: AssessmentReport,
+    project,
+    user_repository: UserRepository,
+    notification_service: SMTPNotificationService,
+    job_id: str,
+    project_repository: ProjectRepository | None = None,
+) -> None:
+    subject = f"Your SprintSight assessment report is ready: {project.project_name}"
+    scored_student_ids = [score.student_id for score in report.individual_scores]
+    project_student_ids: list[str] = []
+    if project_repository:
+        try:
+            project_student_ids = project_repository.list_member_ids(report.project_id)
+        except Exception:
+            logger.exception(
+                "Could not identify project members for completed assessment job %s.",
+                job_id,
+            )
+            job_repo.append_event(
+                job_id,
+                "notification_failed",
+                {"message": "The report is ready, but student email recipients could not be loaded."},
+            )
+    student_ids = dict.fromkeys([*project_student_ids, *scored_student_ids])
+    for student_id in student_ids:
+        try:
+            student = user_repository.get_by_id(student_id)
+        except Exception:
+            logger.exception(
+                "Could not load student %s for completed assessment job %s.",
+                student_id,
+                job_id,
+            )
+            job_repo.append_event(
+                job_id,
+                "notification_failed",
+                {"message": "The report is ready, but a student email recipient could not be loaded."},
+            )
+            continue
+        if not student or not student.is_active or student.role.value != "student":
+            logger.warning(
+                "Could not identify an active student %s for completed assessment job %s.",
+                student_id,
+                job_id,
+            )
+            continue
+        score = next(
+            (score for score in report.individual_scores if score.student_id == student_id),
+            None,
+        )
+        body = (
+            "Your sprint assessment report has been completed.\n\n"
+            f"Course: {report.course_id}\n"
+            f"Project: {project.project_name}\n"
+            f"Sprint: {report.sprint_id}\n"
+            f"Report ID: {report.report_id}\n"
+            + (f"Your score: {score.score}\n" if score else "")
+        )
+        try:
+            notification_service.send_email(student.email, subject, body)
+        except Exception:
+            logger.exception(
+                "Could not email student %s for completed assessment job %s.",
+                student.id,
+                job_id,
+            )
+            job_repo.append_event(
+                job_id,
+                "notification_failed",
+                {"message": "The report is ready, but a student notification could not be delivered."},
+            )
+            continue
+        job_repo.append_event(
+            job_id,
+            "notification_sent",
+            {"message": "Report completion email sent to a student."},
+        )
+
+
+def notify_students_report_overridden(
+    report: AssessmentReport,
+    user_repository: UserRepository,
+    notification_service: SMTPNotificationService,
+    student_ids: list[str],
+    reason: str,
+) -> None:
+    for student_id in dict.fromkeys(student_ids):
+        try:
+            student = user_repository.get_by_id(student_id)
+        except Exception:
+            logger.exception(
+                "Could not load student %s for report override %s.",
+                student_id,
+                report.report_id,
+            )
+            continue
+        if not student or not student.is_active or student.role.value != "student":
+            logger.warning(
+                "Could not identify an active student %s for report override %s.",
+                student_id,
+                report.report_id,
+            )
+            continue
+        score = next(
+            (item for item in report.individual_scores if item.student_id == student_id),
+            None,
+        )
+        body = (
+            "Your SprintSight assessment report has been updated by your instructor.\n\n"
+            f"Course: {report.course_id}\n"
+            f"Project: {report.project_id}\n"
+            f"Sprint: {report.sprint_id}\n"
+            f"Report ID: {report.report_id}\n"
+            + (f"Your updated score: {score.score}\n" if score else "")
+            + f"Reason: {reason}\n"
+        )
+        try:
+            notification_service.send_email(
+                student.email,
+                f"SprintSight assessment report updated: {report.project_id}",
+                body,
+            )
+        except Exception:
+            logger.exception(
+                "Could not email student %s about overridden report %s.",
+                student.id,
+                report.report_id,
+            )
 
 
 def list_assessment_reports(course_id: str, project_id: str, sprint_id: str, assessment_repository: AssessmentRepository | None = None) -> list[AssessmentReport]:
@@ -493,8 +632,13 @@ def update_manual_assessment(
     return updated
 
 
-def override_student_score(payload: OverrideRequest, instructor_id: str) -> OverrideResponse:
-    report = assessment_repo.get_report(payload.report_id)
+def override_student_score(
+    payload: OverrideRequest,
+    instructor_id: str,
+    assessment_repository: AssessmentRepository | None = None,
+) -> OverrideResponse:
+    repository = assessment_repository or assessment_repo
+    report = repository.get_report(payload.report_id)
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
 
@@ -514,5 +658,5 @@ def override_student_score(payload: OverrideRequest, instructor_id: str) -> Over
     )
     original_entry.score = payload.new_score
     overrides_repo.save_override(override_record)
-    assessment_repo.save_report(report)
+    repository.save_report(report)
     return override_record

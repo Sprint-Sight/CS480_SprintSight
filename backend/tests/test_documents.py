@@ -4,9 +4,9 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.core.storage import storage
+from app.dependencies.auth import get_notification_repository
 from app.main import app
 from app.repositories.interfaces import ProjectRecord
-
 
 client = TestClient(app)
 
@@ -55,6 +55,10 @@ def test_upload_list_and_download_multiple_pdfs(override_user_repository, monkey
     assert {record["filename"] for record in records} == {"proposal.pdf", "final.pdf"}
     assert len({record["id"] for record in records}) == 2
     assert all(record["project_id"] == "project-documents" for record in records)
+    instructor_notifications = app.dependency_overrides[get_notification_repository]().list_notifications("u-faculty-1")
+    assert len(instructor_notifications) == 1
+    assert instructor_notifications[0].event_type == "document_uploaded"
+    assert "Student User uploaded 2 document(s)" in instructor_notifications[0].message
 
     listing = client.get("/api/v1/projects/project-documents/documents", headers=headers)
     assert listing.status_code == 200

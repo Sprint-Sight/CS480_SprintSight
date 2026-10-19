@@ -50,6 +50,15 @@ type ScopeTeam = {
   averageScore: number;
 };
 
+type DashboardNotification = {
+  id: string;
+  event_type: string;
+  title: string;
+  message: string;
+  created_at: string;
+  read_at: string | null;
+};
+
 const instructorNavItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Projects", href: "/projects", icon: FolderOpen },
@@ -110,6 +119,10 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [userName, setUserName] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [notificationError, setNotificationError] = useState("");
 
   // Dynamic scope states fetched from DB / API
   const [semesterOptions, setSemesterOptions] = useState<string[]>([]);
@@ -216,6 +229,56 @@ export default function DashboardShell({ children }: DashboardShellProps) {
       router.replace("/");
     }
   }, [isAuthorized, role, isProjectsRoot, router]);
+
+  useEffect(() => {
+    if (!isAuthorized) return;
+    let active = true;
+
+    async function refreshNotifications() {
+      try {
+        const response = await apiRequest<{
+          notifications: DashboardNotification[];
+          unread_count: number;
+        }>("/notifications");
+        if (active) {
+          setNotifications(response.notifications);
+          setUnreadNotificationCount(response.unread_count);
+          setNotificationError("");
+        }
+      } catch (error) {
+        if (active) {
+          setNotificationError(
+            error instanceof Error ? error.message : "Could not load notifications.",
+          );
+        }
+      }
+    }
+
+    void refreshNotifications();
+    const interval = window.setInterval(() => void refreshNotifications(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [isAuthorized, isNotificationsOpen]);
+
+  async function markNotificationRead(notification: DashboardNotification) {
+    if (notification.read_at) return;
+    try {
+      const updated = await apiRequest<DashboardNotification>(
+        `/notifications/${notification.id}/read`,
+        { method: "PATCH" },
+      );
+      setNotifications((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setUnreadNotificationCount((current) => Math.max(0, current - 1));
+    } catch (error) {
+      setNotificationError(
+        error instanceof Error ? error.message : "Could not update notification.",
+      );
+    }
+  }
 
   const profileUser = useMemo(() => {
     const fallbackName = userEmail ? userEmail.split("@")[0] : "User";
@@ -336,14 +399,76 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                   />
                 </div>
                 <div className="ml-auto flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
-                    aria-label="Notifications"
-                  >
-                    <Bell className="h-4 w-4" />
-                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsNotificationsOpen((open) => !open)}
+                      className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
+                      aria-label="Notifications"
+                      aria-expanded={isNotificationsOpen}
+                      aria-controls="notification-panel"
+                    >
+                      <Bell className="h-4 w-4" />
+                      {unreadNotificationCount > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                          {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                        </span>
+                      )}
+                    </button>
+                    {isNotificationsOpen && (
+                      <div
+                        id="notification-panel"
+                        className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.12)]"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                          <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+                          {unreadNotificationCount > 0 && (
+                            <span className="text-xs text-slate-500">
+                              {unreadNotificationCount} unread
+                            </span>
+                          )}
+                        </div>
+                        {notificationError && (
+                          <p role="alert" className="px-4 py-3 text-xs text-rose-600">
+                            {notificationError}
+                          </p>
+                        )}
+                        <div className="max-h-96 overflow-y-auto">
+                          {notifications.length === 0 ? (
+                            <p className="px-4 py-6 text-center text-sm text-slate-500">
+                              You're all caught up.
+                            </p>
+                          ) : (
+                            notifications.map((notification) => (
+                              <button
+                                key={notification.id}
+                                type="button"
+                                onClick={() => void markNotificationRead(notification)}
+                                className={`w-full border-b border-slate-100 px-4 py-3 text-left last:border-0 hover:bg-slate-50 ${
+                                  notification.read_at ? "bg-white" : "bg-blue-50/60"
+                                }`}
+                              >
+                                <span className="flex items-start justify-between gap-3">
+                                  <span className="text-sm font-medium text-slate-900">
+                                    {notification.title}
+                                  </span>
+                                  {!notification.read_at && (
+                                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                                  )}
+                                </span>
+                                <span className="mt-1 block text-xs leading-5 text-slate-600">
+                                  {notification.message}
+                                </span>
+                                <span className="mt-2 block text-[11px] text-slate-400">
+                                  {new Date(notification.created_at).toLocaleString()}
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   <div ref={menuRef} className="relative">
                     <button
