@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 import { resolveAssessmentScope } from "@/features/assessment/assessment-scope";
 import { readIngestionState } from "@/features/ingestion/state";
@@ -34,8 +34,8 @@ export function useAssessmentReport() {
 
   const resolveScope = () => resolveAssessmentScope({ selectedCourseId, selectedProjectId, selectedSprintId: sprintId, projects: projectOptions });
 
-  async function loadLatestReport() {
-    const scope = resolveScope();
+  const loadLatestReport = useCallback(async () => {
+    const scope = resolveAssessmentScope({ selectedCourseId, selectedProjectId, selectedSprintId: sprintId, projects: projectOptions });
     if (!scope || !isUuid(scope.projectId)) {
       setReport(emptyReport(selectedProjectId, sprintId));
       setAssessmentError("The selected course, project, and sprint must refer to the same project scope.");
@@ -47,7 +47,7 @@ export function useAssessmentReport() {
       setReport(toSprintAssessmentReport(data, scope.projectLabel.split(" - ")[0] || "Project team", scope.projectLabel.split(" - ").slice(1).join(" - ") || scope.projectLabel));
     } catch (error) { clearLiveReport(scope.projectId, scope.sprintId); setAssessmentError(error instanceof Error ? error.message : "Failed to load the latest assessment."); }
     finally { setIsLoadingReport(false); }
-  }
+  }, [selectedCourseId, selectedProjectId, sprintId, projectOptions]);
 
   async function generateAssessment() {
     const scope = resolveScope();
@@ -69,7 +69,7 @@ export function useAssessmentReport() {
   useEffect(() => setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | "admin" | null) || "student"), []);
   useEffect(() => { if (role === "student") return; const refreshScope = () => { const state = readIngestionState(); setSelectedCourseId(state.selectedCourseId || ""); setSelectedProjectId(state.selectedProjectId || ""); setSprintId(state.selectedSprintId || "sprint-1"); }; refreshScope(); window.addEventListener("sprintsight-ingestion-updated", refreshScope); return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope); }, [role]);
   useEffect(() => { if (!role || role === "student") return; async function loadProjects() { try { const courses = await apiRequest<Array<{ id: string; code: string; name: string; section: string }>>("/courses"); const groups = await Promise.all(courses.map(async (course) => ({ course, projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`) }))); const options = groups.flatMap(({ course, projects }) => projects.map((project) => ({ id: project.id, courseId: course.id, courseLabel: `${course.code} - ${course.name} - ${course.section}`, label: `${project.team_name} - ${project.project_name}` }))); setProjectOptions(options); } catch (error) { setProjectOptions([]); setAssessmentError(error instanceof Error ? error.message : "Could not load assessment projects."); } } void loadProjects(); }, [role]);
-  useEffect(() => { if (role !== "student" && selectedProjectId) void loadLatestReport(); }, [role, selectedProjectId, sprintId, projectOptions]);
+  useEffect(() => { if (role !== "student" && selectedProjectId) void loadLatestReport(); }, [role, selectedProjectId, sprintId, projectOptions, loadLatestReport]);
   const scope = resolveScope();
   return { report, role, isLoadingReport, isGenerating, assessmentProgress, assessmentMessage, assessmentError, scope, loadLatestReport, generateAssessment };
 }

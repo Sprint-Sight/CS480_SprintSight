@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -88,7 +88,7 @@ export function AdminPageContent() {
   };
 
   // 1. GET /users - Fetch User Directory
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     const token = getAuthToken();
     if (!token) return;
 
@@ -116,7 +116,7 @@ export function AdminPageContent() {
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role");
@@ -133,7 +133,7 @@ export function AdminPageContent() {
 
     fetchUsers();
     setMounted(true);
-  }, [router]);
+  }, [router, fetchUsers]);
 
   // 2. POST /users - Create Managed User
   const handleCreateUser = async (data: CreateUserData) => {

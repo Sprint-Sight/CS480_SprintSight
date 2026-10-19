@@ -1,7 +1,7 @@
 "use client";
 
 import { BookOpen, Plus, Search, Settings, SlidersHorizontal, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
 import { ProjectCard } from "@/features/projects/components/project-card";
@@ -120,7 +120,7 @@ export default function ProjectsPageContent() {
     }
   }
 
-  async function loadCourseStudents() {
+  const loadCourseStudents = useCallback(async () => {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
       setCourseStudents([]);
       return;
@@ -135,9 +135,9 @@ export default function ProjectsPageContent() {
       console.error("Failed to load course students:", error);
       setCourseStudents([]);
     }
-  }
+  }, [selectedCourseId]);
 
-  async function loadProjects() {
+  const loadProjects = useCallback(async () => {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
       setProjects([]);
       return;
@@ -178,7 +178,7 @@ export default function ProjectsPageContent() {
       console.error("Failed to load projects:", error);
       setProjects([]);
     }
-  }
+  }, [selectedCourseId]);
 
   useEffect(() => {
     reloadCourses();
@@ -187,7 +187,7 @@ export default function ProjectsPageContent() {
   useEffect(() => {
     loadCourseStudents();
     loadProjects();
-  }, [selectedCourseId]);
+  }, [selectedCourseId, loadCourseStudents, loadProjects]);
 
   const appliedFilterCount = useMemo(() => {
     let count = 0;
