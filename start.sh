@@ -51,7 +51,12 @@ bash "$HPC" models
 #    because the GPU Ollama runs on the cluster). Waits for the healthcheck.
 echo ""
 echo "[3/4] Starting the AI-engine stack..."
-bash "$HPC" docker
+# The two stacks are independent (they talk over host ports at call time), so a
+# slow or unhealthy AI engine must not stop the application stack from starting.
+if ! bash "$HPC" docker; then
+    echo "[warn] AI-engine stack reported a problem (see above)."
+    echo "[warn] Continuing to start the application stack anyway."
+fi
 
 # 4. Application stack: frontend + backend + audit-retention + db + minio.
 #    Kept as its own Compose project so its 'db'/'postgres_data' never collide

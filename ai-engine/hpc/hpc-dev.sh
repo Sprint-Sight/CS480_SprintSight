@@ -111,8 +111,11 @@ submit_job() {
     out=$(ssh_hpc "sbatch ~/CS480_SprintSight/ai-engine/hpc/ollama_gpu.sbatch" 2>&1)
     echo "  $out"
     if echo "$out" | grep -q "Submitted batch job"; then
-        ok "Job submitted — run 'bash hpc/hpc-dev.sh status' once it's RUNNING"
-        info "Then open the tunnel: bash hpc/hpc-dev.sh tunnel"
+        ok "Job submitted. The cluster may queue it for a bit before it starts."
+        info "1. Wait until it's RUNNING:  bash hpc/hpc-dev.sh status"
+        info "2. Then start everything:    bash start.sh   (from the repo root)"
+        info "   start.sh opens the tunnel and brings up both Docker stacks;"
+        info "   you only need to type your HPC password."
     else
         fail "sbatch failed"
         return 1
@@ -170,7 +173,7 @@ open_tunnel_bg() {
 
     local n=0
     until check_tunnel >/dev/null 2>&1; do
-        ((n++)); [[ $n -gt 10 ]] && { fail "Tunnel opened but Ollama not reachable on localhost:${LOCAL_OLLAMA_PORT}"; return 1; }
+        n=$((n + 1)); [[ $n -gt 10 ]] && { fail "Tunnel opened but Ollama not reachable on localhost:${LOCAL_OLLAMA_PORT}"; return 1; }
         sleep 1
     done
     ok "Background tunnel live on localhost:${LOCAL_OLLAMA_PORT}"
@@ -392,10 +395,14 @@ except:
                           return 0 ;;
             esac
         fi
-        ((attempts++))
+        attempts=$((attempts + 1))
     done
-    fail "sprintsight_ai not responding after 60 s"
-    return 1
+    # Containers are already up by this point; a slow healthcheck usually means
+    # the models are still warming up on the GPU, not a startup failure. Warn and
+    # return success so the unified launcher can continue to the backend stack.
+    warn "sprintsight_ai not healthy yet after 60 s — it may still be loading models."
+    warn "Check later with: bash hpc/hpc-dev.sh status  (or curl http://localhost:8001/health)"
+    return 0
 }
 
 show_status() {
