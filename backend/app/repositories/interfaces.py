@@ -26,12 +26,17 @@ class UserRecord:
     is_active: bool = True
     must_change_password: bool = False
     token_version: int = 0
+    student_number: int | None = None
 
 
 class UserRepository(Protocol):
     def get_by_email(self, email: str) -> UserRecord | None: ...
 
     def get_by_id(self, user_id: str) -> UserRecord | None: ...
+
+    def get_by_student_number(self, student_number: int) -> UserRecord | None: ...
+
+    def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None: ...
 
     def record_login(self, user_id: str) -> None: ...
 

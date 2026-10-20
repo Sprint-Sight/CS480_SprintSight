@@ -2,6 +2,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from psycopg.errors import UniqueViolation
 
 from app.dependencies.auth import (
     get_action_audit_repository,
@@ -27,7 +28,11 @@ from app.schemas.auth import (
 from app.services.auditLogService.service import append_action_audit
 from app.services.authService.deactivation import deactivate_user_cascade
 from app.services.authService.email_tokens import create_email_action_token, email_action_message
-from app.services.authService.service import create_user, reset_password, user_response
+from app.services.authService.service import (
+    create_user,
+    reset_password,
+    user_response,
+)
 from app.services.notificationService.service import (
     NotificationConfigurationError,
     NotificationDeliveryError,
@@ -38,7 +43,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 logger = logging.getLogger(__name__)
 
 
-def _send_password_setup_email(user: UserRecord, notification_service: SMTPNotificationService) -> None:
+def send_password_setup_email(user: UserRecord, notification_service: SMTPNotificationService) -> None:
     if not notification_service.is_configured:
         logger.warning(
             "Password setup email was not sent to user %s because email delivery is not configured.",
@@ -119,7 +124,14 @@ def create_managed_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Instructors can only create student accounts.",
         )
-    created = create_user(repository, payload.email, payload.full_name, payload.role, payload.password)
+    created = create_user(
+        repository,
+        payload.email,
+        payload.full_name,
+        payload.role,
+        payload.password,
+        payload.student_number,
+    )
     append_action_audit(
         action_audits,
         actor_id=current_user.id,
@@ -129,7 +141,7 @@ def create_managed_user(
         target_id=created.id,
         details={"email": created.email, "role": created.role.value},
     )
-    _send_password_setup_email(created, notification_service)
+    send_password_setup_email(created, notification_service)
     return user_response(created)
 
 
@@ -178,12 +190,33 @@ def update_managed_user(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email is already registered."
         )
+    target_role = payload.role or user.role
+    if target_role == Role.STUDENT:
+        student_number = payload.student_number or user.student_number
+        existing_number = (
+            repository.get_by_student_number(student_number)
+            if student_number is not None
+            else None
+        )
+        if existing_number and existing_number.id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Student number is already registered.",
+            )
+        if student_number is not None and user.student_number != student_number:
+            try:
+                user = repository.set_student_number(user_id, student_number) or user
+            except (UniqueViolation, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Student number is already registered.",
+                ) from exc
 
     updated = repository.update_user(
         user_id,
         email,
         payload.full_name or user.full_name,
-        payload.role or user.role,
+        target_role,
         payload.is_active if payload.is_active is not None else user.is_active,
     )
     append_action_audit(
@@ -221,7 +254,7 @@ def reset_managed_user_password(
         target_id=user_id,
         details={"email": user.email, "role": user.role.value, "must_change_password": True},
     )
-    _send_password_setup_email(updated, notification_service)
+    send_password_setup_email(updated, notification_service)
     return user_response(updated)
 
 

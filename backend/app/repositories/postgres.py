@@ -42,6 +42,15 @@ _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, 
     p.jira_email, p.jira_domain, p.jira_project_key, p.jira_api_token_encrypted"""
 
 
+def ensure_user_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS student_number BIGINT")
+        connection.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS uq_users_student_number
+               ON users(student_number) WHERE student_number IS NOT NULL"""
+        )
+
+
 def ensure_project_credential_schema(pool: ConnectionPool) -> None:
     statements = (
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_name VARCHAR(255)",
@@ -494,7 +503,7 @@ class PostgresUserRepository(UserRepository):
         with self._pool.connection() as connection:
             row = connection.execute(
                 """
-                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version
+                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number
                 FROM users
                 WHERE lower(email) = lower(%s)
                 """,
@@ -511,11 +520,35 @@ class PostgresUserRepository(UserRepository):
         with self._pool.connection() as connection:
             row = connection.execute(
                 """
-                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version
+                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number
                 FROM users
                 WHERE user_id = %s
                 """,
                 (parsed_id,),
+            ).fetchone()
+        return self._to_record(row) if row else None
+
+    def get_by_student_number(self, student_number: int) -> UserRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT user_id, email, full_name, password_hash, role, is_active,
+                       must_change_password, token_version, student_number
+                FROM users
+                WHERE student_number = %s
+                """,
+                (student_number,),
+            ).fetchone()
+        return self._to_record(row) if row else None
+
+    def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE users SET student_number = %s
+                   WHERE user_id = %s
+                   RETURNING user_id, email, full_name, password_hash, role, is_active,
+                             must_change_password, token_version, student_number""",
+                (student_number, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
 
@@ -552,18 +585,18 @@ class PostgresUserRepository(UserRepository):
     def list_users(self) -> list[UserRecord]:
         with self._pool.connection() as connection:
             rows = connection.execute(
-                "SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version FROM users ORDER BY email"
+                "SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number FROM users ORDER BY email"
             ).fetchall()
         return [self._to_record(row) for row in rows]
 
     def create_user(self, user: UserRecord) -> UserRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
-                """INSERT INTO users (user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                """INSERT INTO users (user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number""",
                 (UUID(user.id), user.email.lower(), user.full_name, user.hashed_password, user.role.value,
-                 user.is_active, user.must_change_password, user.token_version),
+                 user.is_active, user.must_change_password, user.token_version, user.student_number),
             ).fetchone()
         return self._to_record(row)
 
@@ -572,7 +605,7 @@ class PostgresUserRepository(UserRepository):
             row = connection.execute(
                 """UPDATE users SET email = %s, full_name = %s, role = %s, is_active = %s
                 WHERE user_id = %s
-                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number""",
                 (email.lower(), full_name, role.value, is_active, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
@@ -582,7 +615,8 @@ class PostgresUserRepository(UserRepository):
             row = connection.execute(
                 """UPDATE users SET password_hash = %s, must_change_password = %s, token_version = token_version + 1
                 WHERE user_id = %s
-                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                RETURNING user_id, email, full_name, password_hash, role, is_active,
+                          must_change_password, token_version, student_number""",
                 (hashed_password, must_change_password, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
@@ -600,6 +634,7 @@ class PostgresUserRepository(UserRepository):
             is_active=row["is_active"],
             must_change_password=row["must_change_password"],
             token_version=row["token_version"],
+            student_number=row.get("student_number"),
         )
 
 

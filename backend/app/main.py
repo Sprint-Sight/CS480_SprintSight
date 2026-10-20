@@ -33,6 +33,7 @@ from app.repositories.postgres import (
     ensure_notification_schema,
     ensure_instructor_model_selection_schema,
     ensure_project_credential_schema,
+    ensure_user_schema,
     ensure_rubric_weights_schema,
 )
 from app.schemas.auth import Role
@@ -50,6 +51,7 @@ def _bootstrap_user(repository: PostgresUserRepository, email: str, password: st
             full_name=name,
             role=role,
             hashed_password=hash_password(password),
+            student_number=1 if role == Role.STUDENT else None,
         ))
 
 
@@ -61,6 +63,7 @@ async def lifespan(app: FastAPI):
     # ---- STARTUP -------------------------------------------------
     pool = create_user_pool(settings.database_connection_string())
     pool.open(wait=True)
+    ensure_user_schema(pool)
     ensure_project_credential_schema(pool)
     ensure_notification_schema(pool)
     ensure_assessment_schema(pool)
@@ -127,6 +130,13 @@ def custom_openapi() -> dict:
     request_schema = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
     request_component = schema["components"]["schemas"][request_schema["$ref"].split("/")[-1]]
     request_component["properties"]["files"]["items"] = {
+        "type": "string",
+        "format": "binary",
+    }
+    import_operation = schema["paths"]["/api/v1/courses/{course_id}/students/import"]["post"]
+    import_request_schema = import_operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    import_component = schema["components"]["schemas"][import_request_schema["$ref"].split("/")[-1]]
+    import_component["properties"]["file"] = {
         "type": "string",
         "format": "binary",
     }

@@ -218,6 +218,11 @@ class InstructorStudentCreate(BaseModel):
     email: str
     full_name: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=128)
+    student_number: int | None = Field(default=None, gt=0)
+
+
+class CourseStudentResponse(UserResponse):
+    student_number: int | None
 
 
 class CourseInstructorResponse(BaseModel):

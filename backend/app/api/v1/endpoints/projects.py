@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from psycopg.errors import UniqueViolation
 
 from app.core.credential_crypto import encrypt_secret
@@ -12,6 +12,7 @@ from app.dependencies.auth import (
     get_current_user,
     get_jira_ingestion_repository,
     get_notification_repository,
+    get_notification_service,
     get_project_repository,
     get_user_repository,
     require_admin,
@@ -33,16 +34,21 @@ from app.schemas.projects import (
     CourseCreate,
     CourseInstructorResponse,
     CourseResponse,
+    CourseStudentResponse,
     CourseUpdate,
     InstructorStudentCreate,
     ProjectCreate,
     ProjectResponse,
     ProjectUpdate,
 )
+from app.schemas.student_import import StudentImportResult
 from app.services.auditLogService.service import append_action_audit
 from app.services.authService.service import create_user, user_response
 from app.services.jiraService.service import validate_jira_credentials
 from app.services.notificationService.in_app import create_in_app_notification
+from app.services.studentImportService.service import import_students
+from app.services.notificationService.service import SMTPNotificationService
+from app.api.v1.endpoints.users import send_password_setup_email
 
 router = APIRouter(tags=["courses", "projects"])
 
@@ -325,17 +331,55 @@ def delete_course(
     )
 
 
-@router.get("/courses/{course_id}/students", response_model=list[UserResponse])
+@router.get("/courses/{course_id}/students", response_model=list[CourseStudentResponse])
 def list_course_students(
     course_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> list[UserResponse]:
+) -> list[CourseStudentResponse]:
     _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can view this roster.")
-    return [user_response(user) for user_id in repository.list_enrolled_student_ids(course_id) if (user := users.get_by_id(user_id))]
+    return [
+        CourseStudentResponse.model_validate(user_response(user).model_dump())
+        for user_id in repository.list_enrolled_student_ids(course_id)
+        if (user := users.get_by_id(user_id))
+    ]
+
+
+@router.post("/courses/{course_id}/students/import", response_model=StudentImportResult)
+def import_course_students(
+    course_id: str,
+    file: Annotated[UploadFile, File(...)],
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+) -> StudentImportResult:
+    course = _course_or_404(repository, course_id)
+    if not _can_manage_course(current_user, course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can import students.")
+    if file.content_type not in (None, "text/csv", "application/csv", "application/vnd.ms-excel"):
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Upload a CSV file.")
+
+    result, enrolled_users = import_students(file.file.read(), course_id, users, repository)
+    for student, account_created in enrolled_users:
+        append_action_audit(
+            action_audits,
+            actor_id=current_user.id,
+            actor_role=current_user.role.value,
+            action="bulk_import_course_student",
+            target_type="student",
+            target_id=student.id,
+            details={"course_id": course_id, "student_number": student.student_number, "account_created": account_created},
+        )
+        _notify_course_enrollment(notifications, student, course)
+        if account_created:
+            send_password_setup_email(student, notification_service)
+    return result
 
 
 @router.post("/courses/{course_id}/students/{user_id}", response_model=UserResponse)
@@ -460,7 +504,14 @@ def create_course_student(
         student = existing_user
     else:
         try:
-            student = create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password)
+            student = create_user(
+                users,
+                payload.email,
+                payload.full_name,
+                Role.STUDENT,
+                payload.password,
+                payload.student_number,
+            )
             created_account = True
         except HTTPException as exc:
             if exc.status_code != status.HTTP_409_CONFLICT:
@@ -469,6 +520,12 @@ def create_course_student(
             if not existing_user or existing_user.role != Role.STUDENT:
                 raise
             student = existing_user
+
+    if student.student_number is None:
+        if payload.student_number is not None:
+            student = users.set_student_number(student.id, payload.student_number) or student
+    elif payload.student_number is not None and student.student_number != payload.student_number:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student number conflicts with the existing account.")
 
     if repository.is_student_enrolled(course_id, student.id):
         return user_response(student)

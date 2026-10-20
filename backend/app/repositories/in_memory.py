@@ -65,6 +65,7 @@ class InMemoryUserRepository(UserRepository):
                 full_name="Student User",
                 role=Role.STUDENT,
                 hashed_password=hash_password("password123"),
+                student_number=1,
             ),
         }
 
@@ -76,6 +77,19 @@ class InMemoryUserRepository(UserRepository):
             if user.id == user_id:
                 return user
         return None
+
+    def get_by_student_number(self, student_number: int) -> UserRecord | None:
+        return next((user for user in self._users.values() if user.student_number == student_number), None)
+
+    def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None:
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+        existing = self.get_by_student_number(student_number)
+        if existing and existing.id != user_id:
+            raise ValueError("Student number is already registered.")
+        user.student_number = student_number
+        return user
 
     def record_login(self, user_id: str) -> None:
         return None
@@ -90,6 +104,10 @@ class InMemoryUserRepository(UserRepository):
         return list(self._users.values())
 
     def create_user(self, user: UserRecord) -> UserRecord:
+        if self.get_by_email(user.email):
+            raise ValueError("Email is already registered.")
+        if user.student_number is not None and self.get_by_student_number(user.student_number):
+            raise ValueError("Student number is already registered.")
         self._users[user.email.lower()] = user
         return user
 
@@ -97,6 +115,9 @@ class InMemoryUserRepository(UserRepository):
         user = self.get_by_id(user_id)
         if not user:
             return None
+        existing = self.get_by_email(email)
+        if existing and existing.id != user_id:
+            raise ValueError("Email is already registered.")
         old_email = user.email.lower()
         user.email = email.lower()
         user.full_name = full_name

@@ -173,7 +173,7 @@ def test_course_student_endpoint_is_idempotent_for_duplicate_create_requests() -
     assert second.status_code == 201
     assert first.json()["id"] == second.json()["id"]
     assert client.get(f"/api/v1/courses/{course['id']}/students", headers=instructor_headers).json() == [
-        {"id": first.json()["id"], "email": payload["email"], "full_name": payload["full_name"], "role": "student", "is_active": True, "must_change_password": True}
+        {"id": first.json()["id"], "email": payload["email"], "full_name": payload["full_name"], "role": "student", "is_active": True, "must_change_password": True, "student_number": None}
     ]
 
 
@@ -200,7 +200,7 @@ def test_course_student_endpoint_reuses_existing_student_account_for_enrollment(
     assert response.status_code == 201
     assert response.json()["id"] == existing["id"]
     assert client.get(f"/api/v1/courses/{course['id']}/students", headers=instructor_headers).json() == [
-        {"id": existing["id"], "email": existing["email"], "full_name": existing["full_name"], "role": "student", "is_active": True, "must_change_password": True}
+        {"id": existing["id"], "email": existing["email"], "full_name": existing["full_name"], "role": "student", "is_active": True, "must_change_password": True, "student_number": None}
     ]
 
 

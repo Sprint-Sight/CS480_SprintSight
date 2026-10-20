@@ -23,12 +23,16 @@ CREATE TABLE IF NOT EXISTS users (
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     token_version INTEGER NOT NULL DEFAULT 0,
+    student_number BIGINT,
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login    TIMESTAMP
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS student_number BIGINT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_student_number ON users(student_number)
+    WHERE student_number IS NOT NULL;
 
 -- Fast lookups by email on every login request
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

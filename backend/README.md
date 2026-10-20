@@ -51,6 +51,33 @@ available for temporary-password login; the unauthenticated
 `/users/change-password` route was removed because it allowed password changes
 with only an email address.
 
+## Bulk course student import
+
+Assigned instructors can import a course roster with:
+
+```text
+POST /api/v1/courses/{course_id}/students/import
+```
+
+Send a `multipart/form-data` request with a `file` field containing UTF-8 CSV
+data with exactly these headers:
+
+```csv
+student_name,student_id,student_email
+Student One,123456,student.one@example.edu
+```
+
+The import validates the complete file before enrolling anyone. Existing
+student accounts are matched by numeric `student_id` or email; new accounts
+are created with a generated temporary password and marked for first-time
+password setup. Re-importing an already enrolled student is idempotent.
+Student emails and supplied student numbers must be unique. Existing legacy
+accounts without a student number are left unchanged; bulk CSV imports always
+require a student number for each imported row.
+Invalid rows, conflicting identity fields, disabled accounts, and students
+already enrolled in another section of the same course offering reject the
+import. The CSV is limited to 10 MB and 5,000 rows.
+
 ## Assessment completion notifications
 
 After the assessment report has been saved, each active instructor assigned to
