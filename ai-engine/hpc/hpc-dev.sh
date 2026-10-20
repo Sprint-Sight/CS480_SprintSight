@@ -141,6 +141,41 @@ open_tunnel() {
         "${HPC_USER}@${HPC_LOGIN_HOST}"
 }
 
+# Like open_tunnel, but backgrounds itself after you type the password, so a
+# single-command launcher (../../start.sh) can keep going. `ssh -f` only forks
+# AFTER authentication, which is why the password prompt stays the one manual
+# step. If there's no running GPU job yet, this explains what to do rather than
+# failing cryptically (see no_gpu_job_help).
+open_tunnel_bg() {
+    check_vpn || { vpn_help; return 1; }
+    check_slurm || { no_gpu_job_help; return 1; }
+
+    if check_tunnel >/dev/null 2>&1; then
+        ok "Tunnel already up on localhost:${LOCAL_OLLAMA_PORT}"
+        return 0
+    fi
+
+    info "Opening background SSH tunnel: localhost:${LOCAL_OLLAMA_PORT} -> ${COMPUTE_NODE}:${REMOTE_OLLAMA_PORT}"
+    warn "Enter your HPC password when prompted — the tunnel backgrounds itself afterward."
+    # -f                       fork to background AFTER authentication (password = only manual step)
+    # -o ExitOnForwardFailure  fail loudly if the local port can't bind, instead of a dead background ssh
+    # ServerAlive*             drop the tunnel cleanly if the node/VPN goes away rather than hanging
+    ssh -f -N \
+        -o ExitOnForwardFailure=yes \
+        -o ConnectTimeout=8 \
+        -o StrictHostKeyChecking=accept-new \
+        -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+        -L "${LOCAL_OLLAMA_PORT}:${COMPUTE_NODE}:${REMOTE_OLLAMA_PORT}" \
+        "${HPC_USER}@${HPC_LOGIN_HOST}"
+
+    local n=0
+    until check_tunnel >/dev/null 2>&1; do
+        ((n++)); [[ $n -gt 10 ]] && { fail "Tunnel opened but Ollama not reachable on localhost:${LOCAL_OLLAMA_PORT}"; return 1; }
+        sleep 1
+    done
+    ok "Background tunnel live on localhost:${LOCAL_OLLAMA_PORT}"
+}
+
 list_models() {
     local response
     response=$(curl -s --max-time 10 "${OLLAMA_URL}/api/tags" 2>/dev/null) || {
@@ -466,6 +501,65 @@ watch_gpu() {
         "srun --jobid=${jobid} --overlap --pty ${nvidia_cmd}"
 }
 
+# ── Guidance for teammates new to the HPC/GPU workflow ────────────────────────
+#
+# How the GPU connection actually works (read this once if you're new):
+#
+#   Your laptop ──VPN──> HPC login node (10.193.104.102) ──Slurm──> GPU compute
+#                                                                    node (e.g. "toga")
+#                                                                       │
+#                                                                   Ollama :11434
+#
+#   The GPU does NOT run on your laptop and you cannot SSH to the GPU node
+#   directly. You:
+#     1. connect the SMUResearch VPN,
+#     2. ask Slurm (the cluster's job scheduler) to RESERVE a GPU node for you
+#        by submitting a job — that job launches Ollama on the GPU node,
+#     3. open an SSH tunnel so localhost:11435 on your laptop forwards to
+#        Ollama on that reserved GPU node.
+#
+#   The job is per-person and temporary: it has a time limit, it ends when you
+#   stop it, and it may sit in a queue before it starts if the cluster is busy.
+#   That's why "is a GPU job running?" is a thing you have to check — there
+#   isn't an always-on GPU server.
+
+vpn_help() {
+    echo ""
+    fail "Can't reach the HPC login node (${HPC_LOGIN_HOST})."
+    echo ""
+    echo "  This almost always means the SMUResearch VPN is not connected."
+    echo "  Connect the VPN, then run the same command again."
+    echo ""
+}
+
+no_gpu_job_help() {
+    echo ""
+    fail "No GPU is reserved for you yet — there is no running Slurm job named '${SLURM_JOB_NAME}'."
+    echo ""
+    echo "  WHY THIS HAPPENS"
+    echo "  ----------------"
+    echo "  The GPU runs on the cluster, not on your laptop. Before you can use it"
+    echo "  you must reserve a GPU node by submitting a Slurm job. That job is"
+    echo "  temporary and per-person, so you'll see this message when:"
+    echo "    - you've never submitted the job this session, or"
+    echo "    - a teammate's job is running but not yours (jobs aren't shared), or"
+    echo "    - your job hit its time limit / was stopped, or"
+    echo "    - the job is still PENDING in the queue (reserved, not started yet)."
+    echo ""
+    echo "  WHAT TO DO"
+    echo "  ----------"
+    echo "    1. Make sure the SMUResearch VPN is connected."
+    echo "    2. Submit the GPU job:    bash hpc/hpc-dev.sh submit"
+    echo "    3. Wait until it RUNNING: bash hpc/hpc-dev.sh status"
+    echo "       (If it shows PENDING, the cluster is busy — wait and re-check."
+    echo "        This can take anywhere from seconds to a few minutes.)"
+    echo "    4. Re-run your startup command once status shows RUNNING."
+    echo ""
+    echo "  You only submit the job once per work session; after that, start.sh"
+    echo "  reuses it and just asks for your password to open the tunnel."
+    echo ""
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 cmd="${1:-full}"
@@ -510,9 +604,10 @@ case "$cmd" in
     status)  show_status ;;
     models)  ensure_models ;;
     docker)  start_docker ;;
-    submit)  submit_job ;;
-    tunnel)  open_tunnel ;;
-    stop)    stop_all ;;
+    submit)     submit_job ;;
+    tunnel)     open_tunnel ;;
+    tunnel-bg)  open_tunnel_bg ;;
+    stop)       stop_all ;;
     gpu)     watch_gpu "${2:-once}" ;;
     *)
         echo "Usage: bash hpc/hpc-dev.sh {full|status|models|docker|submit|tunnel|stop|gpu}"
@@ -523,7 +618,8 @@ case "$cmd" in
         echo "  models        Create/verify sprintsight-* models on remote Ollama"
         echo "  docker        Start local db + mlflow + sprintsight_ai"
         echo "  submit        Submit the Slurm GPU job on the cluster"
-        echo "  tunnel        Open SSH tunnel to the Slurm job's compute node"
+        echo "  tunnel        Open SSH tunnel (blocking; keep the terminal open)"
+        echo "  tunnel-bg     Open SSH tunnel in the background (used by start.sh)"
         echo "  stop          Stop Docker and show tunnel teardown instructions"
         echo "  gpu           One snapshot of nvidia-smi on the GPU compute node"
         echo "  gpu --watch   Stream GPU utilisation every 2s (Ctrl+C to stop)"
