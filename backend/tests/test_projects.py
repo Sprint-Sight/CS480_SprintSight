@@ -220,6 +220,73 @@ def test_instructor_can_view_all_students_and_section_roster() -> None:
     assert [user["id"] for user in section_students.json()] == [student["id"]]
 
 
+def test_student_can_enroll_in_different_course_codes_but_not_repeat_a_code() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    first_course = client.post(
+        "/api/v1/courses",
+        json={"code": "CS510", "name": "Course One", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor_headers,
+    ).json()
+    second_course = client.post(
+        "/api/v1/courses",
+        json={"code": "CS520", "name": "Course Two", "section": "001", "year": 2026, "term": "Fall"},
+        headers=instructor_headers,
+    ).json()
+    repeated_code_different_term = client.post(
+        "/api/v1/courses",
+        json={"code": "CS510", "name": "Course One", "section": "001", "year": 2027, "term": "Spring"},
+        headers=instructor_headers,
+    ).json()
+    student = client.post(
+        "/api/v1/users",
+        json={
+            "email": "multiple.courses@sprintsight.edu",
+            "full_name": "Multiple Courses Student",
+            "password": "temporary123",
+        },
+        headers=instructor_headers,
+    ).json()
+
+    assert client.post(
+        f"/api/v1/courses/{first_course['id']}/students/{student['id']}",
+        headers=instructor_headers,
+    ).status_code == 200
+    assert client.post(
+        f"/api/v1/courses/{second_course['id']}/students/{student['id']}",
+        headers=instructor_headers,
+    ).status_code == 200
+    duplicate = client.post(
+        f"/api/v1/courses/{repeated_code_different_term['id']}/students/{student['id']}",
+        headers=instructor_headers,
+    )
+
+    assert duplicate.status_code == 409
+
+
+def test_instructor_student_directory_includes_inactive_accounts() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    student = client.post(
+        "/api/v1/users",
+        json={
+            "email": "inactive.directory@sprintsight.edu",
+            "full_name": "Inactive Directory Student",
+            "password": "temporary123",
+        },
+        headers=instructor_headers,
+    ).json()
+    deactivated = client.delete(
+        f"/api/v1/users/{student['id']}",
+        headers=headers(token("admin@sprintsight.edu")),
+    )
+    assert deactivated.status_code == 200
+
+    response = client.get("/api/v1/users", headers=instructor_headers)
+
+    assert response.status_code == 200
+    matching_student = next(user for user in response.json() if user["id"] == student["id"])
+    assert matching_student["is_active"] is False
+
+
 def test_student_cannot_enroll_in_two_sections_of_same_course_code() -> None:
     instructor_headers = headers(token("faculty@sprintsight.edu"))
     first = client.post("/api/v1/courses", json={"code": "CS493", "name": "Enrollment", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()

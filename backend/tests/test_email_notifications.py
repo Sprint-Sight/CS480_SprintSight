@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.dependencies.auth import get_assessment_repository
+from app.dependencies.auth import get_project_repository
 from app.main import app
 from app.repositories.in_memory import InMemoryProjectRepository, InMemoryUserRepository
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
@@ -48,11 +49,13 @@ def test_first_time_password_setup_uses_email_token(monkeypatch) -> None:
             "email": "email.setup@sprintsight.edu",
             "full_name": "Email Setup",
             "role": "student",
-            "password": "temporary123",
         },
         headers={"Authorization": f"Bearer {admin_login.json()['access_token']}"},
     )
     assert response.status_code == 201
+    assert response.json()["account_created"] is True
+    assert response.json()["signup_email_sent"] is True
+    assert response.json()["must_change_password"] is True
     assert len(notifications.messages) == 1
     recipient, subject, body = notifications.messages[0]
     assert recipient == "email.setup@sprintsight.edu"
@@ -75,6 +78,92 @@ def test_first_time_password_setup_uses_email_token(monkeypatch) -> None:
         "/api/v1/auth/first-time-password/complete",
         json={"token": _token_from_email(body), "new_password": "replayed123"},
     ).status_code == 400
+
+
+def test_instructor_can_create_student_without_enrolling(monkeypatch) -> None:
+    notifications = FakeNotificationService()
+    monkeypatch.setattr(app.state, "notification_service", notifications)
+    course = app.dependency_overrides[get_project_repository]().create_course(
+        "CS501",
+        "Standalone Student",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
+    )
+    instructor_token = client.post(
+        "/api/v1/auth/login",
+        json={"email": "faculty@sprintsight.edu", "password": "password123"},
+    ).json()["access_token"]
+
+    response = client.post(
+        "/api/v1/users",
+        json={
+            "email": "standalone.student@sprintsight.edu",
+            "full_name": "Standalone Student",
+            "role": "student",
+        },
+        headers={"Authorization": f"Bearer {instructor_token}"},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["account_created"] is True
+    assert response.json()["signup_email_sent"] is True
+    assert response.json()["must_change_password"] is True
+    roster = client.get(
+        f"/api/v1/courses/{course.id}/students",
+        headers={"Authorization": f"Bearer {instructor_token}"},
+    )
+    assert roster.status_code == 200
+    assert roster.json() == []
+    recipient, subject, body = notifications.messages[0]
+    assert recipient == "standalone.student@sprintsight.edu"
+    assert subject == "Set your SprintSight password"
+    assert "purpose=first-time-password" in body
+
+
+def test_instructor_created_course_student_receives_setup_email(monkeypatch) -> None:
+    notifications = FakeNotificationService()
+    monkeypatch.setattr(app.state, "notification_service", notifications)
+    course = app.dependency_overrides[get_project_repository]().create_course(
+        "CS499",
+        "Email Setup",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
+    )
+    instructor_token = client.post(
+        "/api/v1/auth/login",
+        json={"email": "faculty@sprintsight.edu", "password": "password123"},
+    ).json()["access_token"]
+
+    response = client.post(
+        f"/api/v1/courses/{course.id}/students",
+        json={
+            "email": "course.setup@sprintsight.edu",
+            "full_name": "Course Setup Student",
+        },
+        headers={"Authorization": f"Bearer {instructor_token}"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["account_created"] is True
+    assert response.json()["signup_email_sent"] is True
+    assert response.json()["must_change_password"] is True
+    assert len(notifications.messages) == 1
+    recipient, subject, body = notifications.messages[0]
+    assert recipient == "course.setup@sprintsight.edu"
+    assert subject == "Set your SprintSight password"
+    assert "purpose=first-time-password" in body
+    complete = client.post(
+        "/api/v1/auth/first-time-password/complete",
+        json={
+            "token": _token_from_email(body),
+            "new_password": "courseSetup123",
+        },
+    )
+    assert complete.status_code == 200
 
 
 def test_password_reset_email_is_single_use_and_unknown_accounts_are_generic(monkeypatch) -> None:

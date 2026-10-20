@@ -117,9 +117,13 @@ CREATE TABLE IF NOT EXISTS course_students (
         REFERENCES courses(course_id, code, term, year) ON DELETE CASCADE
 );
 
--- UNIQUE CONSTRAINT: Prevents a student from enrolling in multiple sections of the same course offering
+-- Legacy offering-level index retained for existing databases.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_section_per_course
     ON course_students(user_id, code, term, year);
+
+-- A student may enroll in different course codes, but only once per course code.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_course_code
+    ON course_students(user_id, lower(trim(code)));
 
 CREATE TABLE IF NOT EXISTS projects (
     project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

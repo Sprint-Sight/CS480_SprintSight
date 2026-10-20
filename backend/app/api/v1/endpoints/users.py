@@ -1,5 +1,6 @@
-import logging
 from typing import Annotated
+
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.errors import UniqueViolation
@@ -23,13 +24,15 @@ from app.schemas.auth import (
     AdminUserCreate,
     AdminUserUpdate,
     Role,
+    UserCreationResponse,
     UserResponse,
 )
 from app.services.auditLogService.service import append_action_audit
 from app.services.authService.deactivation import deactivate_user_cascade
-from app.services.authService.email_tokens import create_email_action_token, email_action_message
+from app.services.authService.password_setup import send_password_setup_email
 from app.services.authService.service import (
     create_user,
+    generate_placeholder_password,
     reset_password,
     user_response,
 )
@@ -43,28 +46,13 @@ router = APIRouter(prefix="/users", tags=["users"])
 logger = logging.getLogger(__name__)
 
 
-def send_password_setup_email(user: UserRecord, notification_service: SMTPNotificationService) -> None:
-    if not notification_service.is_configured:
-        logger.warning(
-            "Password setup email was not sent to user %s because email delivery is not configured.",
-            user.id,
-        )
-        return
-
-    token = create_email_action_token(user, "first_time_password")
-    subject, body = email_action_message(token, "first_time_password")
-    try:
-        notification_service.send_email(user.email, subject, body)
-    except (NotificationConfigurationError, NotificationDeliveryError):
-        logger.exception("Password setup email could not be delivered to user %s.", user.id)
-
-
 # ---------------------------------------------------------------------------
 # Who can create whom?
 #
 #   Admin      → POST /users with any role (instructor, student, admin)
-#   Instructor → POST /courses/{id}/students   (creates + enrols in one step)
-#                POST /students                 (creates without enrolment)
+#   Instructor → POST /users                    (creates without enrolment)
+#                POST /courses/{id}/students    (creates and enrols)
+#                POST /courses/{id}/students/{user_id} (enrols an existing student)
 #   Student    → cannot create any user
 #
 # Who can deactivate (soft-delete) whom?
@@ -89,7 +77,7 @@ def list_users(
 ) -> list[UserResponse]:
     users = repository.list_users()
     if current_user.role == Role.INSTRUCTOR:
-        users = [u for u in users if u.role == Role.STUDENT and u.is_active]
+        users = [u for u in users if u.role == Role.STUDENT]
     return [user_response(user) for user in users]
 
 
@@ -102,19 +90,19 @@ def get_user(
     user = repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    if current_user.role == Role.INSTRUCTOR and (user.role != Role.STUDENT or not user.is_active):
+    if current_user.role == Role.INSTRUCTOR and user.role != Role.STUDENT:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors can only view student accounts.")
     return user_response(user)
 
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserCreationResponse, status_code=status.HTTP_201_CREATED)
 def create_managed_user(
     payload: AdminUserCreate,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
-) -> UserResponse:
+) -> UserCreationResponse:
     """
     Admin creates any account type (instructor / student / admin).
     Instructors may only create student accounts.
@@ -126,11 +114,10 @@ def create_managed_user(
         )
     created = create_user(
         repository,
-        payload.email,
+        str(payload.email),
         payload.full_name,
         payload.role,
-        payload.password,
-        payload.student_number,
+        payload.password or generate_placeholder_password(),
     )
     append_action_audit(
         action_audits,
@@ -141,8 +128,12 @@ def create_managed_user(
         target_id=created.id,
         details={"email": created.email, "role": created.role.value},
     )
-    send_password_setup_email(created, notification_service)
-    return user_response(created)
+    signup_email_sent = send_password_setup_email(created, notification_service)
+    return UserCreationResponse(
+        **user_response(created).model_dump(),
+        account_created=True,
+        signup_email_sent=signup_email_sent,
+    )
 
 
 @router.patch("/{user_id}", response_model=UserResponse)

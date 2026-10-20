@@ -685,15 +685,13 @@ class PostgresProjectRepository(ProjectRepository):
 
     def enroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
-            # Check if student is already in any section of the same course code/term/year
+            # A student can enroll in a course code only once, across terms and sections.
             row = connection.execute("""
                 SELECT 1 FROM course_students cs
                 JOIN courses c ON c.course_id = cs.course_id
                 WHERE cs.user_id = %s
-                AND lower(c.code) = lower((SELECT code FROM courses WHERE course_id = %s))
-                AND c.year = (SELECT year FROM courses WHERE course_id = %s)
-                AND lower(c.term) = lower((SELECT term FROM courses WHERE course_id = %s))
-            """, (UUID(user_id), UUID(course_id), UUID(course_id), UUID(course_id))).fetchone()
+                AND lower(trim(c.code)) = lower(trim((SELECT code FROM courses WHERE course_id = %s)))
+            """, (UUID(user_id), UUID(course_id))).fetchone()
 
             if row:
                 return False
@@ -717,7 +715,23 @@ class PostgresProjectRepository(ProjectRepository):
     def unenroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
             row = connection.execute("DELETE FROM course_students WHERE course_id = %s AND user_id = %s RETURNING course_id", (UUID(course_id), UUID(user_id))).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        self.remove_student_from_projects_in_course(course_id, user_id)
+        return True
+
+    def remove_student_from_projects_in_course(self, course_id: str, user_id: str) -> None:
+        with self._pool.connection() as connection:
+            project_rows = connection.execute(
+                "SELECT project_id FROM projects WHERE course_id = %s",
+                (UUID(course_id),),
+            ).fetchall()
+            for row in project_rows:
+                project_id = str(row["project_id"])
+                connection.execute(
+                    "DELETE FROM project_members WHERE project_id = %s AND user_id = %s",
+                    (UUID(project_id), UUID(user_id)),
+                )
 
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
         with self._pool.connection() as connection:

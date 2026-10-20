@@ -18,7 +18,7 @@ class AdminUserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=100)
     role: Role = Role.STUDENT
-    password: str = Field(min_length=8, max_length=128)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
     student_number: int | None = Field(default=None, gt=0)
 
 
@@ -62,3 +62,8 @@ class UserResponse(BaseModel):
     is_active: bool = True
     must_change_password: bool = False
     student_number: int | None = None
+
+
+class UserCreationResponse(UserResponse):
+    account_created: bool = True
+    signup_email_sent: bool = False

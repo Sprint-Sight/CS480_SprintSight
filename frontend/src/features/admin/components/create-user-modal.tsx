@@ -1,21 +1,21 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Shield, Key } from "lucide-react";
+import { X, Shield, Key, Mail } from "lucide-react";
 import { Role, CreateUserData } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 interface CreateUserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (data: CreateUserData) => Promise<void>;
+  onCreate: (data: CreateUserData) => Promise<boolean>;
 }
 
 export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalProps) {
   const [formData, setFormData] = useState<CreateUserData>({
     fullName: "",
     email: "",
-    password: "", // Added password field
+    password: "",
     role: "student",
   });
   const [showConfirm, setShowConfirm] = useState(false);
@@ -31,10 +31,10 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
   const handleConfirmedCreate = async () => {
     setShowConfirm(false);
     setIsSubmitting(true);
-    await onCreate(formData);
+    const created = await onCreate(formData);
     setIsSubmitting(false);
-    
-    // Reset form after successful creation
+    if (!created) return;
+
     setFormData({
       fullName: "",
       email: "",
@@ -85,29 +85,19 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-blue-600" />
-                Initial Password
-              </label>
-              <input
-                type="text" // Kept as text so the admin can see it and copy it to give to the user
-                required
-                minLength={6}
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
-                placeholder="TempPassword123!"
-              />
-              <p className="text-[10px] text-slate-500 mt-1.5">You will need to securely share this password with the user.</p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-blue-600" />
                 Assigned Role
               </label>
               <select
                 value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value as Role })}
+                onChange={(e) => {
+                  const role = e.target.value as Role;
+                  setFormData({
+                    ...formData,
+                    role,
+                    password: role === "student" ? "" : formData.password,
+                  });
+                }}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all cursor-pointer"
               >
                 <option value="student">Student</option>
@@ -115,6 +105,30 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
                 <option value="admin">Admin</option>
               </select>
             </div>
+
+            {formData.role === "student" ? (
+              <p className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0" />
+                The student will receive an email with a secure link to set their
+                first password. No initial password is needed.
+              </p>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Key className="w-3.5 h-3.5 text-blue-600" />
+                  Initial Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={formData.password || ""}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+                  placeholder="Enter an initial password"
+                />
+              </div>
+            )}
 
             <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
               Instructors manage student course enrollment and project-team membership from the course workspace.
@@ -145,7 +159,11 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
         onClose={() => setShowConfirm(false)}
         onConfirm={handleConfirmedCreate}
         title="Confirm User Provisioning"
-        message={`Provision a new ${formData.role.toUpperCase()} account for ${formData.fullName} (${formData.email})?`}
+        message={
+          formData.role === "student"
+            ? `Create a student account for ${formData.fullName} (${formData.email})? A first-time password setup link will be emailed to the student.`
+            : `Provision a new ${formData.role.toUpperCase()} account for ${formData.fullName} (${formData.email})?`
+        }
         confirmText="Yes, Create Account"
         cancelText="Cancel"
       />

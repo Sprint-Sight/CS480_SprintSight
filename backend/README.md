@@ -38,6 +38,15 @@ Creating a managed account or resetting its temporary password sends a
 first-time-password email when SMTP is configured. Users can request a fresh
 setup email or a password-reset email:
 
+Instructors can also create a student from a course roster without supplying a
+password. The account is created with a random, undisclosed temporary password,
+and sent a first-time setup link. The student is then enrolled separately from
+the roster. A student can be enrolled in multiple courses, but only once per
+course code. To apply this rule to an existing database, run
+`docker compose exec -T db psql -U postgres -d sprintsight < migrations/20261020_student_course_code_unique.sql`
+from `backend/`; the migration stops without changing enrollment data if
+duplicate course-code enrollments already exist.
+
 - `POST /api/v1/auth/first-time-password/request` with `{"email":"user@example.com"}`
 - `POST /api/v1/auth/password-reset/request` with `{"email":"user@example.com"}`
 

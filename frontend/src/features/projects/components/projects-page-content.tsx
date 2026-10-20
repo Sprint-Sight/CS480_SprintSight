@@ -57,7 +57,11 @@ export default function ProjectsPageContent() {
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
-  const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string }>>([]);
+  const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
+  const [allStudents, setAllStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
+  const [studentSearchTerm, setStudentSearchTerm] = useState("");
+  const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  const [studentDirectoryError, setStudentDirectoryError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
   const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
@@ -82,7 +86,7 @@ export default function ProjectsPageContent() {
     term: "Fall",
   });
 
-  const [studentForm, setStudentForm] = useState({ email: "", full_name: "", password: "" });
+  const [studentForm, setStudentForm] = useState({ email: "", full_name: "" });
 
   async function reloadCourses() {
     const token = getAuthToken();
@@ -128,7 +132,7 @@ export default function ProjectsPageContent() {
     }
 
     try {
-      const students = await apiRequest<Array<{ id: string; email: string; full_name: string }>>(
+      const students = await apiRequest<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>(
         `/courses/${selectedCourseId}/students`
       );
       setCourseStudents(students);
@@ -137,6 +141,23 @@ export default function ProjectsPageContent() {
       setCourseStudents([]);
     }
   }, [selectedCourseId]);
+
+  const loadAllStudents = useCallback(async () => {
+    setIsLoadingStudents(true);
+    setStudentDirectoryError("");
+    try {
+      const students = await apiRequest<
+        Array<{ id: string; email: string; full_name: string; is_active: boolean; role: string }>
+      >("/users");
+      setAllStudents(students.filter((student) => student.role === "student"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load student accounts.";
+      setStudentDirectoryError(message);
+      console.error("Failed to load student directory:", error);
+    } finally {
+      setIsLoadingStudents(false);
+    }
+  }, []);
 
   const loadProjects = useCallback(async () => {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
@@ -189,6 +210,10 @@ export default function ProjectsPageContent() {
     loadCourseStudents();
     loadProjects();
   }, [selectedCourseId, loadCourseStudents, loadProjects]);
+
+  useEffect(() => {
+    if (isRosterModalOpen) void loadAllStudents();
+  }, [isRosterModalOpen, loadAllStudents]);
 
   const appliedFilterCount = useMemo(() => {
     let count = 0;
@@ -381,39 +406,51 @@ export default function ProjectsPageContent() {
     }
   }
 
-  async function handleEnrollStudent() {
-    if (!selectedCourseId || !isUuid(selectedCourseId)) {
-      window.alert("Please select a valid course before enrolling students.");
-      return;
-    }
-
+  async function handleCreateStudent() {
     const trimmedEmail = studentForm.email.trim().toLowerCase();
     const trimmedName = studentForm.full_name.trim();
-    const password = studentForm.password;
 
-    if (!trimmedEmail || !trimmedName || !password) {
-      window.alert("Student name, email, and password are required.");
-      return;
-    }
-    if (password.length < 8) {
-      window.alert("The student password must be at least 8 characters.");
-      return;
-    }
-    if (courseStudents.some((student) => student.email.trim().toLowerCase() === trimmedEmail)) {
-      window.alert("This student is already enrolled in the selected course. Their existing password was not changed.");
+    if (!trimmedEmail || !trimmedName) {
+      window.alert("Student name and email are required.");
       return;
     }
 
     try {
-      const student = await apiRequest<{ id: string; email: string; full_name: string; must_change_password?: boolean }>(`/courses/${selectedCourseId}/students`, {
+      const student = await apiRequest<{
+        id: string;
+        email: string;
+        full_name: string;
+        signup_email_sent: boolean;
+      }>("/users", {
         method: "POST",
-        body: JSON.stringify({ email: trimmedEmail, full_name: trimmedName, password }),
+        body: JSON.stringify({ email: trimmedEmail, full_name: trimmedName }),
       });
 
-      window.alert(`Student ${student.full_name} created and enrolled. They can log in with ${student.email} and the password entered here, then change it after first login.`);
+      if (student.signup_email_sent) {
+        window.alert(`Student ${student.full_name} was created. A first-time password setup link was sent to ${student.email}. Enroll them in a course from the student directory below.`);
+      } else {
+        window.alert(`Student ${student.full_name} was created, but the setup email could not be sent. Check the backend SMTP configuration and logs. You can enroll them in a course from the student directory below.`);
+      }
 
-      setStudentForm({ email: "", full_name: "", password: "" });
+      setStudentForm({ email: "", full_name: "" });
+      await loadAllStudents();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to create student.");
+    }
+  }
+
+  async function handleEnrollExistingStudent(userId: string) {
+    if (!selectedCourseId || !isUuid(selectedCourseId)) {
+      window.alert("Please select a valid course before enrolling students.");
+      return;
+    }
+    try {
+      const student = await apiRequest<{ full_name: string }>(
+        `/courses/${selectedCourseId}/students/${userId}`,
+        { method: "POST" },
+      );
       await loadCourseStudents();
+      window.alert(`${student.full_name} was enrolled in this course.`);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to enroll student.");
     }
@@ -524,9 +561,9 @@ export default function ProjectsPageContent() {
             </button>
           </div>
 
-          <button type="button" onClick={() => setIsRosterModalOpen(true)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
+          <button type="button" onClick={() => { setStudentSearchTerm(""); setIsRosterModalOpen(true); }} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
             <Users className="h-4 w-4 text-slate-500" />
-            Roster
+            Students
           </button>
 
           <button type="button" onClick={handleOpenCreateProject} disabled={!selectedCourseId} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
@@ -596,20 +633,37 @@ export default function ProjectsPageContent() {
 
       <RosterModal
         isOpen={isRosterModalOpen}
+        hasSelectedCourse={Boolean(selectedCourseId && isUuid(selectedCourseId))}
         courseStudents={courseStudents}
+        allStudents={allStudents}
+        studentSearchTerm={studentSearchTerm}
+        isLoadingStudents={isLoadingStudents}
+        studentDirectoryError={studentDirectoryError}
         studentForm={studentForm}
         onClose={() => {
           setIsRosterModalOpen(false);
         }}
-        onEnroll={handleEnrollStudent}
+        onCreateStudent={handleCreateStudent}
+        onEnrollExisting={handleEnrollExistingStudent}
         onUnenroll={handleUnenrollStudent}
+        onRefreshStudents={() => void loadAllStudents()}
+        setStudentSearchTerm={setStudentSearchTerm}
         setStudentForm={setStudentForm}
       />
 
       <ProjectMembersModal
         isOpen={Boolean(projectForMemberSelection)}
         projectName={projectForMemberSelection?.team_name || "this project"}
+        hasEnrolledStudents={courseStudents.length > 0}
         availableStudents={courseStudents.filter((student) => !projects.some((project) => project.members.some((member) => member.id === student.id)))}
+        assignedStudents={courseStudents.flatMap((student) => {
+          const assignedProject = projects.find((project) =>
+            project.members.some((member) => member.id === student.id),
+          );
+          return assignedProject
+            ? [{ ...student, projectName: assignedProject.team_name }]
+            : [];
+        })}
         selectedStudentId={selectedProjectMemberId}
         onClose={() => { setProjectForMemberSelection(null); setSelectedProjectMemberId(""); }}
         onSelectStudent={setSelectedProjectMemberId}

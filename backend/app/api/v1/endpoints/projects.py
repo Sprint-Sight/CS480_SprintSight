@@ -43,12 +43,15 @@ from app.schemas.projects import (
 )
 from app.schemas.student_import import StudentImportResult
 from app.services.auditLogService.service import append_action_audit
-from app.services.authService.service import create_user, user_response
+from app.services.authService.password_setup import send_password_setup_email
+from app.services.authService.service import (
+    create_user,
+    generate_placeholder_password,
+    user_response,
+)
 from app.services.jiraService.service import validate_jira_credentials
 from app.services.notificationService.in_app import create_in_app_notification
-from app.services.studentImportService.service import import_students
 from app.services.notificationService.service import SMTPNotificationService
-from app.api.v1.endpoints.users import send_password_setup_email
 
 router = APIRouter(tags=["courses", "projects"])
 
@@ -99,22 +102,17 @@ def _encrypted_jira_token(new_token: str | None, existing_encrypted: str | None,
 
 
 def _validate_student_course_enrollment(repository: ProjectRepository, course_id: str, user_id: str):
-    """Enforce: 1 student can only be enrolled in 1 section of a course code per term/year."""
+    """Enforce one enrollment per course code, independent of term or section."""
     target_course = repository.get_course(course_id)
     if not target_course:
         return
 
-    # Check all courses matching the code, year, and term
     for course in repository.list_courses():
-        if (
-            course.code.lower() == target_course.code.lower()
-            and course.year == target_course.year
-            and course.term.lower() == target_course.term.lower()
-        ):
+        if course.code.strip().lower() == target_course.code.strip().lower():
             if repository.is_student_enrolled(course.id, user_id):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Student is already enrolled in section '{course.section}' for {course.code} ({course.term} {course.year}).",
+                    detail=f"Student is already enrolled in a section of {target_course.code}.",
                 )
 
 
@@ -409,7 +407,8 @@ def enroll_course_student(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in this course section.")
     except UniqueViolation as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in a section for this course."
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Student is already enrolled in a section of this course code.",
         ) from exc
 
     append_action_audit(
@@ -480,7 +479,11 @@ def assign_instructor(
     return CourseInstructorResponse(course_id=course_id, user_id=user_id, role=user.role)
 
 
-@router.post("/courses/{course_id}/students", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/courses/{course_id}/students",
+    response_model=CourseStudentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_course_student(
     course_id: str,
     payload: InstructorStudentCreate,
@@ -489,13 +492,15 @@ def create_course_student(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
-) -> UserResponse:
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+) -> CourseStudentResponse:
     course = _course_or_404(repository, course_id)
     if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or TA is not assigned to this course.")
 
     existing_user = users.get_by_email(payload.email)
     created_account = False
+    signup_email_sent = False
     if existing_user:
         if existing_user.role != Role.STUDENT:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.")
@@ -511,6 +516,10 @@ def create_course_student(
                 Role.STUDENT,
                 payload.password,
                 payload.student_number,
+                str(payload.email),
+                payload.full_name,
+                Role.STUDENT,
+                payload.password or generate_placeholder_password(),
             )
             created_account = True
         except HTTPException as exc:
@@ -528,12 +537,15 @@ def create_course_student(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student number conflicts with the existing account.")
 
     if repository.is_student_enrolled(course_id, student.id):
-        return user_response(student)
+        return CourseStudentResponse(**user_response(student).model_dump())
 
     _validate_student_course_enrollment(repository, course_id, student.id)
 
     if not repository.enroll_student(course_id, student.id):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in this course section.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Student is already enrolled in a section of {course.code}.",
+        )
     append_action_audit(
         action_audits,
         actor_id=current_user.id,
@@ -544,7 +556,13 @@ def create_course_student(
         details={"course_id": course_id},
     )
     _notify_course_enrollment(notifications, student, course)
-    return user_response(student)
+    if created_account:
+        signup_email_sent = send_password_setup_email(student, notification_service)
+    return CourseStudentResponse(
+        **user_response(student).model_dump(),
+        account_created=created_account,
+        signup_email_sent=signup_email_sent,
+    )
 
 
 # ---------------------------------------------------------------------------

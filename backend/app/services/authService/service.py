@@ -1,12 +1,16 @@
-from fastapi import HTTPException, status
-
+import secrets
 from uuid import uuid4
 
+from fastapi import HTTPException, status
 from psycopg.errors import UniqueViolation
 
 from app.core.security import hash_password, verify_password
 from app.repositories.interfaces import UserRecord, UserRepository
 from app.schemas.auth import Role
+
+
+def generate_placeholder_password() -> str:
+    return secrets.token_urlsafe(24)
 
 
 def authenticate_user(repository: UserRepository, email: str, password: str) -> UserRecord:

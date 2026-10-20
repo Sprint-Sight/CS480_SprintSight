@@ -171,7 +171,7 @@ class InMemoryProjectRepository(ProjectRepository):
         if (course_id, user_id) in self._enrollments:
             return False
         course = self.get_course(course_id)
-        if course and any(self.get_course(existing_course_id).code.lower() == course.code.lower()
+        if course and any(self.get_course(existing_course_id).code.strip().lower() == course.code.strip().lower()
                           for existing_course_id, existing_user_id in self._enrollments
                           if existing_user_id == user_id and self.get_course(existing_course_id)):
             return False
@@ -186,7 +186,14 @@ class InMemoryProjectRepository(ProjectRepository):
         if enrollment not in self._enrollments:
             return False
         self._enrollments.remove(enrollment)
+        self.remove_student_from_projects_in_course(course_id, user_id)
         return True
+
+    def remove_student_from_projects_in_course(self, course_id: str, user_id: str) -> None:
+        for project_id, member_ids in self._members.items():
+            project = self._projects.get(project_id)
+            if project and project.course_id == course_id and user_id in member_ids:
+                self._members[project_id] = [mid for mid in member_ids if mid != user_id]
 
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
         return [user_id for enrolled_course_id, user_id in self._enrollments if enrolled_course_id == course_id]
