@@ -15,7 +15,7 @@ AI="$ROOT/ai-engine"
 BE="$ROOT/backend"
 
 echo "Stopping the application stack..."
-docker compose -p sprintsight-backend -f "$BE/docker-compose.yml" down
+docker compose -p backend -f "$BE/docker-compose.yml" down
 
 echo "Stopping the AI-engine stack..."
 bash "$AI/hpc/hpc-dev.sh" stop

@@ -59,11 +59,16 @@ if ! bash "$HPC" docker; then
 fi
 
 # 4. Application stack: frontend + backend + audit-retention + db + minio.
-#    Kept as its own Compose project so its 'db'/'postgres_data' never collide
-#    with the AI-engine stack's. The two talk over host ports (host.docker.internal).
+#    Project name "backend" matches `cd backend && docker compose up` (the
+#    README workflow) so a stack already started that way is reconciled, not
+#    duplicated. It must match: backend/docker-compose.yml pins literal
+#    container_name values (sprintsight-db, sprintsight-minio, ...), which are
+#    global, so the stack can only run under one project name. It stays a
+#    SEPARATE project from the AI-engine stack ("ai-engine"); the two talk over
+#    host ports (host.docker.internal), so they never need to share a project.
 echo ""
 echo "[4/4] Starting the application stack..."
-docker compose -p sprintsight-backend -f "$BE/docker-compose.yml" up -d
+docker compose -p backend -f "$BE/docker-compose.yml" up -d
 
 echo ""
 echo "========================================="
