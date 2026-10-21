@@ -9,6 +9,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  BookOpen,
   ChevronDown,
   ClipboardList,
   Eye,
@@ -19,7 +20,9 @@ import {
   Search,
   Settings,
   User,
+  Users,
   Loader2,
+  type LucideIcon,
 } from "lucide-react";
 
 import { apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
@@ -57,6 +60,24 @@ type DashboardNotification = {
   message: string;
   created_at: string;
   read_at: string | null;
+};
+
+/**
+ * How each notification event is presented in the feed. Removals are tinted
+ * differently from additions so a student can see at a glance that something was
+ * taken away from them rather than granted.
+ */
+const NOTIFICATION_STYLES: Record<string, { icon: LucideIcon; accent: string }> = {
+  course_enrollment: { icon: BookOpen, accent: "bg-emerald-50 text-emerald-600" },
+  course_unenrollment: { icon: BookOpen, accent: "bg-rose-50 text-rose-600" },
+  project_membership: { icon: Users, accent: "bg-emerald-50 text-emerald-600" },
+  project_unmembership: { icon: Users, accent: "bg-rose-50 text-rose-600" },
+  document_uploaded: { icon: FileText, accent: "bg-blue-50 text-blue-600" },
+};
+
+const DEFAULT_NOTIFICATION_STYLE: { icon: LucideIcon; accent: string } = {
+  icon: Bell,
+  accent: "bg-slate-100 text-slate-600",
 };
 
 const instructorNavItems: NavItem[] = [
@@ -657,31 +678,45 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                   You are all caught up.
                 </p>
               ) : (
-                notifications.map((notification) => (
-                  <button
-                    key={notification.id}
-                    type="button"
-                    onClick={() => void markNotificationRead(notification)}
-                    className={`w-full border-b border-slate-100 px-4 py-3 text-left last:border-0 hover:bg-slate-50 ${
-                      notification.read_at ? "bg-white" : "bg-blue-50/60"
-                    }`}
-                  >
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="text-sm font-medium text-slate-900">
-                        {notification.title}
+                notifications.map((notification) => {
+                  const style = NOTIFICATION_STYLES[notification.event_type] ?? DEFAULT_NOTIFICATION_STYLE;
+                  const Icon = style.icon;
+                  return (
+                    <button
+                      key={notification.id}
+                      type="button"
+                      onClick={() => void markNotificationRead(notification)}
+                      className={`w-full border-b border-slate-100 px-4 py-3 text-left last:border-0 hover:bg-slate-50 ${
+                        notification.read_at ? "bg-white" : "bg-blue-50/60"
+                      }`}
+                    >
+                      <span className="flex items-start gap-3">
+                        <span
+                          aria-hidden="true"
+                          className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${style.accent}`}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-start justify-between gap-3">
+                            <span className="text-sm font-medium text-slate-900">
+                              {notification.title}
+                            </span>
+                            {!notification.read_at && (
+                              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                            )}
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-600">
+                            {notification.message}
+                          </span>
+                          <span className="mt-2 block text-[11px] text-slate-400">
+                            {new Date(notification.created_at).toLocaleString()}
+                          </span>
+                        </span>
                       </span>
-                      {!notification.read_at && (
-                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
-                      )}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-600">
-                      {notification.message}
-                    </span>
-                    <span className="mt-2 block text-[11px] text-slate-400">
-                      {new Date(notification.created_at).toLocaleString()}
-                    </span>
-                  </button>
-                ))
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>,

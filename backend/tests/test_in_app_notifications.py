@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -82,6 +82,141 @@ def test_course_and_project_additions_notify_student(override_user_repository) -
 
     instructor_feed = client.get("/api/v1/notifications", headers=instructor_headers)
     assert instructor_feed.json()["notifications"] == []
+
+
+def _project(
+    course_id: str,
+    name: str = "Removal Project",
+    team: str = "Removal Team",
+) -> ProjectRecord:
+    return ProjectRecord(
+        id=str(uuid4()),
+        project_name=name,
+        team_name=team,
+        description=None,
+        course_id=course_id,
+        course_code="CS480",
+        github_repo_url=None,
+        local_repo_path=None,
+        created_by="u-faculty-1",
+        created_at=datetime.now(UTC),
+    )
+
+
+def test_removing_a_student_from_a_course_notifies_them(override_user_repository) -> None:
+    course = override_user_repository.create_course(
+        "CS482",
+        "Removal Course",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
+    )
+    instructor_headers = {
+        "Authorization": f"Bearer {_token('faculty@sprintsight.edu')}",
+    }
+    student_headers = {
+        "Authorization": f"Bearer {_token('student@sprintsight.edu')}",
+    }
+
+    enrollment = client.post(
+        f"/api/v1/courses/{course.id}/students/u-student-1",
+        headers=instructor_headers,
+    )
+    assert enrollment.status_code == 200, enrollment.text
+
+    project = _project(course.id)
+    override_user_repository.create_project(project, ["u-student-1"])
+
+    removal = client.delete(
+        f"/api/v1/courses/{course.id}/students/u-student-1",
+        headers=instructor_headers,
+    )
+    assert removal.status_code == 204, removal.text
+
+    response = client.get("/api/v1/notifications", headers=student_headers)
+    assert response.status_code == 200
+    removals = [
+        item
+        for item in response.json()["notifications"]
+        if item["event_type"] == "course_unenrollment"
+    ]
+    assert len(removals) == 1
+    assert removals[0]["title"] == "Removed from a course"
+    assert "CS482" in removals[0]["message"]
+    # Unenrolling also dropped them from the project group, so it is named.
+    assert "Removal Team" in removals[0]["message"]
+    assert not override_user_repository.is_student_enrolled(course.id, "u-student-1")
+    assert "u-student-1" not in override_user_repository.list_member_ids(project.id)
+
+
+def test_removing_a_student_from_a_project_group_notifies_them(override_user_repository) -> None:
+    course = override_user_repository.create_course(
+        "CS483",
+        "Group Removal",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
+    )
+    instructor_headers = {
+        "Authorization": f"Bearer {_token('faculty@sprintsight.edu')}",
+    }
+    student_headers = {
+        "Authorization": f"Bearer {_token('student@sprintsight.edu')}",
+    }
+
+    client.post(
+        f"/api/v1/courses/{course.id}/students/u-student-1",
+        headers=instructor_headers,
+    )
+    project = _project(course.id, "Group Removal Project", "Alpha Squad")
+    override_user_repository.create_project(project, ["u-student-1"])
+
+    removal = client.delete(
+        f"/api/v1/projects/{project.id}/members/u-student-1",
+        headers=instructor_headers,
+    )
+    assert removal.status_code == 200, removal.text
+
+    response = client.get("/api/v1/notifications", headers=student_headers)
+    removals = [
+        item
+        for item in response.json()["notifications"]
+        if item["event_type"] == "project_unmembership"
+    ]
+    assert len(removals) == 1
+    assert removals[0]["title"] == "Removed from a project"
+    assert "Alpha Squad" in removals[0]["message"]
+    # The student stays enrolled in the course; only the group membership ended.
+    assert override_user_repository.is_student_enrolled(course.id, "u-student-1")
+    assert "u-student-1" not in override_user_repository.list_member_ids(project.id)
+
+
+def test_unenrolling_an_unenrolled_student_does_not_notify(override_user_repository) -> None:
+    course = override_user_repository.create_course(
+        "CS484",
+        "No Such Enrollment",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
+    )
+    instructor_headers = {
+        "Authorization": f"Bearer {_token('faculty@sprintsight.edu')}",
+    }
+    student_headers = {
+        "Authorization": f"Bearer {_token('student@sprintsight.edu')}",
+    }
+
+    removal = client.delete(
+        f"/api/v1/courses/{course.id}/students/u-student-1",
+        headers=instructor_headers,
+    )
+    assert removal.status_code == 404
+
+    response = client.get("/api/v1/notifications", headers=student_headers)
+    assert response.json()["notifications"] == []
 
 
 def test_user_cannot_mark_another_users_notification_read(

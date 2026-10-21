@@ -86,7 +86,7 @@ export default function ProjectsPageContent() {
     term: "Fall",
   });
 
-  const [studentForm, setStudentForm] = useState({ email: "", full_name: "" });
+  const [studentForm, setStudentForm] = useState({ email: "", full_name: "", password: "" });
 
   async function reloadCourses() {
     const token = getAuthToken();
@@ -409,9 +409,14 @@ export default function ProjectsPageContent() {
   async function handleCreateStudent() {
     const trimmedEmail = studentForm.email.trim().toLowerCase();
     const trimmedName = studentForm.full_name.trim();
+    const fallbackPassword = studentForm.password;
 
     if (!trimmedEmail || !trimmedName) {
       window.alert("Student name and email are required.");
+      return;
+    }
+    if (fallbackPassword && fallbackPassword.length < 8) {
+      window.alert("The fallback password must be at least 8 characters.");
       return;
     }
 
@@ -423,16 +428,32 @@ export default function ProjectsPageContent() {
         signup_email_sent: boolean;
       }>("/users", {
         method: "POST",
-        body: JSON.stringify({ email: trimmedEmail, full_name: trimmedName }),
+        body: JSON.stringify({
+          email: trimmedEmail,
+          full_name: trimmedName,
+          ...(fallbackPassword ? { password: fallbackPassword } : {}),
+        }),
       });
 
       if (student.signup_email_sent) {
-        window.alert(`Student ${student.full_name} was created. A first-time password setup link was sent to ${student.email}. Enroll them in a course from the student directory below.`);
+        window.alert(
+          `Student ${student.full_name} was created. A first-time password setup link was queued for delivery to ${student.email}.${
+            fallbackPassword
+              ? " They can also log in once with the fallback password you set."
+              : ""
+          } Enroll them in a course from the student directory below.`,
+        );
       } else {
-        window.alert(`Student ${student.full_name} was created, but the setup email could not be sent. Check the backend SMTP configuration and logs. You can enroll them in a course from the student directory below.`);
+        window.alert(
+          `Student ${student.full_name} was created, but the setup email could not be queued. Check the backend SMTP configuration and logs.${
+            fallbackPassword
+              ? " They can still log in once with the fallback password you set."
+              : " You can enroll them in a course from the student directory below."
+          }`,
+        );
       }
 
-      setStudentForm({ email: "", full_name: "" });
+      setStudentForm({ email: "", full_name: "", password: "" });
       await loadAllStudents();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to create student.");

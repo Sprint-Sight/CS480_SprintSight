@@ -44,7 +44,7 @@ from app.services.middleManService.service import (
     build_assessment_payload,
     send_assessment_to_ai_engine,
 )
-from app.services.notificationService.service import SMTPNotificationService
+from app.services.notificationService.service import EmailTransport
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +293,7 @@ def run_assessment_job(
     document_repository: DocumentRepository | None = None,
     user_repository: UserRepository | None = None,
     project_repository: ProjectRepository | None = None,
-    notification_service: SMTPNotificationService | None = None,
+    notification_service: EmailTransport | None = None,
 ) -> None:
     """Background worker that collects the same input that the old synchronous endpoint used,
     sends the canonical payload to the AI engine, and then persists a report without
@@ -409,7 +409,7 @@ def _notify_instructors_report_completed(
     project,
     user_repository: UserRepository,
     project_repository: ProjectRepository,
-    notification_service: SMTPNotificationService,
+    notification_service: EmailTransport,
     job_id: str,
 ) -> None:
     try:
@@ -468,7 +468,7 @@ def _notify_students_report_completed(
     report: AssessmentReport,
     project,
     user_repository: UserRepository,
-    notification_service: SMTPNotificationService,
+    notification_service: EmailTransport,
     job_id: str,
     project_repository: ProjectRepository | None = None,
 ) -> None:
@@ -547,7 +547,7 @@ def _notify_students_report_completed(
 def notify_students_report_overridden(
     report: AssessmentReport,
     user_repository: UserRepository,
-    notification_service: SMTPNotificationService,
+    notification_service: EmailTransport,
     student_ids: list[str],
     reason: str,
 ) -> None:

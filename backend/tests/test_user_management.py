@@ -43,6 +43,63 @@ def test_admin_can_create_user_and_user_must_change_temporary_password() -> None
     assert login("new@sprintsight.edu", "permanent123")["must_change_password"] is False
 
 
+def test_instructor_set_fallback_password_lets_a_student_in_without_the_email() -> None:
+    """The fallback path when the setup email cannot be delivered.
+
+    The instructor sets a password, the student logs in with it once, and is then
+    forced onto the change-first-password screen.
+    """
+    instructor = login("faculty@sprintsight.edu", "password123")
+    response = client.post(
+        "/api/v1/users",
+        json={
+            "email": "fallback@sprintsight.edu",
+            "full_name": "Fallback Student",
+            "role": "student",
+            "password": "fallback123",
+        },
+        headers=auth_header(instructor["access_token"]),
+    )
+    assert response.status_code == 201
+    assert response.json()["must_change_password"] is True
+    # The password is never echoed back to the client.
+    assert "password" not in response.json()
+
+    student = login("fallback@sprintsight.edu", "fallback123")
+    assert student["must_change_password"] is True
+    # Blocked from the rest of the app until they choose their own password.
+    me = client.get("/api/v1/auth/me", headers=auth_header(student["access_token"]))
+    assert me.status_code == 403
+
+    change = client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": "fallback123", "new_password": "studentchosen123"},
+        headers=auth_header(student["access_token"]),
+    )
+    assert change.status_code == 200
+    assert change.json()["must_change_password"] is False
+    assert login("fallback@sprintsight.edu", "studentchosen123")["must_change_password"] is False
+
+
+def test_student_created_without_a_password_cannot_log_in_without_the_email() -> None:
+    """Without an instructor-set password there is no fallback: only the link works."""
+    instructor = login("faculty@sprintsight.edu", "password123")
+    response = client.post(
+        "/api/v1/users",
+        json={"email": "nolink@sprintsight.edu", "full_name": "No Link", "role": "student"},
+        headers=auth_header(instructor["access_token"]),
+    )
+    assert response.status_code == 201
+    assert response.json()["must_change_password"] is True
+    assert "password" not in response.json()
+
+    # A random placeholder was generated, so no guessed password gets in.
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"email": "nolink@sprintsight.edu", "password": "temporary123"},
+    ).status_code == 401
+
+
 def test_non_admin_cannot_manage_users() -> None:
     student = login("student@sprintsight.edu", "password123")
     response = client.get("/api/v1/users", headers=auth_header(student["access_token"]))

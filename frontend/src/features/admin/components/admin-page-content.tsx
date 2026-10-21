@@ -173,12 +173,12 @@ export function AdminPageContent() {
       if (newUser.role === "student" && newUser.signup_email_sent) {
         showNotification(
           "success",
-          `Student ${newUser.full_name} was created. A first-time password setup link was emailed to ${newUser.email}.`,
+          `Student ${newUser.full_name} was created. A first-time password setup link was queued for delivery to ${newUser.email}.`,
         );
       } else if (newUser.role === "student") {
         showNotification(
           "error",
-          `Student ${newUser.full_name} was created, but the setup email was not sent. Check SMTP configuration and backend logs.`,
+          `Student ${newUser.full_name} was created, but the setup email was not queued. Check SMTP configuration and backend logs.`,
         );
       } else {
         showNotification("success", `User ${newUser.full_name} provisioned successfully.`);
