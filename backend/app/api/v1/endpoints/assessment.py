@@ -1,27 +1,64 @@
-from typing import Annotated
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import get_action_audit_repository, get_assessment_repository, get_audit_repository, get_document_repository, get_instructor_model_selection_repository, get_jira_ingestion_repository, get_manual_text_repository, get_metrics_repository, get_project_repository, get_rubric_weights_repository, require_faculty, require_instructor, require_student_or_faculty
+from app.dependencies.auth import (
+    get_action_audit_repository,
+    get_assessment_repository,
+    get_audit_repository,
+    get_document_repository,
+    get_instructor_model_selection_repository,
+    get_jira_ingestion_repository,
+    get_manual_text_repository,
+    get_metrics_repository,
+    get_notification_service,
+    get_project_repository,
+    get_rubric_weights_repository,
+    get_user_repository,
+    require_faculty,
+    require_instructor,
+    require_student_or_faculty,
+)
 from app.repositories.in_memory import job_repo
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, InstructorModelSelectionRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository
-from app.schemas.assessment import AssessRequest, AssessmentReport, ManualAssessmentPatch, OverrideRequest, RubricWeightsPayload, RubricWeightsResponse
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    AssessmentRepository,
+    AuditRepository,
+    DocumentRepository,
+    InstructorModelSelectionRepository,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    ProjectRepository,
+    RubricWeightsRepository,
+    UserRepository,
+)
+from app.schemas.assessment import (
+    AssessmentReport,
+    AssessRequest,
+    ManualAssessmentPatch,
+    OverrideRequest,
+    RubricWeightsPayload,
+    RubricWeightsResponse,
+)
 from app.schemas.auth import Role
 from app.services.assessmentService.service import (
     get_effective_model_name,
     get_effective_rubric_weights,
     get_latest_assessment,
     list_assessment_reports,
+    notify_students_report_overridden,
     override_student_score,
     run_assessment_job,
     set_rubric_weights,
     update_manual_assessment,
 )
 from app.services.auditLogService.service import append_action_audit, append_override_audit
+from app.services.notificationService.service import SMTPNotificationService
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -47,6 +84,8 @@ def assess_sprint(
     rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     document_repository: Annotated[DocumentRepository, Depends(get_document_repository)],
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
     selection_repository: Annotated[InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
@@ -79,6 +118,9 @@ def assess_sprint(
         jira_ingestion_repository,
         rubric_weights_repository,
         document_repository,
+        user_repository=user_repository,
+        project_repository=projects,
+        notification_service=notification_service,
     )
     append_action_audit(
         action_audits,
@@ -207,6 +249,8 @@ def patch_assessment_report(
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
 ) -> AssessmentReport:
     if assessment_repository is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
@@ -226,6 +270,13 @@ def patch_assessment_report(
         target_id=report_id,
         details={"updated_fields": sorted(payload.model_fields_set)},
     )
+    notify_students_report_overridden(
+        report,
+        user_repository,
+        notification_service,
+        [score.student_id for score in report.individual_scores],
+        "Your instructor updated the assessment report.",
+    )
     return report
 
 
@@ -234,9 +285,27 @@ def override_score(
     payload: OverrideRequest,
     faculty_user: Annotated[object, Depends(require_faculty)],
     audit_repository: Annotated[AuditRepository, Depends(get_audit_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
 ):
-    override_record = override_student_score(payload, instructor_id=faculty_user.id)
+    if assessment_repository is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+    override_record = override_student_score(
+        payload,
+        instructor_id=faculty_user.id,
+        assessment_repository=assessment_repository,
+    )
     audit = append_override_audit(override_record, audit_repository)
+    report = assessment_repository.get_report(payload.report_id)
+    if report:
+        notify_students_report_overridden(
+            report,
+            user_repository,
+            notification_service,
+            [payload.student_id],
+            payload.reason_comment,
+        )
     return {
         "override": override_record,
         "audit": audit,

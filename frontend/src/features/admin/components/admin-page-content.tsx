@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -88,7 +88,7 @@ export function AdminPageContent() {
   };
 
   // 1. GET /users - Fetch User Directory
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     const token = getAuthToken();
     if (!token) return;
 
@@ -116,7 +116,7 @@ export function AdminPageContent() {
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role");
@@ -133,10 +133,10 @@ export function AdminPageContent() {
 
     fetchUsers();
     setMounted(true);
-  }, [router]);
+  }, [router, fetchUsers]);
 
   // 2. POST /users - Create Managed User
-  const handleCreateUser = async (data: CreateUserData) => {
+  const handleCreateUser = async (data: CreateUserData): Promise<boolean> => {
     const token = getAuthToken();
     try {
       const res = await fetch(`${API_BASE_URL}/users`, {
@@ -149,14 +149,14 @@ export function AdminPageContent() {
           email: data.email,
           full_name: data.fullName,
           role: data.role,
-          password: data.password,
+          ...(data.password ? { password: data.password } : {}),
         }),
       });
 
       if (!res.ok) {
         const err = await res.json();
         showNotification("error", err.detail || "Failed to create user.");
-        return;
+        return false;
       }
 
       const newUser = await res.json();
@@ -170,9 +170,23 @@ export function AdminPageContent() {
       };
 
       setUsers((prev) => [createdRecord, ...prev]);
-      showNotification("success", `User ${newUser.full_name} provisioned successfully.`);
-    } catch (err) {
+      if (newUser.role === "student" && newUser.signup_email_sent) {
+        showNotification(
+          "success",
+          `Student ${newUser.full_name} was created. A first-time password setup link was emailed to ${newUser.email}.`,
+        );
+      } else if (newUser.role === "student") {
+        showNotification(
+          "error",
+          `Student ${newUser.full_name} was created, but the setup email was not sent. Check SMTP configuration and backend logs.`,
+        );
+      } else {
+        showNotification("success", `User ${newUser.full_name} provisioned successfully.`);
+      }
+      return true;
+    } catch {
       showNotification("error", "Network error while provisioning user.");
+      return false;
     }
   };
 

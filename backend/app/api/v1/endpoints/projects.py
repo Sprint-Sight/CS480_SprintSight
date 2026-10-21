@@ -1,38 +1,59 @@
-from typing import Annotated
 from datetime import datetime, timezone
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from psycopg.errors import UniqueViolation
 
+from app.core.credential_crypto import encrypt_secret
 from app.dependencies.auth import (
     get_action_audit_repository,
     get_assessment_repository,
+    get_current_user,
     get_jira_ingestion_repository,
+    get_notification_repository,
+    get_notification_service,
     get_project_repository,
     get_user_repository,
     require_admin,
     require_faculty,
     require_instructor,
-    get_current_user,
 )
-from app.core.credential_crypto import encrypt_secret
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, ProjectRecord, ProjectRepository, UserRecord, UserRepository
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    AssessmentRepository,
+    NotificationRepository,
+    ProjectRecord,
+    ProjectRepository,
+    UserRecord,
+    UserRepository,
+)
 from app.schemas.assessment import AssessmentReport
-from app.services.auditLogService.service import append_action_audit
-from app.services.jiraService.service import validate_jira_credentials
 from app.schemas.auth import Role, UserResponse
 from app.schemas.projects import (
     CourseCreate,
     CourseInstructorResponse,
     CourseResponse,
+    CourseStudentCreationResponse,
+    CourseStudentResponse,
     CourseUpdate,
     InstructorStudentCreate,
     ProjectCreate,
     ProjectResponse,
     ProjectUpdate,
 )
-from app.services.authService.service import create_user, user_response
+from app.schemas.student_import import StudentImportResult
+from app.services.auditLogService.service import append_action_audit
+from app.services.authService.password_setup import send_password_setup_email
+from app.services.authService.service import (
+    create_user,
+    generate_placeholder_password,
+    user_response,
+)
+from app.services.jiraService.service import validate_jira_credentials
+from app.services.notificationService.in_app import create_in_app_notification
+from app.services.notificationService.service import SMTPNotificationService
+from app.services.studentImportService.service import import_students
 
 router = APIRouter(tags=["courses", "projects"])
 
@@ -83,22 +104,17 @@ def _encrypted_jira_token(new_token: str | None, existing_encrypted: str | None,
 
 
 def _validate_student_course_enrollment(repository: ProjectRepository, course_id: str, user_id: str):
-    """Enforce: 1 student can only be enrolled in 1 section of a course code per term/year."""
+    """Enforce one enrollment per course code, independent of term or section."""
     target_course = repository.get_course(course_id)
     if not target_course:
         return
 
-    # Check all courses matching the code, year, and term
     for course in repository.list_courses():
-        if (
-            course.code.lower() == target_course.code.lower()
-            and course.year == target_course.year
-            and course.term.lower() == target_course.term.lower()
-        ):
+        if course.code.strip().lower() == target_course.code.strip().lower():
             if repository.is_student_enrolled(course.id, user_id):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Student is already enrolled in section '{course.section}' for {course.code} ({course.term} {course.year}).",
+                    detail=f"Student is already enrolled in a section of {target_course.code}.",
                 )
 
 
@@ -113,6 +129,35 @@ def _validate_student_project_assignment(repository: ProjectRepository, course_i
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Student is already assigned to group '{project.team_name}' in this course.",
             )
+
+
+def _notify_course_enrollment(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    course,
+) -> None:
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "course_enrollment",
+        "Added to a course",
+        f"You have been added to {course.code} {course.name}, section {course.section} "
+        f"({course.term} {course.year}).",
+    )
+
+
+def _notify_project_membership(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    project: ProjectRecord,
+) -> None:
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "project_membership",
+        "Added to a project",
+        f"You have been added to {project.team_name} ({project.project_name}).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -286,17 +331,55 @@ def delete_course(
     )
 
 
-@router.get("/courses/{course_id}/students", response_model=list[UserResponse])
+@router.get("/courses/{course_id}/students", response_model=list[CourseStudentResponse])
 def list_course_students(
     course_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> list[UserResponse]:
+) -> list[CourseStudentResponse]:
     _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can view this roster.")
-    return [user_response(user) for user_id in repository.list_enrolled_student_ids(course_id) if (user := users.get_by_id(user_id))]
+    return [
+        CourseStudentResponse.model_validate(user_response(user).model_dump())
+        for user_id in repository.list_enrolled_student_ids(course_id)
+        if (user := users.get_by_id(user_id))
+    ]
+
+
+@router.post("/courses/{course_id}/students/import", response_model=StudentImportResult)
+def import_course_students(
+    course_id: str,
+    file: Annotated[UploadFile, File(...)],
+    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+) -> StudentImportResult:
+    course = _course_or_404(repository, course_id)
+    if not _can_manage_course(current_user, course_id, repository):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can import students.")
+    if file.content_type not in (None, "text/csv", "application/csv", "application/vnd.ms-excel"):
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Upload a CSV file.")
+
+    result, enrolled_users = import_students(file.file.read(), course_id, users, repository)
+    for student, account_created in enrolled_users:
+        append_action_audit(
+            action_audits,
+            actor_id=current_user.id,
+            actor_role=current_user.role.value,
+            action="bulk_import_course_student",
+            target_type="student",
+            target_id=student.id,
+            details={"course_id": course_id, "student_number": student.student_number, "account_created": account_created},
+        )
+        _notify_course_enrollment(notifications, student, course)
+        if account_created:
+            send_password_setup_email(student, notification_service)
+    return result
 
 
 @router.post("/courses/{course_id}/students/{user_id}", response_model=UserResponse)
@@ -307,8 +390,9 @@ def enroll_course_student(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> UserResponse:
-    _course_or_404(repository, course_id)
+    course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can enroll students.")
     user = users.get_by_id(user_id)
@@ -325,7 +409,8 @@ def enroll_course_student(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in this course section.")
     except UniqueViolation as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in a section for this course."
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Student is already enrolled in a section of this course code.",
         ) from exc
 
     append_action_audit(
@@ -337,6 +422,7 @@ def enroll_course_student(
         target_id=user_id,
         details={"course_id": course_id},
     )
+    _notify_course_enrollment(notifications, user, course)
     return user_response(user)
 
 
@@ -395,7 +481,11 @@ def assign_instructor(
     return CourseInstructorResponse(course_id=course_id, user_id=user_id, role=user.role)
 
 
-@router.post("/courses/{course_id}/students", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/courses/{course_id}/students",
+    response_model=CourseStudentCreationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_course_student(
     course_id: str,
     payload: InstructorStudentCreate,
@@ -403,13 +493,16 @@ def create_course_student(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
-) -> UserResponse:
-    _course_or_404(repository, course_id)
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+) -> CourseStudentCreationResponse:
+    course = _course_or_404(repository, course_id)
     if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or TA is not assigned to this course.")
 
     existing_user = users.get_by_email(payload.email)
     created_account = False
+    signup_email_sent = False
     if existing_user:
         if existing_user.role != Role.STUDENT:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered.")
@@ -418,7 +511,14 @@ def create_course_student(
         student = existing_user
     else:
         try:
-            student = create_user(users, payload.email, payload.full_name, Role.STUDENT, payload.password)
+            student = create_user(
+                users,
+                payload.email,
+                payload.full_name,
+                Role.STUDENT,
+                payload.password or generate_placeholder_password(),
+                payload.student_number,
+            )
             created_account = True
         except HTTPException as exc:
             if exc.status_code != status.HTTP_409_CONFLICT:
@@ -428,13 +528,22 @@ def create_course_student(
                 raise
             student = existing_user
 
+    if student.student_number is None:
+        if payload.student_number is not None:
+            student = users.set_student_number(student.id, payload.student_number) or student
+    elif payload.student_number is not None and student.student_number != payload.student_number:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student number conflicts with the existing account.")
+
     if repository.is_student_enrolled(course_id, student.id):
-        return user_response(student)
+        return CourseStudentCreationResponse(**user_response(student).model_dump())
 
     _validate_student_course_enrollment(repository, course_id, student.id)
 
     if not repository.enroll_student(course_id, student.id):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already enrolled in this course section.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Student is already enrolled in a section of {course.code}.",
+        )
     append_action_audit(
         action_audits,
         actor_id=current_user.id,
@@ -444,7 +553,14 @@ def create_course_student(
         target_id=student.id,
         details={"course_id": course_id},
     )
-    return user_response(student)
+    _notify_course_enrollment(notifications, student, course)
+    if created_account:
+        signup_email_sent = send_password_setup_email(student, notification_service)
+    return CourseStudentCreationResponse(
+        **user_response(student).model_dump(),
+        account_created=created_account,
+        signup_email_sent=signup_email_sent,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +575,7 @@ def create_project(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
@@ -513,6 +630,10 @@ def create_project(
         target_id=project.id,
         details={"team_name": project.team_name, "course_id": course_id},
     )
+    for member_id in members:
+        member = users.get_by_id(member_id)
+        if member:
+            _notify_project_membership(notifications, member, project)
     return _project_response(project, repository, users)
 
 
@@ -779,6 +900,7 @@ def add_member(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     member = users.get_by_id(user_id)
@@ -810,6 +932,7 @@ def add_member(
         target_id=user_id,
         details={"project_id": project_id, "course_id": project.course_id},
     )
+    _notify_project_membership(notifications, member, project)
     return _project_response(project, repository, users)
 
 

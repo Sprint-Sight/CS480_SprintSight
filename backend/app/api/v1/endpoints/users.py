@@ -1,11 +1,13 @@
-# app/routers/users.py
-
-from app.core.security import hash_password
 from typing import Annotated
+
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from psycopg.errors import UniqueViolation
 
 from app.dependencies.auth import (
     get_action_audit_repository,
+    get_notification_service,
     get_project_repository,
     get_user_repository,
     require_admin,
@@ -21,23 +23,36 @@ from app.schemas.auth import (
     AdminPasswordReset,
     AdminUserCreate,
     AdminUserUpdate,
-    PasswordChangeRequest, #for reset password unsafe
     Role,
+    UserCreationResponse,
     UserResponse,
 )
 from app.services.auditLogService.service import append_action_audit
 from app.services.authService.deactivation import deactivate_user_cascade
-from app.services.authService.service import create_user, reset_password, user_response
+from app.services.authService.password_setup import send_password_setup_email
+from app.services.authService.service import (
+    create_user,
+    generate_placeholder_password,
+    reset_password,
+    user_response,
+)
+from app.services.notificationService.service import (
+    NotificationConfigurationError,
+    NotificationDeliveryError,
+    SMTPNotificationService,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
 # Who can create whom?
 #
 #   Admin      → POST /users with any role (instructor, student, admin)
-#   Instructor → POST /courses/{id}/students   (creates + enrols in one step)
-#                POST /students                 (creates without enrolment)
+#   Instructor → POST /users                    (creates without enrolment)
+#                POST /courses/{id}/students    (creates and enrols)
+#                POST /courses/{id}/students/{user_id} (enrols an existing student)
 #   Student    → cannot create any user
 #
 # Who can deactivate (soft-delete) whom?
@@ -62,7 +77,7 @@ def list_users(
 ) -> list[UserResponse]:
     users = repository.list_users()
     if current_user.role == Role.INSTRUCTOR:
-        users = [u for u in users if u.role == Role.STUDENT and u.is_active]
+        users = [u for u in users if u.role == Role.STUDENT]
     return [user_response(user) for user in users]
 
 
@@ -75,18 +90,19 @@ def get_user(
     user = repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    if current_user.role == Role.INSTRUCTOR and (user.role != Role.STUDENT or not user.is_active):
+    if current_user.role == Role.INSTRUCTOR and user.role != Role.STUDENT:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors can only view student accounts.")
     return user_response(user)
 
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserCreationResponse, status_code=status.HTTP_201_CREATED)
 def create_managed_user(
     payload: AdminUserCreate,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
-) -> UserResponse:
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+) -> UserCreationResponse:
     """
     Admin creates any account type (instructor / student / admin).
     Instructors may only create student accounts.
@@ -96,7 +112,14 @@ def create_managed_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Instructors can only create student accounts.",
         )
-    created = create_user(repository, payload.email, payload.full_name, payload.role, payload.password)
+    created = create_user(
+        repository,
+        str(payload.email),
+        payload.full_name,
+        payload.role,
+        payload.password or generate_placeholder_password(),
+        payload.student_number,
+    )
     append_action_audit(
         action_audits,
         actor_id=current_user.id,
@@ -106,7 +129,12 @@ def create_managed_user(
         target_id=created.id,
         details={"email": created.email, "role": created.role.value},
     )
-    return user_response(created)
+    signup_email_sent = send_password_setup_email(created, notification_service)
+    return UserCreationResponse(
+        **user_response(created).model_dump(),
+        account_created=True,
+        signup_email_sent=signup_email_sent,
+    )
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -154,12 +182,33 @@ def update_managed_user(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email is already registered."
         )
+    target_role = payload.role or user.role
+    if target_role == Role.STUDENT:
+        student_number = payload.student_number or user.student_number
+        existing_number = (
+            repository.get_by_student_number(student_number)
+            if student_number is not None
+            else None
+        )
+        if existing_number and existing_number.id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Student number is already registered.",
+            )
+        if student_number is not None and user.student_number != student_number:
+            try:
+                user = repository.set_student_number(user_id, student_number) or user
+            except (UniqueViolation, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Student number is already registered.",
+                ) from exc
 
     updated = repository.update_user(
         user_id,
         email,
         payload.full_name or user.full_name,
-        payload.role or user.role,
+        target_role,
         payload.is_active if payload.is_active is not None else user.is_active,
     )
     append_action_audit(
@@ -181,6 +230,7 @@ def reset_managed_user_password(
     current_admin: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
@@ -196,29 +246,7 @@ def reset_managed_user_password(
         target_id=user_id,
         details={"email": user.email, "role": user.role.value, "must_change_password": True},
     )
-    return user_response(updated)
-
-
-@router.post("/change-password", response_model=UserResponse)
-def change_own_password(
-    payload: PasswordChangeRequest,
-    repository: Annotated[UserRepository, Depends(get_user_repository)],
-) -> UserResponse:
-    """
-    Self-service password change/reset (forgot-password flow).
-    Identifies the account by email instead of user_id, since a user
-    who forgot their password only knows their email, not their
-    internal user_id. This also matches the future OTP flow, where
-    email is the natural first input (OTP gets sent there).
-    """
-    user = repository.get_by_email(payload.email)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-
-    updated = repository.update_password(user.id, hash_password(payload.password), False)
-    if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-
+    send_password_setup_email(updated, notification_service)
     return user_response(updated)
 
 

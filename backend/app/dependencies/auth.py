@@ -4,17 +4,54 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.config import get_settings
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.in_memory import InMemoryDocumentRepository, audit_action_repo, audit_repo, instructor_model_selection_repo, jira_ingestion_repo, manual_text_repo, metrics_repo, rubric_weights_repo
-from app.repositories.interfaces import ActionAuditRepository, AssessmentRepository, AuditRepository, DocumentRepository, InstructorModelSelectionRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository, UserRepository
+from app.repositories.in_memory import (
+    InMemoryDocumentRepository,
+    audit_action_repo,
+    audit_repo,
+    instructor_model_selection_repo,
+    jira_ingestion_repo,
+    manual_text_repo,
+    metrics_repo,
+    rubric_weights_repo,
+)
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    AssessmentRepository,
+    AuditRepository,
+    AuditRetentionConfigRepository,
+    DocumentRepository,
+    InstructorModelSelectionRepository,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    NotificationRepository,
+    ProjectRepository,
+    RubricWeightsRepository,
+    UserRepository,
+)
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
+from app.services.notificationService.service import SMTPNotificationService
 
 oauth2_scheme = HTTPBearer()
 
 
 def get_user_repository(request: Request) -> UserRepository:
     return request.app.state.user_repository
+
+
+def get_notification_service(request: Request) -> SMTPNotificationService:
+    service = getattr(request.app.state, "notification_service", None)
+    if service is None:
+        service = SMTPNotificationService(get_settings())
+        request.app.state.notification_service = service
+    return service
+
+
+def get_notification_repository(request: Request) -> NotificationRepository:
+    return request.app.state.notification_repository
 
 
 def get_project_repository(request: Request) -> ProjectRepository:
@@ -47,6 +84,10 @@ def get_audit_repository(request: Request) -> AuditRepository:
 
 def get_action_audit_repository(request: Request) -> ActionAuditRepository:
     return getattr(request.app.state, "action_audit_repository", audit_action_repo)
+
+
+def get_audit_retention_config_repository(request: Request) -> AuditRetentionConfigRepository:
+    return request.app.state.audit_retention_config_repository
 
 
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:

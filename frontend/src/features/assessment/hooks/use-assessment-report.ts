@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 
 import {
   clearActiveAssessmentJob,
@@ -82,8 +82,8 @@ export function useAssessmentReport() {
 
   const resolveScope = () => resolveAssessmentScope({ selectedCourseId, selectedProjectId, selectedSprintId: sprintId, projects: projectOptions });
 
-  async function loadLatestReport() {
-    const scope = resolveScope();
+  const loadLatestReport = useCallback(async () => {
+    const scope = resolveAssessmentScope({ selectedCourseId, selectedProjectId, selectedSprintId: sprintId, projects: projectOptions });
     if (!scope || !isUuid(scope.projectId)) {
       setBackendReport(null);
       setReport(emptyReport(selectedProjectId, sprintId));
@@ -97,7 +97,7 @@ export function useAssessmentReport() {
       setReport(toSprintAssessmentReport(data, scope.projectLabel.split(" - ")[0] || "Project team", scope.projectLabel.split(" - ").slice(1).join(" - ") || scope.projectLabel));
     } catch (error) { clearLiveReport(scope.projectId, scope.sprintId); setAssessmentError(error instanceof Error ? error.message : "Failed to load the latest assessment."); }
     finally { setIsLoadingReport(false); }
-  }
+  }, [selectedCourseId, selectedProjectId, sprintId, projectOptions]);
 
   function acceptSavedReport(data: BackendAssessmentReport) {
     setBackendReport(data);
@@ -146,7 +146,7 @@ export function useAssessmentReport() {
   useEffect(() => setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | "admin" | null) || "student"), []);
   useEffect(() => { if (role === "student") return; const refreshScope = () => { const state = readIngestionState(); setSelectedCourseId(state.selectedCourseId || ""); setSelectedProjectId(state.selectedProjectId || ""); setSprintId(state.selectedSprintId || "sprint-1"); }; refreshScope(); window.addEventListener("sprintsight-ingestion-updated", refreshScope); return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope); }, [role]);
   useEffect(() => { if (!role || role === "student") return; async function loadProjects() { try { const courses = await apiRequest<Array<{ id: string; code: string; name: string; section: string }>>("/courses"); const groups = await Promise.all(courses.map(async (course) => ({ course, projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`) }))); const options = groups.flatMap(({ course, projects }) => projects.map((project) => ({ id: project.id, courseId: course.id, courseLabel: `${course.code} - ${course.name} - ${course.section}`, label: `${project.team_name} - ${project.project_name}` }))); setProjectOptions(options); } catch (error) { setProjectOptions([]); setAssessmentError(error instanceof Error ? error.message : "Could not load assessment projects."); } } void loadProjects(); }, [role]);
-  useEffect(() => { if (role !== "student" && selectedProjectId) void loadLatestReport(); }, [role, selectedProjectId, sprintId, projectOptions]);
+  useEffect(() => { if (role !== "student" && selectedProjectId) void loadLatestReport(); }, [role, selectedProjectId, sprintId, projectOptions, loadLatestReport]);
   const scope = resolveScope();
   return { report, backendReport, role, isLoadingReport, isGenerating, assessmentProgress, assessmentMessage, assessmentError, scope, loadLatestReport, generateAssessment, acceptSavedReport };
 }

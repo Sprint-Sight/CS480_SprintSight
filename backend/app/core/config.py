@@ -43,6 +43,24 @@ class Settings(BaseSettings):
     bootstrap_student_password: str = Field(default="", alias="BOOTSTRAP_STUDENT_PASSWORD")
     bootstrap_student_name: str = Field(default="Sample Student", alias="BOOTSTRAP_STUDENT_NAME")
 
+    email_smtp_host: str = Field(default="", alias="EMAIL_SMTP_HOST")
+    email_smtp_port: int = Field(default=587, alias="EMAIL_SMTP_PORT", ge=1, le=65535)
+    email_smtp_username: str = Field(default="", alias="EMAIL_SMTP_USERNAME")
+    email_smtp_password: str = Field(default="", alias="EMAIL_SMTP_PASSWORD")
+    email_from_address: str = Field(default="", alias="EMAIL_FROM_ADDRESS")
+    email_from_name: str = Field(default="SprintSight", alias="EMAIL_FROM_NAME")
+    email_smtp_use_tls: bool = Field(default=True, alias="EMAIL_SMTP_USE_TLS")
+    email_smtp_use_ssl: bool = Field(default=False, alias="EMAIL_SMTP_USE_SSL")
+    email_frontend_base_url: str = Field(
+        default="http://localhost:3000", alias="EMAIL_FRONTEND_BASE_URL",
+    )
+    email_first_time_token_expire_minutes: int = Field(
+        default=1440, alias="EMAIL_FIRST_TIME_TOKEN_EXPIRE_MINUTES", ge=1, le=10080,
+    )
+    email_password_reset_token_expire_minutes: int = Field(
+        default=30, alias="EMAIL_PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", ge=1, le=1440,
+    )
+
     ollama_base_url: str = Field(default="http://ollama:11434", alias="OLLAMA_BASE_URL")
     assessment_mode: str = Field(default="mock", alias="ASSESSMENT_MODE")
     default_model_name: str = Field(default="mock-rubric-v1", alias="DEFAULT_MODEL_NAME")

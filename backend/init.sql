@@ -23,12 +23,16 @@ CREATE TABLE IF NOT EXISTS users (
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     token_version INTEGER NOT NULL DEFAULT 0,
+    student_number BIGINT,
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login    TIMESTAMP
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS student_number BIGINT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_student_number ON users(student_number)
+    WHERE student_number IS NOT NULL;
 
 -- Fast lookups by email on every login request
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -113,9 +117,13 @@ CREATE TABLE IF NOT EXISTS course_students (
         REFERENCES courses(course_id, code, term, year) ON DELETE CASCADE
 );
 
--- UNIQUE CONSTRAINT: Prevents a student from enrolling in multiple sections of the same course offering
+-- Legacy offering-level index retained for existing databases.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_section_per_course
     ON course_students(user_id, code, term, year);
+
+-- A student may enroll in different course codes, but only once per course code.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_course_code
+    ON course_students(user_id, lower(trim(code)));
 
 CREATE TABLE IF NOT EXISTS projects (
     project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

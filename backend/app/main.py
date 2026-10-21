@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,30 +9,35 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_middleware
-from app.core.storage import storage
 from app.core.security import hash_password
+from app.core.storage import storage
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresActionAuditRepository,
     PostgresAssessmentRepository,
     PostgresAuditRepository,
-    PostgresMetricsRepository,
+    PostgresAuditRetentionConfigRepository,
     PostgresDocumentRepository,
     PostgresInstructorModelSelectionRepository,
     PostgresJiraIngestionRunRepository,
     PostgresManualTextRepository,
+    PostgresMetricsRepository,
+    PostgresNotificationRepository,
     PostgresProjectRepository,
     PostgresRubricWeightsRepository,
     PostgresUserRepository,
     create_user_pool,
     ensure_assessment_schema,
+    ensure_audit_retention_config_schema,
     ensure_audit_schema,
+    ensure_notification_schema,
     ensure_instructor_model_selection_schema,
     ensure_project_credential_schema,
+    ensure_user_schema,
     ensure_rubric_weights_schema,
 )
 from app.schemas.auth import Role
-from uuid import uuid4
+from app.services.notificationService.service import SMTPNotificationService
 
 settings = get_settings()
 configure_logging()
@@ -45,6 +51,7 @@ def _bootstrap_user(repository: PostgresUserRepository, email: str, password: st
             full_name=name,
             role=role,
             hashed_password=hash_password(password),
+            student_number=1 if role == Role.STUDENT else None,
         ))
 
 
@@ -56,20 +63,30 @@ async def lifespan(app: FastAPI):
     # ---- STARTUP -------------------------------------------------
     pool = create_user_pool(settings.database_connection_string())
     pool.open(wait=True)
+    ensure_user_schema(pool)
     ensure_project_credential_schema(pool)
+    ensure_notification_schema(pool)
     ensure_assessment_schema(pool)
     ensure_audit_schema(pool)
+    ensure_audit_retention_config_schema(
+        pool,
+        settings.audit_hot_retention_days,
+        settings.audit_action_archive_retention_days,
+        settings.audit_override_archive_retention_days,
+    )
     ensure_rubric_weights_schema(pool)
     ensure_instructor_model_selection_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
     app.state.document_repository = PostgresDocumentRepository(pool)
+    app.state.notification_repository = PostgresNotificationRepository(pool)
     app.state.jira_ingestion_repository = PostgresJiraIngestionRunRepository(pool)
     app.state.manual_text_repository = PostgresManualTextRepository(pool)
     app.state.assessment_repository = PostgresAssessmentRepository(pool)
     app.state.audit_repository = PostgresAuditRepository(pool)
     app.state.action_audit_repository = PostgresActionAuditRepository(pool)
+    app.state.audit_retention_config_repository = PostgresAuditRetentionConfigRepository(pool)
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
     app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(pool)
 
@@ -94,6 +111,7 @@ app = FastAPI(
     title=settings.project_name,
     lifespan=lifespan,
 )
+app.state.notification_service = SMTPNotificationService(settings)
 
 app.openapi_version = "3.0.3"
 
@@ -112,6 +130,13 @@ def custom_openapi() -> dict:
     request_schema = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
     request_component = schema["components"]["schemas"][request_schema["$ref"].split("/")[-1]]
     request_component["properties"]["files"]["items"] = {
+        "type": "string",
+        "format": "binary",
+    }
+    import_operation = schema["paths"]["/api/v1/courses/{course_id}/students/import"]["post"]
+    import_request_schema = import_operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    import_component = schema["components"]["schemas"][import_request_schema["$ref"].split("/")[-1]]
+    import_component["properties"]["file"] = {
         "type": "string",
         "format": "binary",
     }

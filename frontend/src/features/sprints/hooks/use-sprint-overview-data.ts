@@ -22,7 +22,7 @@ export function useSprintOverviewData() {
       return { projectId: selectedProjectId, projectName: "Project", projectTeam: "Selected project", sprint: { id: sprintId, name: sprintId, status: completion >= 100 ? "Completed" : "On Track", score: 0, completion, startDate: capturedAt.slice(0, 10), endDate: capturedAt.slice(0, 10) }, activity: { commits: git?.pagination?.total ?? git?.commits.length ?? 0, tasks: jira?.tickets.length ?? 0, documents: state.documentCounts[selectedProjectId] || 0 }, isCompleted: completion >= 100, isOngoing: completion < 100, displayStatus: completion >= 100 ? "Completed" : "In Progress" };
     });
     return { project: { id: selectedProjectId, name: "Project", teamName: "Selected project", module: "", status: "Active", score: 0, completion: rows.at(-1)?.sprint.completion || 0, members: [], currentSprint: rows.at(-1)?.sprint.name || "", sprints: rows.map((row) => row.sprint) }, rows, summary: { totalCommits: rows.reduce((total, row) => total + row.activity.commits, 0), totalTasks: rows.reduce((total, row) => total + row.activity.tasks, 0), totalDocuments: state.documentCounts[selectedProjectId] || 0, averageScore: 0 } } satisfies SprintOverviewPayload;
-  }, [selectedProjectId, ingestionVersion]);
+  }, [selectedProjectId]);
   useEffect(() => { const refresh = () => { setSelectedProjectId(readIngestionState().selectedProjectId || ""); setIngestionVersion((version) => version + 1); }; window.addEventListener("sprintsight-ingestion-updated", refresh); return () => window.removeEventListener("sprintsight-ingestion-updated", refresh); }, []);
   return { selectedProjectId, payload, liveIngestion };
 }

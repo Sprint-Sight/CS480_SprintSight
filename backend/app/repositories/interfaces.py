@@ -2,18 +2,18 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from app.schemas.auth import Role
 from app.schemas.assessment import (
-    AssessRequest,
     AssessmentJobEvent,
     AssessmentJobRecord,
     AssessmentReport,
+    AssessRequest,
     AuditRecord,
     CommitInfo,
     JiraCleanedSnapshot,
     ManualTextPayload,
     OverrideResponse,
 )
+from app.schemas.auth import Role
 
 
 @dataclass
@@ -26,12 +26,17 @@ class UserRecord:
     is_active: bool = True
     must_change_password: bool = False
     token_version: int = 0
+    student_number: int | None = None
 
 
 class UserRepository(Protocol):
     def get_by_email(self, email: str) -> UserRecord | None: ...
 
     def get_by_id(self, user_id: str) -> UserRecord | None: ...
+
+    def get_by_student_number(self, student_number: int) -> UserRecord | None: ...
+
+    def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None: ...
 
     def record_login(self, user_id: str) -> None: ...
 
@@ -106,6 +111,7 @@ class ProjectRepository(Protocol):
     def list_member_ids(self, project_id: str) -> list[str]: ...
     def enroll_student(self, course_id: str, user_id: str) -> bool: ...
     def unenroll_student(self, course_id: str, user_id: str) -> bool: ...
+    def remove_student_from_projects_in_course(self, course_id: str, user_id: str) -> None: ...
     def is_student_enrolled(self, course_id: str, user_id: str) -> bool: ...
     def list_enrolled_student_ids(self, course_id: str) -> list[str]: ...
     def list_student_course_codes(self, user_id: str) -> list[str]: ...
@@ -135,6 +141,29 @@ class DocumentRepository(Protocol):
     def get_document(self, project_id: str, document_id: str) -> DocumentRecord | None: ...
 
     def delete_document(self, project_id: str, document_id: str) -> DocumentRecord | None: ...
+
+
+@dataclass
+class NotificationRecord:
+    id: str
+    recipient_id: str
+    event_type: str
+    title: str
+    message: str
+    created_at: datetime
+    read_at: datetime | None = None
+
+
+class NotificationRepository(Protocol):
+    def create_notification(self, notification: NotificationRecord) -> NotificationRecord: ...
+
+    def list_notifications(self, recipient_id: str, limit: int = 50) -> list[NotificationRecord]: ...
+
+    def count_unread_notifications(self, recipient_id: str) -> int: ...
+
+    def mark_notification_read(
+        self, notification_id: str, recipient_id: str
+    ) -> NotificationRecord | None: ...
 
 
 class ManualTextRepository(Protocol):
@@ -232,6 +261,27 @@ class ActionAuditRepository(Protocol):
     def list_action_audits_before(self, cutoff: datetime, limit: int) -> list[object]: ...
 
     def delete_action_audits(self, audit_ids: list[str]) -> int: ...
+
+
+@dataclass
+class AuditRetentionConfig:
+    hot_retention_days: int
+    action_archive_retention_days: int
+    override_archive_retention_days: int
+    updated_at: datetime
+    updated_by: str | None
+
+
+class AuditRetentionConfigRepository(Protocol):
+    def get_config(self) -> AuditRetentionConfig: ...
+
+    def update_config(
+        self,
+        hot_retention_days: int,
+        action_archive_retention_days: int,
+        override_archive_retention_days: int,
+        updated_by: str,
+    ) -> AuditRetentionConfig: ...
 
 
 @dataclass

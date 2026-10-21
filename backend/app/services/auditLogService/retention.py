@@ -14,8 +14,10 @@ from app.repositories.interfaces import ActionAuditRepository, AuditRepository
 from app.repositories.postgres import (
     PostgresActionAuditRepository,
     PostgresAuditRepository,
+    PostgresAuditRetentionConfigRepository,
     create_user_pool,
     ensure_audit_schema,
+    ensure_audit_retention_config_schema,
 )
 
 logger = logging.getLogger(__name__)
@@ -220,10 +222,20 @@ def run_once() -> RetentionResult:
     pool.open(wait=True)
     try:
         ensure_audit_schema(pool)
+        ensure_audit_retention_config_schema(
+            pool,
+            settings.audit_hot_retention_days,
+            settings.audit_action_archive_retention_days,
+            settings.audit_override_archive_retention_days,
+        )
         storage.init_buckets()
+        config = PostgresAuditRetentionConfigRepository(pool).get_config()
         job = AuditRetentionJob(
             PostgresActionAuditRepository(pool),
             PostgresAuditRepository(pool),
+            hot_retention_days=config.hot_retention_days,
+            action_archive_retention_days=config.action_archive_retention_days,
+            override_archive_retention_days=config.override_archive_retention_days,
         )
         with pool.connection() as lock_connection:
             with lock_connection.transaction():

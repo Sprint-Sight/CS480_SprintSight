@@ -18,7 +18,8 @@ class AdminUserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=100)
     role: Role = Role.STUDENT
-    password: str = Field(min_length=8, max_length=128)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    student_number: int | None = Field(default=None, gt=0)
 
 
 class AdminUserUpdate(BaseModel):
@@ -26,6 +27,7 @@ class AdminUserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=100)
     role: Role | None = None
     is_active: bool | None = None
+    student_number: int | None = Field(default=None, gt=0)
 
 
 class AdminPasswordReset(BaseModel):
@@ -34,6 +36,15 @@ class AdminPasswordReset(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class EmailAddressRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailPasswordResetRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)
     new_password: str = Field(min_length=8, max_length=128)
 
 
@@ -50,3 +61,9 @@ class UserResponse(BaseModel):
     role: Role
     is_active: bool = True
     must_change_password: bool = False
+    student_number: int | None = None
+
+
+class UserCreationResponse(UserResponse):
+    account_created: bool = True
+    signup_email_sent: bool = False

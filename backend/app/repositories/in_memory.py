@@ -5,6 +5,9 @@ from app.core.security import hash_password
 from app.repositories.interfaces import (
     AssessmentRepository,
     AuditRepository,
+    AuditRetentionConfig,
+    AuditRetentionConfigRepository,
+    CourseRecord,
     DocumentRecord,
     DocumentRepository,
     IngestionMetricBundle,
@@ -12,23 +15,24 @@ from app.repositories.interfaces import (
     JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
+    NotificationRecord,
+    NotificationRepository,
     OverrideRepository,
+    ProjectRecord,
+    ProjectRepository,
     InstructorModelSelectionRecord,
     InstructorModelSelectionRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
     UserRepository,
-    CourseRecord,
-    ProjectRecord,
-    ProjectRepository,
 )
 from app.schemas.assessment import (
     ActionAuditRecord,
-    AssessRequest,
     AssessmentJobEvent,
     AssessmentJobRecord,
     AssessmentReport,
+    AssessRequest,
     AuditRecord,
     JiraCleanedSnapshot,
     ManualTextPayload,
@@ -61,6 +65,7 @@ class InMemoryUserRepository(UserRepository):
                 full_name="Student User",
                 role=Role.STUDENT,
                 hashed_password=hash_password("password123"),
+                student_number=1,
             ),
         }
 
@@ -72,6 +77,19 @@ class InMemoryUserRepository(UserRepository):
             if user.id == user_id:
                 return user
         return None
+
+    def get_by_student_number(self, student_number: int) -> UserRecord | None:
+        return next((user for user in self._users.values() if user.student_number == student_number), None)
+
+    def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None:
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+        existing = self.get_by_student_number(student_number)
+        if existing and existing.id != user_id:
+            raise ValueError("Student number is already registered.")
+        user.student_number = student_number
+        return user
 
     def record_login(self, user_id: str) -> None:
         return None
@@ -86,6 +104,10 @@ class InMemoryUserRepository(UserRepository):
         return list(self._users.values())
 
     def create_user(self, user: UserRecord) -> UserRecord:
+        if self.get_by_email(user.email):
+            raise ValueError("Email is already registered.")
+        if user.student_number is not None and self.get_by_student_number(user.student_number):
+            raise ValueError("Student number is already registered.")
         self._users[user.email.lower()] = user
         return user
 
@@ -93,6 +115,9 @@ class InMemoryUserRepository(UserRepository):
         user = self.get_by_id(user_id)
         if not user:
             return None
+        existing = self.get_by_email(email)
+        if existing and existing.id != user_id:
+            raise ValueError("Email is already registered.")
         old_email = user.email.lower()
         user.email = email.lower()
         user.full_name = full_name
@@ -146,7 +171,7 @@ class InMemoryProjectRepository(ProjectRepository):
         if (course_id, user_id) in self._enrollments:
             return False
         course = self.get_course(course_id)
-        if course and any(self.get_course(existing_course_id).code.lower() == course.code.lower()
+        if course and any(self.get_course(existing_course_id).code.strip().lower() == course.code.strip().lower()
                           for existing_course_id, existing_user_id in self._enrollments
                           if existing_user_id == user_id and self.get_course(existing_course_id)):
             return False
@@ -161,7 +186,14 @@ class InMemoryProjectRepository(ProjectRepository):
         if enrollment not in self._enrollments:
             return False
         self._enrollments.remove(enrollment)
+        self.remove_student_from_projects_in_course(course_id, user_id)
         return True
+
+    def remove_student_from_projects_in_course(self, course_id: str, user_id: str) -> None:
+        for project_id, member_ids in self._members.items():
+            project = self._projects.get(project_id)
+            if project and project.course_id == course_id and user_id in member_ids:
+                self._members[project_id] = [mid for mid in member_ids if mid != user_id]
 
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
         return [user_id for enrolled_course_id, user_id in self._enrollments if enrolled_course_id == course_id]
@@ -309,6 +341,39 @@ class InMemoryDocumentRepository(DocumentRepository):
         if document:
             del self._documents[document_id]
         return document
+
+
+class InMemoryNotificationRepository(NotificationRepository):
+    def __init__(self) -> None:
+        self._notifications: dict[str, NotificationRecord] = {}
+
+    def create_notification(self, notification: NotificationRecord) -> NotificationRecord:
+        self._notifications[notification.id] = notification
+        return notification
+
+    def list_notifications(self, recipient_id: str, limit: int = 50) -> list[NotificationRecord]:
+        matching = [
+            notification
+            for notification in self._notifications.values()
+            if notification.recipient_id == recipient_id
+        ]
+        return sorted(matching, key=lambda item: (item.created_at, item.id), reverse=True)[:limit]
+
+    def count_unread_notifications(self, recipient_id: str) -> int:
+        return sum(
+            notification.recipient_id == recipient_id and notification.read_at is None
+            for notification in self._notifications.values()
+        )
+
+    def mark_notification_read(
+        self, notification_id: str, recipient_id: str
+    ) -> NotificationRecord | None:
+        notification = self._notifications.get(notification_id)
+        if not notification or notification.recipient_id != recipient_id:
+            return None
+        if notification.read_at is None:
+            notification.read_at = now_utc()
+        return notification
 
 
 class InMemoryAssessmentRepository(AssessmentRepository):
@@ -479,6 +544,41 @@ class InMemoryActionAuditRepository:
         original_count = len(self._audit_actions)
         self._audit_actions = [record for record in self._audit_actions if record.audit_id not in ids]
         return original_count - len(self._audit_actions)
+
+
+class InMemoryAuditRetentionConfigRepository(AuditRetentionConfigRepository):
+    def __init__(
+        self,
+        hot_retention_days: int = 168,
+        action_archive_retention_days: int = 365,
+        override_archive_retention_days: int = 365,
+    ) -> None:
+        self._config = AuditRetentionConfig(
+            hot_retention_days=hot_retention_days,
+            action_archive_retention_days=action_archive_retention_days,
+            override_archive_retention_days=override_archive_retention_days,
+            updated_at=datetime.now(timezone.utc),
+            updated_by=None,
+        )
+
+    def get_config(self) -> AuditRetentionConfig:
+        return self._config
+
+    def update_config(
+        self,
+        hot_retention_days: int,
+        action_archive_retention_days: int,
+        override_archive_retention_days: int,
+        updated_by: str,
+    ) -> AuditRetentionConfig:
+        self._config = AuditRetentionConfig(
+            hot_retention_days=hot_retention_days,
+            action_archive_retention_days=action_archive_retention_days,
+            override_archive_retention_days=override_archive_retention_days,
+            updated_at=datetime.now(timezone.utc),
+            updated_by=updated_by,
+        )
+        return self._config
 
 
 class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):

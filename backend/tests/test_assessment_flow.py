@@ -1,18 +1,17 @@
-from pathlib import Path
 import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
+from app.dependencies.auth import get_assessment_repository
 from app.main import app
 from app.repositories.interfaces import ProjectRecord
+from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
 from app.services.assessmentService.service import convert_ai_result_to_assessment_report
 from app.services.middleManService.service import send_assessment_to_ai_engine
-from datetime import datetime, timezone
-from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
-from app.repositories.in_memory import assessment_repo
-
 
 client = TestClient(app)
 
@@ -140,7 +139,7 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
     assert assess_response.status_code == 202
 
     report_id = "rpt-audit-1"
-    assessment_repo.save_report(
+    app.dependency_overrides[get_assessment_repository]().save_report(
         AssessmentReport(
             report_id=report_id,
             model_name="mock-rubric-v1",

@@ -7,6 +7,7 @@ export interface UserAccount {
   role: Role;
   status: "Active" | "Inactive";
   createdAt: string;
+  signupEmailSent?: boolean;
 }
 
 export interface CreateUserData {
