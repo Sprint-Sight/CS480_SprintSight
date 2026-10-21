@@ -22,5 +22,26 @@ export type OverrideAuditRecord = {
   reason_comment: string;
 };
 
+export type AuditRetentionConfig = {
+  hot_retention_days: number;
+  action_archive_retention_days: number;
+  override_archive_retention_days: number;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+export type AuditRetentionConfigUpdate = {
+  hot_retention_days: number;
+  action_archive_retention_days: number;
+  override_archive_retention_days: number;
+};
+
 export const getActionAuditRecords = () => apiRequest<ActionAuditRecord[]>("/audit/actions");
 export const getOverrideAuditRecords = () => apiRequest<OverrideAuditRecord[]>("/audit/overrides");
+export const getAuditRetentionConfig = () => apiRequest<AuditRetentionConfig>("/audit/retention");
+export const updateAuditRetentionConfig = (payload: AuditRetentionConfigUpdate) =>
+  apiRequest<AuditRetentionConfig>("/audit/retention", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json" },
+  });

@@ -7,10 +7,25 @@ import { AuditLogPage } from "@/features/audit/components/audit-log-page";
 
 describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
   const mockRefresh = vi.fn();
+  const mockLoadRetentionConfig = vi.fn();
+  const mockSaveRetentionConfig = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  const defaultRetentionProps = {
+    retentionConfig: null,
+    retentionIsLoading: false,
+    retentionError: null,
+    retentionIsSaving: false,
+    retentionSaveError: null,
+    isRetentionModalOpen: false,
+    onRetentionModalOpen: vi.fn(),
+    onRetentionModalClose: vi.fn(),
+    onLoadRetentionConfig: mockLoadRetentionConfig,
+    onSaveRetentionConfig: mockSaveRetentionConfig,
+  };
 
   it("should render audit log page for instructor with back link to dashboard", () => {
     renderComponent(
@@ -22,6 +37,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={false}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 
@@ -41,6 +57,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={false}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 
@@ -73,6 +90,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={false}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 
@@ -104,6 +122,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={false}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 
@@ -126,6 +145,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={false}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 
@@ -144,6 +164,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={false}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 
@@ -160,6 +181,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={true}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 
@@ -177,6 +199,7 @@ describe("AuditLogPage - Critical User Workflow: Role-Based Access", () => {
         overridesError=""
         isLoading={false}
         onRefresh={mockRefresh}
+        {...defaultRetentionProps}
       />
     );
 

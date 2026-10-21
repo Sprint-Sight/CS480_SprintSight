@@ -3,8 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -24,6 +23,8 @@ import {
 
 import { apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
 import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
+import { useNotifications } from "@/hooks/use-notifications";
+import { NotificationsDropdown } from "@/components/ui/notifications-modal";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -48,15 +49,6 @@ type ScopeTeam = {
   status: string;
   studentCount: number;
   averageScore: number;
-};
-
-type DashboardNotification = {
-  id: string;
-  event_type: string;
-  title: string;
-  message: string;
-  created_at: string;
-  read_at: string | null;
 };
 
 const instructorNavItems: NavItem[] = [
@@ -111,20 +103,16 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const showsSprintScope = showsInstructorScope && pathname !== "/progress";
   const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings" || pathname === "/audit-log";
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const notificationsButtonRef = useRef<HTMLButtonElement | null>(null);
-  const notificationPanelRef = useRef<HTMLDivElement | null>(null);
 
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [role, setRole] = useState<"student" | "instructor">("instructor");
   const [userName, setUserName] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [notificationPanelPosition, setNotificationPanelPosition] = useState({ top: 0, right: 16 });
-  const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
-  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-  const [notificationError, setNotificationError] = useState("");
+  const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
+
+  // Use notifications hook
+  const { notifications, unreadCount, isLoading: isLoadingNotifications, error: notificationError, markAsRead, markAllAsRead } = useNotifications();
 
   // Dynamic scope states fetched from DB / API
   const [semesterOptions, setSemesterOptions] = useState<string[]>([]);
@@ -231,101 +219,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
       router.replace("/");
     }
   }, [isAuthorized, role, isProjectsRoot, router]);
-
-  const refreshNotifications = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) {
-      setNotificationError("You are not signed in. Please log in again.");
-      setIsLoadingNotifications(false);
-      return;
-    }
-    setIsLoadingNotifications(true);
-    try {
-      const response = await apiRequest<{
-        notifications: DashboardNotification[];
-        unread_count: number;
-      }>("/notifications");
-      setNotifications(response.notifications);
-      setUnreadNotificationCount(response.unread_count);
-      setNotificationError("");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not load notifications.";
-      setNotificationError(message);
-      // Surface API errors prominently so they are not missed
-      window.alert(`Notifications failed to load: ${message}`);
-    } finally {
-      setIsLoadingNotifications(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isAuthorized) return;
-
-    void refreshNotifications();
-    const interval = window.setInterval(() => void refreshNotifications(), 30_000);
-    return () => window.clearInterval(interval);
-  }, [isAuthorized, refreshNotifications]);
-
-  useEffect(() => {
-    function closeNotificationPanel(event: MouseEvent) {
-      const target = event.target as Node;
-      if (
-        !notificationsButtonRef.current?.contains(target) &&
-        !notificationPanelRef.current?.contains(target)
-      ) {
-        setIsNotificationsOpen(false);
-      }
-    }
-
-    function closeNotificationPanelOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsNotificationsOpen(false);
-    }
-
-    document.addEventListener("mousedown", closeNotificationPanel);
-    document.addEventListener("keydown", closeNotificationPanelOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeNotificationPanel);
-      document.removeEventListener("keydown", closeNotificationPanelOnEscape);
-    };
-  }, []);
-
-  async function toggleNotifications() {
-    if (isNotificationsOpen) {
-      setIsNotificationsOpen(false);
-      return;
-    }
-
-    const button = notificationsButtonRef.current;
-    if (button) {
-      const bounds = button.getBoundingClientRect();
-      setNotificationPanelPosition({
-        top: bounds.bottom + 8,
-        right: Math.max(16, window.innerWidth - bounds.right),
-      });
-    }
-    setIsNotificationsOpen(true);
-    // Refresh notifications when the panel is opened so the bell always
-    // shows the latest unread count and message list.
-    void refreshNotifications();
-  }
-
-  async function markNotificationRead(notification: DashboardNotification) {
-    if (notification.read_at) return;
-    try {
-      const updated = await apiRequest<DashboardNotification>(
-        `/notifications/${notification.id}/read`,
-        { method: "PATCH" },
-      );
-      setNotifications((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
-      setUnreadNotificationCount((current) => Math.max(0, current - 1));
-    } catch (error) {
-      setNotificationError(
-        error instanceof Error ? error.message : "Could not update notification.",
-      );
-    }
-  }
 
   const profileUser = useMemo(() => {
     const fallbackName = userEmail ? userEmail.split("@")[0] : "User";
@@ -448,22 +341,31 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 <div className="ml-auto flex items-center gap-3">
                   <div className="relative">
                     <button
-                      ref={notificationsButtonRef}
                       type="button"
-                      onClick={toggleNotifications}
+                      onClick={() => setIsNotificationsModalOpen(!isNotificationsModalOpen)}
                       className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
                       aria-label="Notifications"
                       title="Open notifications"
-                      aria-expanded={isNotificationsOpen}
-                      aria-controls="notification-panel"
+                      aria-expanded={isNotificationsModalOpen}
                     >
                       <Bell className="h-4 w-4" />
-                      {unreadNotificationCount > 0 && (
+                      {unreadCount > 0 && (
                         <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                          {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                          {unreadCount > 99 ? "99+" : unreadCount}
                         </span>
                       )}
                     </button>
+
+                    <NotificationsDropdown
+                      isOpen={isNotificationsModalOpen}
+                      onClose={() => setIsNotificationsModalOpen(false)}
+                      notifications={notifications}
+                      unreadCount={unreadCount}
+                      isLoading={isLoadingNotifications}
+                      error={notificationError}
+                      onMarkAsRead={markAsRead}
+                      onMarkAllAsRead={markAllAsRead}
+                    />
                   </div>
 
                   <div ref={menuRef} className="relative">
@@ -620,73 +522,16 @@ export default function DashboardShell({ children }: DashboardShellProps) {
         </div>
       </div>
 
-      {isNotificationsOpen &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div
-            ref={notificationPanelRef}
-            id="notification-panel"
-            role="dialog"
-            aria-label="Notifications"
-            className="fixed z-[9999] w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.2)]"
-            style={{
-              top: notificationPanelPosition.top,
-              right: notificationPanelPosition.right,
-            }}
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
-              {unreadNotificationCount > 0 && (
-                <span className="text-xs text-slate-500">
-                  {unreadNotificationCount} unread
-                </span>
-              )}
-            </div>
-            {notificationError && (
-              <p role="alert" className="px-4 py-3 text-xs text-rose-600">
-                {notificationError}
-              </p>
-            )}
-            <div className="max-h-96 overflow-y-auto">
-              {isLoadingNotifications && notifications.length === 0 ? (
-                <p className="px-4 py-6 text-center text-sm text-slate-500">
-                  Loading notifications...
-                </p>
-              ) : notifications.length === 0 ? (
-                <p className="px-4 py-6 text-center text-sm text-slate-500">
-                  You are all caught up.
-                </p>
-              ) : (
-                notifications.map((notification) => (
-                  <button
-                    key={notification.id}
-                    type="button"
-                    onClick={() => void markNotificationRead(notification)}
-                    className={`w-full border-b border-slate-100 px-4 py-3 text-left last:border-0 hover:bg-slate-50 ${
-                      notification.read_at ? "bg-white" : "bg-blue-50/60"
-                    }`}
-                  >
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="text-sm font-medium text-slate-900">
-                        {notification.title}
-                      </span>
-                      {!notification.read_at && (
-                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-600" />
-                      )}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-600">
-                      {notification.message}
-                    </span>
-                    <span className="mt-2 block text-[11px] text-slate-400">
-                      {new Date(notification.created_at).toLocaleString()}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>,
-          document.body,
-        )}
+      <NotificationsDropdown
+        isOpen={isNotificationsModalOpen}
+        onClose={() => setIsNotificationsModalOpen(false)}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        isLoading={isLoadingNotifications}
+        error={notificationError}
+        onMarkAsRead={markAsRead}
+        onMarkAllAsRead={markAllAsRead}
+      />
 
     </>
   );
