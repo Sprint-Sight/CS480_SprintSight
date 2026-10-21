@@ -1,3 +1,4 @@
+from prompts.dimension_criteria import DIMENSIONS
 from schemas.fixtures import (
     good_collab_low_output_team,
     high_performing_team,
@@ -23,7 +24,7 @@ high_performing_grade = SprintAssessment(
     team_id=high_performing_team.team_id,
     sprint_id=high_performing_team.sprint_id,
     prompt_version="v1.0",
-    overall_score=9,
+    overall_score=7.5,  # mean of all 6 dimensions: (9+8+8+9+10+1)/6
     rubric_scores=RubricsScore(
         code_quality=RubricDimensionScore(
             dimension="code_quality",
@@ -80,6 +81,17 @@ high_performing_grade = SprintAssessment(
             strengths=["Every teammate gave specific, positive feedback about a teammate"],
             areas_for_improvement=["No constructive critique appears anywhere in peer feedback"],
         ),
+        cicd=RubricDimensionScore(
+            dimension="cicd",
+            score=1,
+            justification="No CI/CD artifact exists in this sprint: no workflow or pipeline configuration, no Dockerfile, and artifact_metrics is empty. Band 1-2 applies.",
+            evidence_citations=[
+                _cite("Commits a1f3c02 through d4i6f35 touch only auth/service.py, tests/test_auth.py and docs/auth.md; no pipeline or workflow file appears in any of the 6 commits."),
+                _cite("Tickets AUTH-1 through AUTH-6 cover middleware, tests, documentation and logging; none plans CI, build or deployment work."),
+            ],
+            strengths=[],
+            areas_for_improvement=["Add a CI workflow that runs the existing tests/test_auth.py suite on every push", "No automated deployment or build step exists to attribute to any member"],
+        ),
     ),
     member_contributions=[
         MemberContribution(
@@ -109,7 +121,7 @@ struggling_grade = SprintAssessment(
     team_id=struggling_team.team_id,
     sprint_id=struggling_team.sprint_id,
     prompt_version="v1.0",
-    overall_score=3,
+    overall_score=2.67,  # mean of all 6 dimensions: (5+2+2+2+4+1)/6
     rubric_scores=RubricsScore(
         code_quality=RubricDimensionScore(
             dimension="code_quality",
@@ -166,6 +178,17 @@ struggling_grade = SprintAssessment(
             strengths=["Feedback, while critical, is specific rather than hostile"],
             areas_for_improvement=["No team member received a rating above 3/5 from any peer", "The team should discuss blockers directly rather than only surfacing them in peer evaluations"],
         ),
+        cicd=RubricDimensionScore(
+            dimension="cicd",
+            score=1,
+            justification="No CI/CD artifact exists in this sprint: no workflow or pipeline configuration, no Dockerfile, and artifact_metrics is empty. Band 1-2 applies.",
+            evidence_citations=[
+                _cite("Commit 9f8e7d6 and the other 5 commits touch only api/routes.py, db/schema.py and tests/test_db.py; no pipeline or workflow file is present."),
+                _cite("Tickets DB-1, DB-2 and DB-3 cover schema and API work only; none plans CI, build or deployment work."),
+            ],
+            strengths=[],
+            areas_for_improvement=["Add a CI workflow that runs tests/test_db.py so the failing database work is caught automatically", "No automated build or deployment step exists to attribute to any member"],
+        ),
     ),
     member_contributions=[
         MemberContribution(
@@ -196,7 +219,7 @@ good_collab_low_output_grade = SprintAssessment(
     team_id=good_collab_low_output_team.team_id,
     sprint_id=good_collab_low_output_team.sprint_id,
     prompt_version="v1.0",
-    overall_score=6,
+    overall_score=5.17,  # mean of all 6 dimensions: (6+5+5+5+9+1)/6
     rubric_scores=RubricsScore(
         code_quality=RubricDimensionScore(
             dimension="code_quality",
@@ -251,6 +274,17 @@ good_collab_low_output_grade = SprintAssessment(
             strengths=["Every peer evaluation is positive and specific, with no signs of friction"],
             areas_for_improvement=["No constructive critique appears anywhere in peer feedback"],
         ),
+        cicd=RubricDimensionScore(
+            dimension="cicd",
+            score=1,
+            justification="No CI/CD artifact exists in this sprint: no workflow or pipeline configuration, no Dockerfile, and artifact_metrics is empty. Band 1-2 applies.",
+            evidence_citations=[
+                _cite("Commit d1e2f3a and the other 3 commits touch only auth/login_page.py, components/navbar.css and forms/validation.py; no pipeline configuration is present."),
+                _cite("Ticket DEL-1 'Build login page' is feature work, not a CI build; no DEL ticket covers CI, build or deployment work."),
+            ],
+            strengths=[],
+            areas_for_improvement=["Add a CI workflow that runs the test suite on every push", "No automated build or deployment step exists to attribute to any member"],
+        ),
     ),
     member_contributions=[
         MemberContribution(
@@ -280,7 +314,7 @@ imbalanced_high_output_grade = SprintAssessment(
     team_id=imbalanced_high_output_team.team_id,
     sprint_id=imbalanced_high_output_team.sprint_id,
     prompt_version="v1.0",
-    overall_score=7,
+    overall_score=5.33,  # mean of all 6 dimensions: (9+6+6+8+2+1)/6
     rubric_scores=RubricsScore(
         code_quality=RubricDimensionScore(
             dimension="code_quality",
@@ -336,6 +370,17 @@ imbalanced_high_output_grade = SprintAssessment(
             strengths=["Liam acknowledged the imbalance directly rather than overstating teammates' contributions"],
             areas_for_improvement=["Maya and Noah did not pick up any of the 4 planned tickets", "Workload concentration this severe is a project-risk concern even though delivery succeeded"],
         ),
+        cicd=RubricDimensionScore(
+            dimension="cicd",
+            score=1,
+            justification="No CI/CD artifact exists in this sprint. The only infrastructure-adjacent file is a .gitignore edit, which is not pipeline configuration, and artifact_metrics is empty. Band 1-2 applies.",
+            evidence_citations=[
+                _cite("Commit e1a2b3c and the other 5 commits touch payments/service.py, payments/refunds.py and .gitignore; a .gitignore edit is not pipeline configuration, and no workflow or Dockerfile is present."),
+                _cite("Ticket PAY-1 'Build payment processing service' is feature work, not a CI build; no PAY ticket covers CI, build or deployment work."),
+            ],
+            strengths=[],
+            areas_for_improvement=["Add a CI workflow so the payments module is tested automatically rather than relying on one member", "No automated build or deployment step exists to attribute to any member"],
+        ),
     ),
     member_contributions=[
         MemberContribution(
@@ -365,7 +410,7 @@ lone_contributor_poor_outcome_grade = SprintAssessment(
     team_id=lone_contributor_poor_outcome_team.team_id,
     sprint_id=lone_contributor_poor_outcome_team.sprint_id,
     prompt_version="v1.0",
-    overall_score=3,
+    overall_score=2.67,  # mean of all 6 dimensions: (4+3+3+3+2+1)/6
     rubric_scores=RubricsScore(
         code_quality=RubricDimensionScore(
             dimension="code_quality",
@@ -420,6 +465,17 @@ lone_contributor_poor_outcome_grade = SprintAssessment(
             strengths=["Uma's effort was real and acknowledged by teammates, not just self-reported"],
             areas_for_improvement=["Two of three members made zero commits", "The team should not have let all 4 tickets sit with one person"],
         ),
+        cicd=RubricDimensionScore(
+            dimension="cicd",
+            score=1,
+            justification="No CI/CD artifact exists in this sprint: no workflow or pipeline configuration, no Dockerfile, and artifact_metrics is empty. Band 1-2 applies.",
+            evidence_citations=[
+                _cite("All 3 commits b1a2b3c, b2b3c4d and b3c4d5e touch only reports/generator.py and reports/export.py; no pipeline or workflow file is present."),
+                _cite("Ticket REP-1 'Build report generation core' is feature work, not a CI build; no REP ticket covers CI, build or deployment work."),
+            ],
+            strengths=[],
+            areas_for_improvement=["Add a CI workflow that runs the test suite on every push", "No automated build or deployment step exists to attribute to any member"],
+        ),
     ),
     member_contributions=[
         MemberContribution(
@@ -445,6 +501,62 @@ lone_contributor_poor_outcome_grade = SprintAssessment(
     ],
 )
 
+
+
+GOLD_ASSESSMENTS: tuple[SprintAssessment, ...] = (
+    high_performing_grade,
+    struggling_grade,
+    good_collab_low_output_grade,
+    imbalanced_high_output_grade,
+    lone_contributor_poor_outcome_grade,
+)
+
+
+def _assert_gold_is_consistent() -> None:
+    """Fail at import if a gold assessment has drifted from the live rubric.
+
+    Two invariants, both of which were silently violated before:
+
+    1. Every gold scores every dimension in DIMENSIONS. The `cicd` dimension
+       was added to the rubric in "feature/add cicd rubric" and these five
+       golds were never backfilled, so `cicd` sat unscored. Nothing broke
+       loudly -- the judge pipeline just computed `grade_abs_error_cicd` as
+       None on every row and quietly measured 5 dimensions out of 6.
+    2. `overall_score` equals the mean of the scored dimensions, which is how
+       services/evaluator.py derives it (`average_score = sum(...) / len(...)`).
+       While gold averaged 5 dimensions and a real candidate averaged 6,
+       `grade_abs_error_overall` carried a systematic bias in the candidate's
+       disfavour that no metric would have revealed.
+
+    Raising here is deliberate: a stale benchmark produces confident,
+    plausible numbers, which is far worse than an import error.
+    """
+    for gold in GOLD_ASSESSMENTS:
+        missing = [
+            dimension
+            for dimension in DIMENSIONS
+            if getattr(gold.rubric_scores, dimension, None) is None
+        ]
+        if missing:
+            raise ValueError(
+                f"Gold assessment for team {gold.team_id} is missing rubric "
+                f"dimension(s) {missing}. Every dimension in DIMENSIONS needs a "
+                "human reference score, or judge metrics that compare against "
+                "gold silently skip it."
+            )
+        scored = gold.rubric_scores.scored()
+        expected = round(sum(score.score for score in scored) / len(scored), 2)
+        if abs(gold.overall_score - expected) > 0.01:
+            raise ValueError(
+                f"Gold assessment for team {gold.team_id} has "
+                f"overall_score={gold.overall_score} but its {len(scored)} "
+                f"dimension scores average {expected}. services/evaluator.py "
+                "derives overall_score as that mean, so gold must too or "
+                "grade_abs_error_overall is biased."
+            )
+
+
+_assert_gold_is_consistent()
 
 
 if __name__ == "__main__":
