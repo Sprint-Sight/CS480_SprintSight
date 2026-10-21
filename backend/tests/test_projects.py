@@ -204,6 +204,44 @@ def test_course_student_endpoint_reuses_existing_student_account_for_enrollment(
     ]
 
 
+def test_course_student_can_be_created_with_a_fallback_password() -> None:
+    """The instructor may set a password so the student can get in without the email."""
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    course = client.post(
+        "/api/v1/courses",
+        json={
+            "code": "CS494",
+            "name": "Fallback Student",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
+        headers=instructor_headers,
+    ).json()
+
+    created = client.post(
+        f"/api/v1/courses/{course['id']}/students",
+        json={
+            "email": "course.fallback@sprintsight.edu",
+            "full_name": "Course Fallback Student",
+            "password": "fallback123",
+        },
+        headers=instructor_headers,
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["must_change_password"] is True
+    # The password is never echoed back to the client.
+    assert "password" not in created.json()
+
+    student_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "course.fallback@sprintsight.edu", "password": "fallback123"},
+    )
+    assert student_login.status_code == 200
+    assert student_login.json()["must_change_password"] is True
+
+
 def test_instructor_can_view_all_students_and_section_roster() -> None:
     instructor_headers = headers(token("faculty@sprintsight.edu"))
     course = client.post("/api/v1/courses", json={"code": "CS492", "name": "Roster", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers).json()

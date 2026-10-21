@@ -10,6 +10,8 @@ from app.repositories.interfaces import (
     CourseRecord,
     DocumentRecord,
     DocumentRepository,
+    EmailOutboxRecord,
+    EmailOutboxRepository,
     IngestionMetricBundle,
     JiraIngestionRunRecord,
     JiraIngestionRunRepository,
@@ -374,6 +376,73 @@ class InMemoryNotificationRepository(NotificationRepository):
         if notification.read_at is None:
             notification.read_at = now_utc()
         return notification
+
+
+class InMemoryEmailOutboxRepository(EmailOutboxRepository):
+    """In-memory stand-in for the durable email outbox (tests and local runs)."""
+
+    def __init__(self) -> None:
+        self._emails: dict[str, EmailOutboxRecord] = {}
+
+    def enqueue_email(self, record: EmailOutboxRecord) -> EmailOutboxRecord:
+        self._emails[record.id] = record
+        return record
+
+    def claim_due_emails(self, now: datetime, limit: int) -> list[EmailOutboxRecord]:
+        due = sorted(
+            (
+                record
+                for record in self._emails.values()
+                if record.status == "pending" and record.scheduled_for <= now
+            ),
+            key=lambda record: (record.scheduled_for, record.created_at, record.id),
+        )[:limit]
+        for record in due:
+            record.status = "sending"
+            record.attempts += 1
+            record.scheduled_for = now
+        return list(due)
+
+    def mark_email_sent(self, email_id: str, sent_at: datetime) -> None:
+        record = self._emails.get(email_id)
+        if record:
+            record.status = "sent"
+            record.sent_at = sent_at
+            record.last_error = None
+
+    def mark_email_failed(
+        self, email_id: str, error: str, retry_after: datetime | None
+    ) -> None:
+        record = self._emails.get(email_id)
+        if record:
+            record.status = "pending" if retry_after else "failed"
+            record.last_error = error
+            record.scheduled_for = retry_after or record.scheduled_for
+
+    def count_emails_sent_since(self, since: datetime) -> int:
+        return sum(
+            record.status == "sent"
+            and record.sent_at is not None
+            and record.sent_at >= since
+            for record in self._emails.values()
+        )
+
+    def requeue_stale_emails(self, cutoff: datetime) -> int:
+        stale = [
+            record
+            for record in self._emails.values()
+            if record.status == "sending" and record.scheduled_for <= cutoff
+        ]
+        for record in stale:
+            record.status = "pending"
+        return len(stale)
+
+    def list_emails(self, limit: int = 50) -> list[EmailOutboxRecord]:
+        return sorted(
+            self._emails.values(),
+            key=lambda record: (record.created_at, record.id),
+            reverse=True,
+        )[:limit]
 
 
 class InMemoryAssessmentRepository(AssessmentRepository):

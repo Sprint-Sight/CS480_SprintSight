@@ -12,6 +12,8 @@ from app.repositories.interfaces import (
     CourseRecord,
     DocumentRecord,
     DocumentRepository,
+    EmailOutboxRecord,
+    EmailOutboxRepository,
     IngestionMetricBundle,
     JiraIngestionRunRecord,
     JiraIngestionRunRepository,
@@ -133,6 +135,153 @@ def ensure_notification_schema(pool: ConnectionPool) -> None:
             """CREATE INDEX IF NOT EXISTS idx_user_notifications_recipient_created
                ON user_notifications(recipient_id, created_at DESC)"""
         )
+
+
+def ensure_email_outbox_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS email_outbox (
+                email_id UUID PRIMARY KEY,
+                recipient VARCHAR(320) NOT NULL,
+                subject VARCHAR(500) NOT NULL,
+                body TEXT NOT NULL,
+                kind VARCHAR(80) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                scheduled_for TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                sent_at TIMESTAMPTZ,
+                last_error TEXT
+            )"""
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS idx_email_outbox_pending
+               ON email_outbox(status, scheduled_for)"""
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS idx_email_outbox_sent_at
+               ON email_outbox(sent_at DESC)"""
+        )
+
+
+class PostgresEmailOutboxRepository(EmailOutboxRepository):
+    """Durable outbound email queue backed by Postgres."""
+
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _email(row: dict) -> EmailOutboxRecord:
+        return EmailOutboxRecord(
+            id=str(row["email_id"]),
+            recipient=row["recipient"],
+            subject=row["subject"],
+            body=row["body"],
+            kind=row["kind"],
+            status=row["status"],
+            attempts=int(row["attempts"]),
+            created_at=row["created_at"],
+            scheduled_for=row["scheduled_for"],
+            sent_at=row["sent_at"],
+            last_error=row["last_error"],
+        )
+
+    def enqueue_email(self, record: EmailOutboxRecord) -> EmailOutboxRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO email_outbox
+                   (email_id, recipient, subject, body, kind, status, attempts,
+                    created_at, scheduled_for, sent_at, last_error)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING email_id, recipient, subject, body, kind, status,
+                             attempts, created_at, scheduled_for, sent_at, last_error""",
+                (
+                    UUID(record.id),
+                    record.recipient,
+                    record.subject,
+                    record.body,
+                    record.kind,
+                    record.status,
+                    record.attempts,
+                    record.created_at,
+                    record.scheduled_for,
+                    record.sent_at,
+                    record.last_error,
+                ),
+            ).fetchone()
+        return self._email(row)
+
+    def claim_due_emails(self, now: datetime, limit: int) -> list[EmailOutboxRecord]:
+        """Atomically move due messages to ``sending`` and hand them to the caller."""
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """UPDATE email_outbox
+                   SET status = 'sending', attempts = attempts + 1, scheduled_for = %s
+                   WHERE email_id IN (
+                       SELECT email_id FROM email_outbox
+                       WHERE status = 'pending' AND scheduled_for <= %s
+                       ORDER BY scheduled_for, created_at
+                       FOR UPDATE SKIP LOCKED
+                       LIMIT %s
+                   )
+                   RETURNING email_id, recipient, subject, body, kind, status,
+                             attempts, created_at, scheduled_for, sent_at, last_error""",
+                (now, now, limit),
+            ).fetchall()
+        return [self._email(row) for row in rows]
+
+    def mark_email_sent(self, email_id: str, sent_at: datetime) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """UPDATE email_outbox
+                   SET status = 'sent', sent_at = %s, last_error = NULL
+                   WHERE email_id = %s""",
+                (sent_at, UUID(email_id)),
+            )
+
+    def mark_email_failed(
+        self, email_id: str, error: str, retry_after: datetime | None
+    ) -> None:
+        status = "pending" if retry_after else "failed"
+        with self._pool.connection() as connection:
+            connection.execute(
+                """UPDATE email_outbox
+                   SET status = %s, last_error = %s, scheduled_for = COALESCE(%s, scheduled_for)
+                   WHERE email_id = %s""",
+                (status, error[:2000], retry_after, UUID(email_id)),
+            )
+
+    def count_emails_sent_since(self, since: datetime) -> int:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS sent_count FROM email_outbox "
+                "WHERE status = 'sent' AND sent_at IS NOT NULL AND sent_at >= %s",
+                (since,),
+            ).fetchone()
+        return int(row["sent_count"])
+
+    def requeue_stale_emails(self, cutoff: datetime) -> int:
+        """Return messages abandoned mid-delivery to the pending pool."""
+        with self._pool.connection() as connection:
+            result = connection.execute(
+                """UPDATE email_outbox
+                   SET status = 'pending', scheduled_for = CURRENT_TIMESTAMP
+                   WHERE status = 'sending' AND scheduled_for <= %s""",
+                (cutoff,),
+            )
+        return int(result.rowcount or 0)
+
+    def list_emails(self, limit: int = 50) -> list[EmailOutboxRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT email_id, recipient, subject, body, kind, status,
+                          attempts, created_at, scheduled_for, sent_at, last_error
+                   FROM email_outbox
+                   ORDER BY created_at DESC, email_id DESC
+                   LIMIT %s""",
+                (limit,),
+            ).fetchall()
+        return [self._email(row) for row in rows]
 
 
 class PostgresNotificationRepository(NotificationRepository):

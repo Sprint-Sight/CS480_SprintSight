@@ -10,7 +10,7 @@ type RosterModalProps = {
   studentSearchTerm: string;
   isLoadingStudents: boolean;
   studentDirectoryError: string;
-  studentForm: { email: string; full_name: string };
+  studentForm: { email: string; full_name: string; password: string };
   onClose: () => void;
   onCreateStudent: () => void;
   onEnrollExisting: (userId: string) => void;
@@ -18,7 +18,7 @@ type RosterModalProps = {
   onRefreshStudents: () => void;
   setStudentSearchTerm: (value: string) => void;
   setStudentForm: React.Dispatch<
-    React.SetStateAction<{ email: string; full_name: string }>
+    React.SetStateAction<{ email: string; full_name: string; password: string }>
   >;
 };
 
@@ -172,6 +172,17 @@ export function RosterModal({
                 className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
+            <input
+              type="password"
+              placeholder="Fallback password (optional)"
+              value={studentForm.password}
+              onChange={(event) => setStudentForm((current) => ({ ...current, password: event.target.value }))}
+              className="mt-3 h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+            <p className="mt-1.5 text-xs text-slate-500">
+              Only needed when the setup email cannot be delivered. The student can log
+              in with it once and is then forced to set their own password.
+            </p>
             <div className="mt-3 flex justify-end">
               <button
                 type="button"

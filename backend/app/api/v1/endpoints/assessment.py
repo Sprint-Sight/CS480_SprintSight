@@ -58,7 +58,7 @@ from app.services.assessmentService.service import (
     update_manual_assessment,
 )
 from app.services.auditLogService.service import append_action_audit, append_override_audit
-from app.services.notificationService.service import SMTPNotificationService
+from app.services.notificationService.service import EmailTransport
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -85,7 +85,7 @@ def assess_sprint(
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     document_repository: Annotated[DocumentRepository, Depends(get_document_repository)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
     selection_repository: Annotated[InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
@@ -250,7 +250,7 @@ def patch_assessment_report(
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ) -> AssessmentReport:
     if assessment_repository is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
@@ -287,7 +287,7 @@ def override_score(
     audit_repository: Annotated[AuditRepository, Depends(get_audit_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ):
     if assessment_repository is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")

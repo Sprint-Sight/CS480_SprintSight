@@ -166,6 +166,41 @@ class NotificationRepository(Protocol):
     ) -> NotificationRecord | None: ...
 
 
+@dataclass
+class EmailOutboxRecord:
+    """A single outbound email waiting to be delivered by the dispatcher."""
+
+    id: str
+    recipient: str
+    subject: str
+    body: str
+    kind: str
+    status: str
+    attempts: int
+    created_at: datetime
+    scheduled_for: datetime
+    sent_at: datetime | None = None
+    last_error: str | None = None
+
+
+class EmailOutboxRepository(Protocol):
+    def enqueue_email(self, record: EmailOutboxRecord) -> EmailOutboxRecord: ...
+
+    def claim_due_emails(self, now: datetime, limit: int) -> list[EmailOutboxRecord]: ...
+
+    def mark_email_sent(self, email_id: str, sent_at: datetime) -> None: ...
+
+    def mark_email_failed(
+        self, email_id: str, error: str, retry_after: datetime | None
+    ) -> None: ...
+
+    def requeue_stale_emails(self, cutoff: datetime) -> int: ...
+
+    def count_emails_sent_since(self, since: datetime) -> int: ...
+
+    def list_emails(self, limit: int = 50) -> list[EmailOutboxRecord]: ...
+
+
 class ManualTextRepository(Protocol):
     def upsert(self, payload: ManualTextPayload, updated_by: str) -> None: ...
 

@@ -28,6 +28,8 @@ htmlcov/
 *.log
 *.eval_cache
 eval_report/
+backend/logs/*
+!backend/logs/.gitkeep
 mlruns/
 
 # ==========================================

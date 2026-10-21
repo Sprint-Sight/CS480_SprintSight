@@ -92,11 +92,7 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
                 value={formData.role}
                 onChange={(e) => {
                   const role = e.target.value as Role;
-                  setFormData({
-                    ...formData,
-                    role,
-                    password: role === "student" ? "" : formData.password,
-                  });
+                  setFormData({ ...formData, role });
                 }}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all cursor-pointer"
               >
@@ -107,11 +103,29 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
             </div>
 
             {formData.role === "student" ? (
-              <p className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-                <Mail className="mt-0.5 h-4 w-4 shrink-0" />
-                The student will receive an email with a secure link to set their
-                first password. No initial password is needed.
-              </p>
+              <div>
+                <p className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+                  <Mail className="mt-0.5 h-4 w-4 shrink-0" />
+                  The student will receive an email with a secure link to set their
+                  first password. No initial password is required.
+                </p>
+                <label className="mt-3 block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Key className="h-3.5 w-3.5 text-blue-600" />
+                  Fallback Password <span className="font-normal text-slate-400">(optional)</span>
+                </label>
+                <input
+                  type="password"
+                  minLength={8}
+                  value={formData.password || ""}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+                  placeholder="Leave empty to rely on the emailed link only"
+                />
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Only used when the setup email cannot be delivered. The student can
+                  log in with it once and is then forced to set their own password.
+                </p>
+              </div>
             ) : (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
@@ -161,7 +175,9 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
         title="Confirm User Provisioning"
         message={
           formData.role === "student"
-            ? `Create a student account for ${formData.fullName} (${formData.email})? A first-time password setup link will be emailed to the student.`
+            ? `Create a student account for ${formData.fullName} (${formData.email})? A first-time password setup link will be emailed to the student.${
+                formData.password ? " They can also log in once with the fallback password you set." : ""
+              }`
             : `Provision a new ${formData.role.toUpperCase()} account for ${formData.fullName} (${formData.email})?`
         }
         confirmText="Yes, Create Account"

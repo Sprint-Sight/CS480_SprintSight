@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.security import TokenPayloadError, decode_access_token
 from app.repositories.in_memory import (
     InMemoryDocumentRepository,
+    InMemoryEmailOutboxRepository,
     audit_action_repo,
     audit_repo,
     instructor_model_selection_repo,
@@ -33,7 +34,8 @@ from app.repositories.interfaces import (
 )
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
-from app.services.notificationService.service import SMTPNotificationService
+from app.services.notificationService.queue import EmailQueue
+from app.services.notificationService.service import EmailTransport, build_email_transport
 
 oauth2_scheme = HTTPBearer()
 
@@ -42,10 +44,15 @@ def get_user_repository(request: Request) -> UserRepository:
     return request.app.state.user_repository
 
 
-def get_notification_service(request: Request) -> SMTPNotificationService:
+def get_notification_service(request: Request) -> EmailTransport:
+    """Return the outbound email queue used to deliver queued messages."""
     service = getattr(request.app.state, "notification_service", None)
     if service is None:
-        service = SMTPNotificationService(get_settings())
+        service = EmailQueue(
+            InMemoryEmailOutboxRepository(),
+            build_email_transport(get_settings()),
+            get_settings(),
+        )
         request.app.state.notification_service = service
     return service
 
