@@ -237,11 +237,37 @@ JUDGE_SEED = int(os.getenv("SPRINTSIGHT_JUDGE_SEED", "7"))
 # a truncated response loses the score field entirely.
 JUDGE_MAX_TOKENS = int(os.getenv("SPRINTSIGHT_JUDGE_MAX_TOKENS", "1200"))
 
-# How much of a bundle / assessment to show the judge. Local 3B-8B judges have
-# a 4k-128k context depending on tag; truncating here (with an explicit
-# marker) is better than letting Ollama silently drop the end of the prompt,
-# which would make a faithfulness judgement meaningless.
-JUDGE_BUNDLE_CHAR_BUDGET = int(os.getenv("SPRINTSIGHT_JUDGE_BUNDLE_CHARS", "12000"))
+# How much of the candidate's evidence view to show the judge.
+#
+# 32000 chars is roughly 8k tokens, which leaves room alongside the rubric,
+# the few-shot exemplars and the stage-one audit inside a 16k-context judge
+# such as phi4:14b. It is sized against what has to fit: the union of
+# per-dimension commit samples measured 64-89 commits on the real sprints,
+# which renders at well under this, so truncation should be the exception
+# rather than the rule.
+#
+# Raising this is NOT the way to fix a truncated bundle -- the full real-sprint
+# bundle renders at up to 2.4 MB, so no budget makes it fit. The fix is to show
+# the candidate's sampled view instead; see candidate_visible_commits.
+JUDGE_BUNDLE_CHAR_BUDGET = int(os.getenv("SPRINTSIGHT_JUDGE_BUNDLE_CHARS", "32000"))
+
+
+# Context window requested of the judge, as Ollama's `options.num_ctx`.
+#
+# This must be set explicitly. Ollama applies its own small default (a few
+# thousand tokens) unless a Modelfile or the request says otherwise, and it
+# truncates an over-long prompt SILENTLY -- no error, no warning. Every
+# character budget in this module would be meaningless if the server quietly
+# dropped the end of the bundle, and the symptom would be the judge calling
+# real citations fabricated: exactly the bug candidate_visible_commits exists
+# to fix. llm_client.py takes the same precaution via _request_extra_body.
+#
+# 32768 covers the 32000-char bundle budget plus the rubric, the exemplars
+# and the stage-one audit with room to spare (chars // 4 is the usual rough
+# token estimate). Keep it at or below the judge's real ceiling: phi4:14b is
+# 16k, qwen2.5:14b-instruct is 32k. Set SPRINTSIGHT_JUDGE_NUM_CTX to 16384
+# for a 16k judge, or 0 to omit the override entirely and let Ollama decide.
+JUDGE_NUM_CTX = int(os.getenv("SPRINTSIGHT_JUDGE_NUM_CTX", "32768"))
 
 
 def judge_parameters(temperature: float = 0.0, seed: int | None = None) -> dict[str, Any]:
@@ -250,15 +276,19 @@ def judge_parameters(temperature: float = 0.0, seed: int | None = None) -> dict[
     ``response_format`` is included because local models wrap JSON in
     markdown fences often enough to matter, and a fenced response fails both
     of MLflow's parse paths. Ollama honours OpenAI's ``json_object`` mode, and
-    MLflow passes unrecognised parameters straight through to the payload.
+    MLflow passes unrecognised parameters straight through to the payload --
+    verified for both ``response_format`` and ``options``.
     """
-    return {
+    parameters: dict[str, Any] = {
         "temperature": temperature,
         "max_tokens": JUDGE_MAX_TOKENS,
         "top_p": 1.0,
         "seed": JUDGE_SEED if seed is None else seed,
         "response_format": {"type": "json_object"},
     }
+    if JUDGE_NUM_CTX > 0:
+        parameters["options"] = {"num_ctx": JUDGE_NUM_CTX}
+    return parameters
 
 
 def configure_judge_endpoint(
@@ -1584,65 +1614,208 @@ def render_assessment_for_judge(assessment: SprintAssessment | None, error: str 
     return _strip_braces("\n".join(lines))
 
 
+def candidate_visible_commits(bundle: ArtifactBundle) -> list[dict[str, Any]]:
+    """The commits the candidate model could legitimately have cited.
+
+    This reuses ``services.llm_client``'s own sampling rather than the raw
+    commit list, because the two are wildly different on a real sprint. The
+    candidate never sees every commit: ``evaluate_dimension`` trims noise
+    files, then takes ``_COMMIT_BUDGET`` representative commits PER DIMENSION
+    (by file pattern, recency and churn). So the set of citable commits is the
+    UNION of those per-dimension samples -- 64 to 89 commits on the real
+    sprints, not the 223 to 544 the bundle contains.
+
+    Showing the judge anything else breaks faithfulness judging outright.
+    Measured before this function existed: the judge was shown the first ~20
+    commits in bundle order, of which 1 to 3 overlapped with the 30 the
+    candidate was given, so 27 to 29 of every 30 legitimately citable commits
+    were invisible and would have been scored as fabrications.
+
+    The private imports are deliberate. Re-deriving this sampling here is
+    precisely the bug: the judge's view must change in lockstep with the
+    candidate's, so it has to be the same code. If llm_client ever makes
+    these public, drop the underscores and nothing else changes.
+    """
+    from services.llm_client import (
+        _COMMIT_BUDGET,
+        _DIMENSION_ARTIFACT_FIELDS,
+        _select_representative_commits,
+        _trim_commits,
+    )
+
+    trimmed = _trim_commits(bundle.model_dump(mode="json")["commits"])
+    citable: dict[str, dict[str, Any]] = {}
+    for dimension in DIMENSIONS:
+        if "commits" not in _DIMENSION_ARTIFACT_FIELDS.get(dimension, ()):
+            continue
+        for commit in _select_representative_commits(trimmed, dimension, _COMMIT_BUDGET):
+            citable.setdefault(commit["sha"], commit)
+    # Chronological so the judge reads a sprint narrative rather than an
+    # arbitrary sampling order.
+    return sorted(citable.values(), key=lambda commit: str(commit.get("timestamp") or ""))
+
+
 def render_bundle_for_judge(
     bundle: ArtifactBundle, char_budget: int = JUDGE_BUNDLE_CHAR_BUDGET
 ) -> str:
-    """Render the ground-truth bundle as brace-free prose, truncating loudly.
+    """Render the candidate's own evidence view as brace-free prose.
 
-    Truncation is announced in the text. A silently truncated bundle makes
-    every faithfulness judgement unsound in a way that is invisible in the
-    results -- the judge marks a real citation as fabricated because the
-    commit it names fell off the end of the prompt.
+    Three things the judge is given, matching what the candidate had:
+
+      1. The citable commits (see ``candidate_visible_commits``), with the
+         same trimmed file lists the candidate saw -- so a filename citation
+         is verifiable, and a filename the candidate never saw is not
+         presented as if it were.
+      2. ``_compute_commit_facts`` / ``_compute_jira_facts``: the precomputed
+         aggregates the candidate's prompt tells it to "trust over your own
+         counting". Without these the judge cannot check a claim like "223
+         commits by 10 authors", because it is only shown a sample, and would
+         score a correct aggregate as unverifiable.
+      3. Tickets, peer evaluations and metrics in full -- these are small
+         (around 11 tickets even on the real sprints) and are never sampled.
+
+    Any truncation drops whole commits from the end and says how many, rather
+    than cutting mid-record: half a commit is worse than no commit, because
+    its SHA may survive while its author does not.
     """
-    lines = [f"Team {bundle.team_id}, sprint {bundle.sprint_id}.", "", "Commits:"]
-    for commit in bundle.commits:
-        files = ", ".join(file.filename for file in commit.files_changed) or "no files recorded"
-        lines.append(
-            f"- {commit.sha} by {commit.author} at {commit.timestamp}: "
-            f"{commit.message} (plus {commit.lines_added}, minus "
-            f"{commit.lines_deleted}; files: {files})"
-        )
-    if not bundle.commits:
-        lines.append("- none")
+    from services.llm_client import (
+        _COMMIT_BUDGET,
+        _compute_commit_facts,
+        _compute_jira_facts,
+        _trim_commits,
+    )
 
-    lines += ["", "Jira tickets:"]
+    raw = bundle.model_dump(mode="json")
+    trimmed = _trim_commits(raw["commits"])
+    commits = candidate_visible_commits(bundle)
+    withheld = len(trimmed) - len(commits)
+
+    header = [
+        f"Team {bundle.team_id}, sprint {bundle.sprint_id}.",
+        "",
+        (
+            f"EVIDENCE SCOPE: the sprint contains {len(trimmed)} commits. The "
+            f"{len(commits)} listed below are exactly the ones the candidate "
+            "model was shown and could cite. The aggregate figures further "
+            "down are computed over ALL commits and the candidate was given "
+            "them too, so a claim about sprint-wide totals is checkable "
+            "against those."
+        ),
+    ]
+    if withheld > 0:
+        header.append(
+            f"The other {withheld} commits were NOT shown to the candidate "
+            "either, so it had no way to copy their identifiers from the "
+            "evidence."
+        )
+
+    def commit_line(commit: dict[str, Any], file_cap: int | None) -> str:
+        """One commit. ``file_cap`` None shows every file, 0 shows none."""
+        changed = commit.get("files_changed") or []
+        core = (
+            f"- {commit['sha']} by {commit.get('author')} at "
+            f"{commit.get('timestamp')}: {commit.get('message')} (plus "
+            f"{commit.get('lines_added', 0)}, minus {commit.get('lines_deleted', 0)}"
+        )
+        if file_cap == 0:
+            return core + f"; {len(changed)} file(s) changed, names not shown)"
+        if not changed:
+            return core + "; no files recorded)"
+        if file_cap is None or len(changed) <= file_cap:
+            return core + f"; files: {', '.join(changed)})"
+        remainder = len(changed) - file_cap
+        return (
+            core
+            + f"; files: {', '.join(changed[:file_cap])} and {remainder} more files)"
+        )
+
+    tail: list[str] = ["", "Jira tickets:"]
     for ticket in bundle.jira_tickets:
         points = "not estimated" if ticket.story_points is None else f"{ticket.story_points:g}"
-        lines.append(
+        tail.append(
             f"- {ticket.ticket_id} {ticket.summary}: status {ticket.status}, "
             f"type {ticket.issue_type}, assignee {ticket.assignee or 'unassigned'}, "
             f"story points {points}"
         )
     if not bundle.jira_tickets:
-        lines.append("- none")
+        tail.append("- none")
 
-    lines += ["", "Peer evaluations:"]
+    tail += ["", "Peer evaluations:"]
     for evaluation in bundle.peer_evaluations:
-        lines.append(
+        tail.append(
             f"- {evaluation.evaluator} rated {evaluation.evaluatee} "
             f"{evaluation.rating} out of 5: {evaluation.comments}"
         )
     if not bundle.peer_evaluations:
-        lines.append("- none")
+        tail.append("- none")
 
-    lines += [
+    facts = "\n\n".join(
+        section
+        for section in (
+            _compute_commit_facts(trimmed, _COMMIT_BUDGET),
+            _compute_jira_facts(raw["jira_tickets"]),
+        )
+        if section
+    )
+    if facts:
+        tail += ["", "Precomputed aggregates over ALL commits and tickets:", facts]
+
+    tail += [
         "",
         f"Artifact metrics: {bundle.artifact_metrics or 'none recorded'}",
         f"Collaboration metrics: {bundle.collaboration_metrics or 'none recorded'}",
         f"Instructor expectations: {bundle.instructor_expectations}",
     ]
 
-    rendered = _strip_braces("\n".join(lines))
-    if len(rendered) > char_budget:
-        rendered = (
-            rendered[:char_budget]
-            + "\n\n[BUNDLE TRUNCATED AT "
-            + str(char_budget)
-            + " CHARACTERS. Items below this point were NOT shown to you. Do "
-            "not treat a citation as fabricated merely because you cannot "
-            "find it here.]"
+    # Degrade file DETAIL before dropping any commit. Priority order is
+    # deliberate: a commit SHA is the primary citation anchor and is short, so
+    # every SHA must stay verifiable even on a 544-commit sprint. A file list
+    # is long and secondary, so when the budget bites, file citations degrade
+    # to "unverifiable" (which the judge is told to record as unresolved)
+    # rather than SHA citations degrading to "fabricated". Full file lists
+    # render at 45-49k chars on the real sprints; the SHAs alone are 11-13k.
+    fixed = _strip_braces("\n".join([*header, "", "Commits the candidate was shown:", *tail]))
+    available = char_budget - len(fixed)
+
+    file_cap: int | None = None
+    shown: list[str] = []
+    for candidate_cap in (None, 8, 4, 2, 0):
+        lines = [_strip_braces(commit_line(commit, candidate_cap)) for commit in commits]
+        if sum(len(line) + 1 for line in lines) <= available:
+            file_cap, shown = candidate_cap, lines
+            break
+        file_cap, shown = candidate_cap, lines
+
+    # Last resort: even SHA-only lines do not fit, so drop whole commits.
+    dropped = 0
+    while shown and sum(len(line) + 1 for line in shown) > available:
+        shown.pop()
+        dropped += 1
+
+    notes: list[str] = []
+    if file_cap == 0:
+        notes.append(
+            "[File lists are omitted for every commit to fit the prompt budget. "
+            "A filename citation therefore cannot be confirmed or denied here: "
+            "record it under unresolved, never as fabricated. Commit SHAs, "
+            "authors, dates, messages and line counts above are complete.]"
         )
-    return rendered
+    elif file_cap is not None:
+        notes.append(
+            f"[Only the first {file_cap} changed files are listed per commit, to "
+            "fit the prompt budget. A commit showing 'and N more files' may well "
+            "contain a cited file that is not printed: record such a citation "
+            "under unresolved, never as fabricated.]"
+        )
+    if dropped:
+        notes.append(
+            f"[{dropped} of the {len(commits)} citable commits did not fit and "
+            "are NOT shown. Do not treat a citation as fabricated merely "
+            "because you cannot find it here; record it under unresolved.]"
+        )
+
+    body = [*header, "", "Commits the candidate was shown:", *(shown or ["- none"]), *notes]
+    return _strip_braces("\n".join([*body, *tail]))
 
 
 def render_rubric_criteria() -> str:

@@ -28,6 +28,7 @@ htmlcov/
 *.log
 *.eval_cache
 eval_report/
+mlruns/
 
 # ==========================================
 # 3. Node.js / React (Frontend)
