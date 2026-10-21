@@ -28,6 +28,57 @@ model-comparison harness and feeds the final report.
 | `plots.py` | Four report-ready plots (latency, format-validity, token distribution, pairwise CIs). |
 | `cli.py` | `python -m research.eval.cli …` driver. |
 | `attach_judge_scores.py` | Hand-off from the judging pipeline. |
+| `mlflow_judge_eval.py` | The judge itself: five `make_genai_metric` rubrics + meta-evaluation. Fills the `judge_quality_score` slot the rest of this package reserves. |
+
+## The judge layer (`mlflow_judge_eval.py`)
+
+Built **on top of** this package and `judges/`, not beside it. It reuses
+`metrics.summarise_example` for every per-example row, `analysis.paired_bootstrap_diff`
+for confidence intervals, `judges.code_based_scorer.numeric_grade_accuracy` for grade
+error, `judges.trace_adapters.read_candidate` for trace reading, and
+`llmops.mlflow_config` / `llmops.prompt_registry` for tracking and rubric versioning.
+See the module docstring for the full list and for what it adds.
+
+Two directions of flow:
+
+```bash
+# A. Judge the assessments a runner.py sweep already produced, then merge the
+#    scores back into that same run so `analyze --pairwise-metric
+#    judge_quality_score` finally has data.
+python -m research.eval.mlflow_judge_eval evaluate \
+    --run-id <run id from runner.run_evaluation> \
+    --judge-model phi4:14b \
+    --human-annotations research/eval/data/human_baseline.csv
+
+python -m research.eval.attach_judge_scores \
+    --judge-file research/judge_eval_report/judge_scores_for_attach.csv \
+    --run-id <same run id>
+
+# B. Give the trace-based pipeline in judges/ the same five rubrics:
+#    from research.eval.mlflow_judge_eval import build_trace_scorers
+#    scorers = [grade_accuracy_from_trace, *build_trace_scorers()]
+```
+
+Other subcommands: `calibrate` (judge-vs-human agreement + judge card),
+`pairwise` (position-swap debiased round robin), `consistency` (self-consistency
+and perturbation probes), `compare` (paired tests with multiplicity correction),
+and `selftest`, which runs the whole pipeline against a stub judge on a
+known-answer synthetic set — no GPU, no model server, suitable for CI:
+
+```bash
+python -m research.eval.mlflow_judge_eval selftest
+```
+
+### Choosing a judge model
+
+The judge **must not share a model family with the candidates under test**.
+`assert_judge_independence` enforces this and will refuse to run; override only
+to deliberately measure the bias:
+
+```bash
+ollama pull phi4:14b              # default, ~9 GB, non-llama
+ollama pull qwen2.5:14b-instruct  # alternative
+```
 
 ## Typical invocation
 

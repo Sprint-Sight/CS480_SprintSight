@@ -30,6 +30,7 @@ htmlcov/
 eval_report/
 backend/logs/*
 !backend/logs/.gitkeep
+mlruns/
 
 # ==========================================
 # 3. Node.js / React (Frontend)
