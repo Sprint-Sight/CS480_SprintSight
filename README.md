@@ -1,6 +1,51 @@
 # CS480_SprintSight
 An automated continuous sprint assessment platform to streamline software engineering team evaluations.
 
+## Unified startup (one command)
+
+Start the **entire** system — the GPU connection to the HPC cluster **and** both
+Docker stacks (AI engine + application) — with a single command from the repo root:
+
+```bash
+bash start.sh
+```
+
+The only manual step is typing your HPC password when prompted. Stop everything with:
+
+```bash
+bash stop.sh
+```
+
+`make up` / `make down` / `make status` are thin wrappers around these if you have `make`.
+
+### How the GPU connection works (read once if you're new)
+
+```
+Your laptop ──VPN──> HPC login node ──Slurm──> GPU compute node ──Ollama :11434
+                                                     (e.g. "toga")
+```
+
+The GPU is **not** on your laptop and you **cannot** SSH to it directly. Each person
+must **reserve a GPU** on the cluster by submitting a *Slurm job* — a temporary,
+per-person reservation that launches Ollama on a GPU node. `start.sh` then opens an
+SSH tunnel so `localhost:11435` on your laptop forwards to that GPU node.
+
+**Before `start.sh` works, once per work session:**
+
+1. **Connect the SMUResearch VPN.**
+2. **Reserve a GPU:** `bash ai-engine/hpc/hpc-dev.sh submit`
+3. **Wait until it's running:** `bash ai-engine/hpc/hpc-dev.sh status`
+   (If it shows `PENDING`, the cluster is busy — wait and re-check; it can take
+   seconds to a few minutes.)
+
+**"No running Slurm job" when you start?** That just means no GPU is reserved *for you*
+right now. It happens when you haven't submitted the job this session, your job hit its
+time limit or was stopped, it's still queued (`PENDING`), or a teammate's job is running
+but not yours (jobs aren't shared). `start.sh` detects this and prints these exact steps,
+so just submit the job, wait for `RUNNING`, and run `bash start.sh` again. You only submit
+once per session — after that `start.sh` reuses the reservation and only asks for your password.
+
+---
 
 # Navigate to your frontend directory
 cd c:/Users/jchuj/sprintsight/CS480_SprintSight/frontend
