@@ -46,3 +46,37 @@ jobs:
 
       - name: build
         run: npm run build
+
+  frontend-security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: check out repository
+        uses: actions/checkout@v4
+
+      # Report HIGH and CRITICAL findings without blocking CI while the existing baseline is triaged.
+      - name: scan frontend files and dependencies
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: frontend
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          format: table
+
+      - name: build frontend image for scanning
+        run: docker build --file Dockerfile --tag sprintsight-frontend:ci --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 .
+        working-directory: frontend
+
+      - name: scan frontend image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: sprintsight-frontend:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          format: table

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Plus, Search, Settings, SlidersHorizontal, Users } from "lucide-react";
+import { BookOpen, Plus, Search, Settings, SlidersHorizontal, Users, Upload } from "lucide-react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
@@ -13,6 +13,8 @@ import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload
 import { notifyProjectsUpdated } from "@/features/projects/projects-events";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
+import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
+import { useStudentImport } from "@/features/projects/hooks/use-student-import";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
 const sortOptions = [
@@ -54,6 +56,9 @@ export default function ProjectsPageContent() {
   const [projectForMemberSelection, setProjectForMemberSelection] = useState<Project | null>(null);
   const [selectedProjectMemberId, setSelectedProjectMemberId] = useState("");
   const [memberToRemove, setMemberToRemove] = useState<{ projectId: string; userId: string; fullName: string } | null>(null);
+
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const { isLoading: isImporting, error: importError, parsedRows, validateAndPreview, submitImport, clearState: clearImportState } = useStudentImport();
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
@@ -536,12 +541,12 @@ export default function ProjectsPageContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100">
-            <button type="button" onClick={handleOpenCreateCourse} title="Create a new course" className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100">
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100 h-11">
+            <button type="button" onClick={handleOpenCreateCourse} title="Create a new course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100">
               <Plus className="h-4 w-4" />
             </button>
 
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-0">
               <BookOpen className="h-4 w-4 text-slate-400" />
               <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="h-9 min-w-[220px] appearance-none bg-transparent pr-5 text-sm font-semibold text-slate-700 outline-none">
                 {courses.length === 0 ? (
@@ -556,7 +561,7 @@ export default function ProjectsPageContent() {
               </select>
             </div>
 
-            <button type="button" onClick={handleOpenEditCourse} title="Edit selected course" className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
+            <button type="button" onClick={handleOpenEditCourse} title="Edit selected course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
               <Settings className="h-4 w-4" />
             </button>
           </div>
@@ -564,6 +569,11 @@ export default function ProjectsPageContent() {
           <button type="button" onClick={() => { setStudentSearchTerm(""); setIsRosterModalOpen(true); }} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
             <Users className="h-4 w-4 text-slate-500" />
             Students
+          </button>
+
+          <button type="button" onClick={() => setIsImportModalOpen(true)} disabled={!selectedCourseId} title="Bulk import students from CSV" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+            <Upload className="h-4 w-4 text-slate-500" />
+            Import Students
           </button>
 
           <button type="button" onClick={handleOpenCreateProject} disabled={!selectedCourseId} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
@@ -649,6 +659,33 @@ export default function ProjectsPageContent() {
         onRefreshStudents={() => void loadAllStudents()}
         setStudentSearchTerm={setStudentSearchTerm}
         setStudentForm={setStudentForm}
+      />
+
+      <CSVImportModal
+        isOpen={isImportModalOpen}
+        courseId={selectedCourseId}
+        courseName={
+          selectedCourseId
+            ? courses.find((c) => c.id === selectedCourseId)
+              ? `${courses.find((c) => c.id === selectedCourseId)?.code} · ${courses.find((c) => c.id === selectedCourseId)?.section}`
+              : "Unknown Course"
+            : "No Course Selected"
+        }
+        onClose={() => {
+          setIsImportModalOpen(false);
+          clearImportState();
+        }}
+        onValidatePreview={validateAndPreview}
+        onSubmit={async () => {
+          const result = await submitImport(selectedCourseId);
+          await loadProjects();
+          await loadCourseStudents();
+          notifyProjectsUpdated();
+          return result;
+        }}
+        isLoading={isImporting}
+        error={importError}
+        parsedRows={parsedRows}
       />
 
       <ProjectMembersModal
