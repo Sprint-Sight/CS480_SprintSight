@@ -58,7 +58,7 @@ jobs:
 
       # Report HIGH and CRITICAL findings without blocking CI while the existing baseline is triaged.
       - name: scan frontend files and dependencies
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: frontend
@@ -72,7 +72,7 @@ jobs:
         working-directory: frontend
 
       - name: scan frontend image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
           image-ref: sprintsight-frontend:ci
