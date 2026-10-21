@@ -32,6 +32,32 @@ from app.repositories.in_memory import (
 )
 
 
+class StubNotificationService:
+    """Records outbound email instead of delivering it over SMTP.
+
+    Without this, every test that creates a user reaches the real SMTP server
+    configured in backend/.env, which slows the suite down and burns through the
+    provider's daily sending quota.
+    """
+
+    is_configured = True
+
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, str, str]] = []
+
+    def send_email(self, recipient: str, subject: str, body: str) -> None:
+        self.messages.append((recipient, subject, body))
+
+
+@pytest.fixture(autouse=True)
+def stub_notification_service():
+    original = getattr(app.state, "notification_service", None)
+    app.state.notification_service = StubNotificationService()
+    yield app.state.notification_service
+    if original is not None:
+        app.state.notification_service = original
+
+
 @pytest.fixture(autouse=True)
 def override_user_repository():
     repository = InMemoryUserRepository()

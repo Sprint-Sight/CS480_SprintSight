@@ -47,7 +47,7 @@ def parse_student_csv(contents: bytes) -> list[StudentImportRow]:
     headers = set(reader.fieldnames or [])
     if headers != REQUIRED_HEADERS:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": "CSV headers must be student_name, student_id, and student_email.",
                 "headers": sorted(headers),
@@ -84,10 +84,11 @@ def parse_student_csv(contents: bytes) -> list[StudentImportRow]:
         rows.append(StudentImportRow(row_number, name, student_number, email))
 
     if errors:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=errors)
     if not rows:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="CSV contains no student rows."
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="CSV contains no student rows.",
         )
     return rows
 

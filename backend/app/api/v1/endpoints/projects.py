@@ -34,6 +34,7 @@ from app.schemas.projects import (
     CourseCreate,
     CourseInstructorResponse,
     CourseResponse,
+    CourseStudentCreationResponse,
     CourseStudentResponse,
     CourseUpdate,
     InstructorStudentCreate,
@@ -52,6 +53,7 @@ from app.services.authService.service import (
 from app.services.jiraService.service import validate_jira_credentials
 from app.services.notificationService.in_app import create_in_app_notification
 from app.services.notificationService.service import SMTPNotificationService
+from app.services.studentImportService.service import import_students
 
 router = APIRouter(tags=["courses", "projects"])
 
@@ -481,7 +483,7 @@ def assign_instructor(
 
 @router.post(
     "/courses/{course_id}/students",
-    response_model=CourseStudentResponse,
+    response_model=CourseStudentCreationResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_course_student(
@@ -493,7 +495,7 @@ def create_course_student(
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
     notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
-) -> CourseStudentResponse:
+) -> CourseStudentCreationResponse:
     course = _course_or_404(repository, course_id)
     if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor or TA is not assigned to this course.")
@@ -514,12 +516,8 @@ def create_course_student(
                 payload.email,
                 payload.full_name,
                 Role.STUDENT,
-                payload.password,
-                payload.student_number,
-                str(payload.email),
-                payload.full_name,
-                Role.STUDENT,
                 payload.password or generate_placeholder_password(),
+                payload.student_number,
             )
             created_account = True
         except HTTPException as exc:
@@ -537,7 +535,7 @@ def create_course_student(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student number conflicts with the existing account.")
 
     if repository.is_student_enrolled(course_id, student.id):
-        return CourseStudentResponse(**user_response(student).model_dump())
+        return CourseStudentCreationResponse(**user_response(student).model_dump())
 
     _validate_student_course_enrollment(repository, course_id, student.id)
 
@@ -558,7 +556,7 @@ def create_course_student(
     _notify_course_enrollment(notifications, student, course)
     if created_account:
         signup_email_sent = send_password_setup_email(student, notification_service)
-    return CourseStudentResponse(
+    return CourseStudentCreationResponse(
         **user_response(student).model_dump(),
         account_created=created_account,
         signup_email_sent=signup_email_sent,

@@ -118,6 +118,7 @@ def create_managed_user(
         payload.full_name,
         payload.role,
         payload.password or generate_placeholder_password(),
+        payload.student_number,
     )
     append_action_audit(
         action_audits,
