@@ -6,7 +6,6 @@ from schemas.fixtures import (
     lone_contributor_poor_outcome_team,
     struggling_team,
 )
-from schemas.member_contribution import MemberContribution
 from schemas.rubrics_dimension_score import EvidenceCitation, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
@@ -93,23 +92,6 @@ high_performing_grade = SprintAssessment(
             areas_for_improvement=["Add a CI workflow that runs the existing tests/test_auth.py suite on every push", "No automated deployment or build step exists to attribute to any member"],
         ),
     ),
-    member_contributions=[
-        MemberContribution(
-            student_id="Alice", contribution_score=9,
-            primary_contributions=["Implemented JWT Auth middleware (AUTH-1)", "Fixed auth token refresh bug (AUTH-4)"],
-            evidence=["Commit 'Add JWT Auth middleware' (+150/-10)", "Jira AUTH-1 and AUTH-4 both marked Done"],
-        ),
-        MemberContribution(
-            student_id="Bob", contribution_score=9,
-            primary_contributions=["Wrote unit tests for auth (AUTH-2)", "Authored auth documentation (AUTH-5)"],
-            evidence=["Commit 'Write unit tests for auth' (+120/-5)", "Jira AUTH-2 and AUTH-5 marked Done"],
-        ),
-        MemberContribution(
-            student_id="Charlie", contribution_score=8,
-            primary_contributions=["Refactored auth service for performance (AUTH-3)", "Implemented auth logging (AUTH-6)"],
-            evidence=["Commit 'Refactor auth service for performance' (+80/-20)", "Jira AUTH-3 and AUTH-6 marked Done"],
-        ),
-    ],
     executive_summary="Team_Alpha delivered all 6 planned Jira tickets this sprint with consistently strong code quality and universally positive peer feedback across all three members.",
     key_recommendations=[
         "Reference Jira ticket IDs in commit messages for traceability.",
@@ -190,23 +172,6 @@ struggling_grade = SprintAssessment(
             areas_for_improvement=["Add a CI workflow that runs tests/test_db.py so the failing database work is caught automatically", "No automated build or deployment step exists to attribute to any member"],
         ),
     ),
-    member_contributions=[
-        MemberContribution(
-            student_id="Greg", contribution_score=4,
-            primary_contributions=["Started and iterated on the DB schema design (DB-1, still In Progress)"],
-            evidence=["Commits 'Start DB schema' (+20/-0) and 'Fix DB schema' (+5/-2)", "Jira DB-1 remains In Progress", "Received peer ratings of 2 and 3 out of 5"],
-        ),
-        MemberContribution(
-            student_id="Frank", contribution_score=4,
-            primary_contributions=["Attempted and later refactored the API implementation (DB-2, still To Do)"],
-            evidence=["Commits 'Attempt to implement API' (+30/-5) and 'Refactor API' (+5/-1)", "Jira DB-2 remains To Do", "Described by teammates as 'slow to respond' and 'not helpful'"],
-        ),
-        MemberContribution(
-            student_id="Hank", contribution_score=4,
-            primary_contributions=["Wrote and updated a small set of tests (DB-3, still To Do)"],
-            evidence=["Commits 'Write some tests' (+10/-0) and 'Update tests' (+2/-0)", "Jira DB-3 remains To Do", "Described by teammates as 'not proactive' and doing 'the bare minimum'"],
-        ),
-    ],
     executive_summary="Team_Gamma made incremental progress across all three planned tickets but completed none of them by sprint end. Peer evaluations were uniformly mediocre (2-3 out of 5), with each member criticizing another's pace or proactivity — suggesting broad underperformance rather than one specific blocker.",
     key_recommendations=[
         "Identify what's blocking DB-1 from moving out of In Progress.",
@@ -286,23 +251,6 @@ good_collab_low_output_grade = SprintAssessment(
             areas_for_improvement=["Add a CI workflow that runs the test suite on every push", "No automated build or deployment step exists to attribute to any member"],
         ),
     ),
-    member_contributions=[
-        MemberContribution(
-            student_id="Ivy", contribution_score=6,
-            primary_contributions=["Built the login page (DEL-1)", "Started the responsive layout pass (DEL-4)"],
-            evidence=["Commits 'Add login page skeleton' and 'Fix navbar responsiveness'", "Jira DEL-1 marked Done, DEL-4 still To Do"],
-        ),
-        MemberContribution(
-            student_id="Jack", contribution_score=6,
-            primary_contributions=["Styled the navbar (DEL-2)"],
-            evidence=["Commit 'Style navbar component' (+25/-1)", "Jira DEL-2 marked Done"],
-        ),
-        MemberContribution(
-            student_id="Kim", contribution_score=5,
-            primary_contributions=["Started form validation (DEL-3, still In Progress)"],
-            evidence=["Commit 'Add basic form validation' (+40/-5)", "Jira DEL-3 still In Progress"],
-        ),
-    ],
     executive_summary="Team_Delta showed strong, warm collaboration with universally positive peer feedback, but delivered only 2 of 4 planned tickets this sprint — the shortfall is in output, not teamwork.",
     key_recommendations=[
         "Scope fewer tickets per sprint, or start them earlier — DEL-3 and DEL-4 both stalled.",
@@ -382,23 +330,6 @@ imbalanced_high_output_grade = SprintAssessment(
             areas_for_improvement=["Add a CI workflow so the payments module is tested automatically rather than relying on one member", "No automated build or deployment step exists to attribute to any member"],
         ),
     ),
-    member_contributions=[
-        MemberContribution(
-            student_id="Liam", contribution_score=10,
-            primary_contributions=["Built the entire payments module (PAY-1 through PAY-4)"],
-            evidence=["4 commits totaling 780+ lines", "All 4 Jira tickets assigned to and completed by Liam"],
-        ),
-        MemberContribution(
-            student_id="Maya", contribution_score=2,
-            primary_contributions=["Fixed a typo in a config comment"],
-            evidence=["Commit 'Fix typo in payment config comment' (+1/-1)", "0 Jira tickets assigned"],
-        ),
-        MemberContribution(
-            student_id="Noah", contribution_score=2,
-            primary_contributions=["Updated .gitignore"],
-            evidence=["Commit 'Update .gitignore' (+2/-0)", "0 Jira tickets assigned"],
-        ),
-    ],
     executive_summary="Team_Epsilon delivered all 4 planned payments tickets on time and with clean code, but the work was almost entirely done by one member — a severe workload imbalance that peer evaluations confirm directly, even though overall delivery was excellent.",
     key_recommendations=[
         "Redistribute payments-module tickets across all 3 members next sprint.",
@@ -477,23 +408,6 @@ lone_contributor_poor_outcome_grade = SprintAssessment(
             areas_for_improvement=["Add a CI workflow that runs the test suite on every push", "No automated build or deployment step exists to attribute to any member"],
         ),
     ),
-    member_contributions=[
-        MemberContribution(
-            student_id="Uma", contribution_score=6,
-            primary_contributions=["Started report generation (REP-1, Done)", "Attempted report export and scheduling (REP-2, REP-3, incomplete)"],
-            evidence=["3 commits, one explicitly marked 'WIP, ran out of time'", "All 4 Jira tickets assigned to Uma, only 1 Done"],
-        ),
-        MemberContribution(
-            student_id="Victor", contribution_score=1,
-            primary_contributions=[],
-            evidence=["0 commits this sprint", "Rated 1/5 by Uma: 'did not contribute to any report tickets'"],
-        ),
-        MemberContribution(
-            student_id="Wei", contribution_score=1,
-            primary_contributions=[],
-            evidence=["0 commits this sprint", "Rated 2/5 by Uma: 'helped plan but wrote no code'"],
-        ),
-    ],
     executive_summary="Team_Theta's reporting feature was carried entirely by one member, Uma, and it still wasn't enough — only 1 of 4 planned tickets reached Done, with the other two teammates making zero commits. Peer evaluations confirm both the imbalance and that the team's overall outcome was poor despite Uma's individual effort.",
     key_recommendations=[
         "Redistribute the remaining REP tickets across all 3 members immediately.",

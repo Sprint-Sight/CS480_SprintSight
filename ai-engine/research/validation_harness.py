@@ -36,10 +36,9 @@ Results:
     recomputes the raw float average itself from rubric_scores for the
     reliability metric, since the rounding would hide real variance.
 
-  - member_contributions is NOT populated by the current evaluator.py (it's
-    only demonstrated with fake data in assessment.py's smoke test). There is
-    currently nothing to run the evidence-grounding check against for member
-    contributions -- only rubric_scores[*].evidence_citations exists today.
+  - There are no per-member contributions: scoring is team-level, so the
+    SprintAssessment has no member_contributions field. The only evidence to
+    run the grounding check against is rubric_scores[*].evidence_citations.
 
 STILL UNCONFIRMED (flagging rather than guessing further):
   - The exact fixture names/callable-ness in schemas/fixtures.py. Your

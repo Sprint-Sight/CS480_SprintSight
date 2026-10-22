@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field, computed_field
 
-from schemas.member_contribution import MemberContribution
 from schemas.rubrics_score import RubricsScore
 
 
@@ -13,7 +12,6 @@ class SprintAssessment(BaseModel):
     # the /100 score down to multiples of 10 and throw away real resolution.
     overall_score: float = Field(ge=0, le=10)
     rubric_scores: RubricsScore
-    member_contributions: list[MemberContribution] = [] # Set a default empty list here, making this optional
     executive_summary: str
     strengths: list[str] = []
     weaknesses: list[str] = []
