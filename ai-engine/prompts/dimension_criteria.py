@@ -10,7 +10,7 @@ versioned as a single unit instead of being buried next to unrelated model code.
 from schemas.rubrics_dimension_score import DimensionName
 
 requirements = '''
-    Evaluate the individual's performance against the Requirements dimension using the provided Jira/project data.
+    Evaluate the team's performance against the Requirements dimension using the provided Jira/project data. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -31,7 +31,7 @@ requirements = '''
     '''
 
 code_quality_prompt = '''
-    Evaluate the individual's Code Quality based on the available Git repository and commit history.
+    Evaluate the team's Code Quality based on the available Git repository and commit history. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -52,15 +52,14 @@ code_quality_prompt = '''
     '''
 
 testing_prompt = '''
-    Evaluate the individual's Testing performance using Jira tickets, Git commits, test files, and other available testing evidence.
+    Evaluate the team's Testing performance using Jira tickets, Git commits, test files, and other available testing evidence. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
     Number of dedicated testing/test-related Jira tickets completed
     Presence of explicit test-related commits
     Evidence of unit, integration, system, or other appropriate tests
-    Whether testing appears comprehensive relative to the code contributed
-    Whether testing work is clearly attributable to the individual
+    Whether testing appears comprehensive relative to the code the team contributed
 
     Assign a score from 1–10 using this rubric:
 
@@ -73,7 +72,7 @@ testing_prompt = '''
     '''
 
 documentation_prompt = '''
-    Evaluate the individual's contribution to Documentation using Git commits, Jira ticket descriptions/summaries, README files, technical documentation, and other available project artifacts.
+    Evaluate the team's Documentation using Git commits, Jira ticket descriptions/summaries, README files, technical documentation, and other available project artifacts. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -90,7 +89,7 @@ documentation_prompt = '''
     3–5: Documentation is vague, incomplete, or missing across some artifacts.
     1–2: No documentation effort is recorded in any system.
 
-    Output: Provide the score, a concise justification, and the specific documentation evidence supporting the score. Do not award credit for documentation that cannot be attributed to the individual.
+    Output: Provide the score, a concise justification, and the specific documentation evidence supporting the score. Do not award credit for documentation unless there is evidence it was actually produced.
     '''
 
 collaboration_prompt = '''
@@ -115,7 +114,7 @@ collaboration_prompt = '''
     '''
 
 cicd_prompt = '''
-    Evaluate the individual's contribution to Continuous Integration and Continuous Deployment (CI/CD) using Git commits, pipeline configurations, deployment logs, and other available project artifacts.
+    Evaluate the team's Continuous Integration and Continuous Deployment (CI/CD) practices using Git commits, pipeline configurations, deployment logs, and other available project artifacts. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -131,7 +130,7 @@ cicd_prompt = '''
     3–5: CI/CD practices are sporadic or partially implemented.
     1–2: No significant CI/CD practices are evident.
 
-    Output: Provide the score, a concise justification, and the specific CI/CD evidence supporting the score. Do not award credit for CI/CD practices that cannot be attributed to the individual.
+    Output: Provide the score, a concise justification, and the specific CI/CD evidence supporting the score. Do not award credit for CI/CD practices unless there is evidence they were actually implemented.
     '''
 
 DIMENSIONS: list[DimensionName] = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
