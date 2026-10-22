@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { ArtifactTab } from "@/features/artifacts/types";
 
-const VALID_TABS: ArtifactTab[] = ["github", "jira", "documents", "communication"];
+const VALID_TABS: ArtifactTab[] = ["github", "jira", "documents", "communication", "peer-evaluation"];
 
 export function parseArtifactTab(value: string | null): ArtifactTab | null {
   return VALID_TABS.find((tab) => tab === value) ?? null;

@@ -1,4 +1,4 @@
-export type ArtifactTab = "github" | "jira" | "documents" | "communication";
+export type ArtifactTab = "github" | "jira" | "documents" | "communication" | "peer-evaluation";
 
 export type GitHubArtifact = {
   id: string;
@@ -36,6 +36,14 @@ export type CommunicationArtifact = {
   capturedAt: string;
 };
 
+export type PeerEvaluationArtifact = {
+  id: string;
+  reviewer: string;
+  target: string;
+  score: number;
+  sprint: string;
+};
+
 export type ArtifactSourceSummary = {
   source: "GitHub" | "Jira" | "Documents";
   records: number;
@@ -50,5 +58,6 @@ export type ArtifactProjectDataset = {
   jira: JiraTaskArtifact[];
   documents: DocumentArtifact[];
   communication: CommunicationArtifact[];
+  peerEvaluation: PeerEvaluationArtifact[];
   sources: ArtifactSourceSummary[];
 };
