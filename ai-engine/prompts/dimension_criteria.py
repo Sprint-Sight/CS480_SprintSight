@@ -94,24 +94,24 @@ documentation_prompt = '''
     '''
 
 collaboration_prompt = '''
-    Evaluate the individual's Collaboration performance using workload distribution and participation evidence drawn from the available Git and project-management data.
+    Evaluate the team's Collaboration as a whole, using workload distribution and participation evidence drawn from the available Git and project-management data. This is a single, holistic team-level judgement — do NOT score or single out individual members.
 
     Assess:
 
-    Number of tickets/story points handled relative to teammates
-    Whether the individual's share of the workload is reasonably balanced against the team
-    Participation in shared work such as code reviews, pull-request discussion, and comments on teammates' tickets
+    Whether work is shared across the team rather than concentrated in only one or two members
+    How actively the team uses project-management tools — e.g. whether Jira tickets are created, assigned, updated, and moved to Done rather than left stale or unused
+    Participation in shared work such as code reviews, pull-request discussion, and comments on each other's tickets
     Consistency of engagement across the sprint rather than isolated bursts of activity
-    Evidence of severe under-contribution or freeriding relative to the assigned workload
+    Evidence that the team is coordinating, or conversely that some members are not contributing at all
 
     Assign a score from 1–10 using this rubric:
 
-    9–10: Workload is evenly balanced with teammates and there is clear, consistent participation in shared work.
-    6–8: Workload is mostly balanced with some participation in shared work.
-    3–5: Workload is highly imbalanced or participation in shared work is minimal.
-    1–2: Little or no contribution relative to the assigned workload, with strong evidence of freeriding.
+    9–10: Work is well distributed across the team and project-management tools are used consistently and actively.
+    6–8: Work is mostly shared and project-management tools are used, with some gaps.
+    3–5: Work is concentrated in a few members, or project-management tools are used only sporadically.
+    1–2: Little evidence of teamwork; contribution is highly uneven or project-management tools are barely used.
 
-    Output: Provide the score, a concise justification, and the workload and participation evidence supporting the score. Do not treat a low ticket count alone as evidence of poor collaboration without considering the individual's assigned workload.
+    Output: Provide the score, a concise justification, and the workload and participation evidence supporting the score. Do not treat a low overall ticket count as poor collaboration without considering the total scope of the team's assigned work.
     '''
 
 cicd_prompt = '''
