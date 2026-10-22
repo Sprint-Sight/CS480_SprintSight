@@ -23,8 +23,10 @@ interface NotificationsDropdownProps {
 const eventTypeLabels: Record<string, { label: string; bgColor: string; textColor: string }> = {
   project_membership: { label: "Project", bgColor: "bg-blue-100", textColor: "text-blue-700" },
   project_unmembership: { label: "Project removed", bgColor: "bg-rose-100", textColor: "text-rose-700" },
+  project_deletion: { label: "Project deleted", bgColor: "bg-rose-100", textColor: "text-rose-700" },
   course_enrollment: { label: "Course", bgColor: "bg-emerald-100", textColor: "text-emerald-700" },
   course_unenrollment: { label: "Course removed", bgColor: "bg-rose-100", textColor: "text-rose-700" },
+  course_deletion: { label: "Course deleted", bgColor: "bg-rose-100", textColor: "text-rose-700" },
   document_uploaded: { label: "Document", bgColor: "bg-indigo-100", textColor: "text-indigo-700" },
   assignment: { label: "Assignment", bgColor: "bg-amber-100", textColor: "text-amber-700" },
   team: { label: "Team", bgColor: "bg-purple-100", textColor: "text-purple-700" },
