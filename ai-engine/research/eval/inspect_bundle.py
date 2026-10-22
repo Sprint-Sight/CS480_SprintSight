@@ -88,7 +88,6 @@ def inspect(dataset_name: str, example_id: str, dimensions: list[str], out_dir: 
         "trimmed_commit_count": len(trimmed_commits),
         "commit_budget_per_dimension": budget,
         "jira_tickets": _ticket_breakdown(full["jira_tickets"]),
-        "peer_evaluations_count": len(full["peer_evaluations"]),
         "collaboration_metrics_keys": sorted(full.get("collaboration_metrics", {}).keys()),
         "artifact_metrics_keys": sorted(full.get("artifact_metrics", {}).keys()),
         "project_context_documents_count": len(full.get("project_context_documents", [])),
@@ -123,7 +122,6 @@ def inspect(dataset_name: str, example_id: str, dimensions: list[str], out_dir: 
             "fields_included": list(fields),
             "has_commits": "commits" in fields,
             "has_jira_tickets": "jira_tickets" in fields,
-            "has_peer_evaluations": "peer_evaluations" in fields,
             "has_artifact_metrics": "artifact_metrics" in fields,
             "has_collaboration_metrics": "collaboration_metrics" in fields,
             "commits_sent_to_model": len(sampled) if sampled is not None else 0,
@@ -165,7 +163,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Dataset: {summary['dataset']} @ {summary['dataset_hash']}")
     print(f"Commits: raw={summary['raw_commit_count']}  trimmed={summary['trimmed_commit_count']}  budget_per_dim={summary['commit_budget_per_dimension']}")
     print(f"Jira:    tickets={summary['jira_tickets']['count']}  by_status={summary['jira_tickets']['by_status']}")
-    print(f"Peer evals: {summary['peer_evaluations_count']}")
     print(f"Context docs: {summary['project_context_documents_count']}")
     print()
     print("Per-dimension (what the model receives):")
@@ -173,7 +170,6 @@ def main(argv: list[str] | None = None) -> int:
         marks = []
         marks.append(f"commits={info['commits_sent_to_model']}" if info["has_commits"] else "commits=—")
         marks.append("jira=Y" if info["has_jira_tickets"] else "jira=—")
-        marks.append("peer=Y" if info["has_peer_evaluations"] else "peer=—")
         marks.append(f"~{info['prompt_approx_tokens']}tok")
         warn = f"  {info['jira_warning']}" if "jira_warning" in info else ""
         print(f"  {dim:<16} {'  '.join(marks)}{warn}")

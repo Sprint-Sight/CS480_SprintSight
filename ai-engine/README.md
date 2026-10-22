@@ -132,7 +132,6 @@ with a JSON body shaped as:
   },
   "commits": [],
   "jira_tickets": [],
-  "peer_evaluations": [],
   "artifact_metrics": {},
   "instructor_expectations": "No instructor guidance provided."
 }

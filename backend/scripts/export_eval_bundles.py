@@ -28,8 +28,8 @@ Data pulled from Postgres (via the same repositories the API uses):
                       include extracted document text.
 
 Everything else that an ArtifactBundle expects but doesn't come from
-Postgres (peer_evaluations, artifact_metrics) is written as empty — the
-production pipeline treats those as optional too.
+Postgres (artifact_metrics) is written as empty — the production pipeline
+treats those as optional too.
 """
 
 from __future__ import annotations
@@ -132,7 +132,6 @@ def _bundle_dict_from_db(
         "sprint_id": sprint_id,
         "commits": [commit.model_dump(mode="json") for commit in metrics.commits],
         "jira_tickets": jira_tickets,
-        "peer_evaluations": [],  # Not currently captured by backend ingestion
         "collaboration_metrics": _collaboration_metrics_from_metrics(metrics),
         "artifact_metrics": {},  # Reserved; mock was removed in the docs work
         "project_context_documents": project_context_documents,

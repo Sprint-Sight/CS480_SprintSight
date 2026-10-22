@@ -31,7 +31,6 @@ export type ContributionMember = {
   initials: string;
   githubScore: number;
   jiraScore: number;
-  peerScore: number;
   overallScore: number;
   recommendedGrade: string;
   gradeAdjustmentPercent: number;

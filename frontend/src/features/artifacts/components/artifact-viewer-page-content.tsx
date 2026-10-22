@@ -3,9 +3,8 @@
 import { 
   CheckSquare, 
   FileText, 
-  FolderGit2, 
-  MessageSquare, 
-  Users,
+  FolderGit2,
+  MessageSquare,
   Upload,
   RefreshCw,
   Loader2,
@@ -30,7 +29,6 @@ const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ 
   { id: "jira", label: "Jira", icon: CheckSquare },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "communication", label: "Communication", icon: MessageSquare },
-  { id: "peer-evaluation", label: "Peer Evaluation", icon: Users },
 ];
 
 function getStatusPill(status?: string) {
@@ -774,13 +772,6 @@ export default function ArtifactViewerPageContent() {
           <>
             <h2 className="text-3xl font-semibold text-blue-950">Communication Artifacts</h2>
             <p className="text-sm text-slate-500">No communication artifacts are available for the selected project.</p>
-          </>
-        )}
-
-        {role === "instructor" && displayedTab === "peer-evaluation" && (
-          <>
-            <h2 className="text-3xl font-semibold text-blue-950">Peer Evaluation Inputs</h2>
-            <p className="text-sm text-slate-500">No peer evaluation data is available for the selected project and sprint.</p>
           </>
         )}
       </section>

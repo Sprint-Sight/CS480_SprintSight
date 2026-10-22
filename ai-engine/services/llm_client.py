@@ -149,8 +149,8 @@ _DIMENSION_ARTIFACT_FIELDS = {
     "documentation": ("commits", "jira_tickets"),
     "requirements": ("jira_tickets", "artifact_metrics"),
     "collaboration": (
+        "commits",
         "jira_tickets",
-        "peer_evaluations",
         "collaboration_metrics",
     ),
     "cicd": ("commits", "artifact_metrics"),
@@ -661,7 +661,6 @@ async def evaluate_dimension(
             "bundle_bytes": len(bundle_data.encode("utf-8")),
             "commit_count": len(bundle.commits),
             "jira_ticket_count": len(bundle.jira_tickets),
-            "peer_evaluation_count": len(bundle.peer_evaluations),
             "artifact_metric_keys": sorted(bundle.artifact_metrics),
         }
     )

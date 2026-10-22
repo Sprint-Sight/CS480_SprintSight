@@ -17,7 +17,7 @@ that script's `--help` for the exact invocation.
 ## Expected top-level JSON keys
 
 ```
-team_id, sprint_id, commits, jira_tickets, peer_evaluations,
+team_id, sprint_id, commits, jira_tickets,
 collaboration_metrics, artifact_metrics, project_context_documents,
 instructor_expectations
 ```

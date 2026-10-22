@@ -13,7 +13,7 @@ Two things this judge is asked to do, both of which need a language model
 (neither is a deterministic/code check):
 
   1. Groundedness -- is each evidence_citations string actually supported by
-     the raw commits / jira_tickets / peer_evaluations in the ArtifactBundle,
+     the raw commits / jira_tickets in the ArtifactBundle,
      or does it assert something the bundle doesn't contain? Citations here
      are free-text paraphrases (e.g. "Jira ticket AUTH-2 'Auth Tests' is
      marked Done, assigned to Bob."), not machine-checkable file:line spans,

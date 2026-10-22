@@ -30,7 +30,6 @@ def deactivate_user_cascade(
       - audit_logs             (actor_id FK is ON DELETE SET NULL on hard delete;
                                 here the row stays — the reference is valid because
                                 we never hard-delete users)
-      - peer_evaluations       (evaluator / evaluatee IDs kept for score averaging)
     """
     user = user_repository.get_by_id(user_id)
     if not user:

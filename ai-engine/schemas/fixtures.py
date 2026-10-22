@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo, FileDiff
 from schemas.jira import JiraTicket
-from schemas.peer_evaluation import PeerEvaluation
 
 # The Best Team (Good performance, good work distribution among team members)
 high_performing_team = ArtifactBundle(
@@ -87,14 +86,6 @@ high_performing_team = ArtifactBundle(
         JiraTicket(ticket_id="AUTH-5", summary="Auth Documentation", assignee="Bob", status="Done", issue_type="Task", story_points=1, timestamp=datetime(2026, 8, 10, 14, 30, tzinfo=UTC)),
         JiraTicket(ticket_id="AUTH-6", summary="Auth Logging", assignee="Charlie", status="Done", issue_type="Task", story_points=3, timestamp=datetime(2026, 8, 10, 15, 45, tzinfo=UTC)),
     ],
-    peer_evaluations=[
-        PeerEvaluation(evaluator="Bob", evaluatee="Alice", rating=5, comments="Alice crushed it!"),
-        PeerEvaluation(evaluator="Alice", evaluatee="Bob", rating=5, comments="Bob's tests caught a tricky bug."),
-        PeerEvaluation(evaluator="Charlie", evaluatee="Alice", rating=5, comments="Alice's refactor improved performance significantly."),
-        PeerEvaluation(evaluator="Alice", evaluatee="Charlie", rating=5, comments="Charlie's logging implementation is top-notch."),
-        PeerEvaluation(evaluator="Bob", evaluatee="Charlie", rating=5, comments="Charlie refactored the auth service beautifully."),
-        PeerEvaluation(evaluator="Charlie", evaluatee="Bob", rating=5, comments="Bob's documentation updates were clear and helpful."),
-    ]
 )
 
 # The Struggling Team (Nil / little work done)
@@ -120,14 +111,6 @@ struggling_team = ArtifactBundle(
         JiraTicket(ticket_id="DB-2", summary="Setup ORM", assignee="Frank", status="To Do", issue_type="Task", story_points=3, timestamp=datetime(2026, 8, 10, 9, 0, tzinfo=UTC)),
         JiraTicket(ticket_id="DB-3", summary="Write DB Tests", assignee="Hank", status="To Do", issue_type="Task", story_points=2, timestamp=datetime(2026, 8, 10, 9, 0, tzinfo=UTC)),
     ],
-    peer_evaluations=[
-        PeerEvaluation(evaluator="Greg", evaluatee="Frank", rating=3, comments="Frank was slow to respond."),
-        PeerEvaluation(evaluator="Frank", evaluatee="Greg", rating=3, comments="Greg tried his best but struggled to get task done"),
-        PeerEvaluation(evaluator="Hank", evaluatee="Greg", rating=2, comments="Greg didn't contribute much."),
-        PeerEvaluation(evaluator="Hank", evaluatee="Frank", rating=2, comments="Frank was not helpful."),
-        PeerEvaluation(evaluator="Greg", evaluatee="Hank", rating=3, comments="Hank was not proactive."),
-        PeerEvaluation(evaluator="Frank", evaluatee="Hank", rating=3, comments="Hank did the bare minimum."),
-    ]
 )
 
 # Good collaboration, lower output
@@ -150,14 +133,6 @@ good_collab_low_output_team = ArtifactBundle(
         JiraTicket(ticket_id="DEL-3", summary="Add form validation", assignee="Kim", status="In Progress", issue_type="Task", story_points=3, timestamp=datetime(2026, 8, 15, 11, 30, tzinfo=UTC)),
         JiraTicket(ticket_id="DEL-4", summary="Responsive layout pass", assignee="Ivy", status="To Do", issue_type="Task", story_points=2, timestamp=datetime(2026, 8, 10, 9, 0, tzinfo=UTC)),
     ],
-    peer_evaluations=[
-        PeerEvaluation(evaluator="Ivy", evaluatee="Jack", rating=5, comments="Jack's navbar work looks great and he's always quick to help."),
-        PeerEvaluation(evaluator="Ivy", evaluatee="Kim", rating=4, comments="Kim communicates clearly about blockers."),
-        PeerEvaluation(evaluator="Jack", evaluatee="Ivy", rating=5, comments="Ivy keeps the team organized and unblocks people fast."),
-        PeerEvaluation(evaluator="Jack", evaluatee="Kim", rating=4, comments="Kim is thorough, just a bit slow to start tasks."),
-        PeerEvaluation(evaluator="Kim", evaluatee="Ivy", rating=5, comments="Ivy is a great communicator and very supportive."),
-        PeerEvaluation(evaluator="Kim", evaluatee="Jack", rating=4, comments="Jack is reliable and easy to work with."),
-    ]
 )
 
 # 1 person carry, good outcome
@@ -187,12 +162,6 @@ imbalanced_high_output_team = ArtifactBundle(
         JiraTicket(ticket_id="PAY-3", summary="Implement refund flow", assignee="Liam", status="Done", issue_type="Story", story_points=5, timestamp=datetime(2026, 8, 16, 10, 15, tzinfo=UTC)),
         JiraTicket(ticket_id="PAY-4", summary="Payment audit logging", assignee="Liam", status="Done", issue_type="Task", story_points=3, timestamp=datetime(2026, 8, 19, 15, 55, tzinfo=UTC)),
     ],
-    peer_evaluations=[
-        PeerEvaluation(evaluator="Maya", evaluatee="Liam", rating=5, comments="Liam carried the entire payments module practically by himself."),
-        PeerEvaluation(evaluator="Noah", evaluatee="Liam", rating=5, comments="Liam shipped all four payment tickets alone, incredible pace."),
-        PeerEvaluation(evaluator="Liam", evaluatee="Maya", rating=2, comments="Maya didn't pick up any tickets this sprint, I had to step in."),
-        PeerEvaluation(evaluator="Liam", evaluatee="Noah", rating=2, comments="Noah only made a one-line config fix all sprint, hence I had to do the rest."),
-    ]
 )
 
 # Only 1 person did any work, and the outcome was still poor
@@ -213,12 +182,6 @@ lone_contributor_poor_outcome_team = ArtifactBundle(
         JiraTicket(ticket_id="REP-3", summary="Add report scheduling", assignee="Uma", status="To Do", issue_type="Task", story_points=3, timestamp=datetime(2026, 8, 10, 9, 0, tzinfo=UTC)),
         JiraTicket(ticket_id="REP-4", summary="Add report access permissions", assignee="Uma", status="To Do", issue_type="Task", story_points=2, timestamp=datetime(2026, 8, 10, 9, 0, tzinfo=UTC)),
     ],
-    peer_evaluations=[
-        PeerEvaluation(evaluator="Uma", evaluatee="Victor", rating=1, comments="Victor did not contribute to any report tickets."),
-        PeerEvaluation(evaluator="Uma", evaluatee="Wei", rating=2, comments="Wei helped plan but wrote no code."),
-        PeerEvaluation(evaluator="Victor", evaluatee="Uma", rating=4, comments="Uma tried hard but we still missed most of our sprint goals."),
-        PeerEvaluation(evaluator="Wei", evaluatee="Uma", rating=3, comments="Uma carried the whole feature alone and it was too much for one person."),
-    ]
 )
 
 if __name__ == "__main__":

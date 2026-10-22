@@ -753,7 +753,7 @@ _ACTIONABILITY_LOW = EvaluationExample(
         ),
         "artifact_bundle": (
             "commits: 7de45f2 by Dana, files src/payments.py. jira_tickets: "
-            "AUTH-7 Payment handler, status Done. peer_evaluations: 3 entries."
+            "AUTH-7 Payment handler, status Done."
         ),
     },
 )
@@ -1738,15 +1738,6 @@ def render_bundle_for_judge(
             f"story points {points}"
         )
     if not bundle.jira_tickets:
-        tail.append("- none")
-
-    tail += ["", "Peer evaluations:"]
-    for evaluation in bundle.peer_evaluations:
-        tail.append(
-            f"- {evaluation.evaluator} rated {evaluation.evaluatee} "
-            f"{evaluation.rating} out of 5: {evaluation.comments}"
-        )
-    if not bundle.peer_evaluations:
         tail.append("- none")
 
     facts = "\n\n".join(

@@ -94,24 +94,24 @@ documentation_prompt = '''
     '''
 
 collaboration_prompt = '''
-    Evaluate the individual's Collaboration performance using peer ratings and workload distribution data.
+    Evaluate the individual's Collaboration performance using workload distribution and participation evidence drawn from the available Git and project-management data.
 
     Assess:
 
-    Average peer rating received
-    Distribution of peer ratings, where available
     Number of tickets/story points handled relative to teammates
-    Whether workload appears reasonably balanced
-    Evidence of severe under-contribution or freeriding
+    Whether the individual's share of the workload is reasonably balanced against the team
+    Participation in shared work such as code reviews, pull-request discussion, and comments on teammates' tickets
+    Consistency of engagement across the sprint rather than isolated bursts of activity
+    Evidence of severe under-contribution or freeriding relative to the assigned workload
 
     Assign a score from 1–10 using this rubric:
 
-    9–10: Peer rating average is 4.5–5.0 and workload is evenly balanced.
-    6–8: Peer rating average is 3.5–4.4 and workload is mostly balanced.
-    3–5: Peer rating average is 2.5–3.4 and workload is highly imbalanced.
-    1–2: Peer rating average is below 2.5 and there is strong evidence of freeriding.
+    9–10: Workload is evenly balanced with teammates and there is clear, consistent participation in shared work.
+    6–8: Workload is mostly balanced with some participation in shared work.
+    3–5: Workload is highly imbalanced or participation in shared work is minimal.
+    1–2: Little or no contribution relative to the assigned workload, with strong evidence of freeriding.
 
-    Output: Provide the score, a concise justification, the peer-rating evidence, and the workload evidence. Do not treat a low ticket count alone as evidence of poor collaboration without considering the individual's assigned workload.
+    Output: Provide the score, a concise justification, and the workload and participation evidence supporting the score. Do not treat a low ticket count alone as evidence of poor collaboration without considering the individual's assigned workload.
     '''
 
 cicd_prompt = '''

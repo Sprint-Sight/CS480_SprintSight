@@ -18,7 +18,6 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
 from schemas.modelname import ModelName
-from schemas.peer_evaluation import PeerEvaluation
 from schemas.sprint_assessment import SprintAssessment
 from services.evaluator import evaluate_sprint
 
@@ -53,7 +52,6 @@ class BackendAssessmentPayload(BaseModel):
     collaboration_metrics: BackendCollaborationMetrics = Field(default_factory=BackendCollaborationMetrics)
     commits: list[CommitInfo] = Field(default_factory=list)
     jira_tickets: list[JiraTicket] = Field(default_factory=list)
-    peer_evaluations: list[PeerEvaluation] = Field(default_factory=list)
     artifact_metrics: dict[str, Any] = Field(default_factory=dict)
     project_context_documents: list[dict[str, Any]] = Field(default_factory=list)
     instructor_expectations: str = "No instructor guidance provided."
@@ -75,7 +73,6 @@ async def assess_backend_data_endpoint(
             sprint_id=payload.sprint_context.sprint_id,
             commits=payload.commits,
             jira_tickets=payload.jira_tickets,
-            peer_evaluations=payload.peer_evaluations,
             collaboration_metrics=payload.collaboration_metrics.model_dump(),
             artifact_metrics=payload.artifact_metrics,
             project_context_documents=payload.project_context_documents,
