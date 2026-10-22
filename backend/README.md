@@ -235,12 +235,14 @@ disappeared:
 | --- | --- | --- |
 | `course_enrollment` | Added to a course | The student is enrolled in a course |
 | `course_unenrollment` | Removed from a course | The student is unenrolled. Unenrolling also drops them from their project group in that course, and the message names the group |
+| `course_deletion` | Course deleted | The whole course is deleted. Every enrolled student is told, and the message names their project group when they had one |
 | `project_membership` | Added to a project | The student is added to a project group |
 | `project_unmembership` | Removed from a project | The student is removed from a project group |
+| `project_deletion` | Project deleted | The whole project group is deleted. Every member is told; the course itself is unaffected |
 | `document_uploaded` | Student uploaded a document | A student uploads documents to a project |
 
-The dashboard renders each event with its own icon, and tints removals in rose
-so they are visually distinct from additions.
+The dashboard renders each event with its own label chip, and tints removals and
+deletions in rose so they are visually distinct from additions.
 
 Deactivating a student removes them from every course and project group, but
 no notification is created for it: the account is disabled at that point, so

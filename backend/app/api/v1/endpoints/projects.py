@@ -201,6 +201,48 @@ def _notify_project_unmembership(
     )
 
 
+def _notify_course_deletion(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    course,
+    deleted_group: str | None = None,
+) -> None:
+    """Tell a student the course they were enrolled in was deleted.
+
+    Deleting a course also deletes its project groups, so the message names the
+    group when the student had one.
+    """
+    message = (
+        f"{course.code} {course.name}, section {course.section} ({course.term} "
+        f"{course.year}) has been deleted. You are no longer enrolled in it."
+    )
+    if deleted_group:
+        message += f" The project group {deleted_group} was deleted with it."
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "course_deletion",
+        "Course deleted",
+        message,
+    )
+
+
+def _notify_project_deletion(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    project: ProjectRecord,
+) -> None:
+    """Tell a student the project group they belonged to was deleted."""
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "project_deletion",
+        "Project deleted",
+        f"The project group {project.team_name} ({project.project_name}) has been "
+        f"deleted. You are no longer a member of a project group in this course.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Course Endpoints
 # ---------------------------------------------------------------------------
@@ -345,11 +387,21 @@ def delete_course(
     course_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> CourseResponse:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an assigned instructor can manage this course.")
+
+    # Capture who is affected before the delete cascades the memberships away.
+    enrolled_ids = repository.list_enrolled_student_ids(course_id)
+    group_by_student: dict[str, str] = {}
+    for project in repository.list_projects(course_id):
+        for member_id in repository.list_member_ids(project.id):
+            group_by_student[member_id] = project.team_name
+
     repository.delete_course(course_id)
     append_action_audit(
         action_audits,
@@ -360,6 +412,15 @@ def delete_course(
         target_id=course_id,
         details={"code": course.code, "section": course.section, "year": course.year, "term": course.term},
     )
+    for student_id in enrolled_ids:
+        student = users.get_by_id(student_id)
+        if student:
+            _notify_course_deletion(
+                notifications,
+                student,
+                course,
+                group_by_student.get(student_id),
+            )
     return CourseResponse(
         id=course.id,
         code=course.code,
@@ -946,12 +1007,16 @@ def delete_project(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if not _can_manage_course(current_user, project.course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    # Capture the members before the delete cascades the group away.
+    member_ids = repository.list_member_ids(project_id)
 
     deleted = repository.delete_project(project_id)
     if deleted is None:
@@ -966,6 +1031,10 @@ def delete_project(
         target_id=project_id,
         details={"team_name": project.team_name, "course_id": project.course_id},
     )
+    for member_id in member_ids:
+        member = users.get_by_id(member_id)
+        if member:
+            _notify_project_deletion(notifications, member, project)
     return _project_response(project, repository, users)
 
 
