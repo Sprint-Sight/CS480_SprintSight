@@ -42,7 +42,7 @@ export function NotificationsDropdown({
 
   return (
     <div
-      className="absolute right-0 top-full z-50 mt-2 w-80 max-h-96 flex flex-col rounded-xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.2)]"
+      className="absolute right-0 top-full z-50 mt-2 w-80 sm:w-96 md:w-80 max-h-96 flex flex-col rounded-xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.2)]"
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3 flex-shrink-0">
