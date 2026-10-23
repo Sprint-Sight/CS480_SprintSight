@@ -29,6 +29,7 @@ from app.repositories.interfaces import (
     ManualTextRepository,
     MetricsRepository,
     NotificationRepository,
+    PeerEvaluationRepository,
     ProjectRepository,
     RubricWeightsRepository,
     UserRepository,
@@ -100,6 +101,10 @@ def get_audit_retention_config_repository(request: Request) -> AuditRetentionCon
 
 def get_export_log_repository(request: Request) -> ExportLogRepository:
     return request.app.state.export_log_repository
+
+
+def get_peer_evaluation_repository(request: Request) -> PeerEvaluationRepository:
+    return request.app.state.peer_evaluation_repository
 
 
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:

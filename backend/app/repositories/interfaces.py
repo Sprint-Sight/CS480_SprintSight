@@ -424,3 +424,51 @@ class ExportLogRepository(Protocol):
     def count_exports_since(
         self, user_id: str, since: datetime
     ) -> int: ...
+
+
+@dataclass
+class PeerEvaluationRecord:
+    evaluation_id: str
+    course_id: str
+    project_id: str
+    rater_id: str          # The student who submitted the evaluation
+    rated_id: str          # The student being evaluated
+    score: int             # 1-5
+    remarks: str | None    # Optional remarks
+    reason: str | None     # Reason for the score
+    created_at: datetime
+
+
+@dataclass
+class PeerEvaluationConfigRecord:
+    course_id: str
+    is_open: bool
+    expires_at: datetime | None
+    updated_by: str
+    updated_at: datetime
+
+
+class PeerEvaluationRepository(Protocol):
+    def save_evaluation(self, evaluation: PeerEvaluationRecord) -> PeerEvaluationRecord: ...
+
+    def get_evaluation(self, evaluation_id: str) -> PeerEvaluationRecord | None: ...
+
+    def list_evaluations_by_rater(
+        self, rater_id: str, project_id: str | None = None
+    ) -> list[PeerEvaluationRecord]: ...
+
+    def list_evaluations_by_project(
+        self, project_id: str
+    ) -> list[PeerEvaluationRecord]: ...
+
+    def list_evaluations_by_course(
+        self, course_id: str
+    ) -> list[PeerEvaluationRecord]: ...
+
+    def get_evaluation_by_rater_and_rated(
+        self, rater_id: str, rated_id: str, project_id: str
+    ) -> PeerEvaluationRecord | None: ...
+
+    def save_config(self, config: PeerEvaluationConfigRecord) -> PeerEvaluationConfigRecord: ...
+
+    def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None: ...

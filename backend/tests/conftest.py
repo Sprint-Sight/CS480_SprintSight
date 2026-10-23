@@ -17,6 +17,7 @@ from app.dependencies.auth import (
     get_export_log_repository,
     get_manual_text_repository,
     get_notification_repository,
+    get_peer_evaluation_repository,
     get_user_repository,
 )
 from app.main import app
@@ -29,6 +30,7 @@ from app.repositories.in_memory import (
     InMemoryExportLogRepository,
     InMemoryManualTextRepository,
     InMemoryNotificationRepository,
+    InMemoryPeerEvaluationRepository,
     InMemoryProjectRepository,
     InMemoryUserRepository,
 )
@@ -72,6 +74,7 @@ def override_user_repository():
     notification_repository = InMemoryNotificationRepository()
     audit_retention_config_repository = InMemoryAuditRetentionConfigRepository()
     export_log_repository = InMemoryExportLogRepository()
+    peer_evaluation_repository = InMemoryPeerEvaluationRepository()
     app.dependency_overrides[get_user_repository] = lambda: repository
     from app.dependencies.auth import get_project_repository
     app.dependency_overrides[get_project_repository] = lambda: project_repository
@@ -83,6 +86,7 @@ def override_user_repository():
     app.dependency_overrides[get_notification_repository] = lambda: notification_repository
     app.dependency_overrides[get_audit_retention_config_repository] = lambda: audit_retention_config_repository
     app.dependency_overrides[get_export_log_repository] = lambda: export_log_repository
+    app.dependency_overrides[get_peer_evaluation_repository] = lambda: peer_evaluation_repository
     yield project_repository
     app.dependency_overrides.pop(get_user_repository, None)
     app.dependency_overrides.pop(get_project_repository, None)
@@ -94,3 +98,4 @@ def override_user_repository():
     app.dependency_overrides.pop(get_notification_repository, None)
     app.dependency_overrides.pop(get_audit_retention_config_repository, None)
     app.dependency_overrides.pop(get_export_log_repository, None)
+    app.dependency_overrides.pop(get_peer_evaluation_repository, None)
