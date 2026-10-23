@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from psycopg.errors import UniqueViolation
 
 from app.core.credential_crypto import encrypt_secret
@@ -52,7 +52,7 @@ from app.services.authService.service import (
 )
 from app.services.jiraService.service import validate_jira_credentials
 from app.services.notificationService.in_app import create_in_app_notification
-from app.services.notificationService.service import SMTPNotificationService
+from app.services.notificationService.service import EmailTransport
 from app.services.studentImportService.service import import_students
 
 router = APIRouter(tags=["courses", "projects"])
@@ -157,6 +157,89 @@ def _notify_project_membership(
         "project_membership",
         "Added to a project",
         f"You have been added to {project.team_name} ({project.project_name}).",
+    )
+
+
+def _notify_course_unenrollment(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    course,
+    removed_group: str | None = None,
+) -> None:
+    """Tell a student they were removed from a course.
+
+    Unenrolling also drops the student from their project group in that course,
+    so the message names the group when there was one.
+    """
+    message = (
+        f"You have been removed from {course.code} {course.name}, section "
+        f"{course.section} ({course.term} {course.year})."
+    )
+    if removed_group:
+        message += f" You have also been removed from the project group {removed_group}."
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "course_unenrollment",
+        "Removed from a course",
+        message,
+    )
+
+
+def _notify_project_unmembership(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    project: ProjectRecord,
+) -> None:
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "project_unmembership",
+        "Removed from a project",
+        f"You have been removed from the project group {project.team_name} "
+        f"({project.project_name}).",
+    )
+
+
+def _notify_course_deletion(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    course,
+    deleted_group: str | None = None,
+) -> None:
+    """Tell a student the course they were enrolled in was deleted.
+
+    Deleting a course also deletes its project groups, so the message names the
+    group when the student had one.
+    """
+    message = (
+        f"{course.code} {course.name}, section {course.section} ({course.term} "
+        f"{course.year}) has been deleted. You are no longer enrolled in it."
+    )
+    if deleted_group:
+        message += f" The project group {deleted_group} was deleted with it."
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "course_deletion",
+        "Course deleted",
+        message,
+    )
+
+
+def _notify_project_deletion(
+    notifications: NotificationRepository,
+    student: UserRecord,
+    project: ProjectRecord,
+) -> None:
+    """Tell a student the project group they belonged to was deleted."""
+    create_in_app_notification(
+        notifications,
+        student.id,
+        "project_deletion",
+        "Project deleted",
+        f"The project group {project.team_name} ({project.project_name}) has been "
+        f"deleted. You are no longer a member of a project group in this course.",
     )
 
 
@@ -304,11 +387,21 @@ def delete_course(
     course_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> CourseResponse:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an assigned instructor can manage this course.")
+
+    # Capture who is affected before the delete cascades the memberships away.
+    enrolled_ids = repository.list_enrolled_student_ids(course_id)
+    group_by_student: dict[str, str] = {}
+    for project in repository.list_projects(course_id):
+        for member_id in repository.list_member_ids(project.id):
+            group_by_student[member_id] = project.team_name
+
     repository.delete_course(course_id)
     append_action_audit(
         action_audits,
@@ -319,6 +412,15 @@ def delete_course(
         target_id=course_id,
         details={"code": course.code, "section": course.section, "year": course.year, "term": course.term},
     )
+    for student_id in enrolled_ids:
+        student = users.get_by_id(student_id)
+        if student:
+            _notify_course_deletion(
+                notifications,
+                student,
+                course,
+                group_by_student.get(student_id),
+            )
     return CourseResponse(
         id=course.id,
         code=course.code,
@@ -357,7 +459,17 @@ def import_course_students(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
+    suppress_notifications: Annotated[
+        bool,
+        Query(
+            description=(
+                "Skip in-app notifications and password setup emails for the "
+                "imported students. Use this for large imports so the email "
+                "provider's daily quota is not exhausted."
+            ),
+        ),
+    ] = False,
 ) -> StudentImportResult:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
@@ -376,10 +488,12 @@ def import_course_students(
             target_id=student.id,
             details={"course_id": course_id, "student_number": student.student_number, "account_created": account_created},
         )
+        if suppress_notifications:
+            continue
         _notify_course_enrollment(notifications, student, course)
         if account_created:
             send_password_setup_email(student, notification_service)
-    return result
+    return result.model_copy(update={"notifications_suppressed": suppress_notifications})
 
 
 @router.post("/courses/{course_id}/students/{user_id}", response_model=UserResponse)
@@ -432,11 +546,34 @@ def unenroll_course_student(
     user_id: str,
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> None:
-    _course_or_404(repository, course_id)
+    course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the assigned instructor can unenroll students.")
+    if not repository.is_student_enrolled(course_id, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student is not enrolled in this course.",
+        )
+
+    student = users.get_by_id(user_id)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
+
+    # Unenrolling also removes the student from their project group in this
+    # course, so capture the group name before the change for the notification.
+    removed_group = next(
+        (
+            project.team_name
+            for project in repository.list_projects(course_id)
+            if user_id in repository.list_member_ids(project.id)
+        ),
+        None,
+    )
+
     if not repository.unenroll_student(course_id, user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not enrolled in this course.")
     append_action_audit(
@@ -446,8 +583,9 @@ def unenroll_course_student(
         action="unenroll_course_student",
         target_type="student",
         target_id=user_id,
-        details={"course_id": course_id},
+        details={"course_id": course_id, "removed_project_group": removed_group},
     )
+    _notify_course_unenrollment(notifications, student, course, removed_group)
 
 
 @router.post("/courses/{course_id}/instructors/{user_id}", response_model=CourseInstructorResponse)
@@ -494,7 +632,7 @@ def create_course_student(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ) -> CourseStudentCreationResponse:
     course = _course_or_404(repository, course_id)
     if current_user.role != Role.INSTRUCTOR or not repository.is_instructor_assigned(course_id, current_user.id):
@@ -869,12 +1007,16 @@ def delete_project(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if not _can_manage_course(current_user, project.course_id, repository):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+
+    # Capture the members before the delete cascades the group away.
+    member_ids = repository.list_member_ids(project_id)
 
     deleted = repository.delete_project(project_id)
     if deleted is None:
@@ -889,6 +1031,10 @@ def delete_project(
         target_id=project_id,
         details={"team_name": project.team_name, "course_id": project.course_id},
     )
+    for member_id in member_ids:
+        member = users.get_by_id(member_id)
+        if member:
+            _notify_project_deletion(notifications, member, project)
     return _project_response(project, repository, users)
 
 
@@ -944,6 +1090,7 @@ def remove_member(
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     if not project or not _can_manage_course(current_user, project.course_id, repository):
@@ -953,6 +1100,7 @@ def remove_member(
     if user_id not in current_members:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student is not a member of this project.")
 
+    member = users.get_by_id(user_id)
     repository.set_members(project_id, [m_id for m_id in current_members if m_id != user_id])
     append_action_audit(
         action_audits,
@@ -963,4 +1111,6 @@ def remove_member(
         target_id=user_id,
         details={"project_id": project_id, "course_id": project.course_id},
     )
+    if member:
+        _notify_project_unmembership(notifications, member, project)
     return _project_response(project, repository, users)  

@@ -226,7 +226,6 @@ class CourseStudentResponse(UserResponse):
 
 
 class CourseStudentCreationResponse(CourseStudentResponse):
-    password: str | None = Field(default=None, min_length=8, max_length=128)
     account_created: bool = False
     signup_email_sent: bool = False
 

@@ -37,9 +37,9 @@ from app.services.authService.service import (
     user_response,
 )
 from app.services.notificationService.service import (
+    EmailTransport,
     NotificationConfigurationError,
     NotificationDeliveryError,
-    SMTPNotificationService,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -101,7 +101,7 @@ def create_managed_user(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ) -> UserCreationResponse:
     """
     Admin creates any account type (instructor / student / admin).
@@ -230,7 +230,7 @@ def reset_managed_user_password(
     current_admin: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:

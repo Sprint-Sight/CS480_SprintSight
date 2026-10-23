@@ -5,11 +5,13 @@ from app.api.v1.endpoints import (
     audit,
     auth,
     documents,
+    export,
     health,
     ingestion,
     manual_text,
     models,
     notifications,
+    peer_evaluation,
     projects,
     users,
 )
@@ -27,3 +29,5 @@ api_router.include_router(models.router)
 api_router.include_router(audit.router)
 api_router.include_router(documents.router)
 api_router.include_router(notifications.router)
+api_router.include_router(export.router, prefix="/export")
+api_router.include_router(peer_evaluation.router, prefix="/peer-evaluation")

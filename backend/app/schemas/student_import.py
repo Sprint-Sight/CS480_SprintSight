@@ -7,3 +7,4 @@ class StudentImportResult(BaseModel):
     created_students: int = Field(ge=0)
     enrolled_students: int = Field(ge=0)
     already_enrolled: int = Field(ge=0)
+    notifications_suppressed: bool = False

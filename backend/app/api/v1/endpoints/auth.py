@@ -35,9 +35,11 @@ from app.services.authService.email_tokens import (
 )
 from app.services.authService.service import authenticate_user, change_password, user_response
 from app.services.notificationService.service import (
+    EmailTransport,
+    NotificationCircuitOpenError,
     NotificationConfigurationError,
     NotificationDeliveryError,
-    SMTPNotificationService,
+    NotificationQuotaExceededError,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -58,7 +60,7 @@ def _request_password_email(
     payload: EmailAddressRequest,
     purpose: str,
     repository: UserRepository,
-    notification_service: SMTPNotificationService,
+    notification_service: EmailTransport,
 ) -> dict[str, str]:
     if not notification_service.is_configured:
         raise HTTPException(
@@ -80,6 +82,11 @@ def _request_password_email(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Email delivery is not configured.",
+        ) from exc
+    except (NotificationQuotaExceededError, NotificationCircuitOpenError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email delivery is temporarily unavailable. Please try again later.",
         ) from exc
     except NotificationDeliveryError as exc:
         raise HTTPException(
@@ -125,7 +132,7 @@ def _complete_email_password_action(
 def request_first_time_password(
     payload: EmailAddressRequest,
     repository: Annotated[UserRepository, Depends(get_user_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ) -> dict[str, str]:
     return _request_password_email(payload, "first_time_password", repository, notification_service)
 
@@ -142,7 +149,7 @@ def complete_first_time_password(
 def request_password_reset(
     payload: EmailAddressRequest,
     repository: Annotated[UserRepository, Depends(get_user_repository)],
-    notification_service: Annotated[SMTPNotificationService, Depends(get_notification_service)],
+    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ) -> dict[str, str]:
     return _request_password_email(payload, "password_reset", repository, notification_service)
 

@@ -146,6 +146,9 @@ def test_smtp_delivery_error_raises_notification_delivery_error(monkeypatch) -> 
             "email_from_address": "notify@example.test",
             "email_smtp_use_tls": False,
             "email_smtp_use_ssl": False,
+            # Keep the test focused on the error contract, not the retry policy.
+            "email_smtp_max_attempts": 1,
+            "email_smtp_retry_backoff_seconds": 0.0,
         }
     )
     service = SMTPNotificationService(settings)

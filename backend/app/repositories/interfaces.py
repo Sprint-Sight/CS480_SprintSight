@@ -166,6 +166,41 @@ class NotificationRepository(Protocol):
     ) -> NotificationRecord | None: ...
 
 
+@dataclass
+class EmailOutboxRecord:
+    """A single outbound email waiting to be delivered by the dispatcher."""
+
+    id: str
+    recipient: str
+    subject: str
+    body: str
+    kind: str
+    status: str
+    attempts: int
+    created_at: datetime
+    scheduled_for: datetime
+    sent_at: datetime | None = None
+    last_error: str | None = None
+
+
+class EmailOutboxRepository(Protocol):
+    def enqueue_email(self, record: EmailOutboxRecord) -> EmailOutboxRecord: ...
+
+    def claim_due_emails(self, now: datetime, limit: int) -> list[EmailOutboxRecord]: ...
+
+    def mark_email_sent(self, email_id: str, sent_at: datetime) -> None: ...
+
+    def mark_email_failed(
+        self, email_id: str, error: str, retry_after: datetime | None
+    ) -> None: ...
+
+    def requeue_stale_emails(self, cutoff: datetime) -> int: ...
+
+    def count_emails_sent_since(self, since: datetime) -> int: ...
+
+    def list_emails(self, limit: int = 50) -> list[EmailOutboxRecord]: ...
+
+
 class ManualTextRepository(Protocol):
     def upsert(self, payload: ManualTextPayload, updated_by: str) -> None: ...
 
@@ -363,3 +398,77 @@ class JiraIngestionRunRepository(Protocol):
         processing_error: str | None,
         cleaned_snapshot: JiraCleanedSnapshot | None,
     ) -> JiraIngestionRunRecord | None: ...
+
+
+@dataclass
+class ExportLogRecord:
+    log_id: str
+    user_id: str
+    report_type: str  # "pdf" or "csv"
+    course_id: str
+    project_id: str
+    sprint_id: str
+    include_student_emails: bool
+    download_token: str
+    expires_at: datetime
+    created_at: datetime
+
+
+class ExportLogRepository(Protocol):
+    def create_log(self, record: ExportLogRecord) -> ExportLogRecord: ...
+
+    def get_log(self, download_token: str) -> ExportLogRecord | None: ...
+
+    def list_logs(self, user_id: str, limit: int = 50) -> list[ExportLogRecord]: ...
+
+    def count_exports_since(
+        self, user_id: str, since: datetime
+    ) -> int: ...
+
+
+@dataclass
+class PeerEvaluationRecord:
+    evaluation_id: str
+    course_id: str
+    project_id: str
+    rater_id: str          # The student who submitted the evaluation
+    rated_id: str          # The student being evaluated
+    score: int             # 1-5
+    remarks: str | None    # Optional remarks
+    reason: str | None     # Reason for the score
+    created_at: datetime
+
+
+@dataclass
+class PeerEvaluationConfigRecord:
+    course_id: str
+    is_open: bool
+    expires_at: datetime | None
+    updated_by: str
+    updated_at: datetime
+
+
+class PeerEvaluationRepository(Protocol):
+    def save_evaluation(self, evaluation: PeerEvaluationRecord) -> PeerEvaluationRecord: ...
+
+    def get_evaluation(self, evaluation_id: str) -> PeerEvaluationRecord | None: ...
+
+    def list_evaluations_by_rater(
+        self, rater_id: str, project_id: str | None = None
+    ) -> list[PeerEvaluationRecord]: ...
+
+    def list_evaluations_by_project(
+        self, project_id: str
+    ) -> list[PeerEvaluationRecord]: ...
+
+    def list_evaluations_by_course(
+        self, course_id: str
+    ) -> list[PeerEvaluationRecord]: ...
+
+    def get_evaluation_by_rater_and_rated(
+        self, rater_id: str, rated_id: str, project_id: str
+    ) -> PeerEvaluationRecord | None: ...
+
+    def save_config(self, config: PeerEvaluationConfigRecord) -> PeerEvaluationConfigRecord: ...
+
+    def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None: ...

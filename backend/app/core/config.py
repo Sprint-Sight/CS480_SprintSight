@@ -51,6 +51,28 @@ class Settings(BaseSettings):
     email_from_name: str = Field(default="SprintSight", alias="EMAIL_FROM_NAME")
     email_smtp_use_tls: bool = Field(default=True, alias="EMAIL_SMTP_USE_TLS")
     email_smtp_use_ssl: bool = Field(default=False, alias="EMAIL_SMTP_USE_SSL")
+    email_transport: str = Field(default="smtp", alias="EMAIL_TRANSPORT")
+    email_outbox_path: Path = Field(default=Path("logs/email-outbox"), alias="EMAIL_OUTBOX_PATH")
+    email_daily_send_cap: int = Field(default=450, alias="EMAIL_DAILY_SEND_CAP", ge=0)
+    email_send_interval_seconds: float = Field(
+        default=1.0, alias="EMAIL_SEND_INTERVAL_SECONDS", ge=0.0, le=60.0,
+    )
+    email_dispatch_interval_seconds: float = Field(
+        default=5.0, alias="EMAIL_DISPATCH_INTERVAL_SECONDS", ge=0.5, le=300.0,
+    )
+    email_smtp_max_attempts: int = Field(default=3, alias="EMAIL_SMTP_MAX_ATTEMPTS", ge=1, le=10)
+    email_smtp_retry_backoff_seconds: float = Field(
+        default=2.0, alias="EMAIL_SMTP_RETRY_BACKOFF_SECONDS", ge=0.0, le=60.0,
+    )
+    email_smtp_circuit_breaker_seconds: int = Field(
+        default=300, alias="EMAIL_SMTP_CIRCUIT_BREAKER_SECONDS", ge=0, le=86400,
+    )
+    email_quota_backoff_seconds: int = Field(
+        default=1800, alias="EMAIL_QUOTA_BACKOFF_SECONDS", ge=0, le=86400,
+    )
+    email_queue_max_attempts: int = Field(
+        default=5, alias="EMAIL_QUEUE_MAX_ATTEMPTS", ge=1, le=100,
+    )
     email_frontend_base_url: str = Field(
         default="http://localhost:3000", alias="EMAIL_FRONTEND_BASE_URL",
     )

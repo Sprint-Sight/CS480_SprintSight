@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.core.security import hash_password
@@ -10,7 +10,13 @@ from app.repositories.interfaces import (
     CourseRecord,
     DocumentRecord,
     DocumentRepository,
+    EmailOutboxRecord,
+    EmailOutboxRepository,
+    ExportLogRecord,
+    ExportLogRepository,
     IngestionMetricBundle,
+    InstructorModelSelectionRecord,
+    InstructorModelSelectionRepository,
     JiraIngestionRunRecord,
     JiraIngestionRunRepository,
     ManualTextRepository,
@@ -18,10 +24,11 @@ from app.repositories.interfaces import (
     NotificationRecord,
     NotificationRepository,
     OverrideRepository,
+    PeerEvaluationConfigRecord,
+    PeerEvaluationRecord,
+    PeerEvaluationRepository,
     ProjectRecord,
     ProjectRepository,
-    InstructorModelSelectionRecord,
-    InstructorModelSelectionRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
@@ -289,7 +296,7 @@ class InMemoryRubricWeightsRepository(RubricWeightsRepository):
             course_id=course_id,
             weights=dict(weights),
             updated_by=updated_by,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         self._weights[course_id] = record
         return record
@@ -309,7 +316,7 @@ class InMemoryInstructorModelSelectionRepository(InstructorModelSelectionReposit
         record = InstructorModelSelectionRecord(
             user_id=user_id,
             model_id=model_id,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         self._selections[user_id] = record
         return record
@@ -376,6 +383,73 @@ class InMemoryNotificationRepository(NotificationRepository):
         return notification
 
 
+class InMemoryEmailOutboxRepository(EmailOutboxRepository):
+    """In-memory stand-in for the durable email outbox (tests and local runs)."""
+
+    def __init__(self) -> None:
+        self._emails: dict[str, EmailOutboxRecord] = {}
+
+    def enqueue_email(self, record: EmailOutboxRecord) -> EmailOutboxRecord:
+        self._emails[record.id] = record
+        return record
+
+    def claim_due_emails(self, now: datetime, limit: int) -> list[EmailOutboxRecord]:
+        due = sorted(
+            (
+                record
+                for record in self._emails.values()
+                if record.status == "pending" and record.scheduled_for <= now
+            ),
+            key=lambda record: (record.scheduled_for, record.created_at, record.id),
+        )[:limit]
+        for record in due:
+            record.status = "sending"
+            record.attempts += 1
+            record.scheduled_for = now
+        return list(due)
+
+    def mark_email_sent(self, email_id: str, sent_at: datetime) -> None:
+        record = self._emails.get(email_id)
+        if record:
+            record.status = "sent"
+            record.sent_at = sent_at
+            record.last_error = None
+
+    def mark_email_failed(
+        self, email_id: str, error: str, retry_after: datetime | None
+    ) -> None:
+        record = self._emails.get(email_id)
+        if record:
+            record.status = "pending" if retry_after else "failed"
+            record.last_error = error
+            record.scheduled_for = retry_after or record.scheduled_for
+
+    def count_emails_sent_since(self, since: datetime) -> int:
+        return sum(
+            record.status == "sent"
+            and record.sent_at is not None
+            and record.sent_at >= since
+            for record in self._emails.values()
+        )
+
+    def requeue_stale_emails(self, cutoff: datetime) -> int:
+        stale = [
+            record
+            for record in self._emails.values()
+            if record.status == "sending" and record.scheduled_for <= cutoff
+        ]
+        for record in stale:
+            record.status = "pending"
+        return len(stale)
+
+    def list_emails(self, limit: int = 50) -> list[EmailOutboxRecord]:
+        return sorted(
+            self._emails.values(),
+            key=lambda record: (record.created_at, record.id),
+            reverse=True,
+        )[:limit]
+
+
 class InMemoryAssessmentRepository(AssessmentRepository):
     def __init__(self) -> None:
         self._reports: dict[str, AssessmentReport] = {}
@@ -427,7 +501,6 @@ class InMemoryAssessmentJobRepository:
         self._events: dict[str, list[AssessmentJobEvent]] = {}
 
     def create_job(self, payload: "AssessRequest") -> AssessmentJobRecord:
-        from app.schemas.assessment import AssessRequest
 
         job_id = f"job-{uuid4().hex[:12]}"
         now = now_utc()
@@ -557,7 +630,7 @@ class InMemoryAuditRetentionConfigRepository(AuditRetentionConfigRepository):
             hot_retention_days=hot_retention_days,
             action_archive_retention_days=action_archive_retention_days,
             override_archive_retention_days=override_archive_retention_days,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
             updated_by=None,
         )
 
@@ -575,7 +648,7 @@ class InMemoryAuditRetentionConfigRepository(AuditRetentionConfigRepository):
             hot_retention_days=hot_retention_days,
             action_archive_retention_days=action_archive_retention_days,
             override_archive_retention_days=override_archive_retention_days,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
             updated_by=updated_by,
         )
         return self._config
@@ -702,6 +775,70 @@ class InMemoryMetricsRepository(MetricsRepository):
         ), len(ordered_commits)
 
 
+class InMemoryPeerEvaluationRepository(PeerEvaluationRepository):
+    def __init__(self) -> None:
+        self._evaluations: dict[str, PeerEvaluationRecord] = {}
+        self._configs: dict[str, PeerEvaluationConfigRecord] = {}
+
+    def save_evaluation(self, evaluation: PeerEvaluationRecord) -> PeerEvaluationRecord:
+        self._evaluations[evaluation.evaluation_id] = evaluation
+        return evaluation
+
+    def get_evaluation(self, evaluation_id: str) -> PeerEvaluationRecord | None:
+        return self._evaluations.get(evaluation_id)
+
+    def list_evaluations_by_rater(
+        self, rater_id: str, project_id: str | None = None
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e
+            for e in self._evaluations.values()
+            if e.rater_id == rater_id
+            and (project_id is None or e.project_id == project_id)
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def list_evaluations_by_project(
+        self, project_id: str
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e for e in self._evaluations.values() if e.project_id == project_id
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def list_evaluations_by_course(
+        self, course_id: str
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e for e in self._evaluations.values() if e.course_id == course_id
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def get_evaluation_by_rater_and_rated(
+        self, rater_id: str, rated_id: str, project_id: str
+    ) -> PeerEvaluationRecord | None:
+        for e in self._evaluations.values():
+            if (
+                e.rater_id == rater_id
+                and e.rated_id == rated_id
+                and e.project_id == project_id
+            ):
+                return e
+        return None
+
+    def save_config(
+        self, config: PeerEvaluationConfigRecord
+    ) -> PeerEvaluationConfigRecord:
+        self._configs[config.course_id] = config
+        return config
+
+    def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None:
+        return self._configs.get(course_id)
+
+
+peer_evaluation_repo = InMemoryPeerEvaluationRepository()
+
+
 users_repo = InMemoryUserRepository()
 manual_text_repo = InMemoryManualTextRepository()
 assessment_repo = InMemoryAssessmentRepository()
@@ -710,9 +847,40 @@ audit_repo = InMemoryAuditRepository()
 audit_action_repo = InMemoryActionAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
 projects_repo = InMemoryProjectRepository()
+class InMemoryExportLogRepository(ExportLogRepository):
+    def __init__(self) -> None:
+        self._logs: dict[str, ExportLogRecord] = {}
+
+    def create_log(self, record: ExportLogRecord) -> ExportLogRecord:
+        self._logs[record.log_id] = record
+        return record
+
+    def get_log(self, download_token: str) -> ExportLogRecord | None:
+        for record in self._logs.values():
+            if record.download_token == download_token:
+                return record
+        return None
+
+    def list_logs(self, user_id: str, limit: int = 50) -> list[ExportLogRecord]:
+        matching = [
+            record
+            for record in self._logs.values()
+            if record.user_id == user_id
+        ]
+        return sorted(matching, key=lambda record: record.created_at, reverse=True)[:limit]
+
+    def count_exports_since(self, user_id: str, since: datetime) -> int:
+        return sum(
+            1
+            for record in self._logs.values()
+            if record.user_id == user_id and record.created_at >= since
+        )
+
+
 jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
 job_repo = InMemoryAssessmentJobRepository()
+export_log_repo = InMemoryExportLogRepository()
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
