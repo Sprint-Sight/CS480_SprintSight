@@ -24,6 +24,9 @@ from app.repositories.interfaces import (
     NotificationRecord,
     NotificationRepository,
     OverrideRepository,
+    PeerEvaluationConfigRecord,
+    PeerEvaluationRecord,
+    PeerEvaluationRepository,
     ProjectRecord,
     ProjectRepository,
     RubricWeightsRecord,
@@ -770,6 +773,70 @@ class InMemoryMetricsRepository(MetricsRepository):
             head_sha=metrics.head_sha,
             captured_at=metrics.captured_at,
         ), len(ordered_commits)
+
+
+class InMemoryPeerEvaluationRepository(PeerEvaluationRepository):
+    def __init__(self) -> None:
+        self._evaluations: dict[str, PeerEvaluationRecord] = {}
+        self._configs: dict[str, PeerEvaluationConfigRecord] = {}
+
+    def save_evaluation(self, evaluation: PeerEvaluationRecord) -> PeerEvaluationRecord:
+        self._evaluations[evaluation.evaluation_id] = evaluation
+        return evaluation
+
+    def get_evaluation(self, evaluation_id: str) -> PeerEvaluationRecord | None:
+        return self._evaluations.get(evaluation_id)
+
+    def list_evaluations_by_rater(
+        self, rater_id: str, project_id: str | None = None
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e
+            for e in self._evaluations.values()
+            if e.rater_id == rater_id
+            and (project_id is None or e.project_id == project_id)
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def list_evaluations_by_project(
+        self, project_id: str
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e for e in self._evaluations.values() if e.project_id == project_id
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def list_evaluations_by_course(
+        self, course_id: str
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e for e in self._evaluations.values() if e.course_id == course_id
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def get_evaluation_by_rater_and_rated(
+        self, rater_id: str, rated_id: str, project_id: str
+    ) -> PeerEvaluationRecord | None:
+        for e in self._evaluations.values():
+            if (
+                e.rater_id == rater_id
+                and e.rated_id == rated_id
+                and e.project_id == project_id
+            ):
+                return e
+        return None
+
+    def save_config(
+        self, config: PeerEvaluationConfigRecord
+    ) -> PeerEvaluationConfigRecord:
+        self._configs[config.course_id] = config
+        return config
+
+    def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None:
+        return self._configs.get(course_id)
+
+
+peer_evaluation_repo = InMemoryPeerEvaluationRepository()
 
 
 users_repo = InMemoryUserRepository()

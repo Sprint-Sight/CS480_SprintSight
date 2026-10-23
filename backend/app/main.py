@@ -11,7 +11,11 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_middleware
 from app.core.security import hash_password
 from app.core.storage import storage
-from app.repositories.in_memory import InMemoryEmailOutboxRepository, InMemoryExportLogRepository
+from app.repositories.in_memory import (
+    InMemoryEmailOutboxRepository,
+    InMemoryExportLogRepository,
+    InMemoryPeerEvaluationRepository,
+)
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresActionAuditRepository,
@@ -95,6 +99,7 @@ async def lifespan(app: FastAPI):
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
     app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(pool)
     app.state.export_log_repository = InMemoryExportLogRepository()
+    app.state.peer_evaluation_repository = InMemoryPeerEvaluationRepository()
     app.state.email_outbox_repository = PostgresEmailOutboxRepository(pool)
     app.state.notification_service = EmailQueue(
         app.state.email_outbox_repository,
@@ -133,6 +138,7 @@ app = FastAPI(
 )
 app.state.email_outbox_repository = InMemoryEmailOutboxRepository()
 app.state.export_log_repository = InMemoryExportLogRepository()
+app.state.peer_evaluation_repository = InMemoryPeerEvaluationRepository()
 app.state.notification_service = EmailQueue(
     app.state.email_outbox_repository,
     build_email_transport(settings),
