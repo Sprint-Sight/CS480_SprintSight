@@ -23,6 +23,7 @@ from app.repositories.interfaces import (
     AuditRepository,
     AuditRetentionConfigRepository,
     DocumentRepository,
+    ExportLogRepository,
     InstructorModelSelectionRepository,
     JiraIngestionRunRepository,
     ManualTextRepository,
@@ -95,6 +96,10 @@ def get_action_audit_repository(request: Request) -> ActionAuditRepository:
 
 def get_audit_retention_config_repository(request: Request) -> AuditRetentionConfigRepository:
     return request.app.state.audit_retention_config_repository
+
+
+def get_export_log_repository(request: Request) -> ExportLogRepository:
+    return request.app.state.export_log_repository
 
 
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:

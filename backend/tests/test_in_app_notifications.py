@@ -193,6 +193,86 @@ def test_removing_a_student_from_a_project_group_notifies_them(override_user_rep
     assert "u-student-1" not in override_user_repository.list_member_ids(project.id)
 
 
+def test_deleting_a_course_notifies_its_students(override_user_repository) -> None:
+    course = override_user_repository.create_course(
+        "CS485",
+        "Deleted Course",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
+    )
+    instructor_headers = {
+        "Authorization": f"Bearer {_token('faculty@sprintsight.edu')}",
+    }
+    student_headers = {
+        "Authorization": f"Bearer {_token('student@sprintsight.edu')}",
+    }
+
+    client.post(
+        f"/api/v1/courses/{course.id}/students/u-student-1",
+        headers=instructor_headers,
+    )
+    project = _project(course.id, "Doomed Project", "Doomed Team")
+    override_user_repository.create_project(project, ["u-student-1"])
+
+    deletion = client.delete(f"/api/v1/courses/{course.id}", headers=instructor_headers)
+    assert deletion.status_code == 200, deletion.text
+
+    response = client.get("/api/v1/notifications", headers=student_headers)
+    deletions = [
+        item
+        for item in response.json()["notifications"]
+        if item["event_type"] == "course_deletion"
+    ]
+    assert len(deletions) == 1
+    assert deletions[0]["title"] == "Course deleted"
+    assert "CS485" in deletions[0]["message"]
+    # The project group went with the course, so it is named.
+    assert "Doomed Team" in deletions[0]["message"]
+    assert override_user_repository.get_course(course.id) is None
+
+
+def test_deleting_a_project_group_notifies_its_members(override_user_repository) -> None:
+    course = override_user_repository.create_course(
+        "CS486",
+        "Project Deletion",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
+    )
+    instructor_headers = {
+        "Authorization": f"Bearer {_token('faculty@sprintsight.edu')}",
+    }
+    student_headers = {
+        "Authorization": f"Bearer {_token('student@sprintsight.edu')}",
+    }
+
+    client.post(
+        f"/api/v1/courses/{course.id}/students/u-student-1",
+        headers=instructor_headers,
+    )
+    project = _project(course.id, "Cancelled Project", "Cancelled Squad")
+    override_user_repository.create_project(project, ["u-student-1"])
+
+    deletion = client.delete(f"/api/v1/projects/{project.id}", headers=instructor_headers)
+    assert deletion.status_code == 200, deletion.text
+
+    response = client.get("/api/v1/notifications", headers=student_headers)
+    deletions = [
+        item
+        for item in response.json()["notifications"]
+        if item["event_type"] == "project_deletion"
+    ]
+    assert len(deletions) == 1
+    assert deletions[0]["title"] == "Project deleted"
+    assert "Cancelled Squad" in deletions[0]["message"]
+    # The course survives a project deletion, so the student stays enrolled.
+    assert override_user_repository.is_student_enrolled(course.id, "u-student-1")
+    assert override_user_repository.get_project(project.id) is None
+
+
 def test_unenrolling_an_unenrolled_student_does_not_notify(override_user_repository) -> None:
     course = override_user_repository.create_course(
         "CS484",
