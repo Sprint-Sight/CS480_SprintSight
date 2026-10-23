@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging, request_id_middleware
 from app.core.security import hash_password
 from app.core.storage import storage
-from app.repositories.in_memory import InMemoryEmailOutboxRepository
+from app.repositories.in_memory import InMemoryEmailOutboxRepository, InMemoryExportLogRepository
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresActionAuditRepository,
@@ -33,11 +33,11 @@ from app.repositories.postgres import (
     ensure_audit_retention_config_schema,
     ensure_audit_schema,
     ensure_email_outbox_schema,
-    ensure_notification_schema,
     ensure_instructor_model_selection_schema,
+    ensure_notification_schema,
     ensure_project_credential_schema,
-    ensure_user_schema,
     ensure_rubric_weights_schema,
+    ensure_user_schema,
 )
 from app.schemas.auth import Role
 from app.services.notificationService.queue import EmailDispatcher, EmailQueue
@@ -94,6 +94,7 @@ async def lifespan(app: FastAPI):
     app.state.audit_retention_config_repository = PostgresAuditRetentionConfigRepository(pool)
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
     app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(pool)
+    app.state.export_log_repository = InMemoryExportLogRepository()
     app.state.email_outbox_repository = PostgresEmailOutboxRepository(pool)
     app.state.notification_service = EmailQueue(
         app.state.email_outbox_repository,
@@ -131,6 +132,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.email_outbox_repository = InMemoryEmailOutboxRepository()
+app.state.export_log_repository = InMemoryExportLogRepository()
 app.state.notification_service = EmailQueue(
     app.state.email_outbox_repository,
     build_email_transport(settings),

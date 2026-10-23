@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.core.security import hash_password
@@ -12,7 +12,11 @@ from app.repositories.interfaces import (
     DocumentRepository,
     EmailOutboxRecord,
     EmailOutboxRepository,
+    ExportLogRecord,
+    ExportLogRepository,
     IngestionMetricBundle,
+    InstructorModelSelectionRecord,
+    InstructorModelSelectionRepository,
     JiraIngestionRunRecord,
     JiraIngestionRunRepository,
     ManualTextRepository,
@@ -22,8 +26,6 @@ from app.repositories.interfaces import (
     OverrideRepository,
     ProjectRecord,
     ProjectRepository,
-    InstructorModelSelectionRecord,
-    InstructorModelSelectionRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
@@ -291,7 +293,7 @@ class InMemoryRubricWeightsRepository(RubricWeightsRepository):
             course_id=course_id,
             weights=dict(weights),
             updated_by=updated_by,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         self._weights[course_id] = record
         return record
@@ -311,7 +313,7 @@ class InMemoryInstructorModelSelectionRepository(InstructorModelSelectionReposit
         record = InstructorModelSelectionRecord(
             user_id=user_id,
             model_id=model_id,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         self._selections[user_id] = record
         return record
@@ -496,7 +498,6 @@ class InMemoryAssessmentJobRepository:
         self._events: dict[str, list[AssessmentJobEvent]] = {}
 
     def create_job(self, payload: "AssessRequest") -> AssessmentJobRecord:
-        from app.schemas.assessment import AssessRequest
 
         job_id = f"job-{uuid4().hex[:12]}"
         now = now_utc()
@@ -626,7 +627,7 @@ class InMemoryAuditRetentionConfigRepository(AuditRetentionConfigRepository):
             hot_retention_days=hot_retention_days,
             action_archive_retention_days=action_archive_retention_days,
             override_archive_retention_days=override_archive_retention_days,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
             updated_by=None,
         )
 
@@ -644,7 +645,7 @@ class InMemoryAuditRetentionConfigRepository(AuditRetentionConfigRepository):
             hot_retention_days=hot_retention_days,
             action_archive_retention_days=action_archive_retention_days,
             override_archive_retention_days=override_archive_retention_days,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
             updated_by=updated_by,
         )
         return self._config
@@ -779,9 +780,40 @@ audit_repo = InMemoryAuditRepository()
 audit_action_repo = InMemoryActionAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
 projects_repo = InMemoryProjectRepository()
+class InMemoryExportLogRepository(ExportLogRepository):
+    def __init__(self) -> None:
+        self._logs: dict[str, ExportLogRecord] = {}
+
+    def create_log(self, record: ExportLogRecord) -> ExportLogRecord:
+        self._logs[record.log_id] = record
+        return record
+
+    def get_log(self, download_token: str) -> ExportLogRecord | None:
+        for record in self._logs.values():
+            if record.download_token == download_token:
+                return record
+        return None
+
+    def list_logs(self, user_id: str, limit: int = 50) -> list[ExportLogRecord]:
+        matching = [
+            record
+            for record in self._logs.values()
+            if record.user_id == user_id
+        ]
+        return sorted(matching, key=lambda record: record.created_at, reverse=True)[:limit]
+
+    def count_exports_since(self, user_id: str, since: datetime) -> int:
+        return sum(
+            1
+            for record in self._logs.values()
+            if record.user_id == user_id and record.created_at >= since
+        )
+
+
 jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
 job_repo = InMemoryAssessmentJobRepository()
+export_log_repo = InMemoryExportLogRepository()
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

@@ -398,3 +398,29 @@ class JiraIngestionRunRepository(Protocol):
         processing_error: str | None,
         cleaned_snapshot: JiraCleanedSnapshot | None,
     ) -> JiraIngestionRunRecord | None: ...
+
+
+@dataclass
+class ExportLogRecord:
+    log_id: str
+    user_id: str
+    report_type: str  # "pdf" or "csv"
+    course_id: str
+    project_id: str
+    sprint_id: str
+    include_student_emails: bool
+    download_token: str
+    expires_at: datetime
+    created_at: datetime
+
+
+class ExportLogRepository(Protocol):
+    def create_log(self, record: ExportLogRecord) -> ExportLogRecord: ...
+
+    def get_log(self, download_token: str) -> ExportLogRecord | None: ...
+
+    def list_logs(self, user_id: str, limit: int = 50) -> list[ExportLogRecord]: ...
+
+    def count_exports_since(
+        self, user_id: str, since: datetime
+    ) -> int: ...
