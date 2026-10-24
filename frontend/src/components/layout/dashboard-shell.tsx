@@ -16,6 +16,7 @@ import {
   GitCompare,
   LayoutDashboard,
   Menu,
+  MessageSquare,
   Search,
   Settings,
   User,
@@ -60,6 +61,7 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
+  { label: "Peer Evaluation", href: "/peer-evaluation", icon: MessageSquare },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -71,6 +73,7 @@ const studentNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Results & Feedback", href: "/assessment-report", icon: FileText },
+  { label: "Peer Evaluation", href: "/peer-evaluation", icon: MessageSquare },
   { label: "Progress", href: "/progress", icon: GitCompare },
 ];
 
@@ -80,6 +83,7 @@ const instructorScopeRoutes = new Set([
   "/artifact-viewer",
   "/collaboration",
   "/assessment-report",
+  "/peer-evaluation",
   "/progress",
 ]);
 
