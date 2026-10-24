@@ -51,10 +51,9 @@ jobs:
           mypy app
         continue-on-error: true
 
-      - name: test with coverage
+      - name: backend unit tests
         run: |
           pytest --cov=app --cov-report=term-missing --cov-report=xml -q
-        continue-on-error: true
 
       - name: security scan
         run: |

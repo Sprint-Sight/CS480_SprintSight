@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.config import get_settings
 from app.core.storage import storage
-from app.dependencies.auth import get_jira_ingestion_repository, get_metrics_repository, get_project_repository, get_user_repository, require_faculty
-from app.repositories.interfaces import JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
+from app.dependencies.auth import get_action_audit_repository, get_jira_ingestion_repository, get_metrics_repository, get_project_repository, get_user_repository, require_faculty
+from app.repositories.interfaces import ActionAuditRepository, JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
-from app.services.documentsService.service import collect_document_signals
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
+from app.services.auditLogService.service import append_action_audit
 
 router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
 jira_ingestion_router = APIRouter(prefix="/jira-ingestion", tags=["jira-ingestion"])
@@ -28,6 +28,7 @@ def sync_raw_jira_data(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> dict[str, object]:
     project = projects.get_project(project_id)
     if not project:
@@ -52,6 +53,15 @@ def sync_raw_jira_data(
         raw_object_key=str(result["object_key"]), issue_count=int(result["issue_count"]),
         captured_at=result["captured_at"],
     ))
+    append_action_audit(
+        action_audits,
+        actor_id=current_user.id,
+        actor_role=current_user.role.value,
+        action="sync_raw_jira_data",
+        target_type="project",
+        target_id=project_id,
+        details={"sprint_id": payload.sprint_id, "jira_project_key": jira_project_key},
+    )
     return _run_response(run).model_dump(mode="json")
 
 
@@ -238,8 +248,8 @@ def sync_repository_ingestion(
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> dict:
-    _ = faculty_user
     project = projects.get_project(payload.project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
@@ -253,9 +263,16 @@ def sync_repository_ingestion(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     github_metrics = ingest_github_metrics(payload, repository_path, metrics_repository, projects, users)
     jira_metrics = enrich_jira_metrics(payload)
-    document_signals = collect_document_signals(payload)
+    append_action_audit(
+        action_audits,
+        actor_id=faculty_user.id,
+        actor_role=faculty_user.role.value,
+        action="sync_repository_ingestion",
+        target_type="project",
+        target_id=payload.project_id,
+        details={"course_id": payload.course_id, "sprint_id": payload.sprint_id},
+    )
     return {
         "github_metrics": github_metrics,
         "jira_metrics": jira_metrics,
-        "document_signals": document_signals,
     }

@@ -111,8 +111,11 @@ submit_job() {
     out=$(ssh_hpc "sbatch ~/CS480_SprintSight/ai-engine/hpc/ollama_gpu.sbatch" 2>&1)
     echo "  $out"
     if echo "$out" | grep -q "Submitted batch job"; then
-        ok "Job submitted — run 'bash hpc/hpc-dev.sh status' once it's RUNNING"
-        info "Then open the tunnel: bash hpc/hpc-dev.sh tunnel"
+        ok "Job submitted. The cluster may queue it for a bit before it starts."
+        info "1. Wait until it's RUNNING:  bash hpc/hpc-dev.sh status"
+        info "2. Then start everything:    bash start.sh   (from the repo root)"
+        info "   start.sh opens the tunnel and brings up both Docker stacks;"
+        info "   you only need to type your HPC password."
     else
         fail "sbatch failed"
         return 1
@@ -139,6 +142,41 @@ open_tunnel() {
     echo ""
     ssh -N -L "${LOCAL_OLLAMA_PORT}:${COMPUTE_NODE}:${REMOTE_OLLAMA_PORT}" \
         "${HPC_USER}@${HPC_LOGIN_HOST}"
+}
+
+# Like open_tunnel, but backgrounds itself after you type the password, so a
+# single-command launcher (../../start.sh) can keep going. `ssh -f` only forks
+# AFTER authentication, which is why the password prompt stays the one manual
+# step. If there's no running GPU job yet, this explains what to do rather than
+# failing cryptically (see no_gpu_job_help).
+open_tunnel_bg() {
+    check_vpn || { vpn_help; return 1; }
+    check_slurm || { no_gpu_job_help; return 1; }
+
+    if check_tunnel >/dev/null 2>&1; then
+        ok "Tunnel already up on localhost:${LOCAL_OLLAMA_PORT}"
+        return 0
+    fi
+
+    info "Opening background SSH tunnel: localhost:${LOCAL_OLLAMA_PORT} -> ${COMPUTE_NODE}:${REMOTE_OLLAMA_PORT}"
+    warn "Enter your HPC password when prompted — the tunnel backgrounds itself afterward."
+    # -f                       fork to background AFTER authentication (password = only manual step)
+    # -o ExitOnForwardFailure  fail loudly if the local port can't bind, instead of a dead background ssh
+    # ServerAlive*             drop the tunnel cleanly if the node/VPN goes away rather than hanging
+    ssh -f -N \
+        -o ExitOnForwardFailure=yes \
+        -o ConnectTimeout=8 \
+        -o StrictHostKeyChecking=accept-new \
+        -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+        -L "${LOCAL_OLLAMA_PORT}:${COMPUTE_NODE}:${REMOTE_OLLAMA_PORT}" \
+        "${HPC_USER}@${HPC_LOGIN_HOST}"
+
+    local n=0
+    until check_tunnel >/dev/null 2>&1; do
+        n=$((n + 1)); [[ $n -gt 10 ]] && { fail "Tunnel opened but Ollama not reachable on localhost:${LOCAL_OLLAMA_PORT}"; return 1; }
+        sleep 1
+    done
+    ok "Background tunnel live on localhost:${LOCAL_OLLAMA_PORT}"
 }
 
 list_models() {
@@ -261,7 +299,14 @@ ensure_models() {
     create_model_via_api "sprintsight-qwen"    "qwen3:8b"    "Modelfile.qwen"
     create_model_via_api "sprintsight-mistral" "mistral:7b"  "Modelfile.mistral"
     create_model_via_api "sprintsight-gemma"   "gemma4:12b"  "Modelfile.gemma"
+    # Round-2 benchmark models (8B baseline + three 32B; the 32B base pulls are ~20GB each)
+    create_model_via_api "sprintsight-llama31"     "llama3.1:8b"       "Modelfile.llama31"
+    create_model_via_api "sprintsight-qwen25-32b"  "qwen2.5:32b"       "Modelfile.qwen25-32b"
+    create_model_via_api "sprintsight-r1-32b"      "deepseek-r1:32b"   "Modelfile.deepseek-r1"
+    create_model_via_api "sprintsight-coder-32b"   "qwen2.5-coder:32b" "Modelfile.qwen25-coder"
+    # Judge model for evaluation
     create_model_via_api "sprintsight-judge-phi"   "phi4:14b"  "Modelfile.phi"
+
     echo ""
     info "Remote models:"
     list_models
@@ -288,8 +333,48 @@ start_docker() {
     info "Starting db + mlflow_service..."
     docker compose up -d db mlflow_service
 
-    info "Building and starting sprintsight_ai (skipping ollama/model-init)..."
-    docker compose up -d --no-deps --build sprintsight_ai
+    # The school GPU server runs behind a VPN that blocks docker.io and PyPI,
+    # so `--build` fails there every time: `FROM python:3.13-slim` can't be
+    # pulled, and `pip install -r requirements.txt` can't reach PyPI. The
+    # fix is simple — build the image ONCE off-VPN (or via `rebuild_docker`
+    # below) and reuse it. REBUILD controls the behaviour:
+    #   REBUILD=auto (default) — rebuild only if the image doesn't exist yet
+    #   REBUILD=no             — never rebuild; fail if the image is missing
+    #   REBUILD=yes            — always rebuild (needs internet access)
+    local rebuild_mode="${REBUILD:-auto}"
+    local has_image="no"
+    if docker compose images sprintsight_ai 2>/dev/null | awk 'NR>1 {print $2}' | grep -q .; then
+        has_image="yes"
+    fi
+
+    local do_build=""
+    case "$rebuild_mode" in
+        yes)
+            info "REBUILD=yes — forcing docker build (requires internet)."
+            do_build="--build"
+            ;;
+        no)
+            if [[ "$has_image" != "yes" ]]; then
+                fail "REBUILD=no but no sprintsight_ai image exists. Build it off-VPN first (REBUILD=yes) or load a prebuilt tarball via 'docker load -i sprintsight_ai.tar'."
+                return 1
+            fi
+            info "REBUILD=no — using the existing sprintsight_ai image (no network needed)."
+            ;;
+        auto|*)
+            if [[ "$has_image" == "yes" ]]; then
+                info "Existing sprintsight_ai image found; skipping build. Set REBUILD=yes to force a rebuild."
+            else
+                info "No sprintsight_ai image yet — attempting one-time build. Expect this to fail on the VPN."
+                do_build="--build"
+            fi
+            ;;
+    esac
+
+    info "Starting sprintsight_ai (skipping ollama/model-init)..."
+    if ! docker compose up -d --no-deps $do_build sprintsight_ai; then
+        fail "sprintsight_ai failed to start. If the error mentions 'failed to resolve source metadata for docker.io' or 'Could not fetch URL https://pypi.org', the VPN is blocking the build. Build the image off-VPN with: REBUILD=yes bash $0 docker"
+        return 1
+    fi
 
     info "Waiting for healthcheck..."
     local attempts=0
@@ -313,10 +398,14 @@ except:
                           return 0 ;;
             esac
         fi
-        ((attempts++))
+        attempts=$((attempts + 1))
     done
-    fail "sprintsight_ai not responding after 60 s"
-    return 1
+    # Containers are already up by this point; a slow healthcheck usually means
+    # the models are still warming up on the GPU, not a startup failure. Warn and
+    # return success so the unified launcher can continue to the backend stack.
+    warn "sprintsight_ai not healthy yet after 60 s — it may still be loading models."
+    warn "Check later with: bash hpc/hpc-dev.sh status  (or curl http://localhost:8001/health)"
+    return 0
 }
 
 show_status() {
@@ -370,6 +459,117 @@ stop_all() {
     info "To close the SSH tunnel, press Ctrl+C in the tunnel terminal."
 }
 
+watch_gpu() {
+    # The GPU lives on the Slurm compute node (e.g. "toga") where the
+    # sprintsight-ollama job is running. On a managed HPC you do NOT have
+    # a login/password for compute nodes directly — they're only reachable
+    # through the scheduler. So the correct way to run nvidia-smi there is
+    # to piggyback a new step on the already-running Slurm job via
+    # `srun --jobid=<id> --overlap`, from the login node. `--overlap`
+    # lets the new step share resources with the parent job instead of
+    # blocking on a fresh allocation.
+    check_vpn || return 1
+    check_slurm || { fail "No running Slurm GPU job. Submit one first: bash hpc/hpc-dev.sh submit"; return 1; }
+
+    local line jobid
+    line=$(get_job_info)
+    jobid=$(echo "$line" | awk '{print $1}')
+    if [[ -z "$jobid" ]]; then
+        fail "Could not resolve the Slurm job ID for '${SLURM_JOB_NAME}'."
+        return 1
+    fi
+
+    local mode="${1:-once}"
+    local nvidia_cmd
+    case "$mode" in
+        --watch|watch)
+            # --loop=2 streams a fresh snapshot every 2s and plays nicely
+            # over SSH (no screen-clear flicker like `watch -n 1`).
+            nvidia_cmd="nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used,memory.total,power.draw --format=csv --loop=2"
+            info "Streaming GPU usage from job ${jobid} on ${COMPUTE_NODE} every 2s. Ctrl+C to stop."
+            ;;
+        --processes|processes)
+            # Which PIDs are holding VRAM — handy to confirm it's Ollama
+            # (and only Ollama) using the GPU.
+            nvidia_cmd="nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv"
+            info "Listing GPU processes on job ${jobid} / ${COMPUTE_NODE}..."
+            ;;
+        *)
+            nvidia_cmd="nvidia-smi"
+            info "GPU snapshot from job ${jobid} on ${COMPUTE_NODE}..."
+            ;;
+    esac
+
+    # srun lands the command inside the existing job's cgroup/namespace,
+    # so no second password prompt and no SSH key on the compute node.
+    # --jobid pins it to our running job; --overlap avoids "resources
+    # already allocated" rejection. `ssh -t` forces SSH to allocate a
+    # pseudo-terminal so srun can honour --pty for line-by-line streaming
+    # (otherwise srun prints a harmless "disregarding --pty" warning).
+    ssh -t -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new \
+        "${HPC_USER}@${HPC_LOGIN_HOST}" \
+        "srun --jobid=${jobid} --overlap --pty ${nvidia_cmd}"
+}
+
+# ── Guidance for teammates new to the HPC/GPU workflow ────────────────────────
+#
+# How the GPU connection actually works (read this once if you're new):
+#
+#   Your laptop ──VPN──> HPC login node (10.193.104.102) ──Slurm──> GPU compute
+#                                                                    node (e.g. "toga")
+#                                                                       │
+#                                                                   Ollama :11434
+#
+#   The GPU does NOT run on your laptop and you cannot SSH to the GPU node
+#   directly. You:
+#     1. connect the SMUResearch VPN,
+#     2. ask Slurm (the cluster's job scheduler) to RESERVE a GPU node for you
+#        by submitting a job — that job launches Ollama on the GPU node,
+#     3. open an SSH tunnel so localhost:11435 on your laptop forwards to
+#        Ollama on that reserved GPU node.
+#
+#   The job is per-person and temporary: it has a time limit, it ends when you
+#   stop it, and it may sit in a queue before it starts if the cluster is busy.
+#   That's why "is a GPU job running?" is a thing you have to check — there
+#   isn't an always-on GPU server.
+
+vpn_help() {
+    echo ""
+    fail "Can't reach the HPC login node (${HPC_LOGIN_HOST})."
+    echo ""
+    echo "  This almost always means the SMUResearch VPN is not connected."
+    echo "  Connect the VPN, then run the same command again."
+    echo ""
+}
+
+no_gpu_job_help() {
+    echo ""
+    fail "No GPU is reserved for you yet — there is no running Slurm job named '${SLURM_JOB_NAME}'."
+    echo ""
+    echo "  WHY THIS HAPPENS"
+    echo "  ----------------"
+    echo "  The GPU runs on the cluster, not on your laptop. Before you can use it"
+    echo "  you must reserve a GPU node by submitting a Slurm job. That job is"
+    echo "  temporary and per-person, so you'll see this message when:"
+    echo "    - you've never submitted the job this session, or"
+    echo "    - a teammate's job is running but not yours (jobs aren't shared), or"
+    echo "    - your job hit its time limit / was stopped, or"
+    echo "    - the job is still PENDING in the queue (reserved, not started yet)."
+    echo ""
+    echo "  WHAT TO DO"
+    echo "  ----------"
+    echo "    1. Make sure the SMUResearch VPN is connected."
+    echo "    2. Submit the GPU job:    bash hpc/hpc-dev.sh submit"
+    echo "    3. Wait until it RUNNING: bash hpc/hpc-dev.sh status"
+    echo "       (If it shows PENDING, the cluster is busy — wait and re-check."
+    echo "        This can take anywhere from seconds to a few minutes.)"
+    echo "    4. Re-run your startup command once status shows RUNNING."
+    echo ""
+    echo "  You only submit the job once per work session; after that, start.sh"
+    echo "  reuses it and just asks for your password to open the tunnel."
+    echo ""
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 cmd="${1:-full}"
@@ -414,20 +614,26 @@ case "$cmd" in
     status)  show_status ;;
     models)  ensure_models ;;
     docker)  start_docker ;;
-    submit)  submit_job ;;
-    tunnel)  open_tunnel ;;
-    stop)    stop_all ;;
+    submit)     submit_job ;;
+    tunnel)     open_tunnel ;;
+    tunnel-bg)  open_tunnel_bg ;;
+    stop)       stop_all ;;
+    gpu)     watch_gpu "${2:-once}" ;;
     *)
-        echo "Usage: bash hpc/hpc-dev.sh {full|status|models|docker|submit|tunnel|stop}"
+        echo "Usage: bash hpc/hpc-dev.sh {full|status|models|docker|submit|tunnel|stop|gpu}"
         echo ""
         echo "Commands:"
-        echo "  full     Check tunnel, create models, start Docker (default)"
-        echo "  status   Show cluster job, tunnel, models, Docker health"
-        echo "  models   Create/verify sprintsight-* models on remote Ollama"
-        echo "  docker   Start local db + mlflow + sprintsight_ai"
-        echo "  submit   Submit the Slurm GPU job on the cluster"
-        echo "  tunnel   Open SSH tunnel to the Slurm job's compute node"
-        echo "  stop     Stop Docker and show tunnel teardown instructions"
+        echo "  full          Check tunnel, create models, start Docker (default)"
+        echo "  status        Show cluster job, tunnel, models, Docker health"
+        echo "  models        Create/verify sprintsight-* models on remote Ollama"
+        echo "  docker        Start local db + mlflow + sprintsight_ai"
+        echo "  submit        Submit the Slurm GPU job on the cluster"
+        echo "  tunnel        Open SSH tunnel (blocking; keep the terminal open)"
+        echo "  tunnel-bg     Open SSH tunnel in the background (used by start.sh)"
+        echo "  stop          Stop Docker and show tunnel teardown instructions"
+        echo "  gpu           One snapshot of nvidia-smi on the GPU compute node"
+        echo "  gpu --watch   Stream GPU utilisation every 2s (Ctrl+C to stop)"
+        echo "  gpu --processes  List PIDs/processes holding VRAM on the GPU"
         exit 1
         ;;
 esac

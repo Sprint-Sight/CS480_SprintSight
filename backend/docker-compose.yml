@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   frontend:
       build:
@@ -31,6 +29,21 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       LOCAL_REPOSITORY_ROOT: /app/repo
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  audit-retention:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sprintsight-audit-retention
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["python", "-m", "app.services.auditLogService.retention", "--loop"]
     depends_on:
       db:
         condition: service_healthy

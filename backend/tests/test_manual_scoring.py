@@ -92,6 +92,80 @@ def test_instructor_can_patch_assessment_report(override_user_repository) -> Non
     assert result["override"] is True
     assert result["requirements_score"] == 80
     assert result["team_score"]["rationale"] == "AI rationale"
+    assert result["rubric_scores"]["requirements"]["score"] == 80
+    assert result["rubric_scores"]["requirements"]["justification"] == "Requirements were met."
+
+
+def test_patch_persists_all_report_content_edits(override_user_repository) -> None:
+    setup_project(override_user_repository)
+    assessment_repository = InMemoryAssessmentRepository()
+    assessment_repository.save_report(report())
+    app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
+
+    edits = {
+        **payload(),
+        "rubric_weights": {"requirements": 0.5, "quality": 0.5},
+        "team_score": {"score": 91, "rationale": "Updated overall rationale", "overall_grade": "A"},
+        "individual_scores": [
+            {"student_id": "u-student-1", "score": 92, "rationale": "Updated contribution"}
+        ],
+        "rubric_scores": {
+            "requirements": {
+                "score": 95,
+                "justification": "Updated criterion feedback",
+                "evidence_citations": ["commit:abc123"],
+            },
+            "testing": {
+                "score": 88,
+                "justification": "Regression coverage is strong.",
+                "evidence_citations": ["tests/test_api.py"],
+            },
+            "cicd": {
+                "score": 76,
+                "justification": "Pipeline is configured but lacks deployment checks.",
+                "evidence_citations": [".github/workflows/ci.yml"],
+            },
+        },
+        "strengths": ["Strong delivery"],
+        "weaknesses": ["Needs more tests"],
+        "recommendations": ["Add regression tests"],
+    }
+
+    response = client.patch(
+        "/api/v1/assessments/reports/rpt-manual-1",
+        json=edits,
+        headers=headers("faculty@sprintsight.edu"),
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["rubric_weights"] == edits["rubric_weights"]
+    assert result["team_score"]["rationale"] == "Updated overall rationale"
+    assert result["individual_scores"][0]["rationale"] == "Updated contribution"
+    assert result["rubric_scores"]["requirements"]["evidence_citations"] == ["commit:abc123"]
+    assert result["strengths"] == ["Strong delivery"]
+    assert result["weaknesses"] == ["Needs more tests"]
+    assert result["recommendations"] == ["Add regression tests"]
+    assert result["requirements_score"] == 80
+    assert result["rubric_scores"]["requirements"]["score"] == 95
+    assert result["rubric_scores"]["requirements"]["justification"] == "Updated criterion feedback"
+    assert result["rubric_scores"]["testing"]["score"] == 88
+    assert result["rubric_scores"]["testing"]["justification"] == "Regression coverage is strong."
+    assert result["rubric_scores"]["cicd"]["score"] == 76
+    assert result["rubric_scores"]["cicd"]["justification"] == "Pipeline is configured but lacks deployment checks."
+
+    reloaded = client.get(
+        "/api/v1/assessments/latest?course_id=manual-course&project_id=manual-project&sprint_id=sprint-1",
+        headers=headers("faculty@sprintsight.edu"),
+    )
+    assert reloaded.status_code == 200, reloaded.text
+    reloaded_report = reloaded.json()
+    assert reloaded_report["team_score"]["rationale"] == "Updated overall rationale"
+    assert reloaded_report["rubric_scores"]["testing"]["justification"] == "Regression coverage is strong."
+    assert reloaded_report["rubric_scores"]["cicd"]["score"] == 76
+    assert reloaded_report["strengths"] == ["Strong delivery"]
+    assert reloaded_report["weaknesses"] == ["Needs more tests"]
+    assert reloaded_report["recommendations"] == ["Add regression tests"]
 
 
 def test_unassigned_instructor_cannot_patch_assessment_report(override_user_repository) -> None:

@@ -23,12 +23,16 @@ CREATE TABLE IF NOT EXISTS users (
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     token_version INTEGER NOT NULL DEFAULT 0,
+    student_number BIGINT,
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login    TIMESTAMP
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS student_number BIGINT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_student_number ON users(student_number)
+    WHERE student_number IS NOT NULL;
 
 -- Fast lookups by email on every login request
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -113,9 +117,13 @@ CREATE TABLE IF NOT EXISTS course_students (
         REFERENCES courses(course_id, code, term, year) ON DELETE CASCADE
 );
 
--- UNIQUE CONSTRAINT: Prevents a student from enrolling in multiple sections of the same course offering
+-- Legacy offering-level index retained for existing databases.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_section_per_course
     ON course_students(user_id, code, term, year);
+
+-- A student may enroll in different course codes, but only once per course code.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_single_course_code
+    ON course_students(user_id, lower(trim(code)));
 
 CREATE TABLE IF NOT EXISTS projects (
     project_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -328,3 +336,69 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_commits_author_email ON ingestion_commi
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_student_id ON ingestion_commits(student_id);
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run_timestamp_sha
     ON ingestion_commits(ingestion_run_id, timestamp, sha);
+
+-- Audit history is retained independently from users and other business rows.
+CREATE TABLE IF NOT EXISTS action_audit_events (
+    audit_id TEXT PRIMARY KEY,
+    actor_id TEXT NOT NULL,
+    actor_role TEXT NOT NULL CHECK (actor_role IN ('admin', 'instructor', 'student')),
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS override_audit_events (
+    override_id TEXT PRIMARY KEY,
+    timestamp TIMESTAMPTZ NOT NULL,
+    instructor_id TEXT NOT NULL,
+    student_id TEXT NOT NULL,
+    report_id TEXT NOT NULL,
+    original_score DOUBLE PRECISION NOT NULL,
+    new_score DOUBLE PRECISION NOT NULL,
+    reason_comment TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_action_audit_created_at
+    ON action_audit_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_action_audit_actor_created
+    ON action_audit_events(actor_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_override_audit_timestamp
+    ON override_audit_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_override_audit_instructor_timestamp
+    ON override_audit_events(instructor_id, timestamp DESC);
+
+CREATE OR REPLACE FUNCTION guard_audit_events_immutable()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'UPDATE'
+       OR current_setting('sprintsight.audit_retention', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Audit rows are append-only; deletion is reserved for retention.';
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'trg_action_audit_immutable'
+          AND tgrelid = 'action_audit_events'::regclass
+    ) THEN
+        CREATE TRIGGER trg_action_audit_immutable
+        BEFORE UPDATE OR DELETE ON action_audit_events
+        FOR EACH ROW EXECUTE FUNCTION guard_audit_events_immutable();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'trg_override_audit_immutable'
+          AND tgrelid = 'override_audit_events'::regclass
+    ) THEN
+        CREATE TRIGGER trg_override_audit_immutable
+        BEFORE UPDATE OR DELETE ON override_audit_events
+        FOR EACH ROW EXECUTE FUNCTION guard_audit_events_immutable();
+    END IF;
+END;
+$$;

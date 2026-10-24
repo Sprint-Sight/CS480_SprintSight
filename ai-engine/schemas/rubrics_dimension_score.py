@@ -25,6 +25,13 @@ class EvidenceCitation(BaseModel):
 
 
 def _normalize_citation(item: object) -> dict:
+    # Already a well-formed citation (e.g. hand-authored gold data in
+    # schemas/benchmark.py, or a re-validated model). Without this, the
+    # positional-guessing branch below falls through to str(item) and the
+    # whole EvidenceCitation repr lands in `identifier` with an empty
+    # `reason`, which then fails reason's min_length=15 at validation.
+    if isinstance(item, EvidenceCitation):
+        return {"identifier": item.identifier, "reason": item.reason}
     if isinstance(item, str):
         identifier, separator, reason = item.partition("|")
         return {"identifier": identifier.strip(), "reason": reason.strip() if separator else ""}

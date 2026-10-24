@@ -15,15 +15,18 @@ import {
   FolderOpen,
   GitCompare,
   LayoutDashboard,
-  Pencil,
+  Menu,
   Search,
   Settings,
   User,
   Loader2,
+  X,
 } from "lucide-react";
 
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
 import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
+import { useNotifications } from "@/hooks/use-notifications";
+import { NotificationsDropdown } from "@/components/ui/notifications-modal";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -57,7 +60,6 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
-  { label: "Instructor Review", href: "/instructor-review", icon: Pencil },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -78,7 +80,6 @@ const instructorScopeRoutes = new Set([
   "/artifact-viewer",
   "/collaboration",
   "/assessment-report",
-  "/instructor-review",
   "/progress",
 ]);
 
@@ -110,6 +111,11 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [userName, setUserName] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Use notifications hook
+  const { notifications, unreadCount, isLoading: isLoadingNotifications, error: notificationError, markAsRead, markAllAsRead } = useNotifications();
 
   // Dynamic scope states fetched from DB / API
   const [semesterOptions, setSemesterOptions] = useState<string[]>([]);
@@ -278,10 +284,24 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     <>
       <div className="min-h-screen bg-slate-50 text-slate-900">
         <div className="grid min-h-screen grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="border-r border-slate-200 bg-white md:sticky md:top-0 md:h-screen">
-            <div className="flex h-full flex-col md:h-screen">
-              {/* Centered Logo Header */}
-              <div className="flex items-center justify-center border-b border-slate-200 px-4 py-3">
+          {/* Mobile Overlay */}
+          {isSidebarOpen && (
+            <div
+              className="fixed inset-0 z-40 bg-black/50 md:hidden"
+              onClick={() => setIsSidebarOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Sidebar */}
+          <aside
+            className={`fixed inset-y-0 left-0 z-50 w-64 transform border-r border-slate-200 bg-white transition-transform duration-300 md:static md:z-auto md:transform-none md:w-auto ${
+              isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+            }`}
+          >
+            <div className="flex h-full flex-col">
+              {/* Logo + Close Button */}
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                 <Image
                   src="/logo.png"
                   alt="SprintSight Logo"
@@ -290,29 +310,38 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                   priority
                   className="h-14 w-auto max-w-full object-contain"
                 />
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="md:hidden p-1 hover:bg-slate-100 rounded-lg text-slate-600"
+                  aria-label="Close sidebar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
 
-              <nav className="flex-1 space-y-1 px-3 py-4">
+              <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
                 {navItems.map((item) => {
                   const active = isActivePath(pathname, item.href);
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
+                      onClick={() => setIsSidebarOpen(false)}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                         active
                           ? "bg-blue-50 font-medium text-blue-700"
                           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                       }`}
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className="h-4 w-4 flex-shrink-0" />
                       <span>{item.label}</span>
                     </Link>
                   );
                 })}
               </nav>
 
-              <div className="mt-auto border-t border-slate-200 p-3">
+              <div className="border-t border-slate-200 p-3">
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -325,8 +354,20 @@ export default function DashboardShell({ children }: DashboardShellProps) {
           </aside>
 
           <section className="min-w-0">
-            <header className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-              <div className="flex items-center justify-between gap-4">
+            <header className="border-b border-slate-200 bg-white px-3 py-3 sm:px-6">
+              <div className="flex items-center justify-between gap-3 sm:gap-4">
+                {/* Mobile Menu Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="md:hidden p-2 hover:bg-slate-100 rounded-lg text-slate-600"
+                  aria-label="Toggle sidebar"
+                  aria-expanded={isSidebarOpen}
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+
+                {/* Search Bar - Hidden on small screens */}
                 <div className="relative hidden w-full max-w-xl sm:block">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
@@ -335,28 +376,52 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
-                <div className="ml-auto flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
-                    aria-label="Notifications"
-                  >
-                    <Bell className="h-4 w-4" />
-                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
-                  </button>
 
+                {/* Top right actions */}
+                <div className="ml-auto flex items-center gap-2 sm:gap-3">
+                  {/* Notifications */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsNotificationsModalOpen(!isNotificationsModalOpen)}
+                      className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
+                      aria-label="Notifications"
+                      title="Open notifications"
+                      aria-expanded={isNotificationsModalOpen}
+                    >
+                      <Bell className="h-4 w-4" />
+                      {unreadCount > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </span>
+                      )}
+                    </button>
+
+                    <NotificationsDropdown
+                      isOpen={isNotificationsModalOpen}
+                      onClose={() => setIsNotificationsModalOpen(false)}
+                      notifications={notifications}
+                      unreadCount={unreadCount}
+                      isLoading={isLoadingNotifications}
+                      error={notificationError}
+                      onMarkAsRead={markAsRead}
+                      onMarkAllAsRead={markAllAsRead}
+                    />
+                  </div>
+
+                  {/* Profile Menu */}
                   <div ref={menuRef} className="relative">
                     <button
                       type="button"
                       onClick={() => setIsProfileMenuOpen((open) => !open)}
-                      className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1.5 text-left transition-colors hover:bg-slate-100"
+                      className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-slate-200 bg-slate-50 px-1.5 sm:px-2 py-1.5 text-left transition-colors hover:bg-slate-100"
                       aria-expanded={isProfileMenuOpen}
                       aria-label="Open profile menu"
                     >
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700 flex-shrink-0">
                         {profileUser.initials}
                       </div>
-                      <div className="flex flex-col text-right">
+                      <div className="hidden sm:flex flex-col text-right">
                         <span className="text-sm font-semibold text-slate-800">{profileUser.name}</span>
                         <span className="text-[11px] text-slate-500">{profileUser.label}</span>
                       </div>
@@ -368,7 +433,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                           type="button"
                           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100"
                         >
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700 flex-shrink-0">
                             {profileUser.initials}
                           </div>
                           <div>
@@ -407,8 +472,8 @@ export default function DashboardShell({ children }: DashboardShellProps) {
               </div>
 
               {role === "instructor" && showsInstructorScope && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
-                  <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600">
+                <div className="mt-4 flex flex-row flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 overflow-hidden">
+                  <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 flex-shrink-0">
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
                     Scope
                   </div>
@@ -421,11 +486,11 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     <>
                       {/* Semester Select */}
                       {semesterOptions.length > 0 && (
-                        <div className="relative">
+                        <div className="relative w-auto min-w-[140px] max-w-xs">
                           <select
                             value={selectedSemester}
                             onChange={(e) => setSelectedSemester(e.target.value)}
-                            className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                           >
                             {semesterOptions.map((semester) => (
                               <option key={semester} value={semester}>
@@ -439,11 +504,11 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
                       {/* Section Select */}
                       {sections.length > 0 && (
-                        <div className="relative">
+                        <div className="relative w-auto min-w-[140px] max-w-xs">
                           <select
                             value={selectedSectionId}
                             onChange={(e) => setSelectedSectionId(e.target.value)}
-                            className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                           >
                             {sections.map((section) => (
                               <option key={section.id} value={section.id}>
@@ -457,11 +522,11 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
                       {/* Team Select */}
                       {teamsInSelectedSection.length > 0 && (
-                        <div className="relative">
+                        <div className="relative w-auto min-w-[140px] max-w-xs">
                           <select
                             value={selectedTeamId}
                             onChange={(e) => setSelectedTeamId(e.target.value)}
-                            className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                           >
                             {teamsInSelectedSection.map((team) => (
                               <option key={team.id} value={team.id}>
@@ -473,8 +538,8 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                         </div>
                       )}
                       {showsSprintScope && (
-                        <div className="relative">
-                          <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
+                        <div className="relative w-auto min-w-[140px] max-w-xs">
+                          <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
                             {Array.from({ length: 10 }, (_, index) => `sprint-${index + 1}`).map((sprintId) => <option key={sprintId} value={sprintId}>{sprintId}</option>)}
                           </select>
                           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -483,11 +548,11 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     </>
                   )}
 
-                  <div className="ml-auto flex items-center gap-3">
+                  <div className="ml-auto flex items-center gap-3 flex-shrink-0">
                     {currentTeamStats && (
-                      <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm text-blue-700">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                        {currentTeamStats.status} · {currentTeamStats.studentCount} students · avg {currentTeamStats.averageScore}
+                      <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs sm:text-sm text-blue-700 overflow-hidden">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                        <span className="truncate">{currentTeamStats.status} · {currentTeamStats.studentCount} students · avg {currentTeamStats.averageScore}</span>
                       </div>
                     )}
                   </div>
@@ -498,7 +563,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
           </section>
         </div>
       </div>
-
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -20,12 +20,15 @@ import {
   FolderGit2,
   KeyRound,
   RotateCcw,
+  Upload,
 } from "lucide-react";
 import { UserAccount, CreateUserData, EditUserData } from "@/features/admin/types";
 import { CreateUserModal } from "@/features/admin/components/create-user-modal";
 import { EditUserModal } from "@/features/admin/components/edit-user-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { useAdminDirectory } from "@/features/admin/hooks/use-admin-directory";
+import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
+import { useStudentImport } from "@/features/projects/hooks/use-student-import";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
@@ -41,13 +44,20 @@ export function AdminPageContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState("all");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("Active");
+  const [courses, setCourses] = useState<{ id: string; code: string; title: string }[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [selectedCourseForImport, setSelectedCourseForImport] = useState<string>("");
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [userToDeactivate, setUserToDeactivate] = useState<UserAccount | null>(null);
   const [userToResetPassword, setUserToResetPassword] = useState<UserAccount | null>(null);
   const [resetPasswordInput, setResetPasswordInput] = useState("");
+
+  // Student import hook
+  const { isLoading: isImporting, error: importError, parsedRows, validateAndPreview, submitImport, clearState: clearImportState } = useStudentImport();
 
   // Notifications
   const [notification, setNotification] = useState<{
@@ -88,7 +98,7 @@ export function AdminPageContent() {
   };
 
   // 1. GET /users - Fetch User Directory
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     const token = getAuthToken();
     if (!token) return;
 
@@ -116,7 +126,34 @@ export function AdminPageContent() {
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }, []);
+
+  // Fetch courses for bulk import dropdown
+  const fetchCourses = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    setLoadingCourses(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/courses`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch courses");
+
+      const data = await res.json();
+      setCourses(
+        data.map((c: any) => ({
+          id: c.id,
+          code: c.code,
+          title: c.title,
+        }))
+      );
+    } catch (err: any) {
+      // Silently fail for courses - not critical for admin page
+    } finally {
+      setLoadingCourses(false);
+    }
+  }, []);
 
   useEffect(() => {
     const savedRole = sessionStorage.getItem("sprintsight-auth-role");
@@ -132,11 +169,12 @@ export function AdminPageContent() {
     if (savedEmail) setCurrentEmail(savedEmail);
 
     fetchUsers();
+    fetchCourses();
     setMounted(true);
-  }, [router]);
+  }, [router, fetchUsers, fetchCourses]);
 
   // 2. POST /users - Create Managed User
-  const handleCreateUser = async (data: CreateUserData) => {
+  const handleCreateUser = async (data: CreateUserData): Promise<boolean> => {
     const token = getAuthToken();
     try {
       const res = await fetch(`${API_BASE_URL}/users`, {
@@ -149,14 +187,14 @@ export function AdminPageContent() {
           email: data.email,
           full_name: data.fullName,
           role: data.role,
-          password: data.password,
+          ...(data.password ? { password: data.password } : {}),
         }),
       });
 
       if (!res.ok) {
         const err = await res.json();
         showNotification("error", err.detail || "Failed to create user.");
-        return;
+        return false;
       }
 
       const newUser = await res.json();
@@ -170,9 +208,23 @@ export function AdminPageContent() {
       };
 
       setUsers((prev) => [createdRecord, ...prev]);
-      showNotification("success", `User ${newUser.full_name} provisioned successfully.`);
-    } catch (err) {
+      if (newUser.role === "student" && newUser.signup_email_sent) {
+        showNotification(
+          "success",
+          `Student ${newUser.full_name} was created. A first-time password setup link was queued for delivery to ${newUser.email}.`,
+        );
+      } else if (newUser.role === "student") {
+        showNotification(
+          "error",
+          `Student ${newUser.full_name} was created, but the setup email was not queued. Check SMTP configuration and backend logs.`,
+        );
+      } else {
+        showNotification("success", `User ${newUser.full_name} provisioned successfully.`);
+      }
+      return true;
+    } catch {
       showNotification("error", "Network error while provisioning user.");
+      return false;
     }
   };
 
@@ -350,6 +402,38 @@ export function AdminPageContent() {
             <ClipboardList className="w-4 h-4 text-slate-500" />
             Audit Log
           </Link>
+          {courses.length > 0 && (
+            <select
+              value={selectedCourseForImport}
+              onChange={(e) => setSelectedCourseForImport(e.target.value)}
+              className="bg-white border border-slate-300 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+            >
+              <option value="">Select course for import...</option>
+              {courses.map((course) => (
+                <option key={course.id} value={course.id}>
+                  {course.code} - {course.title}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => {
+              if (courses.length === 0) {
+                showNotification("error", "No courses available. Cannot import students.");
+                return;
+              }
+              if (!selectedCourseForImport) {
+                showNotification("error", "Please select a course first to import students.");
+                return;
+              }
+              setIsImportModalOpen(true);
+            }}
+            disabled={courses.length === 0 || !selectedCourseForImport}
+            className="inline-flex items-center gap-2 bg-white hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 border border-slate-300 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+          >
+            <Upload className="w-4 h-4 text-slate-500" />
+            Import Students
+          </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
@@ -656,6 +740,24 @@ export function AdminPageContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* CSV Import Modal - For bulk student import */}
+      {selectedCourseForImport && (
+        <CSVImportModal
+          isOpen={isImportModalOpen}
+          courseId={selectedCourseForImport}
+          courseName={courses.find((c) => c.id === selectedCourseForImport)?.title || ""}
+          onClose={() => {
+            setIsImportModalOpen(false);
+            clearImportState();
+          }}
+          onValidatePreview={validateAndPreview}
+          onSubmit={submitImport}
+          isLoading={isImporting}
+          error={importError}
+          parsedRows={parsedRows}
+        />
       )}
     </div>
   );

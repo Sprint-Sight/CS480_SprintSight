@@ -4,15 +4,19 @@ from typing import Literal
 from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, Trace, SpanType
 from mlflow.genai.scorers import scorer
 from pydantic import BaseModel, Field, model_validator
+from schemas.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 
+from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 from schemas.modelname import MODEL_NUM_CTX
-from schemas.sprint_assessment import SprintAssessment
 from schemas.rubrics_score import RubricsScore
-from services.llm_client import audit_scope, create_llm_client, request_extra_body
-from judges.trace_adapters import read_candidate
+from services.llm_client import (
+    LLM_TEMPERATURE,
+    audit_scope,
+    create_llm_client,
+    request_extra_body,
+)
 
 GROUNDING_PROMPT_VERSION = "grounding-v1"
 
@@ -106,7 +110,7 @@ async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_mod
         return await create_llm_client().chat.completions.create(
             model=judge_model,
             response_model=make_grounding_verdict_model(set(citations)),
-            temperature=0,
+            temperature=LLM_TEMPERATURE,
             max_retries=3,
             extra_body=request_extra_body(ctx),
             messages=[

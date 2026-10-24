@@ -1,11 +1,14 @@
 import { UserPlus, X } from "lucide-react";
 
 type Student = { id: string; email: string; full_name: string };
+type AssignedStudent = Student & { projectName: string };
 
 type ProjectMembersModalProps = {
   isOpen: boolean;
   projectName: string;
+  hasEnrolledStudents: boolean;
   availableStudents: Student[];
+  assignedStudents: AssignedStudent[];
   selectedStudentId: string;
   onClose: () => void;
   onSelectStudent: (studentId: string) => void;
@@ -15,7 +18,9 @@ type ProjectMembersModalProps = {
 export function ProjectMembersModal({
   isOpen,
   projectName,
+  hasEnrolledStudents,
   availableStudents,
+  assignedStudents,
   selectedStudentId,
   onClose,
   onSelectStudent,
@@ -39,7 +44,11 @@ export function ProjectMembersModal({
         <div className="p-5">
           {availableStudents.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-              Every enrolled student is already assigned to a project in this course, or the course roster is empty.
+              {hasEnrolledStudents && assignedStudents.length > 0
+                ? "All students enrolled in this course are already assigned to a project team. They are listed below."
+                : hasEnrolledStudents
+                  ? "No students are currently available to add to this project."
+                : "No students are enrolled in this course yet. Use the Roster button to enroll an existing student first."}
             </p>
           ) : (
             <label className="block">
@@ -51,6 +60,29 @@ export function ProjectMembersModal({
                 ))}
               </select>
             </label>
+          )}
+          {assignedStudents.length > 0 && (
+            <div className="mt-4">
+              <h3 className="mb-2 text-sm font-medium text-slate-700">
+                Already assigned to a project in this course
+              </h3>
+              <ul className="space-y-2">
+                {assignedStudents.map((student) => (
+                  <li
+                    key={student.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <p className="text-sm font-medium text-slate-800">
+                      {student.full_name}
+                    </p>
+                    <p className="text-xs text-slate-500">{student.email}</p>
+                    <p className="mt-1 text-xs text-blue-700">
+                      Project group: {student.projectName}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
 

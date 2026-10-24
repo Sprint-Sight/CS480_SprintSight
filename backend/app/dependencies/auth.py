@@ -4,17 +4,63 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.config import get_settings
 from app.core.security import TokenPayloadError, decode_access_token
-from app.repositories.in_memory import InMemoryDocumentRepository, jira_ingestion_repo, manual_text_repo, metrics_repo, rubric_weights_repo
-from app.repositories.interfaces import AssessmentRepository, DocumentRepository, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRepository, RubricWeightsRepository, UserRepository
+from app.repositories.in_memory import (
+    InMemoryDocumentRepository,
+    InMemoryEmailOutboxRepository,
+    audit_action_repo,
+    audit_repo,
+    instructor_model_selection_repo,
+    jira_ingestion_repo,
+    manual_text_repo,
+    metrics_repo,
+    rubric_weights_repo,
+)
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    AssessmentRepository,
+    AuditRepository,
+    AuditRetentionConfigRepository,
+    DocumentRepository,
+    ExportLogRepository,
+    InstructorModelSelectionRepository,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    NotificationRepository,
+    PeerEvaluationRepository,
+    ProjectRepository,
+    RubricWeightsRepository,
+    UserRepository,
+)
 from app.schemas.auth import Role
 from app.services.authService.service import get_user_by_id
+from app.services.notificationService.queue import EmailQueue
+from app.services.notificationService.service import EmailTransport, build_email_transport
 
 oauth2_scheme = HTTPBearer()
 
 
 def get_user_repository(request: Request) -> UserRepository:
     return request.app.state.user_repository
+
+
+def get_notification_service(request: Request) -> EmailTransport:
+    """Return the outbound email queue used to deliver queued messages."""
+    service = getattr(request.app.state, "notification_service", None)
+    if service is None:
+        service = EmailQueue(
+            InMemoryEmailOutboxRepository(),
+            build_email_transport(get_settings()),
+            get_settings(),
+        )
+        request.app.state.notification_service = service
+    return service
+
+
+def get_notification_repository(request: Request) -> NotificationRepository:
+    return request.app.state.notification_repository
 
 
 def get_project_repository(request: Request) -> ProjectRepository:
@@ -41,8 +87,32 @@ def get_assessment_repository(request: Request) -> AssessmentRepository:
     return getattr(request.app.state, "assessment_repository", None)
 
 
+def get_audit_repository(request: Request) -> AuditRepository:
+    return getattr(request.app.state, "audit_repository", audit_repo)
+
+
+def get_action_audit_repository(request: Request) -> ActionAuditRepository:
+    return getattr(request.app.state, "action_audit_repository", audit_action_repo)
+
+
+def get_audit_retention_config_repository(request: Request) -> AuditRetentionConfigRepository:
+    return request.app.state.audit_retention_config_repository
+
+
+def get_export_log_repository(request: Request) -> ExportLogRepository:
+    return request.app.state.export_log_repository
+
+
+def get_peer_evaluation_repository(request: Request) -> PeerEvaluationRepository:
+    return request.app.state.peer_evaluation_repository
+
+
 def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:
     return getattr(request.app.state, "rubric_weights_repository", rubric_weights_repo)
+
+
+def get_instructor_model_selection_repository(request: Request) -> InstructorModelSelectionRepository:
+    return getattr(request.app.state, "instructor_model_selection_repository", instructor_model_selection_repo)
 
 
 def get_current_user(

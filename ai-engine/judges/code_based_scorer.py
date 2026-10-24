@@ -1,8 +1,16 @@
 import json
 from typing import Any
+
+from mlflow.entities import (
+    AssessmentSource,
+    AssessmentSourceType,
+    Feedback,
+    SpanType,
+    Trace,
+)
 from mlflow.genai.scorers import scorer
+
 from schemas.rubrics_score import DIMENSIONS
-from mlflow.entities import Trace, Feedback, SpanType, AssessmentSource, AssessmentSourceType
 
 '''
 numeric grade accuracy checks the following:

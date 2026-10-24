@@ -1,18 +1,56 @@
 from datetime import datetime
 from uuid import UUID
-from uuid import uuid4
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from app.repositories.interfaces import AssessmentRepository, CourseRecord, DocumentRecord, DocumentRepository, IngestionMetricBundle, JiraIngestionRunRecord, JiraIngestionRunRepository, ManualTextRepository, MetricsRepository, ProjectRecord, ProjectRepository, RubricWeightsRecord, RubricWeightsRepository, UserRecord, UserRepository
-from app.schemas.assessment import AssessmentReport, JiraCleanedSnapshot, ManualTextPayload
+from app.repositories.interfaces import (
+    AssessmentRepository,
+    AuditRetentionConfig,
+    AuditRetentionConfigRepository,
+    CourseRecord,
+    DocumentRecord,
+    DocumentRepository,
+    EmailOutboxRecord,
+    EmailOutboxRepository,
+    IngestionMetricBundle,
+    JiraIngestionRunRecord,
+    JiraIngestionRunRepository,
+    ManualTextRepository,
+    MetricsRepository,
+    NotificationRecord,
+    NotificationRepository,
+    ProjectRecord,
+    ProjectRepository,
+    InstructorModelSelectionRecord,
+    InstructorModelSelectionRepository,
+    RubricWeightsRecord,
+    RubricWeightsRepository,
+    UserRecord,
+    UserRepository,
+)
+from app.schemas.assessment import (
+    ActionAuditRecord,
+    AssessmentReport,
+    AuditRecord,
+    JiraCleanedSnapshot,
+    ManualTextPayload,
+)
 from app.schemas.auth import Role
 
 _PROJECT_COLUMNS = """p.project_id, p.project_name, p.team_name, p.description, p.course_id, c.code AS course_code,
     p.github_repo_url, p.local_repo_path, p.created_by, p.created_at,
     p.jira_email, p.jira_domain, p.jira_project_key, p.jira_api_token_encrypted"""
+
+
+def ensure_user_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS student_number BIGINT")
+        connection.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS uq_users_student_number
+               ON users(student_number) WHERE student_number IS NOT NULL"""
+        )
 
 
 def ensure_project_credential_schema(pool: ConnectionPool) -> None:
@@ -80,6 +118,532 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
         )
 
 
+def ensure_notification_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS user_notifications (
+                notification_id UUID PRIMARY KEY,
+                recipient_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                event_type VARCHAR(80) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                read_at TIMESTAMPTZ
+            )"""
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS idx_user_notifications_recipient_created
+               ON user_notifications(recipient_id, created_at DESC)"""
+        )
+
+
+def ensure_email_outbox_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS email_outbox (
+                email_id UUID PRIMARY KEY,
+                recipient VARCHAR(320) NOT NULL,
+                subject VARCHAR(500) NOT NULL,
+                body TEXT NOT NULL,
+                kind VARCHAR(80) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                scheduled_for TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                sent_at TIMESTAMPTZ,
+                last_error TEXT
+            )"""
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS idx_email_outbox_pending
+               ON email_outbox(status, scheduled_for)"""
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS idx_email_outbox_sent_at
+               ON email_outbox(sent_at DESC)"""
+        )
+
+
+class PostgresEmailOutboxRepository(EmailOutboxRepository):
+    """Durable outbound email queue backed by Postgres."""
+
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _email(row: dict) -> EmailOutboxRecord:
+        return EmailOutboxRecord(
+            id=str(row["email_id"]),
+            recipient=row["recipient"],
+            subject=row["subject"],
+            body=row["body"],
+            kind=row["kind"],
+            status=row["status"],
+            attempts=int(row["attempts"]),
+            created_at=row["created_at"],
+            scheduled_for=row["scheduled_for"],
+            sent_at=row["sent_at"],
+            last_error=row["last_error"],
+        )
+
+    def enqueue_email(self, record: EmailOutboxRecord) -> EmailOutboxRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO email_outbox
+                   (email_id, recipient, subject, body, kind, status, attempts,
+                    created_at, scheduled_for, sent_at, last_error)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING email_id, recipient, subject, body, kind, status,
+                             attempts, created_at, scheduled_for, sent_at, last_error""",
+                (
+                    UUID(record.id),
+                    record.recipient,
+                    record.subject,
+                    record.body,
+                    record.kind,
+                    record.status,
+                    record.attempts,
+                    record.created_at,
+                    record.scheduled_for,
+                    record.sent_at,
+                    record.last_error,
+                ),
+            ).fetchone()
+        return self._email(row)
+
+    def claim_due_emails(self, now: datetime, limit: int) -> list[EmailOutboxRecord]:
+        """Atomically move due messages to ``sending`` and hand them to the caller."""
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """UPDATE email_outbox
+                   SET status = 'sending', attempts = attempts + 1, scheduled_for = %s
+                   WHERE email_id IN (
+                       SELECT email_id FROM email_outbox
+                       WHERE status = 'pending' AND scheduled_for <= %s
+                       ORDER BY scheduled_for, created_at
+                       FOR UPDATE SKIP LOCKED
+                       LIMIT %s
+                   )
+                   RETURNING email_id, recipient, subject, body, kind, status,
+                             attempts, created_at, scheduled_for, sent_at, last_error""",
+                (now, now, limit),
+            ).fetchall()
+        return [self._email(row) for row in rows]
+
+    def mark_email_sent(self, email_id: str, sent_at: datetime) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """UPDATE email_outbox
+                   SET status = 'sent', sent_at = %s, last_error = NULL
+                   WHERE email_id = %s""",
+                (sent_at, UUID(email_id)),
+            )
+
+    def mark_email_failed(
+        self, email_id: str, error: str, retry_after: datetime | None
+    ) -> None:
+        status = "pending" if retry_after else "failed"
+        with self._pool.connection() as connection:
+            connection.execute(
+                """UPDATE email_outbox
+                   SET status = %s, last_error = %s, scheduled_for = COALESCE(%s, scheduled_for)
+                   WHERE email_id = %s""",
+                (status, error[:2000], retry_after, UUID(email_id)),
+            )
+
+    def count_emails_sent_since(self, since: datetime) -> int:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS sent_count FROM email_outbox "
+                "WHERE status = 'sent' AND sent_at IS NOT NULL AND sent_at >= %s",
+                (since,),
+            ).fetchone()
+        return int(row["sent_count"])
+
+    def requeue_stale_emails(self, cutoff: datetime) -> int:
+        """Return messages abandoned mid-delivery to the pending pool."""
+        with self._pool.connection() as connection:
+            result = connection.execute(
+                """UPDATE email_outbox
+                   SET status = 'pending', scheduled_for = CURRENT_TIMESTAMP
+                   WHERE status = 'sending' AND scheduled_for <= %s""",
+                (cutoff,),
+            )
+        return int(result.rowcount or 0)
+
+    def list_emails(self, limit: int = 50) -> list[EmailOutboxRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT email_id, recipient, subject, body, kind, status,
+                          attempts, created_at, scheduled_for, sent_at, last_error
+                   FROM email_outbox
+                   ORDER BY created_at DESC, email_id DESC
+                   LIMIT %s""",
+                (limit,),
+            ).fetchall()
+        return [self._email(row) for row in rows]
+
+
+class PostgresNotificationRepository(NotificationRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _notification(row: dict) -> NotificationRecord:
+        return NotificationRecord(
+            id=str(row["notification_id"]),
+            recipient_id=str(row["recipient_id"]),
+            event_type=row["event_type"],
+            title=row["title"],
+            message=row["message"],
+            created_at=row["created_at"],
+            read_at=row["read_at"],
+        )
+
+    def create_notification(self, notification: NotificationRecord) -> NotificationRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO user_notifications
+                   (notification_id, recipient_id, event_type, title, message, created_at, read_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   RETURNING notification_id, recipient_id, event_type, title, message,
+                             created_at, read_at""",
+                (
+                    UUID(notification.id),
+                    UUID(notification.recipient_id),
+                    notification.event_type,
+                    notification.title,
+                    notification.message,
+                    notification.created_at,
+                    notification.read_at,
+                ),
+            ).fetchone()
+        return self._notification(row)
+
+    def list_notifications(self, recipient_id: str, limit: int = 50) -> list[NotificationRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT notification_id, recipient_id, event_type, title, message,
+                          created_at, read_at
+                   FROM user_notifications
+                   WHERE recipient_id = %s
+                   ORDER BY created_at DESC, notification_id DESC
+                   LIMIT %s""",
+                (UUID(recipient_id), limit),
+            ).fetchall()
+        return [self._notification(row) for row in rows]
+
+    def count_unread_notifications(self, recipient_id: str) -> int:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT COUNT(*) AS unread_count
+                   FROM user_notifications
+                   WHERE recipient_id = %s AND read_at IS NULL""",
+                (UUID(recipient_id),),
+            ).fetchone()
+        return int(row["unread_count"])
+
+    def mark_notification_read(
+        self, notification_id: str, recipient_id: str
+    ) -> NotificationRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE user_notifications
+                   SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+                   WHERE notification_id = %s AND recipient_id = %s
+                   RETURNING notification_id, recipient_id, event_type, title, message,
+                             created_at, read_at""",
+                (UUID(notification_id), UUID(recipient_id)),
+            ).fetchone()
+        return self._notification(row) if row else None
+
+
+def ensure_audit_schema(pool: ConnectionPool) -> None:
+    statements = (
+        """CREATE TABLE IF NOT EXISTS action_audit_events (
+            audit_id TEXT PRIMARY KEY,
+            actor_id TEXT NOT NULL,
+            actor_role TEXT NOT NULL CHECK (actor_role IN ('admin', 'instructor', 'student')),
+            action TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            details JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS override_audit_events (
+            override_id TEXT PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL,
+            instructor_id TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            report_id TEXT NOT NULL,
+            original_score DOUBLE PRECISION NOT NULL,
+            new_score DOUBLE PRECISION NOT NULL,
+            reason_comment TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_action_audit_created_at "
+        "ON action_audit_events(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_action_audit_actor_created "
+        "ON action_audit_events(actor_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_override_audit_timestamp "
+        "ON override_audit_events(timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_override_audit_instructor_timestamp "
+        "ON override_audit_events(instructor_id, timestamp DESC)",
+        """CREATE OR REPLACE FUNCTION guard_audit_events_immutable()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            IF TG_OP = 'UPDATE'
+               OR current_setting('sprintsight.audit_retention', true) IS DISTINCT FROM 'on' THEN
+                RAISE EXCEPTION 'Audit rows are append-only; deletion is reserved for retention.';
+            END IF;
+            RETURN OLD;
+        END;
+        $$ LANGUAGE plpgsql""",
+        """DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'trg_action_audit_immutable'
+                  AND tgrelid = 'action_audit_events'::regclass
+            ) THEN
+                CREATE TRIGGER trg_action_audit_immutable
+                BEFORE UPDATE OR DELETE ON action_audit_events
+                FOR EACH ROW EXECUTE FUNCTION guard_audit_events_immutable();
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'trg_override_audit_immutable'
+                  AND tgrelid = 'override_audit_events'::regclass
+            ) THEN
+                CREATE TRIGGER trg_override_audit_immutable
+                BEFORE UPDATE OR DELETE ON override_audit_events
+                FOR EACH ROW EXECUTE FUNCTION guard_audit_events_immutable();
+            END IF;
+        END;
+        $$""",
+    )
+    with pool.connection() as connection:
+        for statement in statements:
+            connection.execute(statement)
+
+
+def ensure_audit_retention_config_schema(
+    pool: ConnectionPool,
+    hot_retention_days: int,
+    action_archive_retention_days: int,
+    override_archive_retention_days: int,
+) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS audit_retention_config (
+                config_id SMALLINT PRIMARY KEY CHECK (config_id = 1),
+                hot_retention_days INTEGER NOT NULL CHECK (hot_retention_days >= 1),
+                action_archive_retention_days INTEGER NOT NULL
+                    CHECK (action_archive_retention_days >= 1),
+                override_archive_retention_days INTEGER NOT NULL
+                    CHECK (override_archive_retention_days >= 1),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT
+            )"""
+        )
+        connection.execute(
+            """INSERT INTO audit_retention_config (
+                config_id, hot_retention_days, action_archive_retention_days,
+                override_archive_retention_days
+            ) VALUES (1, %s, %s, %s)
+            ON CONFLICT (config_id) DO NOTHING""",
+            (
+                hot_retention_days,
+                action_archive_retention_days,
+                override_archive_retention_days,
+            ),
+        )
+
+
+class PostgresAuditRetentionConfigRepository(AuditRetentionConfigRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _config(row: dict) -> AuditRetentionConfig:
+        return AuditRetentionConfig(
+            hot_retention_days=row["hot_retention_days"],
+            action_archive_retention_days=row["action_archive_retention_days"],
+            override_archive_retention_days=row["override_archive_retention_days"],
+            updated_at=row["updated_at"],
+            updated_by=row["updated_by"],
+        )
+
+    def get_config(self) -> AuditRetentionConfig:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT hot_retention_days, action_archive_retention_days,
+                          override_archive_retention_days, updated_at, updated_by
+                   FROM audit_retention_config WHERE config_id = 1"""
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Audit retention configuration has not been initialized.")
+        return self._config(row)
+
+    def update_config(
+        self,
+        hot_retention_days: int,
+        action_archive_retention_days: int,
+        override_archive_retention_days: int,
+        updated_by: str,
+    ) -> AuditRetentionConfig:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE audit_retention_config
+                   SET hot_retention_days = %s,
+                       action_archive_retention_days = %s,
+                       override_archive_retention_days = %s,
+                       updated_at = CURRENT_TIMESTAMP,
+                       updated_by = %s
+                   WHERE config_id = 1
+                   RETURNING hot_retention_days, action_archive_retention_days,
+                             override_archive_retention_days, updated_at, updated_by""",
+                (
+                    hot_retention_days,
+                    action_archive_retention_days,
+                    override_archive_retention_days,
+                    updated_by,
+                ),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Audit retention configuration has not been initialized.")
+        return self._config(row)
+
+
+class PostgresAuditRepository:
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def save_audit(self, record: AuditRecord) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO override_audit_events
+                (override_id, timestamp, instructor_id, student_id, report_id,
+                 original_score, new_score, reason_comment)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (override_id) DO NOTHING""",
+                (
+                    record.override_id,
+                    record.timestamp,
+                    record.instructor_id,
+                    record.student_id,
+                    record.report_id,
+                    record.original_score,
+                    record.new_score,
+                    record.reason_comment,
+                ),
+            )
+
+    def list_audits(self) -> list[AuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT override_id, timestamp, instructor_id, student_id,
+                          report_id, original_score, new_score, reason_comment
+                   FROM override_audit_events ORDER BY timestamp DESC, override_id"""
+            ).fetchall()
+        return [
+            AuditRecord.model_validate(row)
+            for row in rows or []
+        ]
+
+    def list_audits_before(
+        self,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[AuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT override_id, timestamp, instructor_id, student_id,
+                          report_id, original_score, new_score, reason_comment
+                   FROM override_audit_events WHERE timestamp < %s
+                   ORDER BY timestamp, override_id LIMIT %s""",
+                (cutoff, limit),
+            ).fetchall()
+        return [AuditRecord.model_validate(row) for row in rows or []]
+
+    def delete_audits(self, override_ids: list[str]) -> int:
+        if not override_ids:
+            return 0
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                connection.execute(
+                    "SELECT set_config('sprintsight.audit_retention', 'on', true)"
+                )
+                cursor = connection.execute(
+                    "DELETE FROM override_audit_events WHERE override_id = ANY(%s)",
+                    (override_ids,),
+                )
+        return cursor.rowcount
+
+
+class PostgresActionAuditRepository:
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def save_action_audit(self, record: ActionAuditRecord) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO action_audit_events
+                (audit_id, actor_id, actor_role, action, target_type, target_id,
+                 details, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (audit_id) DO NOTHING""",
+                (
+                    record.audit_id,
+                    record.actor_id,
+                    record.actor_role,
+                    record.action,
+                    record.target_type,
+                    record.target_id,
+                    Json(record.details),
+                    record.created_at,
+                ),
+            )
+
+    def list_action_audits(self) -> list[ActionAuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT audit_id, actor_id, actor_role, action, target_type,
+                          target_id, details, created_at
+                   FROM action_audit_events
+                   ORDER BY created_at DESC, audit_id"""
+            ).fetchall()
+        return [ActionAuditRecord.model_validate(row) for row in rows or []]
+
+    def list_action_audits_before(
+        self,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[ActionAuditRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT audit_id, actor_id, actor_role, action, target_type,
+                          target_id, details, created_at
+                   FROM action_audit_events WHERE created_at < %s
+                   ORDER BY created_at, audit_id LIMIT %s""",
+                (cutoff, limit),
+            ).fetchall()
+        return [ActionAuditRecord.model_validate(row) for row in rows or []]
+
+    def delete_action_audits(self, audit_ids: list[str]) -> int:
+        if not audit_ids:
+            return 0
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                connection.execute(
+                    "SELECT set_config('sprintsight.audit_retention', 'on', true)"
+                )
+                cursor = connection.execute(
+                    "DELETE FROM action_audit_events WHERE audit_id = ANY(%s)",
+                    (audit_ids,),
+                )
+        return cursor.rowcount
+
+
 class PostgresUserRepository(UserRepository):
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
@@ -88,7 +652,7 @@ class PostgresUserRepository(UserRepository):
         with self._pool.connection() as connection:
             row = connection.execute(
                 """
-                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version
+                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number
                 FROM users
                 WHERE lower(email) = lower(%s)
                 """,
@@ -105,11 +669,35 @@ class PostgresUserRepository(UserRepository):
         with self._pool.connection() as connection:
             row = connection.execute(
                 """
-                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version
+                SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number
                 FROM users
                 WHERE user_id = %s
                 """,
                 (parsed_id,),
+            ).fetchone()
+        return self._to_record(row) if row else None
+
+    def get_by_student_number(self, student_number: int) -> UserRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT user_id, email, full_name, password_hash, role, is_active,
+                       must_change_password, token_version, student_number
+                FROM users
+                WHERE student_number = %s
+                """,
+                (student_number,),
+            ).fetchone()
+        return self._to_record(row) if row else None
+
+    def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE users SET student_number = %s
+                   WHERE user_id = %s
+                   RETURNING user_id, email, full_name, password_hash, role, is_active,
+                             must_change_password, token_version, student_number""",
+                (student_number, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
 
@@ -146,18 +734,18 @@ class PostgresUserRepository(UserRepository):
     def list_users(self) -> list[UserRecord]:
         with self._pool.connection() as connection:
             rows = connection.execute(
-                "SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version FROM users ORDER BY email"
+                "SELECT user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number FROM users ORDER BY email"
             ).fetchall()
         return [self._to_record(row) for row in rows]
 
     def create_user(self, user: UserRecord) -> UserRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
-                """INSERT INTO users (user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                """INSERT INTO users (user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number""",
                 (UUID(user.id), user.email.lower(), user.full_name, user.hashed_password, user.role.value,
-                 user.is_active, user.must_change_password, user.token_version),
+                 user.is_active, user.must_change_password, user.token_version, user.student_number),
             ).fetchone()
         return self._to_record(row)
 
@@ -166,7 +754,7 @@ class PostgresUserRepository(UserRepository):
             row = connection.execute(
                 """UPDATE users SET email = %s, full_name = %s, role = %s, is_active = %s
                 WHERE user_id = %s
-                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number""",
                 (email.lower(), full_name, role.value, is_active, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
@@ -176,7 +764,8 @@ class PostgresUserRepository(UserRepository):
             row = connection.execute(
                 """UPDATE users SET password_hash = %s, must_change_password = %s, token_version = token_version + 1
                 WHERE user_id = %s
-                RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version""",
+                RETURNING user_id, email, full_name, password_hash, role, is_active,
+                          must_change_password, token_version, student_number""",
                 (hashed_password, must_change_password, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
@@ -194,6 +783,7 @@ class PostgresUserRepository(UserRepository):
             is_active=row["is_active"],
             must_change_password=row["must_change_password"],
             token_version=row["token_version"],
+            student_number=row.get("student_number"),
         )
 
 
@@ -244,15 +834,13 @@ class PostgresProjectRepository(ProjectRepository):
 
     def enroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
-            # Check if student is already in any section of the same course code/term/year
+            # A student can enroll in a course code only once, across terms and sections.
             row = connection.execute("""
                 SELECT 1 FROM course_students cs
                 JOIN courses c ON c.course_id = cs.course_id
                 WHERE cs.user_id = %s
-                AND lower(c.code) = lower((SELECT code FROM courses WHERE course_id = %s))
-                AND c.year = (SELECT year FROM courses WHERE course_id = %s)
-                AND lower(c.term) = lower((SELECT term FROM courses WHERE course_id = %s))
-            """, (UUID(user_id), UUID(course_id), UUID(course_id), UUID(course_id))).fetchone()
+                AND lower(trim(c.code)) = lower(trim((SELECT code FROM courses WHERE course_id = %s)))
+            """, (UUID(user_id), UUID(course_id))).fetchone()
 
             if row:
                 return False
@@ -276,7 +864,23 @@ class PostgresProjectRepository(ProjectRepository):
     def unenroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
             row = connection.execute("DELETE FROM course_students WHERE course_id = %s AND user_id = %s RETURNING course_id", (UUID(course_id), UUID(user_id))).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        self.remove_student_from_projects_in_course(course_id, user_id)
+        return True
+
+    def remove_student_from_projects_in_course(self, course_id: str, user_id: str) -> None:
+        with self._pool.connection() as connection:
+            project_rows = connection.execute(
+                "SELECT project_id FROM projects WHERE course_id = %s",
+                (UUID(course_id),),
+            ).fetchall()
+            for row in project_rows:
+                project_id = str(row["project_id"])
+                connection.execute(
+                    "DELETE FROM project_members WHERE project_id = %s AND user_id = %s",
+                    (UUID(project_id), UUID(user_id)),
+                )
 
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
         with self._pool.connection() as connection:
@@ -506,6 +1110,17 @@ class PostgresDocumentRepository(DocumentRepository):
             ).fetchone()
         return self._document(row) if row else None
 
+    def delete_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """DELETE FROM project_documents
+                   WHERE project_id = %s AND document_id = %s
+                   RETURNING document_id, project_id, uploader_id, filename, mime_type,
+                             byte_size, checksum, storage_bucket, storage_key, created_at""",
+                (UUID(project_id), UUID(document_id)),
+            ).fetchone()
+        return self._document(row) if row else None
+
 
 class PostgresManualTextRepository(ManualTextRepository):
     def __init__(self, pool: ConnectionPool) -> None:
@@ -583,6 +1198,54 @@ class PostgresRubricWeightsRepository(RubricWeightsRepository):
             course_id=str(row["course_id"]),
             weights=row["weights"],
             updated_by=str(row["updated_by"]),
+            updated_at=row["updated_at"],
+        )
+
+
+def ensure_instructor_model_selection_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS instructor_model_selections (
+                user_id UUID PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                model_id VARCHAR(255) NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+
+
+class PostgresInstructorModelSelectionRepository(InstructorModelSelectionRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def get_selection(self, user_id: str) -> InstructorModelSelectionRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT user_id, model_id, updated_at
+                FROM instructor_model_selections WHERE user_id = %s""",
+                (UUID(user_id),),
+            ).fetchone()
+        if not row:
+            return None
+        return InstructorModelSelectionRecord(
+            user_id=str(row["user_id"]),
+            model_id=row["model_id"],
+            updated_at=row["updated_at"],
+        )
+
+    def set_selection(self, user_id: str, model_id: str) -> InstructorModelSelectionRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO instructor_model_selections (user_id, model_id)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id)
+                DO UPDATE SET model_id = EXCLUDED.model_id,
+                              updated_at = CURRENT_TIMESTAMP
+                RETURNING user_id, model_id, updated_at""",
+                (UUID(user_id), model_id),
+            ).fetchone()
+        return InstructorModelSelectionRecord(
+            user_id=str(row["user_id"]),
+            model_id=row["model_id"],
             updated_at=row["updated_at"],
         )
 
@@ -721,31 +1384,46 @@ class PostgresAssessmentRepository(AssessmentRepository):
             return self._report(row) if row else None
 
     def update_manual_assessment(self, report_id: str, patch: dict[str, object]) -> AssessmentReport | None:
+        columns = {
+            "requirements_score": "requirements_score",
+            "code_quality_score": "code_quality_score",
+            "documentation_score": "documentation_score",
+            "collaboration_score": "collaboration_score",
+            "requirements_justification": "requirements_justification",
+            "code_quality_justification": "code_quality_justification",
+            "documentation_justification": "documentation_justification",
+            "collaboration_justification": "collaboration_justification",
+            "rubric_weights": "rubric_weights",
+            "team_score": "team_score",
+            "individual_scores": "individual_scores",
+            "rubric_scores": "rubric_scores",
+            "strengths": "strengths",
+            "weaknesses": "weaknesses",
+            "recommendations": "recommendations",
+        }
+        json_columns = {
+            "rubric_weights",
+            "team_score",
+            "individual_scores",
+            "rubric_scores",
+            "strengths",
+            "weaknesses",
+            "recommendations",
+        }
+        assignments = ["override = TRUE"]
+        values = []
+        for key, value in patch.items():
+            column = columns.get(key)
+            if column is None:
+                continue
+            assignments.append(f"{column} = %s")
+            values.append(Json(value) if column in json_columns else value)
+
         with self._pool.connection() as connection:
             row = connection.execute(
-                """UPDATE assessment_reports
-                SET override = TRUE,
-                    requirements_score = %s,
-                    code_quality_score = %s,
-                    documentation_score = %s,
-                    collaboration_score = %s,
-                    requirements_justification = %s,
-                    code_quality_justification = %s,
-                    documentation_justification = %s,
-                    collaboration_justification = %s
-                WHERE report_id = %s
-                RETURNING *""",
-                (
-                    patch["requirements_score"],
-                    patch["code_quality_score"],
-                    patch["documentation_score"],
-                    patch["collaboration_score"],
-                    patch["requirements_justification"],
-                    patch["code_quality_justification"],
-                    patch["documentation_justification"],
-                    patch["collaboration_justification"],
-                    UUID(report_id.replace("rpt-", "")),
-                ),
+                f"UPDATE assessment_reports SET {', '.join(assignments)} "
+                "WHERE report_id = %s RETURNING *",
+                (*values, UUID(report_id.replace("rpt-", ""))),
             ).fetchone()
         return self._report(row) if row else None
 
@@ -781,7 +1459,7 @@ class PostgresAssessmentRepository(AssessmentRepository):
 
     @staticmethod
     def _report(row: dict) -> AssessmentReport:
-        from app.schemas.assessment import TeamScore, StudentScore, RubricDimensionScoreDetail
+        from app.schemas.assessment import RubricDimensionScoreDetail, StudentScore, TeamScore
         rubric_scores = {}
         if row.get("rubric_scores"):
             for key, value in row["rubric_scores"].items():

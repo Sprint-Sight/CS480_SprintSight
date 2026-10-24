@@ -1,32 +1,45 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.core.security import hash_password
 from app.repositories.interfaces import (
     AssessmentRepository,
     AuditRepository,
+    AuditRetentionConfig,
+    AuditRetentionConfigRepository,
+    CourseRecord,
     DocumentRecord,
     DocumentRepository,
+    EmailOutboxRecord,
+    EmailOutboxRepository,
+    ExportLogRecord,
+    ExportLogRepository,
     IngestionMetricBundle,
+    InstructorModelSelectionRecord,
+    InstructorModelSelectionRepository,
     JiraIngestionRunRecord,
     JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
+    NotificationRecord,
+    NotificationRepository,
     OverrideRepository,
+    PeerEvaluationConfigRecord,
+    PeerEvaluationRecord,
+    PeerEvaluationRepository,
+    ProjectRecord,
+    ProjectRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
     UserRepository,
-    CourseRecord,
-    ProjectRecord,
-    ProjectRepository,
 )
 from app.schemas.assessment import (
     ActionAuditRecord,
-    AssessRequest,
     AssessmentJobEvent,
     AssessmentJobRecord,
     AssessmentReport,
+    AssessRequest,
     AuditRecord,
     JiraCleanedSnapshot,
     ManualTextPayload,
@@ -59,6 +72,7 @@ class InMemoryUserRepository(UserRepository):
                 full_name="Student User",
                 role=Role.STUDENT,
                 hashed_password=hash_password("password123"),
+                student_number=1,
             ),
         }
 
@@ -70,6 +84,19 @@ class InMemoryUserRepository(UserRepository):
             if user.id == user_id:
                 return user
         return None
+
+    def get_by_student_number(self, student_number: int) -> UserRecord | None:
+        return next((user for user in self._users.values() if user.student_number == student_number), None)
+
+    def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None:
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+        existing = self.get_by_student_number(student_number)
+        if existing and existing.id != user_id:
+            raise ValueError("Student number is already registered.")
+        user.student_number = student_number
+        return user
 
     def record_login(self, user_id: str) -> None:
         return None
@@ -84,6 +111,10 @@ class InMemoryUserRepository(UserRepository):
         return list(self._users.values())
 
     def create_user(self, user: UserRecord) -> UserRecord:
+        if self.get_by_email(user.email):
+            raise ValueError("Email is already registered.")
+        if user.student_number is not None and self.get_by_student_number(user.student_number):
+            raise ValueError("Student number is already registered.")
         self._users[user.email.lower()] = user
         return user
 
@@ -91,6 +122,9 @@ class InMemoryUserRepository(UserRepository):
         user = self.get_by_id(user_id)
         if not user:
             return None
+        existing = self.get_by_email(email)
+        if existing and existing.id != user_id:
+            raise ValueError("Email is already registered.")
         old_email = user.email.lower()
         user.email = email.lower()
         user.full_name = full_name
@@ -144,7 +178,7 @@ class InMemoryProjectRepository(ProjectRepository):
         if (course_id, user_id) in self._enrollments:
             return False
         course = self.get_course(course_id)
-        if course and any(self.get_course(existing_course_id).code.lower() == course.code.lower()
+        if course and any(self.get_course(existing_course_id).code.strip().lower() == course.code.strip().lower()
                           for existing_course_id, existing_user_id in self._enrollments
                           if existing_user_id == user_id and self.get_course(existing_course_id)):
             return False
@@ -159,7 +193,14 @@ class InMemoryProjectRepository(ProjectRepository):
         if enrollment not in self._enrollments:
             return False
         self._enrollments.remove(enrollment)
+        self.remove_student_from_projects_in_course(course_id, user_id)
         return True
+
+    def remove_student_from_projects_in_course(self, course_id: str, user_id: str) -> None:
+        for project_id, member_ids in self._members.items():
+            project = self._projects.get(project_id)
+            if project and project.course_id == course_id and user_id in member_ids:
+                self._members[project_id] = [mid for mid in member_ids if mid != user_id]
 
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
         return [user_id for enrolled_course_id, user_id in self._enrollments if enrolled_course_id == course_id]
@@ -255,13 +296,33 @@ class InMemoryRubricWeightsRepository(RubricWeightsRepository):
             course_id=course_id,
             weights=dict(weights),
             updated_by=updated_by,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         self._weights[course_id] = record
         return record
 
 
 rubric_weights_repo = InMemoryRubricWeightsRepository()
+
+
+class InMemoryInstructorModelSelectionRepository(InstructorModelSelectionRepository):
+    def __init__(self) -> None:
+        self._selections: dict[str, InstructorModelSelectionRecord] = {}
+
+    def get_selection(self, user_id: str) -> InstructorModelSelectionRecord | None:
+        return self._selections.get(user_id)
+
+    def set_selection(self, user_id: str, model_id: str) -> InstructorModelSelectionRecord:
+        record = InstructorModelSelectionRecord(
+            user_id=user_id,
+            model_id=model_id,
+            updated_at=datetime.now(UTC),
+        )
+        self._selections[user_id] = record
+        return record
+
+
+instructor_model_selection_repo = InMemoryInstructorModelSelectionRepository()
 
 
 class InMemoryDocumentRepository(DocumentRepository):
@@ -282,6 +343,112 @@ class InMemoryDocumentRepository(DocumentRepository):
         document = self._documents.get(document_id)
         return document if document and document.project_id == project_id else None
 
+    def delete_document(self, project_id: str, document_id: str) -> DocumentRecord | None:
+        document = self.get_document(project_id, document_id)
+        if document:
+            del self._documents[document_id]
+        return document
+
+
+class InMemoryNotificationRepository(NotificationRepository):
+    def __init__(self) -> None:
+        self._notifications: dict[str, NotificationRecord] = {}
+
+    def create_notification(self, notification: NotificationRecord) -> NotificationRecord:
+        self._notifications[notification.id] = notification
+        return notification
+
+    def list_notifications(self, recipient_id: str, limit: int = 50) -> list[NotificationRecord]:
+        matching = [
+            notification
+            for notification in self._notifications.values()
+            if notification.recipient_id == recipient_id
+        ]
+        return sorted(matching, key=lambda item: (item.created_at, item.id), reverse=True)[:limit]
+
+    def count_unread_notifications(self, recipient_id: str) -> int:
+        return sum(
+            notification.recipient_id == recipient_id and notification.read_at is None
+            for notification in self._notifications.values()
+        )
+
+    def mark_notification_read(
+        self, notification_id: str, recipient_id: str
+    ) -> NotificationRecord | None:
+        notification = self._notifications.get(notification_id)
+        if not notification or notification.recipient_id != recipient_id:
+            return None
+        if notification.read_at is None:
+            notification.read_at = now_utc()
+        return notification
+
+
+class InMemoryEmailOutboxRepository(EmailOutboxRepository):
+    """In-memory stand-in for the durable email outbox (tests and local runs)."""
+
+    def __init__(self) -> None:
+        self._emails: dict[str, EmailOutboxRecord] = {}
+
+    def enqueue_email(self, record: EmailOutboxRecord) -> EmailOutboxRecord:
+        self._emails[record.id] = record
+        return record
+
+    def claim_due_emails(self, now: datetime, limit: int) -> list[EmailOutboxRecord]:
+        due = sorted(
+            (
+                record
+                for record in self._emails.values()
+                if record.status == "pending" and record.scheduled_for <= now
+            ),
+            key=lambda record: (record.scheduled_for, record.created_at, record.id),
+        )[:limit]
+        for record in due:
+            record.status = "sending"
+            record.attempts += 1
+            record.scheduled_for = now
+        return list(due)
+
+    def mark_email_sent(self, email_id: str, sent_at: datetime) -> None:
+        record = self._emails.get(email_id)
+        if record:
+            record.status = "sent"
+            record.sent_at = sent_at
+            record.last_error = None
+
+    def mark_email_failed(
+        self, email_id: str, error: str, retry_after: datetime | None
+    ) -> None:
+        record = self._emails.get(email_id)
+        if record:
+            record.status = "pending" if retry_after else "failed"
+            record.last_error = error
+            record.scheduled_for = retry_after or record.scheduled_for
+
+    def count_emails_sent_since(self, since: datetime) -> int:
+        return sum(
+            record.status == "sent"
+            and record.sent_at is not None
+            and record.sent_at >= since
+            for record in self._emails.values()
+        )
+
+    def requeue_stale_emails(self, cutoff: datetime) -> int:
+        stale = [
+            record
+            for record in self._emails.values()
+            if record.status == "sending" and record.scheduled_for <= cutoff
+        ]
+        for record in stale:
+            record.status = "pending"
+        return len(stale)
+
+    def list_emails(self, limit: int = 50) -> list[EmailOutboxRecord]:
+        return sorted(
+            self._emails.values(),
+            key=lambda record: (record.created_at, record.id),
+            reverse=True,
+        )[:limit]
+
 
 class InMemoryAssessmentRepository(AssessmentRepository):
     def __init__(self) -> None:
@@ -297,7 +464,9 @@ class InMemoryAssessmentRepository(AssessmentRepository):
         report = self._reports.get(report_id)
         if not report:
             return None
-        updated = report.model_copy(update={"override": True, **patch})
+        updated = AssessmentReport.model_validate(
+            {**report.model_dump(), "override": True, **patch}
+        )
         self._reports[report_id] = updated
         return updated
 
@@ -332,7 +501,6 @@ class InMemoryAssessmentJobRepository:
         self._events: dict[str, list[AssessmentJobEvent]] = {}
 
     def create_job(self, payload: "AssessRequest") -> AssessmentJobRecord:
-        from app.schemas.assessment import AssessRequest
 
         job_id = f"job-{uuid4().hex[:12]}"
         now = now_utc()
@@ -408,10 +576,23 @@ class InMemoryAuditRepository(AuditRepository):
         self._audits: list[AuditRecord] = []
 
     def save_audit(self, record: AuditRecord) -> None:
-        self._audits.append(record)
+        if not any(existing.override_id == record.override_id for existing in self._audits):
+            self._audits.append(record)
 
     def list_audits(self) -> list[AuditRecord]:
         return list(self._audits)
+
+    def list_audits_before(self, cutoff: datetime, limit: int) -> list[AuditRecord]:
+        return sorted(
+            (record for record in self._audits if record.timestamp < cutoff),
+            key=lambda record: (record.timestamp, record.override_id),
+        )[:limit]
+
+    def delete_audits(self, override_ids: list[str]) -> int:
+        ids = set(override_ids)
+        original_count = len(self._audits)
+        self._audits = [record for record in self._audits if record.override_id not in ids]
+        return original_count - len(self._audits)
 
 
 class InMemoryActionAuditRepository:
@@ -419,10 +600,58 @@ class InMemoryActionAuditRepository:
         self._audit_actions: list[ActionAuditRecord] = []
 
     def save_action_audit(self, record: ActionAuditRecord) -> None:
-        self._audit_actions.append(record)
+        if not any(existing.audit_id == record.audit_id for existing in self._audit_actions):
+            self._audit_actions.append(record)
 
     def list_action_audits(self) -> list[ActionAuditRecord]:
         return list(self._audit_actions)
+
+    def list_action_audits_before(self, cutoff: datetime, limit: int) -> list[ActionAuditRecord]:
+        return sorted(
+            (record for record in self._audit_actions if record.created_at < cutoff),
+            key=lambda record: (record.created_at, record.audit_id),
+        )[:limit]
+
+    def delete_action_audits(self, audit_ids: list[str]) -> int:
+        ids = set(audit_ids)
+        original_count = len(self._audit_actions)
+        self._audit_actions = [record for record in self._audit_actions if record.audit_id not in ids]
+        return original_count - len(self._audit_actions)
+
+
+class InMemoryAuditRetentionConfigRepository(AuditRetentionConfigRepository):
+    def __init__(
+        self,
+        hot_retention_days: int = 168,
+        action_archive_retention_days: int = 365,
+        override_archive_retention_days: int = 365,
+    ) -> None:
+        self._config = AuditRetentionConfig(
+            hot_retention_days=hot_retention_days,
+            action_archive_retention_days=action_archive_retention_days,
+            override_archive_retention_days=override_archive_retention_days,
+            updated_at=datetime.now(UTC),
+            updated_by=None,
+        )
+
+    def get_config(self) -> AuditRetentionConfig:
+        return self._config
+
+    def update_config(
+        self,
+        hot_retention_days: int,
+        action_archive_retention_days: int,
+        override_archive_retention_days: int,
+        updated_by: str,
+    ) -> AuditRetentionConfig:
+        self._config = AuditRetentionConfig(
+            hot_retention_days=hot_retention_days,
+            action_archive_retention_days=action_archive_retention_days,
+            override_archive_retention_days=override_archive_retention_days,
+            updated_at=datetime.now(UTC),
+            updated_by=updated_by,
+        )
+        return self._config
 
 
 class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
@@ -546,6 +775,70 @@ class InMemoryMetricsRepository(MetricsRepository):
         ), len(ordered_commits)
 
 
+class InMemoryPeerEvaluationRepository(PeerEvaluationRepository):
+    def __init__(self) -> None:
+        self._evaluations: dict[str, PeerEvaluationRecord] = {}
+        self._configs: dict[str, PeerEvaluationConfigRecord] = {}
+
+    def save_evaluation(self, evaluation: PeerEvaluationRecord) -> PeerEvaluationRecord:
+        self._evaluations[evaluation.evaluation_id] = evaluation
+        return evaluation
+
+    def get_evaluation(self, evaluation_id: str) -> PeerEvaluationRecord | None:
+        return self._evaluations.get(evaluation_id)
+
+    def list_evaluations_by_rater(
+        self, rater_id: str, project_id: str | None = None
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e
+            for e in self._evaluations.values()
+            if e.rater_id == rater_id
+            and (project_id is None or e.project_id == project_id)
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def list_evaluations_by_project(
+        self, project_id: str
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e for e in self._evaluations.values() if e.project_id == project_id
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def list_evaluations_by_course(
+        self, course_id: str
+    ) -> list[PeerEvaluationRecord]:
+        matching = [
+            e for e in self._evaluations.values() if e.course_id == course_id
+        ]
+        return sorted(matching, key=lambda e: e.created_at, reverse=True)
+
+    def get_evaluation_by_rater_and_rated(
+        self, rater_id: str, rated_id: str, project_id: str
+    ) -> PeerEvaluationRecord | None:
+        for e in self._evaluations.values():
+            if (
+                e.rater_id == rater_id
+                and e.rated_id == rated_id
+                and e.project_id == project_id
+            ):
+                return e
+        return None
+
+    def save_config(
+        self, config: PeerEvaluationConfigRecord
+    ) -> PeerEvaluationConfigRecord:
+        self._configs[config.course_id] = config
+        return config
+
+    def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None:
+        return self._configs.get(course_id)
+
+
+peer_evaluation_repo = InMemoryPeerEvaluationRepository()
+
+
 users_repo = InMemoryUserRepository()
 manual_text_repo = InMemoryManualTextRepository()
 assessment_repo = InMemoryAssessmentRepository()
@@ -554,9 +847,40 @@ audit_repo = InMemoryAuditRepository()
 audit_action_repo = InMemoryActionAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
 projects_repo = InMemoryProjectRepository()
+class InMemoryExportLogRepository(ExportLogRepository):
+    def __init__(self) -> None:
+        self._logs: dict[str, ExportLogRecord] = {}
+
+    def create_log(self, record: ExportLogRecord) -> ExportLogRecord:
+        self._logs[record.log_id] = record
+        return record
+
+    def get_log(self, download_token: str) -> ExportLogRecord | None:
+        for record in self._logs.values():
+            if record.download_token == download_token:
+                return record
+        return None
+
+    def list_logs(self, user_id: str, limit: int = 50) -> list[ExportLogRecord]:
+        matching = [
+            record
+            for record in self._logs.values()
+            if record.user_id == user_id
+        ]
+        return sorted(matching, key=lambda record: record.created_at, reverse=True)[:limit]
+
+    def count_exports_since(self, user_id: str, since: datetime) -> int:
+        return sum(
+            1
+            for record in self._logs.values()
+            if record.user_id == user_id and record.created_at >= since
+        )
+
+
 jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
 job_repo = InMemoryAssessmentJobRepository()
+export_log_repo = InMemoryExportLogRepository()
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

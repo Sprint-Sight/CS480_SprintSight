@@ -1,7 +1,7 @@
 "use client";
 
-import { BookOpen, Plus, Search, Settings, SlidersHorizontal, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { BookOpen, Plus, Search, Settings, SlidersHorizontal, Users, Upload } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
 import { ProjectCard } from "@/features/projects/components/project-card";
@@ -10,8 +10,11 @@ import { ProjectModal } from "@/features/projects/components/project-modal";
 import { RosterModal } from "@/features/projects/components/roster-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
+import { notifyProjectsUpdated } from "@/features/projects/projects-events";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
+import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
+import { useStudentImport } from "@/features/projects/hooks/use-student-import";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
 const sortOptions = [
@@ -54,9 +57,16 @@ export default function ProjectsPageContent() {
   const [selectedProjectMemberId, setSelectedProjectMemberId] = useState("");
   const [memberToRemove, setMemberToRemove] = useState<{ projectId: string; userId: string; fullName: string } | null>(null);
 
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const { isLoading: isImporting, error: importError, parsedRows, validateAndPreview, submitImport, clearState: clearImportState } = useStudentImport();
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
-  const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string }>>([]);
+  const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
+  const [allStudents, setAllStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
+  const [studentSearchTerm, setStudentSearchTerm] = useState("");
+  const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  const [studentDirectoryError, setStudentDirectoryError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
   const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
@@ -120,14 +130,14 @@ export default function ProjectsPageContent() {
     }
   }
 
-  async function loadCourseStudents() {
+  const loadCourseStudents = useCallback(async () => {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
       setCourseStudents([]);
       return;
     }
 
     try {
-      const students = await apiRequest<Array<{ id: string; email: string; full_name: string }>>(
+      const students = await apiRequest<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>(
         `/courses/${selectedCourseId}/students`
       );
       setCourseStudents(students);
@@ -135,9 +145,26 @@ export default function ProjectsPageContent() {
       console.error("Failed to load course students:", error);
       setCourseStudents([]);
     }
-  }
+  }, [selectedCourseId]);
 
-  async function loadProjects() {
+  const loadAllStudents = useCallback(async () => {
+    setIsLoadingStudents(true);
+    setStudentDirectoryError("");
+    try {
+      const students = await apiRequest<
+        Array<{ id: string; email: string; full_name: string; is_active: boolean; role: string }>
+      >("/users");
+      setAllStudents(students.filter((student) => student.role === "student"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load student accounts.";
+      setStudentDirectoryError(message);
+      console.error("Failed to load student directory:", error);
+    } finally {
+      setIsLoadingStudents(false);
+    }
+  }, []);
+
+  const loadProjects = useCallback(async () => {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
       setProjects([]);
       return;
@@ -178,7 +205,7 @@ export default function ProjectsPageContent() {
       console.error("Failed to load projects:", error);
       setProjects([]);
     }
-  }
+  }, [selectedCourseId]);
 
   useEffect(() => {
     reloadCourses();
@@ -187,7 +214,11 @@ export default function ProjectsPageContent() {
   useEffect(() => {
     loadCourseStudents();
     loadProjects();
-  }, [selectedCourseId]);
+  }, [selectedCourseId, loadCourseStudents, loadProjects]);
+
+  useEffect(() => {
+    if (isRosterModalOpen) void loadAllStudents();
+  }, [isRosterModalOpen, loadAllStudents]);
 
   const appliedFilterCount = useMemo(() => {
     let count = 0;
@@ -308,6 +339,7 @@ export default function ProjectsPageContent() {
           body: JSON.stringify(updatePayload),
         });
         await loadProjects();
+        notifyProjectsUpdated();
         window.alert("Project updated.");
       } else {
         await apiRequest(`/courses/${selectedCourseId}/projects`, {
@@ -315,6 +347,7 @@ export default function ProjectsPageContent() {
           body: JSON.stringify(projectPayload),
         });
         await loadProjects();
+        notifyProjectsUpdated();
         window.alert("Project created.");
       }
       setIsProjectModalOpen(false);
@@ -378,39 +411,72 @@ export default function ProjectsPageContent() {
     }
   }
 
-  async function handleEnrollStudent() {
-    if (!selectedCourseId || !isUuid(selectedCourseId)) {
-      window.alert("Please select a valid course before enrolling students.");
-      return;
-    }
-
+  async function handleCreateStudent() {
     const trimmedEmail = studentForm.email.trim().toLowerCase();
     const trimmedName = studentForm.full_name.trim();
-    const password = studentForm.password;
+    const fallbackPassword = studentForm.password;
 
-    if (!trimmedEmail || !trimmedName || !password) {
-      window.alert("Student name, email, and password are required.");
+    if (!trimmedEmail || !trimmedName) {
+      window.alert("Student name and email are required.");
       return;
     }
-    if (password.length < 8) {
-      window.alert("The student password must be at least 8 characters.");
-      return;
-    }
-    if (courseStudents.some((student) => student.email.trim().toLowerCase() === trimmedEmail)) {
-      window.alert("This student is already enrolled in the selected course. Their existing password was not changed.");
+    if (fallbackPassword && fallbackPassword.length < 8) {
+      window.alert("The fallback password must be at least 8 characters.");
       return;
     }
 
     try {
-      const student = await apiRequest<{ id: string; email: string; full_name: string; must_change_password?: boolean }>(`/courses/${selectedCourseId}/students`, {
+      const student = await apiRequest<{
+        id: string;
+        email: string;
+        full_name: string;
+        signup_email_sent: boolean;
+      }>("/users", {
         method: "POST",
-        body: JSON.stringify({ email: trimmedEmail, full_name: trimmedName, password }),
+        body: JSON.stringify({
+          email: trimmedEmail,
+          full_name: trimmedName,
+          ...(fallbackPassword ? { password: fallbackPassword } : {}),
+        }),
       });
 
-      window.alert(`Student ${student.full_name} created and enrolled. They can log in with ${student.email} and the password entered here, then change it after first login.`);
+      if (student.signup_email_sent) {
+        window.alert(
+          `Student ${student.full_name} was created. A first-time password setup link was queued for delivery to ${student.email}.${
+            fallbackPassword
+              ? " They can also log in once with the fallback password you set."
+              : ""
+          } Enroll them in a course from the student directory below.`,
+        );
+      } else {
+        window.alert(
+          `Student ${student.full_name} was created, but the setup email could not be queued. Check the backend SMTP configuration and logs.${
+            fallbackPassword
+              ? " They can still log in once with the fallback password you set."
+              : " You can enroll them in a course from the student directory below."
+          }`,
+        );
+      }
 
       setStudentForm({ email: "", full_name: "", password: "" });
+      await loadAllStudents();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to create student.");
+    }
+  }
+
+  async function handleEnrollExistingStudent(userId: string) {
+    if (!selectedCourseId || !isUuid(selectedCourseId)) {
+      window.alert("Please select a valid course before enrolling students.");
+      return;
+    }
+    try {
+      const student = await apiRequest<{ full_name: string }>(
+        `/courses/${selectedCourseId}/students/${userId}`,
+        { method: "POST" },
+      );
       await loadCourseStudents();
+      window.alert(`${student.full_name} was enrolled in this course.`);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to enroll student.");
     }
@@ -472,6 +538,7 @@ export default function ProjectsPageContent() {
     try {
       await apiRequest(`/projects/${projectForMemberSelection.id}/members/${selectedProjectMemberId}`, { method: "POST" });
       await loadProjects();
+      notifyProjectsUpdated();
       setProjectForMemberSelection(null);
       setSelectedProjectMemberId("");
       window.alert("Student added to the project.");
@@ -495,12 +562,12 @@ export default function ProjectsPageContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100">
-            <button type="button" onClick={handleOpenCreateCourse} title="Create a new course" className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100">
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100 h-11">
+            <button type="button" onClick={handleOpenCreateCourse} title="Create a new course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100">
               <Plus className="h-4 w-4" />
             </button>
 
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-0">
               <BookOpen className="h-4 w-4 text-slate-400" />
               <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="h-9 min-w-[220px] appearance-none bg-transparent pr-5 text-sm font-semibold text-slate-700 outline-none">
                 {courses.length === 0 ? (
@@ -515,14 +582,19 @@ export default function ProjectsPageContent() {
               </select>
             </div>
 
-            <button type="button" onClick={handleOpenEditCourse} title="Edit selected course" className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
+            <button type="button" onClick={handleOpenEditCourse} title="Edit selected course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
               <Settings className="h-4 w-4" />
             </button>
           </div>
 
-          <button type="button" onClick={() => setIsRosterModalOpen(true)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
+          <button type="button" onClick={() => { setStudentSearchTerm(""); setIsRosterModalOpen(true); }} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
             <Users className="h-4 w-4 text-slate-500" />
-            Roster
+            Students
+          </button>
+
+          <button type="button" onClick={() => setIsImportModalOpen(true)} disabled={!selectedCourseId} title="Bulk import students from CSV" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+            <Upload className="h-4 w-4 text-slate-500" />
+            Import Students
           </button>
 
           <button type="button" onClick={handleOpenCreateProject} disabled={!selectedCourseId} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
@@ -592,20 +664,64 @@ export default function ProjectsPageContent() {
 
       <RosterModal
         isOpen={isRosterModalOpen}
+        hasSelectedCourse={Boolean(selectedCourseId && isUuid(selectedCourseId))}
         courseStudents={courseStudents}
+        allStudents={allStudents}
+        studentSearchTerm={studentSearchTerm}
+        isLoadingStudents={isLoadingStudents}
+        studentDirectoryError={studentDirectoryError}
         studentForm={studentForm}
         onClose={() => {
           setIsRosterModalOpen(false);
         }}
-        onEnroll={handleEnrollStudent}
+        onCreateStudent={handleCreateStudent}
+        onEnrollExisting={handleEnrollExistingStudent}
         onUnenroll={handleUnenrollStudent}
+        onRefreshStudents={() => void loadAllStudents()}
+        setStudentSearchTerm={setStudentSearchTerm}
         setStudentForm={setStudentForm}
+      />
+
+      <CSVImportModal
+        isOpen={isImportModalOpen}
+        courseId={selectedCourseId}
+        courseName={
+          selectedCourseId
+            ? courses.find((c) => c.id === selectedCourseId)
+              ? `${courses.find((c) => c.id === selectedCourseId)?.code} · ${courses.find((c) => c.id === selectedCourseId)?.section}`
+              : "Unknown Course"
+            : "No Course Selected"
+        }
+        onClose={() => {
+          setIsImportModalOpen(false);
+          clearImportState();
+        }}
+        onValidatePreview={validateAndPreview}
+        onSubmit={async () => {
+          const result = await submitImport(selectedCourseId);
+          await loadProjects();
+          await loadCourseStudents();
+          notifyProjectsUpdated();
+          return result;
+        }}
+        isLoading={isImporting}
+        error={importError}
+        parsedRows={parsedRows}
       />
 
       <ProjectMembersModal
         isOpen={Boolean(projectForMemberSelection)}
         projectName={projectForMemberSelection?.team_name || "this project"}
+        hasEnrolledStudents={courseStudents.length > 0}
         availableStudents={courseStudents.filter((student) => !projects.some((project) => project.members.some((member) => member.id === student.id)))}
+        assignedStudents={courseStudents.flatMap((student) => {
+          const assignedProject = projects.find((project) =>
+            project.members.some((member) => member.id === student.id),
+          );
+          return assignedProject
+            ? [{ ...student, projectName: assignedProject.team_name }]
+            : [];
+        })}
         selectedStudentId={selectedProjectMemberId}
         onClose={() => { setProjectForMemberSelection(null); setSelectedProjectMemberId(""); }}
         onSelectStudent={setSelectedProjectMemberId}
