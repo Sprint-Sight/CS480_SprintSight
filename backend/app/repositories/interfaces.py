@@ -435,7 +435,6 @@ class PeerEvaluationRecord:
     rated_id: str          # The student being evaluated
     score: int             # 1-5
     remarks: str | None    # Optional remarks
-    reason: str | None     # Reason for the score
     created_at: datetime
 
 
@@ -443,9 +442,10 @@ class PeerEvaluationRecord:
 class PeerEvaluationConfigRecord:
     course_id: str
     is_open: bool
-    expires_at: datetime | None
     updated_by: str
     updated_at: datetime
+    opens_at: datetime | None = None
+    expires_at: datetime | None = None
 
 
 class PeerEvaluationRepository(Protocol):
@@ -472,3 +472,5 @@ class PeerEvaluationRepository(Protocol):
     def save_config(self, config: PeerEvaluationConfigRecord) -> PeerEvaluationConfigRecord: ...
 
     def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None: ...
+
+    def delete_evaluation(self, evaluation_id: str) -> bool: ...

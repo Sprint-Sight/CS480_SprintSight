@@ -2,11 +2,12 @@
 
 Covers:
 - Instructor configuring the evaluation window (open/close + expiry)
-- Students submitting 1-5 ratings with remarks/reason for group members
+- Students submitting 1-5 ratings with remarks for group members
 - Students only seeing their own evaluations (not others')
 - Instructors seeing all evaluations for a project/course
 - Evaluation window enforcement (closed/expired blocks submissions)
-- Re-submission updating an existing evaluation
+- Students updating their own evaluations (PATCH)
+- Students/instructors deleting evaluations (DELETE)
 """
 
 from datetime import UTC, datetime, timedelta
@@ -155,6 +156,53 @@ def test_instructor_sets_peer_evaluation_config(override_user_repository) -> Non
         _clear_overrides()
 
 
+def test_instructor_patch_peer_evaluation_config(override_user_repository) -> None:
+    """Instructor can update the evaluation window (open/close + expiry) via PATCH."""
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("faculty@sprintsight.edu")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # First open the window
+        client.post(
+            f"/api/v1/peer-evaluation/courses/{course.id}/config",
+            json={"is_open": True, "expires_at": None},
+            headers=headers,
+        )
+
+        # Then update via PATCH: close it and set a new expiry
+        new_expiry = datetime.now(UTC) + timedelta(days=14)
+        response = client.patch(
+            f"/api/v1/peer-evaluation/courses/{course.id}/config",
+            json={
+                "is_open": True,
+                "expires_at": new_expiry.isoformat(),
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["course_id"] == course.id
+        assert data["is_open"] is True
+        assert data["expires_at"] is not None
+
+        # Now close it
+        response = client.patch(
+            f"/api/v1/peer-evaluation/courses/{course.id}/config",
+            json={"is_open": False, "expires_at": None},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["is_open"] is False
+    finally:
+        _clear_overrides()
+
+
 def test_instructor_gets_peer_evaluation_config(override_user_repository) -> None:
     project_repository, course, user_repository, project = _setup_course_with_project()
     peer_eval_repo = InMemoryPeerEvaluationRepository()
@@ -253,7 +301,6 @@ def test_student_submits_peer_evaluation(override_user_repository) -> None:
                 "rated_id": "u-student-b",
                 "score": 4,
                 "remarks": "Great teamwork.",
-                "reason": "Consistently delivered on time.",
             },
             headers=headers,
         )
@@ -263,7 +310,6 @@ def test_student_submits_peer_evaluation(override_user_repository) -> None:
         assert data["rated_id"] == "u-student-b"
         assert data["score"] == 4
         assert data["remarks"] == "Great teamwork."
-        assert data["reason"] == "Consistently delivered on time."
         assert data["project_id"] == "proj-peer-1"
     finally:
         _clear_overrides()
@@ -427,7 +473,6 @@ def test_resubmission_updates_existing_evaluation(override_user_repository) -> N
                 "rated_id": "u-student-b",
                 "score": 3,
                 "remarks": "OK work.",
-                "reason": "Met deadlines.",
             },
             headers=headers,
         )
@@ -442,7 +487,6 @@ def test_resubmission_updates_existing_evaluation(override_user_repository) -> N
                 "rated_id": "u-student-b",
                 "score": 5,
                 "remarks": "Improved a lot.",
-                "reason": "Stepped up in the final sprint.",
             },
             headers=headers,
         )
@@ -461,6 +505,284 @@ def test_resubmission_updates_existing_evaluation(override_user_repository) -> N
         mine = my_evals.json()
         matching = [e for e in mine if e["rated_id"] == "u-student-b"]
         assert len(matching) == 1
+    finally:
+        _clear_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Student: patch (update) own evaluation
+# ---------------------------------------------------------------------------
+
+
+def test_student_patches_own_evaluation(override_user_repository) -> None:
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            expires_at=None,
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("student.a@sprintsight.edu")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # First submission
+        resp = client.post(
+            "/api/v1/peer-evaluation/evaluations",
+            json={
+                "project_id": "proj-peer-1",
+                "rated_id": "u-student-b",
+                "score": 3,
+                "remarks": "OK work.",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        eval_id = resp.json()["evaluation_id"]
+
+        # PATCH: update score and remarks
+        patch_resp = client.patch(
+            f"/api/v1/peer-evaluation/evaluations/{eval_id}",
+            json={
+                "score": 5,
+                "remarks": "Much better now.",
+            },
+            headers=headers,
+        )
+        assert patch_resp.status_code == 200, patch_resp.text
+        data = patch_resp.json()
+        assert data["evaluation_id"] == eval_id
+        assert data["score"] == 5
+        assert data["remarks"] == "Much better now."
+
+        # PATCH: update only remarks
+        patch_resp2 = client.patch(
+            f"/api/v1/peer-evaluation/evaluations/{eval_id}",
+            json={
+                "remarks": "Final thoughts.",
+            },
+            headers=headers,
+        )
+        assert patch_resp2.status_code == 200, patch_resp2.text
+        data2 = patch_resp2.json()
+        assert data2["score"] == 5  # unchanged
+        assert data2["remarks"] == "Final thoughts."
+    finally:
+        _clear_overrides()
+
+
+def test_student_cannot_patch_another_students_evaluation(
+    override_user_repository,
+) -> None:
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            expires_at=None,
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token_a = _token_for("student.a@sprintsight.edu")
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+        token_b = _token_for("student.b@sprintsight.edu")
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        # Student A creates an evaluation
+        resp = client.post(
+            "/api/v1/peer-evaluation/evaluations",
+            json={
+                "project_id": "proj-peer-1",
+                "rated_id": "u-student-b",
+                "score": 4,
+                "remarks": "Good job.",
+            },
+            headers=headers_a,
+        )
+        assert resp.status_code == 201
+        eval_id = resp.json()["evaluation_id"]
+
+        # Student B tries to patch Student A's evaluation
+        patch_resp = client.patch(
+            f"/api/v1/peer-evaluation/evaluations/{eval_id}",
+            json={"score": 1},
+            headers=headers_b,
+        )
+        assert patch_resp.status_code == 403, patch_resp.text
+    finally:
+        _clear_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Student: delete own evaluation
+# ---------------------------------------------------------------------------
+
+
+def test_student_deletes_own_evaluation(override_user_repository) -> None:
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            expires_at=None,
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("student.a@sprintsight.edu")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Create an evaluation
+        resp = client.post(
+            "/api/v1/peer-evaluation/evaluations",
+            json={
+                "project_id": "proj-peer-1",
+                "rated_id": "u-student-b",
+                "score": 4,
+                "remarks": "To be deleted.",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        eval_id = resp.json()["evaluation_id"]
+
+        # Delete it
+        del_resp = client.delete(
+            f"/api/v1/peer-evaluation/evaluations/{eval_id}",
+            headers=headers,
+        )
+        assert del_resp.status_code == 204, del_resp.text
+
+        # Verify it's gone from "mine"
+        mine = client.get(
+            "/api/v1/peer-evaluation/evaluations/mine",
+            headers=headers,
+        )
+        assert mine.status_code == 200
+        assert len(mine.json()) == 0
+    finally:
+        _clear_overrides()
+
+
+def test_student_cannot_delete_another_students_evaluation(
+    override_user_repository,
+) -> None:
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            expires_at=None,
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token_a = _token_for("student.a@sprintsight.edu")
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+        token_b = _token_for("student.b@sprintsight.edu")
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        # Student A creates an evaluation
+        resp = client.post(
+            "/api/v1/peer-evaluation/evaluations",
+            json={
+                "project_id": "proj-peer-1",
+                "rated_id": "u-student-b",
+                "score": 4,
+                "remarks": "Good job.",
+            },
+            headers=headers_a,
+        )
+        assert resp.status_code == 201
+        eval_id = resp.json()["evaluation_id"]
+
+        # Student B tries to delete Student A's evaluation
+        del_resp = client.delete(
+            f"/api/v1/peer-evaluation/evaluations/{eval_id}",
+            headers=headers_b,
+        )
+        assert del_resp.status_code == 403, del_resp.text
+    finally:
+        _clear_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Instructor: delete any evaluation
+# ---------------------------------------------------------------------------
+
+
+def test_instructor_can_delete_any_evaluation(override_user_repository) -> None:
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            expires_at=None,
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token_a = _token_for("student.a@sprintsight.edu")
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+        token_faculty = _token_for("faculty@sprintsight.edu")
+        headers_faculty = {"Authorization": f"Bearer {token_faculty}"}
+
+        # Student A creates an evaluation
+        resp = client.post(
+            "/api/v1/peer-evaluation/evaluations",
+            json={
+                "project_id": "proj-peer-1",
+                "rated_id": "u-student-b",
+                "score": 4,
+                "remarks": "Good job.",
+            },
+            headers=headers_a,
+        )
+        assert resp.status_code == 201
+        eval_id = resp.json()["evaluation_id"]
+
+        # Instructor deletes it
+        del_resp = client.delete(
+            f"/api/v1/peer-evaluation/evaluations/{eval_id}",
+            headers=headers_faculty,
+        )
+        assert del_resp.status_code == 204, del_resp.text
+
+        # Verify instructor no longer sees it
+        proj_evals = client.get(
+            "/api/v1/peer-evaluation/projects/proj-peer-1/evaluations",
+            headers=headers_faculty,
+        )
+        assert proj_evals.status_code == 200
+        assert len(proj_evals.json()["evaluations"]) == 0
     finally:
         _clear_overrides()
 
@@ -499,7 +821,6 @@ def test_student_sees_only_own_evaluations(override_user_repository) -> None:
                 "rated_id": "u-student-b",
                 "score": 4,
                 "remarks": "Good job.",
-                "reason": "Reliable.",
             },
             headers=headers_a,
         )
@@ -511,7 +832,6 @@ def test_student_sees_only_own_evaluations(override_user_repository) -> None:
                 "rated_id": "u-student-a",
                 "score": 5,
                 "remarks": "Great partner.",
-                "reason": "Excellent communication.",
             },
             headers=headers_b,
         )
@@ -574,7 +894,6 @@ def test_instructor_sees_all_project_evaluations(override_user_repository) -> No
                 "rated_id": "u-student-b",
                 "score": 4,
                 "remarks": "Good job.",
-                "reason": "Reliable.",
             },
             headers=headers_a,
         )
@@ -585,7 +904,6 @@ def test_instructor_sees_all_project_evaluations(override_user_repository) -> No
                 "rated_id": "u-student-a",
                 "score": 5,
                 "remarks": "Great partner.",
-                "reason": "Excellent communication.",
             },
             headers=headers_b,
         )
@@ -657,6 +975,175 @@ def test_instructor_sees_all_course_evaluations(override_user_repository) -> Non
 
 
 def test_instructor_403_viewing_other_course_evaluations(override_user_repository) -> None:
+    project_repository = InMemoryProjectRepository()
+    user_repository = InMemoryUserRepository()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+
+    other_instructor = UserRecord(
+        id="u-other-instr-2",
+        email="other2.instr@sprintsight.edu",
+        full_name="Other Instructor 2",
+        role=Role.INSTRUCTOR,
+        hashed_password="x",
+    )
+    user_repository.create_user(other_instructor)
+    course = project_repository.create_course(
+        "CS499", "Other Course", "A", 2026, "Fall", "u-other-instr-2",
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("faculty@sprintsight.edu")
+        headers = {"Authorization": f"Bearer {token}"}
+        response = client.get(
+            f"/api/v1/peer-evaluation/courses/{course.id}/evaluations",
+            headers=headers,
+        )
+        assert response.status_code == 403, response.text
+    finally:
+        _clear_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Student: evaluation status with opens_at (scheduled open/close)
+# ---------------------------------------------------------------------------
+
+
+def test_student_cannot_evaluate_before_opens_at(override_user_repository) -> None:
+    """Student cannot submit when opens_at is in the future, even if is_open=True."""
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            opens_at=datetime.now(UTC) + timedelta(days=7),  # opens next week
+            expires_at=None,
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("student.a@sprintsight.edu")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Status should show can_evaluate=False
+        status_resp = client.get(
+            f"/api/v1/peer-evaluation/courses/{course.id}/status",
+            headers=headers,
+        )
+        assert status_resp.status_code == 200
+        status_data = status_resp.json()
+        assert status_data["can_evaluate"] is False
+        assert status_data["is_open"] is True
+        assert status_data["opens_at"] is not None
+
+        # Submission should be rejected
+        submit_resp = client.post(
+            "/api/v1/peer-evaluation/evaluations",
+            json={
+                "project_id": "proj-peer-1",
+                "rated_id": "u-student-b",
+                "score": 4,
+            },
+            headers=headers,
+        )
+        assert submit_resp.status_code == 403, submit_resp.text
+    finally:
+        _clear_overrides()
+
+
+def test_student_can_evaluate_after_opens_at(override_user_repository) -> None:
+    """Student can submit once opens_at has passed."""
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            opens_at=datetime.now(UTC) - timedelta(minutes=5),  # opened 5 min ago
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("student.a@sprintsight.edu")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Status should show can_evaluate=True
+        status_resp = client.get(
+            f"/api/v1/peer-evaluation/courses/{course.id}/status",
+            headers=headers,
+        )
+        assert status_resp.status_code == 200
+        status_data = status_resp.json()
+        assert status_data["can_evaluate"] is True
+        assert status_data["is_open"] is True
+
+        # Submission should succeed
+        submit_resp = client.post(
+            "/api/v1/peer-evaluation/evaluations",
+            json={
+                "project_id": "proj-peer-1",
+                "rated_id": "u-student-b",
+                "score": 4,
+                "remarks": "Great work.",
+            },
+            headers=headers,
+        )
+        assert submit_resp.status_code == 201, submit_resp.text
+    finally:
+        _clear_overrides()
+
+
+def test_instructor_sets_opens_at_and_expires_at(override_user_repository) -> None:
+    """Instructor can set both opens_at and expires_at in one config call."""
+    project_repository, course, user_repository, project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("faculty@sprintsight.edu")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        opens = datetime.now(UTC) + timedelta(days=1)
+        expires = datetime.now(UTC) + timedelta(days=7)
+
+        response = client.post(
+            f"/api/v1/peer-evaluation/courses/{course.id}/config",
+            json={
+                "is_open": True,
+                "opens_at": opens.isoformat(),
+                "expires_at": expires.isoformat(),
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["is_open"] is True
+        assert data["opens_at"] is not None
+        assert data["expires_at"] is not None
+
+        # GET config should return both dates
+        get_resp = client.get(
+            f"/api/v1/peer-evaluation/courses/{course.id}/config",
+            headers=headers,
+        )
+        assert get_resp.status_code == 200
+        get_data = get_resp.json()
+        assert get_data["opens_at"] is not None
+        assert get_data["expires_at"] is not None
+    finally:
+        _clear_overrides()
     project_repository = InMemoryProjectRepository()
     user_repository = InMemoryUserRepository()
     peer_eval_repo = InMemoryPeerEvaluationRepository()

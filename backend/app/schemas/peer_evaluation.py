@@ -14,8 +14,16 @@ class PeerEvaluationCreate(BaseModel):
     remarks: str | None = Field(
         default=None, max_length=1000, description="Optional remarks about the member."
     )
-    reason: str | None = Field(
-        default=None, max_length=1000, description="Reason for the score."
+
+
+class PeerEvaluationUpdate(BaseModel):
+    """Request to update an existing peer evaluation (score and/or remarks)."""
+
+    score: int | None = Field(
+        default=None, ge=1, le=5, description="Rating from 1 to 5."
+    )
+    remarks: str | None = Field(
+        default=None, max_length=1000, description="Optional remarks about the member."
     )
 
 
@@ -29,7 +37,6 @@ class PeerEvaluationResponse(BaseModel):
     rated_id: str
     score: int
     remarks: str | None
-    reason: str | None
     created_at: datetime
 
 
@@ -47,7 +54,6 @@ class PeerEvaluationInstructorView(BaseModel):
     rated_full_name: str
     score: int
     remarks: str | None
-    reason: str | None
     created_at: datetime
 
 
@@ -55,6 +61,10 @@ class PeerEvaluationConfigCreate(BaseModel):
     """Request to open/close peer evaluation for a course."""
 
     is_open: bool = Field(..., description="Whether peer evaluation is currently open.")
+    opens_at: datetime | None = Field(
+        default=None,
+        description="Date when peer evaluation opens. If null and is_open=True, opens immediately.",
+    )
     expires_at: datetime | None = Field(
         default=None,
         description="Expiry date after which students cannot submit evaluations.",
@@ -66,6 +76,7 @@ class PeerEvaluationConfigResponse(BaseModel):
 
     course_id: str
     is_open: bool
+    opens_at: datetime | None
     expires_at: datetime | None
     updated_by: str
     updated_at: datetime
@@ -98,5 +109,6 @@ class EvaluationStatusResponse(BaseModel):
 
     can_evaluate: bool
     is_open: bool
+    opens_at: datetime | None
     expires_at: datetime | None
     message: str
