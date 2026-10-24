@@ -8,6 +8,8 @@ import {
 } from "@/features/assessment/components/assessment-report-sections";
 import { toSprintAssessmentReport, useAssessmentReport } from "@/features/assessment/hooks/use-assessment-report";
 import { useAssessmentReportEditor } from "@/features/assessment/hooks/use-assessment-report-editor";
+import { useAssessmentExport } from "@/features/assessment/hooks/use-assessment-export";
+import { ExportModal } from "@/features/assessment/components/export-modal";
 import { InstructorAiFeedbackModal } from "@/features/instructor-feedback/components/instructor-ai-feedback-modal";
 import { StudentAssessmentReport } from "@/features/assessment/components/student-assessment-report";
 import { useStudentProjectContext } from "@/features/student/hooks/use-student-project-context";
@@ -19,6 +21,46 @@ export default function AssessmentReportPageContent() {
   const studentContext = useStudentProjectContext(assessment.role === "student");
   const scope = assessment.scope;
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  const exportManager = useAssessmentExport();
+
+  const handleExportButtonClick = async () => {
+    setIsExportModalOpen(true);
+    if (scope?.courseId && scope?.projectId && scope?.sprintId) {
+      await exportManager.loadPreview({
+        courseId: scope.courseId,
+        projectId: scope.projectId,
+        sprintId: scope.sprintId,
+      });
+    }
+  };
+
+  const handleCloseExportModal = () => {
+    setIsExportModalOpen(false);
+    exportManager.reset();
+  };
+
+  const handleExportPDF = async () => {
+    if (scope?.courseId && scope?.projectId && scope?.sprintId) {
+      await exportManager.handleExportPDF({
+        courseId: scope.courseId,
+        projectId: scope.projectId,
+        sprintId: scope.sprintId,
+      });
+    }
+  };
+
+  const handleExportCSV = async () => {
+    if (scope?.courseId && scope?.projectId && scope?.sprintId) {
+      await exportManager.handleExportCSV({
+        courseId: scope.courseId,
+        projectId: scope.projectId,
+        sprintId: scope.sprintId,
+      });
+    }
+  };
+
   const editor = useAssessmentReportEditor({
     report: assessment.report,
     backendReport: assessment.backendReport,
@@ -104,12 +146,29 @@ export default function AssessmentReportPageContent() {
               </button>
             </>
           )}
-          <button type="button" className="inline-flex h-11 items-center gap-2 self-end rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white">
+          <button
+            type="button"
+            onClick={handleExportButtonClick}
+            disabled={!assessment.report.reportId || assessment.isLoadingReport || assessment.isGenerating}
+            className="inline-flex h-11 items-center gap-2 self-end rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+          >
             <Download className="h-4 w-4" />
-            Download PDF
+            Export Report
           </button>
         </div>
       </div>
+
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={handleCloseExportModal}
+        previewData={exportManager.previewData}
+        isLoading={exportManager.state === "loading-preview"}
+        isExporting={exportManager.state === "exporting"}
+        selectedFormat={exportManager.selectedFormat}
+        error={exportManager.error}
+        onExportPDF={handleExportPDF}
+        onExportCSV={handleExportCSV}
+      />
 
       <section className="grid gap-3 border-y border-slate-200 py-4 text-sm sm:grid-cols-3">
         <div><span className="block text-xs font-semibold uppercase text-slate-500">Course / Section</span><span className="font-medium text-slate-900">{scope?.courseLabel || "No valid course selected"}</span></div>
