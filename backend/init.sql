@@ -337,6 +337,39 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_commits_student_id ON ingestion_commits
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run_timestamp_sha
     ON ingestion_commits(ingestion_run_id, timestamp, sha);
 
+-- =============================================================
+-- PEER EVALUATIONS
+-- Students rate their project group members (1-5) with remarks and reason.
+-- Instructors control the evaluation window and view all evaluations.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS peer_evaluations (
+    evaluation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    rater_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    rated_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 5),
+    remarks TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (rater_id, rated_id, project_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_peer_eval_project
+    ON peer_evaluations(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_peer_eval_rater
+    ON peer_evaluations(rater_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_peer_eval_rated
+    ON peer_evaluations(rated_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS peer_evaluation_configs (
+    course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
+    is_open BOOLEAN NOT NULL DEFAULT FALSE,
+    opens_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    updated_by UUID NOT NULL REFERENCES users(user_id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Audit history is retained independently from users and other business rows.
 CREATE TABLE IF NOT EXISTS action_audit_events (
     audit_id TEXT PRIMARY KEY,

@@ -35,6 +35,7 @@ from app.schemas.peer_evaluation import (
     PeerEvaluationCreate,
     PeerEvaluationResponse,
     PeerEvaluationSummary,
+    PeerEvaluationUpdate,
 )
 from app.services.peerEvaluationService.service import PeerEvaluationService
 
@@ -75,6 +76,40 @@ def set_peer_evaluation_config(
 ) -> PeerEvaluationConfigResponse:
     """Open or close peer evaluation for a course and set an expiry date.
 
+    Only instructors assigned to the course may call this.
+    """
+    if not projects.is_instructor_assigned(course_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not assigned to teach this course.",
+        )
+
+    service = _get_service(
+        current_user=current_user,
+        projects=projects,
+        users=None,  # not needed for config
+        evaluations=evaluations,
+        action_audits=action_audits,
+    )
+    return service.set_evaluation_config(course_id, payload, current_user.id)
+
+
+@router.patch(
+    "/courses/{course_id}/config",
+    response_model=PeerEvaluationConfigResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_peer_evaluation_config(
+    course_id: str,
+    payload: PeerEvaluationConfigCreate,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    evaluations: Annotated[PeerEvaluationRepository, Depends(get_peer_evaluation_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+) -> PeerEvaluationConfigResponse:
+    """Update the peer evaluation configuration for a course.
+
+    Instructors can open/close the evaluation window and change the expiry date.
     Only instructors assigned to the course may call this.
     """
     if not projects.is_instructor_assigned(course_id, current_user.id):
@@ -161,6 +196,75 @@ def submit_peer_evaluation(
 
 
 # ------------------------------------------------------------------
+# Student: update own evaluation (PATCH)
+# ------------------------------------------------------------------
+
+@router.patch(
+    "/evaluations/{evaluation_id}",
+    response_model=PeerEvaluationResponse,
+)
+def update_peer_evaluation(
+    evaluation_id: str,
+    payload: PeerEvaluationUpdate,
+    current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    evaluations: Annotated[PeerEvaluationRepository, Depends(get_peer_evaluation_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> PeerEvaluationResponse:
+    """Update a peer evaluation (score and/or remarks).
+
+    Only the rater who created the evaluation can update it.
+    The evaluation window must still be open and not expired.
+    """
+    if current_user.role not in (Role.STUDENT,):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only students can update peer evaluations.",
+        )
+
+    service = _get_service(
+        current_user=current_user,
+        projects=projects,
+        users=users,
+        evaluations=evaluations,
+        action_audits=action_audits,
+    )
+    return service.update_evaluation(evaluation_id, payload, current_user.id)
+
+
+# ------------------------------------------------------------------
+# Student / Instructor: delete evaluation
+# ------------------------------------------------------------------
+
+@router.delete(
+    "/evaluations/{evaluation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_peer_evaluation(
+    evaluation_id: str,
+    current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    evaluations: Annotated[PeerEvaluationRepository, Depends(get_peer_evaluation_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> None:
+    """Delete a peer evaluation.
+
+    - The rater can delete their own evaluation.
+    - An instructor assigned to the course can delete any evaluation.
+    """
+    service = _get_service(
+        current_user=current_user,
+        projects=projects,
+        users=users,
+        evaluations=evaluations,
+        action_audits=action_audits,
+    )
+    service.delete_evaluation(evaluation_id, current_user.id, current_user.role)
+
+
+# ------------------------------------------------------------------
 # Student: view own evaluations
 # ------------------------------------------------------------------
 
@@ -230,6 +334,7 @@ def get_peer_evaluation_status(
     return EvaluationStatusResponse(
         can_evaluate=status_info["can_evaluate"],
         is_open=status_info["is_open"],
+        opens_at=status_info["opens_at"],
         expires_at=status_info["expires_at"],
         message=status_info["message"],
     )

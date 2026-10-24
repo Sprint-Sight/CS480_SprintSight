@@ -24,6 +24,7 @@ from app.schemas.peer_evaluation import (
     PeerEvaluationInstructorView,
     PeerEvaluationResponse,
     PeerEvaluationSummary,
+    PeerEvaluationUpdate,
 )
 from app.services.auditLogService.service import append_action_audit
 
@@ -55,6 +56,7 @@ class PeerEvaluationService:
         config = PeerEvaluationConfigRecord(
             course_id=course_id,
             is_open=payload.is_open,
+            opens_at=payload.opens_at,
             expires_at=payload.expires_at,
             updated_by=current_user_id,
             updated_at=datetime.now(UTC),
@@ -79,6 +81,7 @@ class PeerEvaluationService:
         return PeerEvaluationConfigResponse(
             course_id=saved.course_id,
             is_open=saved.is_open,
+            opens_at=saved.opens_at,
             expires_at=saved.expires_at,
             updated_by=saved.updated_by,
             updated_at=saved.updated_at,
@@ -93,20 +96,33 @@ class PeerEvaluationService:
         return PeerEvaluationConfigResponse(
             course_id=config.course_id,
             is_open=config.is_open,
+            opens_at=config.opens_at,
             expires_at=config.expires_at,
             updated_by=config.updated_by,
             updated_at=config.updated_at,
         )
 
     def _check_evaluation_window(self, course_id: str) -> None:
-        """Raise if peer evaluation is not currently open for the course."""
+        """Raise if peer evaluation is not currently open for the course.
+
+        An evaluation is open when:
+        - config.is_open is True, AND
+        - opens_at is None OR now >= opens_at, AND
+        - expires_at is None OR now <= expires_at
+        """
         config = self._peer_evaluation_repository.get_config(course_id)
         if config is None or not config.is_open:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Peer evaluation is not currently open for this course.",
             )
-        if config.expires_at is not None and datetime.now(UTC) > config.expires_at:
+        now = datetime.now(UTC)
+        if config.opens_at is not None and now < config.opens_at:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Peer evaluation opens at {config.opens_at.isoformat()}.",
+            )
+        if config.expires_at is not None and now > config.expires_at:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Peer evaluation has expired for this course.",
@@ -172,7 +188,6 @@ class PeerEvaluationService:
         if existing is not None:
             existing.score = payload.score
             existing.remarks = payload.remarks
-            existing.reason = payload.reason
             existing.created_at = now
             saved = self._peer_evaluation_repository.save_evaluation(existing)
             is_update = True
@@ -185,7 +200,6 @@ class PeerEvaluationService:
                 rated_id=payload.rated_id,
                 score=payload.score,
                 remarks=payload.remarks,
-                reason=payload.reason,
                 created_at=now,
             )
             self._peer_evaluation_repository.save_evaluation(saved)
@@ -215,10 +229,133 @@ class PeerEvaluationService:
                 rated_id=saved.rated_id,
                 score=saved.score,
                 remarks=saved.remarks,
-                reason=saved.reason,
                 created_at=saved.created_at,
             ),
             is_update,
+        )
+
+    # ------------------------------------------------------------------
+    # Student: update own evaluation (PATCH)
+    # ------------------------------------------------------------------
+
+    def update_evaluation(
+        self,
+        evaluation_id: str,
+        payload: PeerEvaluationUpdate,
+        rater_id: str,
+    ) -> PeerEvaluationResponse:
+        """Student updates their own evaluation (score and/or remarks).
+
+        Only the rater can update their own evaluation.
+        The evaluation window must still be open and not expired.
+        """
+        existing = self._peer_evaluation_repository.get_evaluation(evaluation_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Evaluation not found.",
+            )
+
+        # Only the rater can update.
+        if existing.rater_id != rater_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only update your own evaluations.",
+            )
+
+        # Verify the course is still open for evaluation.
+        self._check_evaluation_window(existing.course_id)
+
+        # Apply partial updates.
+        if payload.score is not None:
+            existing.score = payload.score
+        if payload.remarks is not None:
+            existing.remarks = payload.remarks
+
+        existing.created_at = datetime.now(UTC)
+        saved = self._peer_evaluation_repository.save_evaluation(existing)
+
+        append_action_audit(
+            self._action_audits,
+            actor_id=rater_id,
+            actor_role=Role.STUDENT.value,
+            action="update_peer_evaluation",
+            target_type="peer_evaluation",
+            target_id=saved.evaluation_id,
+            details={
+                "course_id": existing.course_id,
+                "project_id": existing.project_id,
+                "rated_id": existing.rated_id,
+                "score": saved.score,
+            },
+        )
+
+        return PeerEvaluationResponse(
+            evaluation_id=saved.evaluation_id,
+            course_id=saved.course_id,
+            project_id=saved.project_id,
+            rater_id=saved.rater_id,
+            rated_id=saved.rated_id,
+            score=saved.score,
+            remarks=saved.remarks,
+            created_at=saved.created_at,
+        )
+
+    # ------------------------------------------------------------------
+    # Student / Instructor: delete evaluation
+    # ------------------------------------------------------------------
+
+    def delete_evaluation(
+        self,
+        evaluation_id: str,
+        rater_id: str,
+        current_user_role: Role,
+    ) -> None:
+        """Delete an evaluation.
+
+        - The rater can delete their own evaluation.
+        - An instructor assigned to the course can delete any evaluation.
+        """
+        existing = self._peer_evaluation_repository.get_evaluation(evaluation_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Evaluation not found.",
+            )
+
+        is_rater = existing.rater_id == rater_id
+        is_instructor_assigned = False
+
+        if current_user_role in (Role.INSTRUCTOR, Role.ADMIN):
+            is_instructor_assigned = self._project_repository.is_instructor_assigned(
+                existing.course_id, rater_id
+            )
+
+        if not is_rater and not is_instructor_assigned:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to delete this evaluation.",
+            )
+
+        deleted = self._peer_evaluation_repository.delete_evaluation(evaluation_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Evaluation not found.",
+            )
+
+        append_action_audit(
+            self._action_audits,
+            actor_id=rater_id,
+            actor_role=current_user_role.value,
+            action="delete_peer_evaluation",
+            target_type="peer_evaluation",
+            target_id=evaluation_id,
+            details={
+                "course_id": existing.course_id,
+                "project_id": existing.project_id,
+                "rated_id": existing.rated_id,
+            },
         )
 
     # ------------------------------------------------------------------
@@ -245,7 +382,6 @@ class PeerEvaluationService:
                 rated_id=r.rated_id,
                 score=r.score,
                 remarks=r.remarks,
-                reason=r.reason,
                 created_at=r.created_at,
             )
             for r in records
@@ -297,7 +433,6 @@ class PeerEvaluationService:
                     rated_full_name=rated.full_name if rated else "",
                     score=r.score,
                     remarks=r.remarks,
-                    reason=r.reason,
                     created_at=r.created_at,
                 )
             )
@@ -361,19 +496,31 @@ class PeerEvaluationService:
             return {
                 "can_evaluate": False,
                 "is_open": config.is_open if config else False,
+                "opens_at": config.opens_at if config else None,
                 "expires_at": config.expires_at if config else None,
                 "message": "Peer evaluation is not currently open for this course.",
             }
-        if config.expires_at is not None and datetime.now(UTC) > config.expires_at:
+        now = datetime.now(UTC)
+        if config.opens_at is not None and now < config.opens_at:
             return {
                 "can_evaluate": False,
                 "is_open": True,
+                "opens_at": config.opens_at,
+                "expires_at": config.expires_at,
+                "message": f"Peer evaluation has not opened yet. Opens at {config.opens_at.isoformat()}.",
+            }
+        if config.expires_at is not None and now > config.expires_at:
+            return {
+                "can_evaluate": False,
+                "is_open": True,
+                "opens_at": config.opens_at,
                 "expires_at": config.expires_at,
                 "message": "Peer evaluation has expired for this course.",
             }
         return {
             "can_evaluate": True,
             "is_open": True,
+            "opens_at": config.opens_at,
             "expires_at": config.expires_at,
             "message": "Peer evaluation is open. You may evaluate your group members.",
         }

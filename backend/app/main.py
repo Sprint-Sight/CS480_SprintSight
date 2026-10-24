@@ -29,6 +29,7 @@ from app.repositories.postgres import (
     PostgresManualTextRepository,
     PostgresMetricsRepository,
     PostgresNotificationRepository,
+    PostgresPeerEvaluationRepository,
     PostgresProjectRepository,
     PostgresRubricWeightsRepository,
     PostgresUserRepository,
@@ -39,6 +40,7 @@ from app.repositories.postgres import (
     ensure_email_outbox_schema,
     ensure_instructor_model_selection_schema,
     ensure_notification_schema,
+    ensure_peer_evaluation_schema,
     ensure_project_credential_schema,
     ensure_rubric_weights_schema,
     ensure_user_schema,
@@ -85,6 +87,7 @@ async def lifespan(app: FastAPI):
     )
     ensure_rubric_weights_schema(pool)
     ensure_instructor_model_selection_schema(pool)
+    ensure_peer_evaluation_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
@@ -99,7 +102,7 @@ async def lifespan(app: FastAPI):
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
     app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(pool)
     app.state.export_log_repository = InMemoryExportLogRepository()
-    app.state.peer_evaluation_repository = InMemoryPeerEvaluationRepository()
+    app.state.peer_evaluation_repository = PostgresPeerEvaluationRepository(pool)
     app.state.email_outbox_repository = PostgresEmailOutboxRepository(pool)
     app.state.notification_service = EmailQueue(
         app.state.email_outbox_repository,

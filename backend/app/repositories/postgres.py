@@ -15,16 +15,19 @@ from app.repositories.interfaces import (
     EmailOutboxRecord,
     EmailOutboxRepository,
     IngestionMetricBundle,
+    InstructorModelSelectionRecord,
+    InstructorModelSelectionRepository,
     JiraIngestionRunRecord,
     JiraIngestionRunRepository,
     ManualTextRepository,
     MetricsRepository,
     NotificationRecord,
     NotificationRepository,
+    PeerEvaluationConfigRecord,
+    PeerEvaluationRecord,
+    PeerEvaluationRepository,
     ProjectRecord,
     ProjectRepository,
-    InstructorModelSelectionRecord,
-    InstructorModelSelectionRepository,
     RubricWeightsRecord,
     RubricWeightsRepository,
     UserRecord,
@@ -1211,6 +1214,206 @@ def ensure_instructor_model_selection_schema(pool: ConnectionPool) -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )"""
         )
+
+
+def ensure_peer_evaluation_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS peer_evaluations (
+                evaluation_id UUID PRIMARY KEY,
+                course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                rater_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                rated_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 5),
+                remarks TEXT,
+                reason TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (rater_id, rated_id, project_id)
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_peer_eval_project "
+            "ON peer_evaluations(project_id, created_at DESC)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_peer_eval_rater "
+            "ON peer_evaluations(rater_id, created_at DESC)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_peer_eval_rated "
+            "ON peer_evaluations(rated_id, created_at DESC)"
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS peer_evaluation_configs (
+                course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
+                is_open BOOLEAN NOT NULL DEFAULT FALSE,
+                expires_at TIMESTAMPTZ,
+                updated_by UUID NOT NULL REFERENCES users(user_id),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+
+
+class PostgresPeerEvaluationRepository(PeerEvaluationRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _evaluation(row: dict) -> PeerEvaluationRecord:
+        return PeerEvaluationRecord(
+            evaluation_id=str(row["evaluation_id"]),
+            course_id=str(row["course_id"]),
+            project_id=str(row["project_id"]),
+            rater_id=str(row["rater_id"]),
+            rated_id=str(row["rated_id"]),
+            score=row["score"],
+            remarks=row["remarks"],
+            created_at=row["created_at"],
+        )
+
+    def save_evaluation(self, evaluation: PeerEvaluationRecord) -> PeerEvaluationRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO peer_evaluations
+                (evaluation_id, course_id, project_id, rater_id, rated_id, score, remarks, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (rater_id, rated_id, project_id)
+                DO UPDATE SET score = EXCLUDED.score,
+                              remarks = EXCLUDED.remarks,
+                              created_at = EXCLUDED.created_at
+                RETURNING evaluation_id, course_id, project_id, rater_id, rated_id,
+                          score, remarks, created_at""",
+                (
+                    UUID(evaluation.evaluation_id),
+                    UUID(evaluation.course_id),
+                    UUID(evaluation.project_id),
+                    UUID(evaluation.rater_id),
+                    UUID(evaluation.rated_id),
+                    evaluation.score,
+                    evaluation.remarks,
+                    evaluation.created_at,
+                ),
+            ).fetchone()
+        return self._evaluation(row)
+
+    def get_evaluation(self, evaluation_id: str) -> PeerEvaluationRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM peer_evaluations WHERE evaluation_id = %s",
+                (UUID(evaluation_id),),
+            ).fetchone()
+        return self._evaluation(row) if row else None
+
+    def list_evaluations_by_rater(
+        self, rater_id: str, project_id: str | None = None
+    ) -> list[PeerEvaluationRecord]:
+        if project_id:
+            with self._pool.connection() as connection:
+                db_rows = connection.execute(
+                    """SELECT * FROM peer_evaluations
+                    WHERE rater_id = %s AND project_id = %s
+                    ORDER BY created_at DESC, evaluation_id DESC""",
+                    (UUID(rater_id), UUID(project_id)),
+                ).fetchall()
+        else:
+            with self._pool.connection() as connection:
+                db_rows = connection.execute(
+                    """SELECT * FROM peer_evaluations
+                    WHERE rater_id = %s
+                    ORDER BY created_at DESC, evaluation_id DESC""",
+                    (UUID(rater_id),),
+                ).fetchall()
+        return [self._evaluation(row) for row in db_rows or []]
+
+    def list_evaluations_by_project(
+        self, project_id: str
+    ) -> list[PeerEvaluationRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM peer_evaluations
+                WHERE project_id = %s
+                ORDER BY created_at DESC, evaluation_id DESC""",
+                (UUID(project_id),),
+            ).fetchall()
+        return [self._evaluation(row) for row in rows or []]
+
+    def list_evaluations_by_course(
+        self, course_id: str
+    ) -> list[PeerEvaluationRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM peer_evaluations
+                WHERE course_id = %s
+                ORDER BY created_at DESC, evaluation_id DESC""",
+                (UUID(course_id),),
+            ).fetchall()
+        return [self._evaluation(row) for row in rows or []]
+
+    def get_evaluation_by_rater_and_rated(
+        self, rater_id: str, rated_id: str, project_id: str
+    ) -> PeerEvaluationRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT * FROM peer_evaluations
+                WHERE rater_id = %s AND rated_id = %s AND project_id = %s""",
+                (UUID(rater_id), UUID(rated_id), UUID(project_id)),
+            ).fetchone()
+        return self._evaluation(row) if row else None
+
+    def save_config(
+        self, config: PeerEvaluationConfigRecord
+    ) -> PeerEvaluationConfigRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO peer_evaluation_configs
+                (course_id, is_open, opens_at, expires_at, updated_by, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (course_id)
+                DO UPDATE SET is_open = EXCLUDED.is_open,
+                              opens_at = EXCLUDED.opens_at,
+                              expires_at = EXCLUDED.expires_at,
+                              updated_by = EXCLUDED.updated_by,
+                              updated_at = EXCLUDED.updated_at
+                RETURNING course_id, is_open, opens_at, expires_at, updated_by, updated_at""",
+                (
+                    UUID(config.course_id),
+                    config.is_open,
+                    config.opens_at,
+                    config.expires_at,
+                    UUID(config.updated_by),
+                    config.updated_at,
+                ),
+            ).fetchone()
+        return self._config(row)
+
+    def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM peer_evaluation_configs WHERE course_id = %s",
+                (UUID(course_id),),
+            ).fetchone()
+        return self._config(row) if row else None
+
+    @staticmethod
+    def _config(row: dict) -> PeerEvaluationConfigRecord:
+        return PeerEvaluationConfigRecord(
+            course_id=str(row["course_id"]),
+            is_open=row["is_open"],
+            opens_at=row["opens_at"],
+            expires_at=row["expires_at"],
+            updated_by=str(row["updated_by"]),
+            updated_at=row["updated_at"],
+        )
+
+    def delete_evaluation(self, evaluation_id: str) -> bool:
+        """Delete an evaluation by ID. Returns True if deleted, False if not found."""
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM peer_evaluations WHERE evaluation_id = %s",
+                (UUID(evaluation_id),),
+            )
+        return cursor.rowcount > 0
 
 
 class PostgresInstructorModelSelectionRepository(InstructorModelSelectionRepository):

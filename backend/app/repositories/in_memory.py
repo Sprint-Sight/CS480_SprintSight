@@ -835,6 +835,13 @@ class InMemoryPeerEvaluationRepository(PeerEvaluationRepository):
     def get_config(self, course_id: str) -> PeerEvaluationConfigRecord | None:
         return self._configs.get(course_id)
 
+    def delete_evaluation(self, evaluation_id: str) -> bool:
+        """Delete an evaluation by ID. Returns True if deleted, False if not found."""
+        if evaluation_id in self._evaluations:
+            del self._evaluations[evaluation_id]
+            return True
+        return False
+
 
 peer_evaluation_repo = InMemoryPeerEvaluationRepository()
 
