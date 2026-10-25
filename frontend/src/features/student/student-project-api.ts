@@ -15,6 +15,7 @@ export type StudentProject = {
   team_name: string;
   description: string | null;
   course_code: string;
+  members?: Array<{ id: string; email: string; full_name: string }>;
 };
 
 export type StudentAssessmentReport = {

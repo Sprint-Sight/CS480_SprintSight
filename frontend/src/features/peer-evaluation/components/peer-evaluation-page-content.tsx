@@ -4,18 +4,28 @@ import { StudentEvaluationView } from "@/features/peer-evaluation/components/stu
 import { InstructorEvaluationView } from "@/features/peer-evaluation/components/instructor-evaluation-view";
 import { useAssessmentReport } from "@/features/assessment/hooks/use-assessment-report";
 import { useStudentProjectContext } from "@/features/student/hooks/use-student-project-context";
+import { usePeerTeammates } from "@/features/peer-evaluation/hooks/use-peer-teammates";
 
 export default function PeerEvaluationPageContent() {
   const assessment = useAssessmentReport();
   const studentContext = useStudentProjectContext(assessment.role === "student");
+  const { teammates } = usePeerTeammates(studentContext.project);
 
   const isStudent = assessment.role === "student";
   const isInstructor = assessment.role === "instructor";
 
   // For students, use student project context; for instructors, use assessment scope
   const scope = isStudent
-    ? studentContext.project
-      ? { courseId: studentContext.project.id, projectId: studentContext.project.id }
+    ? studentContext.project && studentContext.courses.length > 0
+      ? // Find the course that matches the project's course_code
+        (() => {
+          const matchedCourse = studentContext.courses.find(
+            (course) => course.code === studentContext.project!.course_code
+          );
+          return matchedCourse
+            ? { courseId: matchedCourse.id, projectId: studentContext.project!.id }
+            : null;
+        })()
       : null
     : assessment.scope;
 
@@ -30,12 +40,6 @@ export default function PeerEvaluationPageContent() {
   }
 
   if (isStudent) {
-    const teammates: Array<{ id: string; name: string }> = [
-      { id: "teammate-1", name: "Team Member 1" },
-      { id: "teammate-2", name: "Team Member 2" },
-      { id: "teammate-3", name: "Team Member 3" },
-    ];
-
     return (
       <div className="space-y-5 p-8">
         <div>
@@ -47,7 +51,6 @@ export default function PeerEvaluationPageContent() {
         <StudentEvaluationView
           courseId={scope.courseId}
           projectId={scope.projectId}
-          currentUserId="current-student"
           teammates={teammates}
         />
       </div>

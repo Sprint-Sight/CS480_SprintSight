@@ -1248,10 +1248,17 @@ def ensure_peer_evaluation_schema(pool: ConnectionPool) -> None:
             """CREATE TABLE IF NOT EXISTS peer_evaluation_configs (
                 course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
                 is_open BOOLEAN NOT NULL DEFAULT FALSE,
+                opens_at TIMESTAMPTZ,
                 expires_at TIMESTAMPTZ,
                 updated_by UUID NOT NULL REFERENCES users(user_id),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )"""
+        )
+        connection.execute(
+            "ALTER TABLE peer_evaluation_configs ADD COLUMN IF NOT EXISTS opens_at TIMESTAMPTZ"
+        )
+        connection.execute(
+            "ALTER TABLE peer_evaluations ADD COLUMN IF NOT EXISTS reason TEXT"
         )
 
 
@@ -1269,6 +1276,7 @@ class PostgresPeerEvaluationRepository(PeerEvaluationRepository):
             rated_id=str(row["rated_id"]),
             score=row["score"],
             remarks=row["remarks"],
+            reason=row.get("reason"),
             created_at=row["created_at"],
         )
 
@@ -1276,14 +1284,15 @@ class PostgresPeerEvaluationRepository(PeerEvaluationRepository):
         with self._pool.connection() as connection:
             row = connection.execute(
                 """INSERT INTO peer_evaluations
-                (evaluation_id, course_id, project_id, rater_id, rated_id, score, remarks, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (evaluation_id, course_id, project_id, rater_id, rated_id, score, remarks, reason, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (rater_id, rated_id, project_id)
                 DO UPDATE SET score = EXCLUDED.score,
                               remarks = EXCLUDED.remarks,
+                              reason = EXCLUDED.reason,
                               created_at = EXCLUDED.created_at
                 RETURNING evaluation_id, course_id, project_id, rater_id, rated_id,
-                          score, remarks, created_at""",
+                          score, remarks, reason, created_at""",
                 (
                     UUID(evaluation.evaluation_id),
                     UUID(evaluation.course_id),
@@ -1292,6 +1301,7 @@ class PostgresPeerEvaluationRepository(PeerEvaluationRepository):
                     UUID(evaluation.rated_id),
                     evaluation.score,
                     evaluation.remarks,
+                    evaluation.reason,
                     evaluation.created_at,
                 ),
             ).fetchone()

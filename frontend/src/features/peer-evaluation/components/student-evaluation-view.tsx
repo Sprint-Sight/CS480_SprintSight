@@ -1,23 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { EvaluationStatusBanner } from "@/features/peer-evaluation/components/evaluation-status-banner";
-import { StudentEvaluationForm } from "@/features/peer-evaluation/components/student-evaluation-form";
-import { StudentEvaluationList } from "@/features/peer-evaluation/components/student-evaluation-list";
+import { TeammateEvaluationRow } from "@/features/peer-evaluation/components/teammate-evaluation-row";
 import { usePeerEvaluation } from "@/features/peer-evaluation/hooks/use-peer-evaluation";
+import type { PeerTeammate } from "@/features/peer-evaluation/peer-evaluation-api";
 
 type StudentEvaluationViewProps = {
   courseId: string;
   projectId: string;
-  currentUserId: string;
-  teammates: Array<{ id: string; name: string }>;
+  teammates: PeerTeammate[];
 };
 
-export function StudentEvaluationView({
-  courseId,
-  projectId,
-  teammates,
-}: StudentEvaluationViewProps) {
+export function StudentEvaluationView({ courseId, projectId, teammates }: StudentEvaluationViewProps) {
   const {
     myEvaluations,
     evaluationStatus,
@@ -29,14 +24,10 @@ export function StudentEvaluationView({
     clearError,
   } = usePeerEvaluation();
 
-  const [selectedTeammateIndex, setSelectedTeammateIndex] = useState(0);
-
   useEffect(() => {
     checkEvaluationStatus(courseId);
     loadMyEvaluations(projectId);
   }, [courseId, projectId, checkEvaluationStatus, loadMyEvaluations]);
-
-  const currentTeammate = teammates && teammates.length > 0 ? teammates[selectedTeammateIndex] : null;
 
   return (
     <div className="space-y-6">
@@ -54,38 +45,21 @@ export function StudentEvaluationView({
 
       <EvaluationStatusBanner status={evaluationStatus} isLoading={isLoading} />
 
-      {evaluationStatus?.can_evaluate && teammates && teammates.length > 0 && (
-        <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Select Teammate to Evaluate
-            </label>
-            <select
-              value={selectedTeammateIndex}
-              onChange={(e) => setSelectedTeammateIndex(Number(e.target.value))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            >
-              {teammates.map((teammate, idx) => (
-                <option key={teammate.id} value={idx}>
-                  {teammate.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {currentTeammate && (
-            <StudentEvaluationForm
-              teammateName={currentTeammate.name}
-              teammateId={currentTeammate.id}
-              projectId={projectId}
-              isLoading={isLoading}
-              onSubmit={submitNewEvaluation}
-            />
-          )}
+      {evaluationStatus?.can_evaluate && teammates.length === 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-6">
+          <p className="text-center text-blue-900">You have no teammates to evaluate in this project.</p>
         </div>
       )}
 
-      <StudentEvaluationList evaluations={myEvaluations} isLoading={isLoading} />
+      {evaluationStatus?.can_evaluate &&
+        teammates.map((teammate) => (
+          <TeammateEvaluationRow
+            key={teammate.id}
+            teammate={teammate}
+            existing={myEvaluations.find((e) => e.rated_id === teammate.id) ?? null}
+            onSubmit={(data) => submitNewEvaluation({ projectId, ...data })}
+          />
+        ))}
     </div>
   );
 }

@@ -61,6 +61,16 @@ export type PeerEvaluationConfigResponse = {
   updated_at: string;
 };
 
+export type PeerTeammate = {
+  id: string;
+  name: string;
+};
+
+export const getCurrentUserId = async (): Promise<string> => {
+  const user = await apiRequest<{ id: string }>("/auth/me", { method: "GET" });
+  return user.id;
+};
+
 type SubmitEvaluationPayload = {
   project_id: string;
   rated_id: string;

@@ -188,6 +188,7 @@ class PeerEvaluationService:
         if existing is not None:
             existing.score = payload.score
             existing.remarks = payload.remarks
+            existing.reason = payload.reason
             existing.created_at = now
             saved = self._peer_evaluation_repository.save_evaluation(existing)
             is_update = True
@@ -200,6 +201,7 @@ class PeerEvaluationService:
                 rated_id=payload.rated_id,
                 score=payload.score,
                 remarks=payload.remarks,
+                reason=payload.reason,
                 created_at=now,
             )
             self._peer_evaluation_repository.save_evaluation(saved)
@@ -229,6 +231,7 @@ class PeerEvaluationService:
                 rated_id=saved.rated_id,
                 score=saved.score,
                 remarks=saved.remarks,
+                reason=saved.reason,
                 created_at=saved.created_at,
             ),
             is_update,
@@ -271,6 +274,8 @@ class PeerEvaluationService:
             existing.score = payload.score
         if payload.remarks is not None:
             existing.remarks = payload.remarks
+        if payload.reason is not None:
+            existing.reason = payload.reason
 
         existing.created_at = datetime.now(UTC)
         saved = self._peer_evaluation_repository.save_evaluation(existing)
@@ -298,6 +303,7 @@ class PeerEvaluationService:
             rated_id=saved.rated_id,
             score=saved.score,
             remarks=saved.remarks,
+            reason=saved.reason,
             created_at=saved.created_at,
         )
 
@@ -382,6 +388,7 @@ class PeerEvaluationService:
                 rated_id=r.rated_id,
                 score=r.score,
                 remarks=r.remarks,
+                reason=r.reason,
                 created_at=r.created_at,
             )
             for r in records
@@ -433,6 +440,7 @@ class PeerEvaluationService:
                     rated_full_name=rated.full_name if rated else "",
                     score=r.score,
                     remarks=r.remarks,
+                    reason=r.reason,
                     created_at=r.created_at,
                 )
             )

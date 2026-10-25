@@ -14,6 +14,9 @@ class PeerEvaluationCreate(BaseModel):
     remarks: str | None = Field(
         default=None, max_length=1000, description="Optional remarks about the member."
     )
+    reason: str | None = Field(
+        default=None, max_length=1000, description="Reason for the given score."
+    )
 
 
 class PeerEvaluationUpdate(BaseModel):
@@ -24,6 +27,9 @@ class PeerEvaluationUpdate(BaseModel):
     )
     remarks: str | None = Field(
         default=None, max_length=1000, description="Optional remarks about the member."
+    )
+    reason: str | None = Field(
+        default=None, max_length=1000, description="Reason for the given score."
     )
 
 
@@ -37,6 +43,7 @@ class PeerEvaluationResponse(BaseModel):
     rated_id: str
     score: int
     remarks: str | None
+    reason: str | None = None
     created_at: datetime
 
 
@@ -54,6 +61,7 @@ class PeerEvaluationInstructorView(BaseModel):
     rated_full_name: str
     score: int
     remarks: str | None
+    reason: str | None = None
     created_at: datetime
 
 
