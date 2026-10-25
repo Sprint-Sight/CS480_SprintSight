@@ -1,9 +1,4 @@
-import contextvars
-import hashlib
-import json
-import logging
-import os
-import time
+import contextvars, hashlib, json, logging, os, time, httpx, instructor, mlflow
 from collections import Counter
 from collections.abc import Sequence
 from contextlib import contextmanager
@@ -14,30 +9,14 @@ from uuid import uuid4
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
-from llmops.prompt_registry import (
-    dimension_prompt_name,
-    SPRINT_FEEDBACK_PROMPT_NAME,
-    prompt_trace_attrs,
-    link_prompt_to_trace,
-)
-import httpx
-import instructor
-import mlflow
 from dotenv import load_dotenv
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
-from prompts.templates import (
-    render_dimension_prompt,
-    render_sprint_feedback_prompt,
-)
+from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_NUM_CTX
-from schemas.rubrics_dimension_score import (
-    DimensionName,
-    ModelOutput,
-    RubricDimensionScore,
-)
+from schemas.rubrics_dimension_score import DimensionName, ModelOutput, RubricDimensionScore
 from schemas.sprint_feedback import SprintFeedback
 from services.audit_logger import write_audit_record
 from services.grounding import find_ungrounded_citations
@@ -421,7 +400,7 @@ def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> 
             f"{len(s['days'])} active day(s)"
         )
 
-    # ── File change heatmap (top 10) ──
+    # File change heatmap (top 10)
     file_freq: Counter[str] = Counter()
     for commit in commits:
         for fname in commit.get("files_changed") or []:
@@ -459,17 +438,14 @@ def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> 
 
     return "\n    ".join(lines)
 
-
 def request_extra_body(num_ctx: int | None) -> dict:
     if num_ctx is None:
         return {}
     return {"options": {"num_ctx": num_ctx}}
 
-
 def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> int:
     """Rough token estimate (chars // 4) for one dimension's trimmed bundle."""
     return len(_dimension_bundle_data(bundle, dimension_name)) // 4
-
 
 # Minimum num_ctx to fall back to when a sprint's bundle is small. Defaults to
 # None (disabled): by default this NEVER reduces num_ctx below the model's
@@ -480,7 +456,6 @@ def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> in
 # via LLM_NUM_CTX_FLOOR once you've verified with `ollama ps` that your actual
 # bundles are consistently far below the ceiling.
 _NUM_CTX_FLOOR = int(os.getenv("LLM_NUM_CTX_FLOOR", "0")) or None
-
 
 def select_run_num_ctx(bundle: ArtifactBundle, model_name: str, dimension_names: Sequence[str]) -> int | None:
     """
@@ -510,7 +485,6 @@ def select_run_num_ctx(bundle: ArtifactBundle, model_name: str, dimension_names:
     )
     needed = largest_prompt_tokens + 1024  # headroom for prompt scaffolding + generated output
     return min(max(needed, _NUM_CTX_FLOOR), ceiling)
-
 
 async def _capture_request(request: httpx.Request) -> None:
     if request.url.path.endswith("/chat/completions"):
@@ -553,7 +527,6 @@ async def _capture_response(response: httpx.Response) -> None:
                     # Non-JSON body (streaming leftover, error page, etc.)
                     # — best-effort capture; skip without failing the call.
                     pass
-
 
 def create_llm_client(provider="ollama"):
     """
@@ -623,104 +596,13 @@ async def evaluate_dimension(
         fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name, ())
         full_bundle = bundle.model_dump(mode="json")
 
-    # ── Stats from ALL commits, then sample for the bundle ──
-    sampled_commits: list[dict] | None = None
-    if "commits" in fields:
-        all_trimmed = _trim_commits(full_bundle["commits"])
-        commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
-        sampled_commits = _select_representative_commits(
-            all_trimmed, dimension_name, _COMMIT_BUDGET,
-        )
-        log.info(
-            ">>> Dimension '%s': %d total commits -> %d sampled (budget=%d)",
-            dimension_name, len(all_trimmed), len(sampled_commits), _COMMIT_BUDGET,
-        )
-    else:
-        commit_facts = ""
-
-    jira_facts = (
-        _compute_jira_facts(full_bundle["jira_tickets"])
-        if "jira_tickets" in fields else ""
-    )
-
-    computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
-
-    bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
-    bundle_hash = hashlib.sha256(
-        bundle_data.encode("utf-8")
-    ).hexdigest()
-
-    approx_tokens = len(bundle_data) // 4
-    log.info(
-        ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
-        dimension_name,
-        len(bundle_data),
-        approx_tokens,
-    )
-
-    effective_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
-    if approx_tokens > effective_ctx * 0.85:
-        log.warning(
-            ">>> Dimension '%s': prompt (~%d tokens) approaches num_ctx (%d). "
-            "Output quality may degrade from silent truncation.",
-            dimension_name, approx_tokens, effective_ctx,
-        )
-
-    project_context = _format_project_context_documents(bundle)
-    prompt = render_dimension_prompt(
-        dimension_name, dimention_prompt, bundle_data, computed_facts, project_context,
-    )
-
-    client = create_llm_client()  # Create a new client for this model
-
-    audit_token = _audit_context.set(
-        {
-            "request_id": str(uuid4()),
-            "team_id": bundle.team_id,
-            "sprint_id": bundle.sprint_id,
-            "dimension": dimension_name,
-            "model": model_name,
-            "bundle_hash": bundle_hash,
-            "bundle_bytes": len(bundle_data.encode("utf-8")),
-            "commit_count": len(bundle.commits),
-            "jira_ticket_count": len(bundle.jira_tickets),
-            "peer_evaluation_count": len(bundle.peer_evaluations),
-            "artifact_metric_keys": sorted(bundle.artifact_metrics),
-        }
-    )
-    try:
-        # The transport hooks capture the exact request and raw Ollama response.
-        model_output = await client.chat.completions.create(
-            model=model_name,
-            response_model=ModelOutput,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=LLM_TEMPERATURE,
-            max_retries=3,
-            extra_body=_request_extra_body(num_ctx),
-        )
-
-        # dimension/evaluation_failed are assigned here, in code, rather than
-        # asked of the model — it can't get the dimension wrong if it's never
-        # given the chance to answer it.
-        result = RubricDimensionScore(
-            dimension=dimension_name,
-            **model_output.model_dump(),
-        )
-
-        # Drop only fabricated/ungrounded citations rather than discarding
-        # the whole dimension over a single bad citation.
-        ungrounded = find_ungrounded_citations(
-            bundle_data,
-            result.evidence_citations or [],
-        )
-
-        if ungrounded:
-            log.warning(
-                "Dimension '%s': dropping %d ungrounded citation(s) "
-                "rather than failing the whole dimension: %r",
-                dimension_name,
-                len(ungrounded),
-                ungrounded,
+        # Stats from ALL commits, then sample for the bundle
+        sampled_commits: list[dict] | None = None
+        if "commits" in fields:
+            all_trimmed = _trim_commits(full_bundle["commits"])
+            commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
+            sampled_commits = _select_representative_commits(
+                all_trimmed, dimension_name, _COMMIT_BUDGET,
             )
             log.info(
                 ">>> Dimension '%s': %d total commits -> %d sampled (budget=%d)",
@@ -757,13 +639,12 @@ async def evaluate_dimension(
                 dimension_name, approx_tokens, effective_ctx,
             )
 
-        # Prompt Registry: Register dimension prompt if not already registered, and log the version used for this evaluation
-        prompt_name = dimension_prompt_name(dimension_name)
-        prompt_attrs = prompt_trace_attrs(prompt_name) # in-memory, no registry call
-        span.set_attributes(prompt_attrs)
-        link_prompt_to_trace(prompt_name)
+        project_context = _format_project_context_documents(bundle)
+        prompt = render_dimension_prompt(
+            dimension_name, dimension_prompt, bundle_data, computed_facts, project_context,
+        )
 
-        client = create_llm_client()  # Only LLM grader will call evaluate_dimension to call this method, hence provider is always ollama
+        client = create_llm_client()  # Create a new client for this model
 
         audit_token = _audit_context.set(
             {
@@ -780,33 +661,33 @@ async def evaluate_dimension(
                 "artifact_metric_keys": sorted(bundle.artifact_metrics),
             }
         )
+        
         try:
             # The transport hooks capture the exact request and raw Ollama response.
             model_output = await client.chat.completions.create(
                 model=model_name,
                 response_model=ModelOutput,
-                messages=[{"role": "user", "content": prompt_name}],
-                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=LLM_TEMPERATURE,
                 max_retries=3,
                 extra_body=request_extra_body(num_ctx),
             )
-
+    
             # dimension/evaluation_failed are assigned here, in code, rather than
             # asked of the model — it can't get the dimension wrong if it's never
             # given the chance to answer it.
             result = RubricDimensionScore(
                 dimension=dimension_name,
-                prompt_version=prompt_attrs.get("prompt_version"),
                 **model_output.model_dump(),
             )
-
+    
             # Drop only fabricated/ungrounded citations rather than discarding
             # the whole dimension over a single bad citation.
             ungrounded = find_ungrounded_citations(
                 bundle_data,
                 result.evidence_citations or [],
             )
-
+    
             if ungrounded:
                 log.warning(
                     "Dimension '%s': dropping %d ungrounded citation(s) "
@@ -815,34 +696,72 @@ async def evaluate_dimension(
                     len(ungrounded),
                     ungrounded,
                 )
-
-                write_audit_record(
-                    {
-                        **(_audit_context.get() or {}),
-                        "ungrounded_citations_dropped": [
-                            (
-                                citation.model_dump()
-                                if hasattr(citation, "model_dump")
-                                else citation
-                            )
-                            for citation in ungrounded
-                        ],
-                    }
+                log.info(
+                    ">>> Dimension '%s': %d total commits -> %d sampled (budget=%d)",
+                    dimension_name, len(all_trimmed), len(sampled_commits), _COMMIT_BUDGET,
                 )
-
-                result.evidence_citations = [
-                    citation
-                    for citation in (result.evidence_citations or [])
-                    if citation not in ungrounded
-                ]
-
-                mlflow.log_feedback(
-                    trace_id=mlflow.get_current_active_span().trace_id,
-                    name='citation_grounding',
-                    value=False,
-                    rationale=f"Dropped {len(ungrounded)} ungrounded citation(s) from dimension '{dimension_name}'",
-                    span_id=span.span_id,
+            else:
+                commit_facts = ""
+    
+            jira_facts = (
+                _compute_jira_facts(full_bundle["jira_tickets"])
+                if "jira_tickets" in fields else ""
+            )
+    
+            computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
+    
+            bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
+            bundle_hash = hashlib.sha256(
+                bundle_data.encode("utf-8")
+            ).hexdigest()
+    
+            approx_tokens = len(bundle_data) // 4
+            log.info(
+                ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
+                dimension_name,
+                len(bundle_data),
+                approx_tokens,
+            )
+    
+            effective_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
+            if approx_tokens > effective_ctx * 0.85:
+                log.warning(
+                    ">>> Dimension '%s': prompt (~%d tokens) approaches num_ctx (%d). "
+                    "Output quality may degrade from silent truncation.",
+                    dimension_name, approx_tokens, effective_ctx,
                 )
+    
+            # # Prompt Registry: Register dimension prompt if not already registered, and log the version used for this evaluation
+            # prompt_name = dimension_prompt_name(dimension_name)
+            # prompt_attrs = prompt_trace_attrs(prompt_name) # in-memory, no registry call
+            # span.set_attributes(prompt_attrs)
+            # link_prompt_to_trace(prompt_name)
+    
+            client = create_llm_client()  # Only LLM grader will call evaluate_dimension to call this method, hence provider is always ollama
+    
+            audit_token = _audit_context.set(
+                {
+                    "request_id": str(uuid4()),
+                    "team_id": bundle.team_id,
+                    "sprint_id": bundle.sprint_id,
+                    "dimension": dimension_name,
+                    "model": model_name,
+                    "bundle_hash": bundle_hash,
+                    "bundle_bytes": len(bundle_data.encode("utf-8")),
+                    "commit_count": len(bundle.commits),
+                    "jira_ticket_count": len(bundle.jira_tickets),
+                    "peer_evaluation_count": len(bundle.peer_evaluations),
+                    "artifact_metric_keys": sorted(bundle.artifact_metrics),
+                }
+            )
+
+            mlflow.log_feedback(
+                trace_id=mlflow.get_current_active_span().trace_id,
+                name='citation_grounding',
+                value=False,
+                rationale=f"Dropped {len(ungrounded)} ungrounded citation(s) from dimension '{dimension_name}'",
+                span_id=span.span_id,
+            )
 
             span.set_inputs({
                 "dimension": dimension_name,
@@ -855,6 +774,9 @@ async def evaluate_dimension(
                 **result.model_dump(mode="json"),
                 "ungrounded_citations_dropped": len(ungrounded),
             })
+
+            log.info('>>> Dimension "%s" evaluation complete. Ungrounded citations dropped: %d', dimension_name, len(ungrounded))
+            print(f"Dimension '{dimension_name}' evaluation complete. Ungrounded citations dropped: {len(ungrounded)}\n")
 
             return result
 
@@ -877,13 +799,12 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
     rubric_scores: dict[str, dict],
     model_name: str,
     num_ctx: int | None = None,
+    sprint_feedback_prompt_name: str | None = None,
 ) -> SprintFeedback:
-    with mlflow.start_span(name="Generate_Sprint_Feedback", span_type=SpanType.LLM) as span:
+    with mlflow.start_span(name=sprint_feedback_prompt_name or "Generate_Sprint_Feedback", span_type=SpanType.LLM) as span:
         scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
-        prompt = render_sprint_feedback_prompt(
-            bundle.team_id, bundle.sprint_id, scores_data, bundle.instructor_expectations
-        )
-        span.set_attributes(prompt_trace_attrs(SPRINT_FEEDBACK_PROMPT_NAME))
+
+        span.set_attributes({'sprint_feedback_prompt': sprint_feedback_prompt_name or "Generate_Sprint_Feedback"})
         audit_token = _audit_context.set(
             {
                 "request_id": str(uuid4()),
@@ -891,9 +812,10 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
                 "sprint_id": bundle.sprint_id,
                 "dimension": "sprint_feedback",
                 "model": model_name,
+                "sprint_feedback_prompt": sprint_feedback_prompt_name,
             }
         )
-        """Generate strengths, weaknesses, and recommendations for the whole sprint."""
+
         scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
         project_context = _format_project_context_documents(bundle)
         prompt = render_sprint_feedback_prompt(
@@ -903,15 +825,7 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
             bundle.instructor_expectations,
             project_context,
         )
-        audit_token = _audit_context.set(
-            {
-                "request_id": str(uuid4()),
-                "team_id": bundle.team_id,
-                "sprint_id": bundle.sprint_id,
-                "dimension": "sprint_feedback",
-                "model": model_name,
-            }
-        )
+
         try:
             client = create_llm_client()
             full_prompt_chars = len(prompt)
@@ -925,26 +839,10 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
                 messages=[{"role": "user", "content": prompt}],
                 temperature=LLM_TEMPERATURE,
                 max_retries=3,
-                extra_body=_request_extra_body(num_ctx),
+                extra_body=request_extra_body(num_ctx),
             )
-            try:
-                client = create_llm_client()
-                full_prompt_chars = len(prompt)
-                log.info(
-                    ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
-                    "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
-                )
-                return await client.chat.completions.create(
-                    model=model_name,
-                    response_model=SprintFeedback,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                    max_retries=3,
-                    extra_body=request_extra_body(num_ctx),
-                )
-            finally:
-                _audit_context.reset(audit_token)
-
+        finally:
+            _audit_context.reset(audit_token)
 
 async def check_ollama_health(model_name: str) -> dict:
     """
@@ -992,7 +890,6 @@ async def check_ollama_health(model_name: str) -> dict:
             "model":  model_name,
             "error":  str(e),
         }
-
 
 async def pull_model_if_missing(model_name: str) -> None:
     """

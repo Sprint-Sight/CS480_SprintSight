@@ -18,6 +18,7 @@ class SprintAssessment(BaseModel):
     strengths: list[str] = []
     weaknesses: list[str] = []
     key_recommendations: list[str]
+    prompt_version: str | None = None  # links to prompt registry
     # failed_dimensions: list[str] = Field(default_factory=list) REPLACED W THE @property BELOW
 
     @computed_field  # type: ignore[prop-decorator]

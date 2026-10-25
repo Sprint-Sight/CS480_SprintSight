@@ -1,13 +1,8 @@
-import asyncio
-import logging
-import os
-import time
-
-import mlflow
+import asyncio, logging, os, time,mlflow
 from mlflow.entities import SpanType
 from llmops.review_queue import add_to_review_queue
-from llmops.prompt_registry import load_dimension_prompt, load_sprint_feedback_prompt, SPRINT_FEEDBACK_PROMPT_NAME, prompt_trace_attrs, ensure_prompts_registered, dimension_prompt_name
-from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS#, WORSE_DIMENSION_PROMPTS
+from llmops.prompt_registry import register_all_dimension_prompts, register_sprint_feedback_prompt
+from prompts.dimension_criteria import SPRINT_FEEDBACK_PROMPT_NAME, DIMENSION_PROMPTS, DIMENSIONS#, WORSE_DIMENSION_PROMPTS
 from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
@@ -34,6 +29,7 @@ async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_na
     async with semaphore:
         dimension_start = time.perf_counter()
         log.info("Starting rubric dimension '%s'", dim)
+        print(f"Starting rubric dimension '{dim}'...")
         try:
             result = await evaluate_dimension(bundle, dim, model_name, DIMENSION_PROMPTS[dim], num_ctx=run_num_ctx)
         except Exception:
@@ -52,18 +48,19 @@ async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_na
             result.justification,
             result.evidence_citations,
         )
+        print(f"Completed rubric dimension '{dim}' with score {result.score} in {time.perf_counter() - dimension_start:.2f} seconds. Justification: {result.justification} | Evidence: {result.evidence_citations}")
         return result
 
 # Evaluates each rubric dimension, then generates project-level sprint feedback.
-async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str) -> SprintAssessment:
+async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient) -> SprintAssessment:
 
     # Start Mlflow experiment
     mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
+    experiment_exist = True if mlflow.get_experiment_by_name(experiment_name) else False
     mlflow.set_experiment(experiment_name)
-    ensure_prompts_registered()
-     
-    # if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
-    #     mlflow.end_run()
+
+    # Register all dimension prompts in MLflow prompt registry
+    prompt_versions_registered = register_all_dimension_prompts(list(DIMENSION_PROMPTS.items()), mlflow_client, experiment_exist)
 
     # Sized ONCE for the whole run (not per-dimension) and reused for every
     # call below, including sprint feedback: Ollama reloads the model
@@ -175,8 +172,12 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
                     {dimension: score.model_dump(exclude={"prompt_version"}) for dimension, score in scores_by_dim.items()},
                     model_name,
                     num_ctx=run_num_ctx,
+                    sprint_feedback_prompt_name=SPRINT_FEEDBACK_PROMPT_NAME,
                 )
+                sprint_feedback_prompt = register_sprint_feedback_prompt(SPRINT_FEEDBACK_PROMPT_NAME, mlflow_client) # Ensure the sprint feedback prompt is registered in MLflow prompt registry
+                
             except Exception:
+                sprint_feedback_prompt = None
                 log.exception("General sprint feedback generation failed.")
         
             strengths = feedback.strengths if feedback else []
@@ -188,25 +189,27 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             final_assessment = SprintAssessment(
                 team_id=bundle.team_id,
                 sprint_id=bundle.sprint_id,
-                prompt_version=prompt_trace_attrs(SPRINT_FEEDBACK_PROMPT_NAME)["prompt_version"],
                 rubric_scores=rubric_scores,
                 overall_score=round(average_score, 2),
                 executive_summary=" ".join(summary_parts),
                 strengths=strengths,
                 weaknesses=weaknesses,
                 key_recommendations=recommendations,
+                prompt_version=str(sprint_feedback_prompt.version) if sprint_feedback_prompt else None,
                 # failed_dimensions=failed_dimensions,
             )
+
             mlflow.log_metric("overall_score", average_score)
             for dim, score in scores_by_dim.items():
                 if not score.evaluation_failed:
                     mlflow.log_metric(f"{dim}_score", score.score)
             mlflow.log_metric("failed_dimensions_count", len(failed_dimensions))
             mlflow.log_metric("evaluation_duration_seconds", time.time() - start_time)
+
             root.set_outputs(final_assessment.model_dump(mode="json"))  # Store the final assessment in the root span outputs for traceability
             # Store the prompt versions used for each dimension & the sprint feedback prompt in the root span attributes for traceability
             root.set_attributes({"prompt_versions": {
-                "dimension_prompts": {dim: prompt_trace_attrs(dimension_prompt_name(dim))["prompt_version"] for dim in DIMENSIONS},
+                "version": {dim: prompt_versions_registered[f"Evaluate_{dim}"] for dim in DIMENSIONS},
                 "sprint_feedback_prompt": final_assessment.prompt_version,
             }})
 
@@ -214,4 +217,4 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
 
     log.info("Evaluation by model %s completed in %.2f seconds.", model_name, time.time() - start_time)
     print(f"Evaluation by model {model_name} completed in {time.time() - start_time:.2f} seconds.")
-    return final_assessment
+    return final_assessment, prompt_versions_registered

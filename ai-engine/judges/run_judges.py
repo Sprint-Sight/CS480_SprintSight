@@ -24,6 +24,13 @@ HALLUCINATION_COL = "citation_hallucination_rate/value"
 CITATION_COUNT_COL = "citation_count/value"
 GROUNDED_COL = "citation_grounded_rate/value"
 
+MAX_PENALISED_MAE = 3
+MAX_HALLUCINATION = 0.1
+MIN_CITATIONS = 10
+MIN_GROUNDED_RATE = 0.5
+
+KEEP_ASSESSMENTS = {'gold', 'citation_grounding'} # not produced by the judge
+
 def _log(msg):
     print(msg, flush=True)
 
@@ -33,111 +40,122 @@ def grade_accuracy_from_trace(trace: Trace, expectations: dict): # expects the g
     outputs = {"rubric_scores": {d: (getattr(rubric, d).model_dump() if getattr(rubric, d) else None) for d in DIMENSIONS}}
     return numeric_grade_accuracy.run(outputs=outputs, expectations=expectations)
 
+def find_gold(trace: Trace):
+    team, sprint = trace.info.tags.get("team_id"), trace.info.tags.get("sprint_id")
+    return GOLD_BY_TEAM.get(team) if sprint else None
+
 # Either trace_ids is provided (explicitly select traces) or model/team_id is provided (filter by tags). If both are provided, trace_ids takes precedence.
 def select_traces(client: MlflowClient, experiment_id: str, *, trace_ids=None, model=None, team_id=None, max_results=100):
     if trace_ids:
         return [client.get_trace(trace_id) for trace_id in trace_ids]
-    if not model and not team_id:
-        clauses = ["trace.status = 'OK'"]
-        traces, token = [], None
-        while True: # Fetch traces in pages until we have enough or there are no more
-            page = client.search_traces( # search_traces() returns a page of traces, not all at once
-                locations=[experiment_id], filter_string=" AND ".join(clauses), 
-                max_results=max_results, order_by=["timestamp_ms DESC"], page_token=token
-            )
-            traces.extend(page)
-            token = page.token
-            if not token or len(traces) >= max_results:
-                break
-
-        return traces
+    clauses = ["trace.status = 'OK'"]
+    if team_id:
+        clauses.append(f"tags.team_id = '{team_id}'")
+    if model:
+        clauses.append(f"tags.model = '{model}'") # the GRADED model
+    traces, token = [], None
+    while True: # search_traces() returns a page at a time
+        page = client.search_traces(experiment_id=[experiment_id], filter=f" AND ".join(clauses), max_results=max_results, order_by=['timestamp_ms DESC'],page_token=token)
+        traces.extend(page)
+        token = page.token
+        if not token or len(traces) >= max_results:
+            return traces[:max_results]
 
 def _flag_for_review(result_df: pd.DataFrame, with_judge: bool):
+    has_gold = GRADE_COL in result_df.columns # absent when the group had no gold (code-based scorer not run)
 
-    USED_COLS = [GRADE_COL, COVERGAE_COL := "coverage_check/value"]
-    JUDGE_COLS = [HALLUCINATION_COL, CITATION_COUNT_COL, GROUNDED_COL]
-
-    needed = USED_COLS + (JUDGE_COLS if with_judge else [])
-    
     for _, row in result_df.iterrows():
-        trace_id = row["trace_id"]
-        mae, cov = row[GRADE_COL], row[COVERGAE_COL]
-        halluc, count, ground = row[HALLUCINATION_COL], row[CITATION_COUNT_COL], row[GROUNDED_COL]
-        reason = ""
-        if pd.isna(mae) or pd.isna(cov):  # a scorer failed (e.g. judge call errored)
-            reason = "Missing scorer output: " + ", ".join(f"{c}={row[c]}" for c in needed if pd.isna(row[c]))
-        if mae > 3:
-            reason += f"grade={mae}, hallucination_rate={halluc}, citation_count={count}, "
-        if (with_judge and halluc > 0.1):
-            reason += f"hallucination_rate={halluc} > 0.1, "
-        if (with_judge and count < 10):
-            reason += f"citation_count={count} < 10, "
-        if (with_judge and ground < 0.5):
-            reason += f"grounded_rate={ground} < 0.83, "
+        def val(col):
+            v = row.get(col)
+            return None if v is None or pd.isna(v) else v
 
-        if reason:
+        trace_id, reasons = row["trace_id"], []
+        if has_gold:
+            mae = val(GRADE_COL)
+            if mae is None:
+                reasons.append("grade scorer produced no output")
+            elif mae > MAX_PENALISED_MAE:
+                reasons.append(f"grade_penalised_mae={mae} > {MAX_PENALISED_MAE}")
+        if with_judge:
+            halluc, count, grounded = val(HALLUCINATION_COL), val(CITATION_COUNT_COL), val(GROUNDED_COL)
+            if halluc is None:
+                reasons.append("citation judge produced no output") # e.g. the judge call errored
+            elif halluc > MAX_HALLUCINATION:
+                reasons.append(f"hallucination_rate={halluc} > {MAX_HALLUCINATION}")
+            if count is not None and count < MIN_CITATIONS:
+                reasons.append(f"citation_count={count} < {MIN_CITATIONS}")
+            if grounded is not None and grounded < MIN_GROUNDED_RATE:
+                reasons.append(f"grounded_rate={grounded} < {MIN_GROUNDED_RATE}")
+
+        if reasons:
             add_to_review_queue(f"review_queue_{trace_id}", [trace_id])
-            _log(f"Trace {trace_id} flagged for review: {reason.strip(', ')}")
+            _log(f"Trace {trace_id} flagged for review: {', '.join(reasons)}")
         else:
-            _log(f"Trace {trace_id} passed all checks: grade={mae}, hallucination_rate={halluc}, citation_count={count}, grounded_rate={ground}")
+            _log(f"Trace {trace_id} passed all checks.")
 
-def run_judge_evaluation(experiment_name: str, *, trace_ids=None, model=None, team_id=None, with_judge=True, run_name=None):
+def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_ids=None, model=None, team_id=None, with_judge=True, run_name=None) -> list:
+    """Returns one evaluate() result per group of traces (gold / no gold). The automatic path judges one trace, so one result."""
     uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
     mlflow.set_tracking_uri(uri)
     _log(f"[1/4] Connecting to MLflow at {uri} (experiment '{experiment_name}')...")
     experiment = mlflow.get_experiment_by_name(experiment_name)
     if experiment is None:
-        raise SystemExit(f"Experiment '{experiment_name}' not found at {uri}.")
+        raise RuntimeError(f"Experiment '{experiment_name}' not found at {uri}.")
     mlflow.set_experiment(experiment_id=experiment.experiment_id)   # the eval run is created in this experiment
-    client = MlflowClient()
 
     _log("[2/4] Fetching traces...")
-    #traces = select_traces(client, experiment.experiment_id, trace_ids=trace_ids, model=model, team_id=team_id)
-    traces, usable = select_traces(client, experiment.experiment_id), [] # traces that have gold logged for their team and are ready to be evaluated
+    traces = select_traces(client, experiment.experiment_id, trace_ids=trace_ids, model=model, team_id=team_id)
+    with_gold, without_gold = [], [] # code-based scorer only runs for traces whose team's sprint has a gold
     for i, trace in enumerate(traces, 1):
-        team = trace.info.tags.get("team_id")
+        trace_id, team = trace.info.trace_id, trace.info.tags.get("team_id")
+        label = f"  [{i}/{len(traces)}] {trace_id} ({team})"
 
-        # Delete existing assessment for this trace
-        for assessment in trace.info.assessments:
-            if assessment.name != "gold": 
-                mlflow.delete_assessment(trace_id=trace.info.trace_id, assessment_id=assessment.assessment_id)
-                _log(f"  [{i}/{len(traces)}] {trace.info.trace_id} ({team}): existing assessment deleted")
+        for assessment in trace.info.assessments: # clear a previous judge run so results don't pile up
+            if assessment.name not in KEEP_ASSESSMENTS:
+                mlflow.delete_assessment(trace_id=trace_id, assessment_id=assessment.assessment_id)
+                _log(f"{label}: existing assessment '{assessment.name}' deleted")
 
-        # Get the gold rubric for this trace's team and log it if not already logged
-        gold = GOLD_BY_TEAM.get(team) # by the trace's own team_id, never the loop index
-        if gold is None: # no gold for this team, skip it
-            _log(f"  [{i}/{len(traces)}] skip {trace.info.trace_id}: no gold for team_id={team!r}")
-            continue
-        stored = [a for a in (trace.info.assessments or []) if a.name == "gold"] # gold already logged for this trace
-        if stored and (stored[0].value or {}).get("team_id") == gold.team_id: # gold already logged for this team, skip it
-            _log(f"  [{i}/{len(traces)}] {trace.info.trace_id} ({team}): gold already correct")
-        else: # gold not logged or logged for the wrong team, log it now
-            for a in stored: # replaces gold stored with the wrong team
-                mlflow.delete_assessment(trace_id=trace.info.trace_id, assessment_id=a.assessment_id)
-            mlflow.log_expectation(trace_id=trace.info.trace_id, name="gold", value=gold.model_dump(mode="json"))
-            _log(f"  [{i}/{len(traces)}] {trace.info.trace_id} ({team}): gold (re)logged")
-        
-        try: # Fetch the trace again to ensure the logged gold is included in the expectations for evaluation. If this fails, flag the trace for review.
-            usable.append(client.get_trace(trace.info.trace_id))   # re-fetch so logged expectations are included
+        gold = find_gold(trace)
+        if gold is None:
+            _log(f"{label}: no gold for this team/sprint -> LLM judge only")
+        else:
+            stored = [a for a in (trace.info.assessments or []) if a.name == "gold"]
+            logged = (stored[0].value or {}) if stored else {}
+            if logged.get("team_id") == gold.team_id and logged.get("sprint_id") == gold.sprint_id:
+                _log(f"{label}: gold already correct")
+            else: # not logged, or logged for another team/sprint
+                for a in stored:
+                    mlflow.delete_assessment(trace_id=trace_id, assessment_id=a.assessment_id)
+                mlflow.log_expectation(trace_id=trace_id, name="gold", value=gold.model_dump(mode="json"))
+                _log(f"{label}: gold (re)logged")
+
+        try: # Fetch the trace again so the logged gold is included in the expectations. If this fails, flag the trace for review.
+            fresh = client.get_trace(trace_id)
         except RestException as e:
-            _log(f"  [{i}/{len(traces)}] {trace.info.trace_id}: failed to fetch trace: {e}")
-            add_to_review_queue(f"review_queue_{trace.info.trace_id}", [trace.info.trace_id]) # flag for review if we can't fetch it
+            _log(f"{label}: failed to fetch trace: {e}")
+            add_to_review_queue(f"review_queue_{trace_id}", [trace_id])
+            continue
+        (with_gold if gold is not None else without_gold).append(fresh)
 
-    if not usable:
-        raise SystemExit("No judgeable traces selected.")
+    if not (with_gold or without_gold):
+        raise RuntimeError("No judgeable traces selected.")
 
-    scorers = [grade_accuracy_from_trace] + ([llm_judge_citation_grounding] if with_judge else [])
-    _log(f"[3/4] Evaluating {len(usable)} trace(s) with {[getattr(s, 'name', s) for s in scorers]} "
-         "(the LLM judge takes minutes per trace)...")
+    judge = [llm_judge_citation_grounding] if with_judge else []
+    groups = [("gold", with_gold, [grade_accuracy_from_trace, *judge]), ("no_gold", without_gold, judge)]
     os.environ.setdefault("MLFLOW_GENAI_EVAL_MAX_WORKERS", "1")   # default 10 parallel scorers would swamp one Ollama server
-    run_name = run_name or f"judge_{JUDGE_MODEL}_{time.strftime('%Y%m%d-%H%M')}"
-    start = time.perf_counter()
-    with mlflow.start_run(run_name=run_name): # evaluate() reuses the active run
-        result = mlflow.genai.evaluate(data=usable, scorers=scorers)
-
-    _flag_for_review(result.result_df, with_judge)
-    _log(f"[4/4] Done in {time.perf_counter() - start:.0f}s. Metrics: {result.metrics}")
-    return result
+    base_name = run_name or f"judge_{JUDGE_MODEL}_{time.strftime('%Y%m%d-%H%M')}"
+    start, results = time.perf_counter(), []
+    for group_name, group, scorers in groups:
+        if not group or not scorers:
+            continue
+        _log(f"[3/4] Evaluating {len(group)} {group_name} trace(s) with {[getattr(s, 'name', s) for s in scorers]} "
+             "(the LLM judge takes minutes per trace)...")
+        with mlflow.start_run(run_name=f"{base_name}_{group_name}"): # evaluate() reuses the active run
+            result = mlflow.genai.evaluate(data=group, scorers=scorers)
+        _flag_for_review(result.result_df, with_judge)
+        results.append(result)
+    _log(f"[4/4] Done in {time.perf_counter() - start:.0f}s. Metrics: {[r.metrics for r in results]}")
+    return results
 
 if __name__ == "__main__":
     trace_ids = [ # CS203 research 12/10/26

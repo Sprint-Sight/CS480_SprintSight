@@ -69,6 +69,10 @@ services: # Seperate containers to run
             ollama pull qwen2.5-coder:32b &&
             ollama create sprintsight-coder-32b -f /ai-engine/models/Modelfile.qwen25-coder
           fi
+          if ! ollama list | grep -q sprintsight-judge-phi; then
+            ollama pull phi4:14b &&
+            ollama create sprintsight-judge-phi -f /ai-engine/models/Modelfile.phi
+          fi
       restart: "no"
 
     sprintsight_ai:

@@ -231,3 +231,12 @@ while yours is running.
 `OLLAMA_KV_CACHE_TYPE=q8_0` in `ollama_gpu.sbatch`'s `--env` list — this
 roughly halves KV cache size at a small quality cost. local copy first:
 `rm ai-engine/hpc/<file>` then `git pull` again.
+
+## Updated E2E workflow for AI engine
+Step by step process once user clicks 'assess sprint':
+1. When user clicks 'assess sprint', register all 6 dimension prompts.
+2. Check every prompt returned from search_prompt and if none of the prompt matches the current, register the prompt. 
+3. If no prompt exists, set the prompt's alias to 'production'. else set the prompt's alias to the default
+4. After all prompts are registered, run evaluate sprint to get SprintAssessment to be returned to UI (UI needs the sprintassessment results asap to be displayed and it can't wait for anything else)
+5. Run judge is called automatically on the traces that were created in the evaluation sprint
+6. As judge assesses each trace, based on the both the code-based scorers metrics (for code-based scorer, check first if the team's sprint has been graded before and hence its gold exists, else don't use code-based scorer) and llm judge assessment, compare the current trace's prompt to the prompt with same dimension_name but of alias 'production', determine if the former should replace the latter as the 'production' (can consider mlflow.genai.optimize_prompt instead)

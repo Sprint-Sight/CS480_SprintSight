@@ -16,7 +16,7 @@ for entry in \
   "sprintsight-qwen|qwen3:8b|Modelfile.qwen" \
   "sprintsight-mistral|mistral:7b|Modelfile.mistral" \
   "sprintsight-gemma|gemma4:12b|Modelfile.gemma" \
-  "sprintsight-judge-phi|phi4:14b|Modelfile.phi"
+  "sprintsight-judge-phi|phi4:14b|Modelfile.phi" \
   "sprintsight-llama31|llama3.1:8b|Modelfile.llama31" \
   "sprintsight-qwen25-32b|qwen2.5:32b|Modelfile.qwen25-32b" \
   "sprintsight-r1-32b|deepseek-r1:32b|Modelfile.deepseek-r1" \
