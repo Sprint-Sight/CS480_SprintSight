@@ -350,6 +350,7 @@ CREATE TABLE IF NOT EXISTS peer_evaluations (
     rated_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 5),
     remarks TEXT,
+    reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (rater_id, rated_id, project_id)
 );
