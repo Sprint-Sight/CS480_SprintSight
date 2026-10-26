@@ -15,6 +15,8 @@ from app.repositories.interfaces import (
     ExportLogRecord,
     ExportLogRepository,
     IngestionMetricBundle,
+    InstructorJiraCredentialsRecord,
+    InstructorJiraCredentialsRepository,
     InstructorModelSelectionRecord,
     InstructorModelSelectionRepository,
     JiraIngestionRunRecord,
@@ -323,6 +325,32 @@ class InMemoryInstructorModelSelectionRepository(InstructorModelSelectionReposit
 
 
 instructor_model_selection_repo = InMemoryInstructorModelSelectionRepository()
+
+
+class InMemoryInstructorJiraCredentialsRepository(InstructorJiraCredentialsRepository):
+    def __init__(self) -> None:
+        self._credentials: dict[str, InstructorJiraCredentialsRecord] = {}
+
+    def get_credentials(self, user_id: str) -> InstructorJiraCredentialsRecord | None:
+        return self._credentials.get(user_id)
+
+    def set_credentials(
+        self,
+        user_id: str,
+        jira_email: str | None,
+        jira_api_token_encrypted: str | None,
+    ) -> InstructorJiraCredentialsRecord:
+        record = InstructorJiraCredentialsRecord(
+            user_id=user_id,
+            jira_email=jira_email,
+            jira_api_token_encrypted=jira_api_token_encrypted,
+            updated_at=datetime.now(UTC),
+        )
+        self._credentials[user_id] = record
+        return record
+
+
+instructor_jira_credentials_repo = InMemoryInstructorJiraCredentialsRepository()
 
 
 class InMemoryDocumentRepository(DocumentRepository):

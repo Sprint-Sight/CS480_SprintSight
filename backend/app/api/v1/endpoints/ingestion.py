@@ -7,9 +7,10 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.config import get_settings
+from app.core.credential_crypto import CredentialDecryptionError, decrypt_secret
 from app.core.storage import storage
-from app.dependencies.auth import get_action_audit_repository, get_jira_ingestion_repository, get_metrics_repository, get_project_repository, get_user_repository, require_faculty
-from app.repositories.interfaces import ActionAuditRepository, JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
+from app.dependencies.auth import get_action_audit_repository, get_instructor_jira_credentials_repository, get_jira_ingestion_repository, get_metrics_repository, get_project_repository, get_user_repository, require_faculty
+from app.repositories.interfaces import ActionAuditRepository, InstructorJiraCredentialsRepository, JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
@@ -27,6 +28,7 @@ def sync_raw_jira_data(
     payload: JiraRawSyncRequest,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    instructor_credentials: Annotated[InstructorJiraCredentialsRepository, Depends(get_instructor_jira_credentials_repository)],
     runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> dict[str, object]:
@@ -38,6 +40,22 @@ def sync_raw_jira_data(
     jira_project_key = payload.jira_project_key or project.jira_project_key
     if not jira_project_key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project key is required.")
+    credential_record = instructor_credentials.get_credentials(current_user.id)
+    shared_credentials = None
+    if credential_record and credential_record.jira_email:
+        if credential_record.jira_api_token_encrypted:
+            try:
+                shared_credentials = (
+                    credential_record.jira_email,
+                    decrypt_secret(credential_record.jira_api_token_encrypted),
+                )
+            except CredentialDecryptionError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Stored Jira credentials could not be decrypted. Re-save the API token.",
+                ) from exc
+        elif get_settings().jira_api_token:
+            shared_credentials = (credential_record.jira_email, get_settings().jira_api_token)
     result = fetch_and_store_raw_jira_data(
         project.course_id,
         project_id,
@@ -45,6 +63,7 @@ def sync_raw_jira_data(
         jira_project_key,
         project,
         payload.jql,
+        instructor_credentials=shared_credentials,
     )
     run = runs.create_run(JiraIngestionRunRecord(
         id=str(uuid4()), course_id=project.course_id, project_id=project_id,

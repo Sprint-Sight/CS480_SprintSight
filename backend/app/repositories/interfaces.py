@@ -272,6 +272,25 @@ class InstructorModelSelectionRepository(Protocol):
     def set_selection(self, user_id: str, model_id: str) -> InstructorModelSelectionRecord: ...
 
 
+@dataclass
+class InstructorJiraCredentialsRecord:
+    user_id: str
+    jira_email: str | None
+    jira_api_token_encrypted: str | None
+    updated_at: datetime
+
+
+class InstructorJiraCredentialsRepository(Protocol):
+    def get_credentials(self, user_id: str) -> InstructorJiraCredentialsRecord | None: ...
+
+    def set_credentials(
+        self,
+        user_id: str,
+        jira_email: str | None,
+        jira_api_token_encrypted: str | None,
+    ) -> InstructorJiraCredentialsRecord: ...
+
+
 class OverrideRepository(Protocol):
     def save_override(self, record: OverrideResponse) -> None: ...
 
