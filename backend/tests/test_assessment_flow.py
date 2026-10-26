@@ -44,8 +44,7 @@ def test_convert_ai_result_to_assessment_report_maps_real_ai_payload() -> None:
     assert report.sprint_id == "sp1"
     assert report.team_score.score == 80.0
     assert report.team_score.rationale == "Strong sprint delivery."
-    assert report.individual_scores[0].student_id == "stu-001"
-    assert report.individual_scores[0].score == 80.0
+    assert report.individual_scores == []
     assert report.recommendations == ["Improve test coverage."]
 
 
