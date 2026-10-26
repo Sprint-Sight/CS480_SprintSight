@@ -32,7 +32,6 @@ export function EvaluationTable({ evaluations, isLoading }: EvaluationTableProps
             <th className="px-4 py-3 text-left font-semibold text-slate-900">Rated</th>
             <th className="px-4 py-3 text-center font-semibold text-slate-900">Score</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-900">Remarks</th>
-            <th className="px-4 py-3 text-left font-semibold text-slate-900">Reason</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-900">Date</th>
           </tr>
         </thead>
@@ -68,9 +67,7 @@ export function EvaluationTable({ evaluations, isLoading }: EvaluationTableProps
               <td className="px-4 py-3 max-w-xs truncate text-slate-700">
                 {evaluation.remarks || "—"}
               </td>
-              <td className="px-4 py-3 max-w-xs truncate text-slate-700">
-                {evaluation.reason || "—"}
-              </td>
+
               <td className="px-4 py-3 text-slate-600">
                 <div className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />

@@ -455,7 +455,6 @@ class PeerEvaluationRecord:
     score: int             # 1-5
     remarks: str | None    # Optional remarks
     created_at: datetime
-    reason: str | None = None  # Why the score was given
 
 
 @dataclass

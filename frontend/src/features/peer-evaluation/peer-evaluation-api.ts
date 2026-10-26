@@ -8,7 +8,6 @@ export type PeerEvaluationResponse = {
   rated_id: string;
   score: number;
   remarks: string | null;
-  reason: string | null;
   created_at: string;
 };
 
@@ -24,7 +23,6 @@ export type PeerEvaluationInstructorView = {
   rated_full_name: string;
   score: number;
   remarks: string | null;
-  reason: string | null;
   created_at: string;
 };
 
@@ -44,6 +42,32 @@ export type CoursePeerEvaluationSummary = {
   total_projects: number;
   total_evaluations: number;
   projects: PeerEvaluationSummary[];
+};
+
+export type PeerEvaluationReceivedItem = PeerEvaluationInstructorView & {
+  is_score_outlier: boolean;
+  score_z_score: number | null;
+};
+
+export type MemberPeerEvaluationDetail = {
+  course_id: string;
+  project_id: string;
+  project_name: string;
+  member_id: string;
+  member_email: string;
+  member_full_name: string;
+  evaluations: PeerEvaluationReceivedItem[];
+  total_score: number;
+  average_score: number | null;
+  evaluation_count: number;
+  is_total_outlier: boolean;
+  total_z_score: number | null;
+  outlier_direction: "low" | "high" | null;
+  course_average_total: number | null;
+  course_total_score_std_dev: number | null;
+  enrolled_student_count: number;
+  students_with_received_evaluations: number;
+  students_below_course_average: number;
 };
 
 export type EvaluationStatusResponse = {
@@ -76,7 +100,6 @@ type SubmitEvaluationPayload = {
   rated_id: string;
   score: number;
   remarks?: string;
-  reason?: string;
 };
 
 type SetConfigPayload = {
@@ -134,6 +157,18 @@ export const getProjectEvaluations = (
 ): Promise<PeerEvaluationSummary> => {
   return apiRequest<PeerEvaluationSummary>(
     `/peer-evaluation/projects/${projectId}/evaluations`,
+    {
+      method: "GET",
+    },
+  );
+};
+
+export const getMemberEvaluations = (
+  projectId: string,
+  memberId: string,
+): Promise<MemberPeerEvaluationDetail> => {
+  return apiRequest<MemberPeerEvaluationDetail>(
+    `/peer-evaluation/projects/${projectId}/members/${memberId}/evaluations`,
     {
       method: "GET",
     },
