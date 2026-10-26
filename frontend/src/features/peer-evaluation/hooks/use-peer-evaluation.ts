@@ -7,11 +7,13 @@ import {
   getEvaluationStatus,
   getCourseEvaluations,
   getProjectEvaluations,
+  getMemberEvaluations,
   getEvaluationConfig,
   setEvaluationConfig,
   type PeerEvaluationResponse,
   type CoursePeerEvaluationSummary,
   type PeerEvaluationSummary,
+  type MemberPeerEvaluationDetail,
   type EvaluationStatusResponse,
   type PeerEvaluationConfigResponse,
 } from "@/features/peer-evaluation/peer-evaluation-api";
@@ -21,7 +23,6 @@ type EvaluationFormData = {
   ratedId: string;
   score: number;
   remarks?: string;
-  reason?: string;
 };
 
 export function usePeerEvaluation() {
@@ -30,6 +31,9 @@ export function usePeerEvaluation() {
     null,
   );
   const [projectEvaluations, setProjectEvaluations] = useState<PeerEvaluationSummary | null>(null);
+  const [memberEvaluations, setMemberEvaluations] = useState<MemberPeerEvaluationDetail | null>(
+    null,
+  );
   const [evaluationStatus, setEvaluationStatus] = useState<EvaluationStatusResponse | null>(null);
   const [evaluationConfig, setEvaluationConfigState] = useState<PeerEvaluationConfigResponse | null>(
     null,
@@ -60,6 +64,23 @@ export function usePeerEvaluation() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load course evaluations";
       setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const loadMemberEvaluations = useCallback(async (projectId: string, memberId: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await getMemberEvaluations(projectId, memberId);
+      setMemberEvaluations(data);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load member evaluations";
+      setError(message);
+      setMemberEvaluations(null);
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -113,7 +134,6 @@ export function usePeerEvaluation() {
           rated_id: formData.ratedId,
           score: formData.score,
           remarks: formData.remarks,
-          reason: formData.reason,
         });
 
         setMyEvaluations((prev) => {
@@ -166,6 +186,7 @@ export function usePeerEvaluation() {
     myEvaluations,
     courseEvaluations,
     projectEvaluations,
+    memberEvaluations,
     evaluationStatus,
     evaluationConfig,
     isLoading,
@@ -173,6 +194,7 @@ export function usePeerEvaluation() {
     loadMyEvaluations,
     loadCourseEvaluations,
     loadProjectEvaluations,
+    loadMemberEvaluations,
     checkEvaluationStatus,
     loadEvaluationConfig,
     submitNewEvaluation,
