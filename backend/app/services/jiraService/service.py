@@ -49,8 +49,16 @@ def _jira_status_error_detail(exc: httpx.HTTPStatusError) -> str:
     return f"{detail} {extra}".strip() if extra else detail
 
 
-def _resolve_jira_auth(project: ProjectRecord) -> tuple[str, str, str]:
+def _resolve_jira_auth(
+    project: ProjectRecord,
+    instructor_credentials: tuple[str, str] | None = None,
+) -> tuple[str, str, str]:
     settings = get_settings()
+    domain = normalize_jira_domain(project.jira_domain) or normalize_jira_domain(settings.jira_domain) or ""
+    if instructor_credentials:
+        email, api_token = instructor_credentials
+        if domain and email and api_token:
+            return domain, email, api_token
     if project.jira_api_token_encrypted:
         try:
             token = decrypt_secret(project.jira_api_token_encrypted)
@@ -60,14 +68,13 @@ def _resolve_jira_auth(project: ProjectRecord) -> tuple[str, str, str]:
                 detail="Stored Jira credentials could not be decrypted. Re-save the API token.",
             ) from exc
         email = project.jira_email
-        domain = normalize_jira_domain(project.jira_domain)
-        if not email or not domain or not token:
+        project_domain = normalize_jira_domain(project.jira_domain)
+        if not email or not project_domain or not token:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Jira credentials are incomplete for this project.",
             )
-        return domain, email, token
-    domain = normalize_jira_domain(settings.jira_domain) or ""
+        return project_domain, email, token
     if domain and settings.jira_email and settings.jira_api_token:
         return domain, settings.jira_email, settings.jira_api_token
     raise HTTPException(
@@ -168,9 +175,10 @@ def fetch_and_store_raw_jira_data(
     jira_project_key: str,
     project: ProjectRecord,
     jql: str | None = None,
+    instructor_credentials: tuple[str, str] | None = None,
 ) -> dict[str, object]:
     settings = get_settings()
-    domain, email, api_token = _resolve_jira_auth(project)
+    domain, email, api_token = _resolve_jira_auth(project, instructor_credentials)
 
     query = _build_jira_search_jql(jira_project_key, sprint_id, jql)
     issues: list[dict] = []

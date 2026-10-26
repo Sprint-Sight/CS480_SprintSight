@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     notifications,
     peer_evaluation,
     projects,
+    settings,
     users,
 )
 
@@ -21,6 +22,7 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(projects.router)
+api_router.include_router(settings.router)
 api_router.include_router(manual_text.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(ingestion.jira_ingestion_router)

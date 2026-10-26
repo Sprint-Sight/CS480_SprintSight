@@ -15,6 +15,8 @@ from app.repositories.interfaces import (
     EmailOutboxRecord,
     EmailOutboxRepository,
     IngestionMetricBundle,
+    InstructorJiraCredentialsRecord,
+    InstructorJiraCredentialsRepository,
     InstructorModelSelectionRecord,
     InstructorModelSelectionRepository,
     JiraIngestionRunRecord,
@@ -1216,6 +1218,18 @@ def ensure_instructor_model_selection_schema(pool: ConnectionPool) -> None:
         )
 
 
+def ensure_instructor_jira_credentials_schema(pool: ConnectionPool) -> None:
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS instructor_jira_credentials (
+                user_id UUID PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                jira_email VARCHAR(255),
+                jira_api_token_encrypted TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+
+
 def ensure_peer_evaluation_schema(pool: ConnectionPool) -> None:
     with pool.connection() as connection:
         connection.execute(
@@ -1459,6 +1473,52 @@ class PostgresInstructorModelSelectionRepository(InstructorModelSelectionReposit
         return InstructorModelSelectionRecord(
             user_id=str(row["user_id"]),
             model_id=row["model_id"],
+            updated_at=row["updated_at"],
+        )
+
+
+class PostgresInstructorJiraCredentialsRepository(InstructorJiraCredentialsRepository):
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def get_credentials(self, user_id: str) -> InstructorJiraCredentialsRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT user_id, jira_email, jira_api_token_encrypted, updated_at
+                FROM instructor_jira_credentials WHERE user_id = %s""",
+                (UUID(user_id),),
+            ).fetchone()
+        if not row:
+            return None
+        return InstructorJiraCredentialsRecord(
+            user_id=str(row["user_id"]),
+            jira_email=row["jira_email"],
+            jira_api_token_encrypted=row["jira_api_token_encrypted"],
+            updated_at=row["updated_at"],
+        )
+
+    def set_credentials(
+        self,
+        user_id: str,
+        jira_email: str | None,
+        jira_api_token_encrypted: str | None,
+    ) -> InstructorJiraCredentialsRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO instructor_jira_credentials
+                (user_id, jira_email, jira_api_token_encrypted)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id)
+                DO UPDATE SET jira_email = EXCLUDED.jira_email,
+                              jira_api_token_encrypted = EXCLUDED.jira_api_token_encrypted,
+                              updated_at = CURRENT_TIMESTAMP
+                RETURNING user_id, jira_email, jira_api_token_encrypted, updated_at""",
+                (UUID(user_id), jira_email, jira_api_token_encrypted),
+            ).fetchone()
+        return InstructorJiraCredentialsRecord(
+            user_id=str(row["user_id"]),
+            jira_email=row["jira_email"],
+            jira_api_token_encrypted=row["jira_api_token_encrypted"],
             updated_at=row["updated_at"],
         )
 

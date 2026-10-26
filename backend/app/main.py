@@ -24,6 +24,7 @@ from app.repositories.postgres import (
     PostgresAuditRetentionConfigRepository,
     PostgresDocumentRepository,
     PostgresEmailOutboxRepository,
+    PostgresInstructorJiraCredentialsRepository,
     PostgresInstructorModelSelectionRepository,
     PostgresJiraIngestionRunRepository,
     PostgresManualTextRepository,
@@ -39,6 +40,7 @@ from app.repositories.postgres import (
     ensure_audit_schema,
     ensure_email_outbox_schema,
     ensure_instructor_model_selection_schema,
+    ensure_instructor_jira_credentials_schema,
     ensure_notification_schema,
     ensure_peer_evaluation_schema,
     ensure_project_credential_schema,
@@ -87,6 +89,7 @@ async def lifespan(app: FastAPI):
     )
     ensure_rubric_weights_schema(pool)
     ensure_instructor_model_selection_schema(pool)
+    ensure_instructor_jira_credentials_schema(pool)
     ensure_peer_evaluation_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
@@ -101,6 +104,7 @@ async def lifespan(app: FastAPI):
     app.state.audit_retention_config_repository = PostgresAuditRetentionConfigRepository(pool)
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
     app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(pool)
+    app.state.instructor_jira_credentials_repository = PostgresInstructorJiraCredentialsRepository(pool)
     app.state.export_log_repository = InMemoryExportLogRepository()
     app.state.peer_evaluation_repository = PostgresPeerEvaluationRepository(pool)
     app.state.email_outbox_repository = PostgresEmailOutboxRepository(pool)
