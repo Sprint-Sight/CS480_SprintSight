@@ -10,7 +10,7 @@ versioned as a single unit instead of being buried next to unrelated model code.
 from schemas.rubrics_dimension_score import DimensionName
 
 requirements = '''
-    Evaluate the individual's performance against the Requirements dimension using the provided Jira/project data.
+    Evaluate the team's performance against the Requirements dimension using the provided Jira/project data. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -31,7 +31,7 @@ requirements = '''
     '''
 
 code_quality_prompt = '''
-    Evaluate the individual's Code Quality based on the available Git repository and commit history.
+    Evaluate the team's Code Quality based on the available Git repository and commit history. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -52,15 +52,14 @@ code_quality_prompt = '''
     '''
 
 testing_prompt = '''
-    Evaluate the individual's Testing performance using Jira tickets, Git commits, test files, and other available testing evidence.
+    Evaluate the team's Testing performance using Jira tickets, Git commits, test files, and other available testing evidence. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
     Number of dedicated testing/test-related Jira tickets completed
     Presence of explicit test-related commits
     Evidence of unit, integration, system, or other appropriate tests
-    Whether testing appears comprehensive relative to the code contributed
-    Whether testing work is clearly attributable to the individual
+    Whether testing appears comprehensive relative to the code the team contributed
 
     Assign a score from 1–10 using this rubric:
 
@@ -73,7 +72,7 @@ testing_prompt = '''
     '''
 
 documentation_prompt = '''
-    Evaluate the individual's contribution to Documentation using Git commits, Jira ticket descriptions/summaries, README files, technical documentation, and other available project artifacts.
+    Evaluate the team's Documentation using Git commits, Jira ticket descriptions/summaries, README files, technical documentation, and other available project artifacts. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -90,32 +89,32 @@ documentation_prompt = '''
     3–5: Documentation is vague, incomplete, or missing across some artifacts.
     1–2: No documentation effort is recorded in any system.
 
-    Output: Provide the score, a concise justification, and the specific documentation evidence supporting the score. Do not award credit for documentation that cannot be attributed to the individual.
+    Output: Provide the score, a concise justification, and the specific documentation evidence supporting the score. Do not award credit for documentation unless there is evidence it was actually produced.
     '''
 
 collaboration_prompt = '''
-    Evaluate the individual's Collaboration performance using peer ratings and workload distribution data.
+    Evaluate the team's Collaboration as a whole, using workload distribution and participation evidence drawn from the available Git and project-management data. This is a single, holistic team-level judgement — do NOT score or single out individual members.
 
     Assess:
 
-    Average peer rating received
-    Distribution of peer ratings, where available
-    Number of tickets/story points handled relative to teammates
-    Whether workload appears reasonably balanced
-    Evidence of severe under-contribution or freeriding
+    Whether work is shared across the team rather than concentrated in only one or two members
+    How actively the team uses project-management tools — e.g. whether Jira tickets are created, assigned, updated, and moved to Done rather than left stale or unused
+    Participation in shared work such as code reviews, pull-request discussion, and comments on each other's tickets
+    Consistency of engagement across the sprint rather than isolated bursts of activity
+    Evidence that the team is coordinating, or conversely that some members are not contributing at all
 
     Assign a score from 1–10 using this rubric:
 
-    9–10: Peer rating average is 4.5–5.0 and workload is evenly balanced.
-    6–8: Peer rating average is 3.5–4.4 and workload is mostly balanced.
-    3–5: Peer rating average is 2.5–3.4 and workload is highly imbalanced.
-    1–2: Peer rating average is below 2.5 and there is strong evidence of freeriding.
+    9–10: Work is well distributed across the team and project-management tools are used consistently and actively.
+    6–8: Work is mostly shared and project-management tools are used, with some gaps.
+    3–5: Work is concentrated in a few members, or project-management tools are used only sporadically.
+    1–2: Little evidence of teamwork; contribution is highly uneven or project-management tools are barely used.
 
-    Output: Provide the score, a concise justification, the peer-rating evidence, and the workload evidence. Do not treat a low ticket count alone as evidence of poor collaboration without considering the individual's assigned workload.
+    Output: Provide the score, a concise justification, and the workload and participation evidence supporting the score. Do not treat a low overall ticket count as poor collaboration without considering the total scope of the team's assigned work.
     '''
 
 cicd_prompt = '''
-    Evaluate the individual's contribution to Continuous Integration and Continuous Deployment (CI/CD) using Git commits, pipeline configurations, deployment logs, and other available project artifacts.
+    Evaluate the team's Continuous Integration and Continuous Deployment (CI/CD) practices using Git commits, pipeline configurations, deployment logs, and other available project artifacts. This is a single, team-level judgement — do not score individual members.
 
     Assess:
 
@@ -131,7 +130,7 @@ cicd_prompt = '''
     3–5: CI/CD practices are sporadic or partially implemented.
     1–2: No significant CI/CD practices are evident.
 
-    Output: Provide the score, a concise justification, and the specific CI/CD evidence supporting the score. Do not award credit for CI/CD practices that cannot be attributed to the individual.
+    Output: Provide the score, a concise justification, and the specific CI/CD evidence supporting the score. Do not award credit for CI/CD practices unless there is evidence they were actually implemented.
     '''
 
 DIMENSIONS: list[DimensionName] = ["code_quality", "testing", "documentation", "requirements", "collaboration", "cicd"]
