@@ -78,7 +78,7 @@ class ModelOutput(BaseModel):
     and writing a justification to match it.
     """
     justification: str = Field(min_length=10, max_length=500)
-    evidence_citations: list[EvidenceCitation] = Field(max_length=3)
+    evidence_citations: list[EvidenceCitation] = Field(max_length=15)
     score: int = Field(ge=1, le=10)
 
     @field_validator("evidence_citations", mode="before")
