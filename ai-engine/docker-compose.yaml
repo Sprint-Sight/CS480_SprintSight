@@ -35,10 +35,6 @@ services: # Seperate containers to run
       command:
         - |
           sleep 10
-          if ! ollama list | grep -q sprintsight-llama; then
-            ollama pull llama3.2 &&
-            ollama create sprintsight-llama -f /ai-engine/models/Modelfile.llama
-          fi
           if ! ollama list | grep -q sprintsight-qwen; then
             ollama pull qwen3:8b &&
             ollama create sprintsight-qwen -f /ai-engine/models/Modelfile.qwen
@@ -85,7 +81,7 @@ services: # Seperate containers to run
         - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow_service:5000}
         
         # Add missing model variable (defaults to llama3 if not in .env)
-        - DEFAULT_MODEL_NAME=${DEFAULT_MODEL_NAME:-sprintsight-llama}
+        - DEFAULT_MODEL_NAME=${DEFAULT_MODEL_NAME:-sprintsight-qwen}
         
         # Moved from the mlflow service to here where the FastAPI client actually uses it
         - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}

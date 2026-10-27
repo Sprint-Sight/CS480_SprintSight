@@ -177,8 +177,8 @@ query the model directly, e.g. via `ollama run`, without going through
      enroot start --rw --mount ~/sprintsight/ollama_data:/root/.ollama \
      --mount ~/CS480_SprintSight/ai-engine/models:/mnt/models ollama sh
    # inside the container:
-   ollama rm sprintsight-llama
-   ollama create sprintsight-llama -f /mnt/models/Modelfile.llama
+   ollama rm sprintsight-qwen
+   ollama create sprintsight-qwen -f /mnt/models/Modelfile.qwen
    ```
 
 `LLM_NUM_CTX_FLOOR` (env var on `sprintsight_ai`) only ever *shrinks* the
