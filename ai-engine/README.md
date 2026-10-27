@@ -86,7 +86,6 @@ The compose file now contains a lightweight `model-init` service that waits for
 Ollama to be reachable and only creates the SprintSight aliases when they are
 missing:
 
-- `sprintsight-llama` from `models/Modelfile.llama`
 - `sprintsight-qwen` from `models/Modelfile.qwen`
 - `sprintsight-mistral` from `models/Modelfile.mistral`
 - `sprintsight-gemma` from `models/Modelfile.gemma`
@@ -101,7 +100,7 @@ You can still verify the installed models with:
 docker compose exec ollama ollama list
 ```
 
-The default model is `sprintsight-llama`. Override it with
+The default model is `sprintsight-qwen`. Override it with
 `DEFAULT_MODEL_NAME` in `.env` or the compose environment.
 
 ## API
@@ -109,7 +108,7 @@ The default model is `sprintsight-llama`. Override it with
 The AI engine accepts the backend canonical payload route:
 
 ```http
-POST /assess/sprint/data?modelname=sprintsight-llama
+POST /assess/sprint/data?modelname=sprintsight-qwen
 Content-Type: application/json
 ```
 
@@ -201,14 +200,14 @@ Smoke-test one model first:
 
 ```powershell
 docker compose exec sprintsight_ai python -m research.validation_harness `
-    --models sprintsight-llama --repeats 1
+    --models sprintsight-qwen --repeats 1
 ```
 
 Run a broader comparison:
 
 ```powershell
 docker compose exec sprintsight_ai python -m research.validation_harness `
-    --models sprintsight-llama sprintsight-mistral sprintsight-qwen sprintsight-gemma `
+    --models sprintsight-qwen sprintsight-mistral sprintsight-gemma `
     --repeats 5
 ```
 
@@ -236,7 +235,7 @@ The main environment variables are:
 ```text
 OLLAMA_BASE_URL=http://ollama:11434/v1
 OLLAMA_TIMEOUT_SECONDS=300
-DEFAULT_MODEL_NAME=sprintsight-llama
+DEFAULT_MODEL_NAME=sprintsight-qwen
 MLFLOW_TRACKING_URI=http://mlflow_service:5000
 MLFLOW_EXPERIMENT_NAME=sprintsight_experiment
 LLM_AUDIT_LOG_DIR=/app/audit_logs

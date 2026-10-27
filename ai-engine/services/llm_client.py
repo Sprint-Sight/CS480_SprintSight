@@ -454,7 +454,7 @@ def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> in
 
 # Minimum num_ctx to fall back to when a sprint's bundle is small. Defaults to
 # None (disabled): by default this NEVER reduces num_ctx below the model's
-# full configured ceiling (e.g. the 49152 set in models/Modelfile.llama and
+# full configured ceiling (e.g. the 49152 set in models/Modelfile.qwen and
 # mirrored in MODEL_NUM_CTX) — chars//4 is only an estimate, and silently
 # undershooting num_ctx means Ollama truncates context with no error, which is
 # unacceptable for a grading tool. Only opt into a smaller floor (e.g. 8192)
