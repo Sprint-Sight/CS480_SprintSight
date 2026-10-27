@@ -11,14 +11,6 @@ export type LlmModelOption = {
   description: string;
 };
 
-export type LlmEvaluationParameters = {
-  temperature: number;
-  maxTokens: number;
-  topP: number;
-  enableChainOfThought: boolean;
-};
-
 export type SettingsSnapshot = {
   rubric: RubricWeight[];
-  llmParams: LlmEvaluationParameters;
 };

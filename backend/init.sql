@@ -403,6 +403,21 @@ CREATE INDEX IF NOT EXISTS idx_override_audit_timestamp
 CREATE INDEX IF NOT EXISTS idx_override_audit_instructor_timestamp
     ON override_audit_events(instructor_id, timestamp DESC);
 
+-- =============================================================
+-- INSTRUCTOR MODEL SELECTION
+-- Each instructor's chosen AI model for sprint assessment (one row per
+-- instructor). Absence of a row means the instructor falls back to the
+-- configured default (DEFAULT_MODEL_NAME, currently sprintsight-qwen), so a
+-- newly created instructor defaults to sprintsight-qwen until they pick another
+-- model. Mirrors ensure_instructor_model_selection_schema() in
+-- repositories/postgres.py (kept in sync so a fresh DB has the table at init).
+-- =============================================================
+CREATE TABLE IF NOT EXISTS instructor_model_selections (
+    user_id UUID PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    model_id VARCHAR(255) NOT NULL DEFAULT 'sprintsight-qwen',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE OR REPLACE FUNCTION guard_audit_events_immutable()
 RETURNS TRIGGER AS $$
 BEGIN

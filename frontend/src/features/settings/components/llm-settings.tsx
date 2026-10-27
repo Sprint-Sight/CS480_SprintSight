@@ -1,25 +1,18 @@
-import type { LlmEvaluationParameters, LlmModelOption } from "@/features/settings/types";
+import type { LlmModelOption } from "@/features/settings/types";
 
 type Props = {
   models: LlmModelOption[];
   selectedModelId: string;
-  params: LlmEvaluationParameters;
   isDisabled: boolean;
   onModelChange: (id: string) => void;
-  onParamsChange: (params: LlmEvaluationParameters) => void;
 };
 
 export function LlmSettings({
   models,
   selectedModelId,
-  params,
   isDisabled,
   onModelChange,
-  onParamsChange,
 }: Props) {
-  const update = (key: keyof LlmEvaluationParameters, value: number | boolean) =>
-    onParamsChange({ ...params, [key]: value });
-
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="text-xl font-semibold text-blue-950">LLM Model Selection</h2>
@@ -52,29 +45,6 @@ export function LlmSettings({
           </label>
         ))}
       </div>
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-        {(["temperature", "topP", "maxTokens"] as const).map((key) => (
-          <label key={key} className="space-y-1 text-sm">
-            <span className="font-medium text-slate-700">
-              {key === "topP" ? "Top P" : key === "maxTokens" ? "Max Tokens" : "Temperature"}
-            </span>
-            <input
-              type="number"
-              value={params[key]}
-              onChange={(event) => update(key, Number(event.target.value))}
-              className="h-10 w-full rounded-lg border border-slate-200 px-3"
-            />
-          </label>
-        ))}
-      </div>
-      <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-700">
-        <input
-          type="checkbox"
-          checked={params.enableChainOfThought}
-          onChange={(event) => update("enableChainOfThought", event.target.checked)}
-        />
-        Enable reasoning trace capture (for instructor audit only)
-      </label>
     </section>
   );
 }
