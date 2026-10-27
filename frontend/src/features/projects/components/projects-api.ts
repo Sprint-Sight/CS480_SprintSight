@@ -71,26 +71,23 @@ export type ProjectFormValues = {
   description: string;
   github_repo_url: string;
   local_repo_path: string;
-  jira_email: string;
   jira_domain: string;
   jira_project_key: string;
-  jira_api_token: string;
 };
 
-export function toProjectPayload(form: ProjectFormValues, memberIds: string[] = []) {
+export function toProjectPayload(form: ProjectFormValues, jiraEmail: string, memberIds: string[] = []) {
   const optionalFields = {
     description: form.description.trim() || undefined,
     github_repo_url: form.github_repo_url.trim() || undefined,
     local_repo_path: form.local_repo_path.trim() || undefined,
     jira_domain: form.jira_domain.trim() || undefined,
     jira_project_key: form.jira_project_key.trim() || undefined,
-    jira_api_token: form.jira_api_token.trim() || undefined,
   };
 
   return {
     project_name: form.project_name.trim(),
     team_name: form.team_name.trim(),
-    jira_email: form.jira_email.trim() || getDefaultJiraEmail(),
+    jira_email: jiraEmail.trim() || getDefaultJiraEmail(),
     ...optionalFields,
     member_ids: memberIds,
   };

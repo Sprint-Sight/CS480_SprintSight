@@ -15,17 +15,32 @@ export function useCollaborationData() {
 
   const liveIngestion = useMemo(() => {
     void ingestionVersion;
-    return getProjectIngestion(selectedProjectId, selectedSprintId);
+    const jiraSnapshots = Object.values(readIngestionState().jiraBySprint)
+      .filter((snapshot) => snapshot.project_id === selectedProjectId)
+      .sort((left, right) => right.captured_at.localeCompare(left.captured_at));
+    const selectedSprintHasJira = jiraSnapshots.some(
+      (snapshot) => snapshot.sprint_id === selectedSprintId,
+    );
+    const sprintId = selectedSprintHasJira
+      ? selectedSprintId
+      : jiraSnapshots[0]?.sprint_id || selectedSprintId;
+    return getProjectIngestion(selectedProjectId, sprintId);
   }, [selectedProjectId, selectedSprintId, ingestionVersion]);
 
   const liveCollaborationData = useMemo<LiveCollaboration | null>(() => {
     if (!liveIngestion.git && !liveIngestion.jira) return null;
-    const commitsByAuthor = new Map<string, number>();
-    for (const commit of liveIngestion.git?.commits || []) commitsByAuthor.set(commit.author || "Unknown author", (commitsByAuthor.get(commit.author || "Unknown author") || 0) + 1);
-    const commitsByMember: MemberCommitMetric[] = Array.from(commitsByAuthor.entries()).map(([member, commits]) => ({ member, commits })).sort((left, right) => right.commits - left.commits);
+    const metricsByAuthor = new Map<string, MemberCommitMetric>();
+    for (const commit of liveIngestion.git?.commits || []) {
+      const author = commit.author || "Unknown author";
+      const metric = metricsByAuthor.get(author) || { member: author, commits: 0, linesChanged: 0 };
+      metric.commits += 1;
+      metric.linesChanged += commit.lines_added + commit.lines_deleted;
+      metricsByAuthor.set(author, metric);
+    }
+    const commitsByMember = Array.from(metricsByAuthor.values()).sort((left, right) => right.commits - left.commits);
     const ticketCounts = new Map<string, number>();
     for (const ticket of liveIngestion.jira?.tickets || []) {
-      const owner = ticket.assignee || ticket.status || "Unassigned";
+      const owner = ticket.assignee || "Unassigned";
       ticketCounts.set(owner, (ticketCounts.get(owner) || 0) + 1);
     }
     const totalTickets = Array.from(ticketCounts.values()).reduce((sum, value) => sum + value, 0) || 1;

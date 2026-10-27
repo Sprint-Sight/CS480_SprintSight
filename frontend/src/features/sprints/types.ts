@@ -21,12 +21,10 @@ export type SprintOverviewSummary = {
   totalCommits: number;
   totalTasks: number;
   totalDocuments: number;
-  averageScore: number;
-};
+}
 
 export type SprintOverviewPayload = {
   project: StudentProject;
   rows: SprintOverviewRow[];
   summary: SprintOverviewSummary;
 };
-

@@ -7,12 +7,29 @@ type ProjectModalProps = {
   isOpen: boolean;
   editingProject: Project | null;
   projectForm: ProjectFormValues;
+  jiraEmail: string;
+  jiraApiToken: string;
+  hasSavedJiraToken: boolean;
   onClose: () => void;
   onSave: () => void;
+  onJiraEmailChange: (email: string) => void;
+  onJiraApiTokenChange: (token: string) => void;
   setProjectForm: React.Dispatch<React.SetStateAction<ProjectFormValues>>;
 };
 
-export function ProjectModal({ isOpen, editingProject, projectForm, onClose, onSave, setProjectForm }: ProjectModalProps) {
+export function ProjectModal({
+  isOpen,
+  editingProject,
+  projectForm,
+  jiraEmail,
+  jiraApiToken,
+  hasSavedJiraToken,
+  onClose,
+  onSave,
+  onJiraEmailChange,
+  onJiraApiTokenChange,
+  setProjectForm,
+}: ProjectModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -69,12 +86,14 @@ export function ProjectModal({ isOpen, editingProject, projectForm, onClose, onS
             <span className="text-sm font-medium text-slate-700">Jira Email</span>
             <input
               type="email"
-              value={projectForm.jira_email}
-              onChange={(event) => setProjectForm((current) => ({ ...current, jira_email: event.target.value }))}
+              value={jiraEmail}
+              onChange={(event) => onJiraEmailChange(event.target.value)}
+              autoComplete="username"
               className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               placeholder="instructor@example.com"
             />
           </label>
+          <p className="-mt-3 text-xs text-slate-500">This Jira account email is shared across your groups and can be changed here or in Settings.</p>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="block min-w-0 space-y-1">
@@ -103,12 +122,18 @@ export function ProjectModal({ isOpen, editingProject, projectForm, onClose, onS
             <span className="text-sm font-medium text-slate-700">Jira API Token <span className="font-normal text-slate-400">(optional)</span></span>
             <input
               type="password"
-              value={projectForm.jira_api_token}
-              onChange={(event) => setProjectForm((current) => ({ ...current, jira_api_token: event.target.value }))}
+              value={jiraApiToken}
+              onChange={(event) => onJiraApiTokenChange(event.target.value)}
+              autoComplete="new-password"
               className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              placeholder="Enter only if this project uses its own Jira credentials"
+              placeholder={hasSavedJiraToken ? "Saved shared token; enter a replacement to change it" : "Enter the shared Jira API token"}
             />
           </label>
+          <p className="-mt-3 text-xs text-slate-500">
+            {hasSavedJiraToken
+              ? "A shared Jira token is saved. Leave this blank to keep it."
+              : "This token is shared across your groups and is stored securely."}
+          </p>
 
           <label className="block space-y-1">
             <span className="text-sm font-medium text-slate-700">GitHub Repository URL <span className="font-normal text-slate-400">(optional)</span></span>
