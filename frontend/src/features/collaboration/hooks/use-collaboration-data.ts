@@ -3,29 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { CollaborationDataset, HeatmapRow, MemberCommitMetric, WorkloadSlice } from "@/features/collaboration/types";
-import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
+import { readIngestionState } from "@/features/ingestion/state";
+import { aggregateProjectSprints } from "@/features/collaboration/aggregate-project-sprints";
 
 type LiveCollaboration = Pick<CollaborationDataset, "commitsByMember" | "workloadDistribution" | "participationHeatmap" | "riskIndicators">;
 
 export function useCollaborationData() {
   const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
-  const [selectedSprintId, setSelectedSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
   const [ingestionVersion, setIngestionVersion] = useState(0);
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
 
   const liveIngestion = useMemo(() => {
     void ingestionVersion;
-    const jiraSnapshots = Object.values(readIngestionState().jiraBySprint)
-      .filter((snapshot) => snapshot.project_id === selectedProjectId)
-      .sort((left, right) => right.captured_at.localeCompare(left.captured_at));
-    const selectedSprintHasJira = jiraSnapshots.some(
-      (snapshot) => snapshot.sprint_id === selectedSprintId,
-    );
-    const sprintId = selectedSprintHasJira
-      ? selectedSprintId
-      : jiraSnapshots[0]?.sprint_id || selectedSprintId;
-    return getProjectIngestion(selectedProjectId, sprintId);
-  }, [selectedProjectId, selectedSprintId, ingestionVersion]);
+    return aggregateProjectSprints(readIngestionState(), selectedProjectId);
+  }, [selectedProjectId, ingestionVersion]);
 
   const liveCollaborationData = useMemo<LiveCollaboration | null>(() => {
     if (!liveIngestion.git && !liveIngestion.jira) return null;
@@ -67,12 +58,11 @@ export function useCollaborationData() {
     const refresh = () => {
       const state = readIngestionState();
       setSelectedProjectId(state.selectedProjectId || "");
-      setSelectedSprintId(state.selectedSprintId || "sprint-1");
       setIngestionVersion((version) => version + 1);
     };
     window.addEventListener("sprintsight-ingestion-updated", refresh);
     return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
   }, []);
 
-  return { role, selectedProjectId, selectedSprintId, setSelectedProjectId, collaborationData, liveIngestion };
+  return { role, selectedProjectId, setSelectedProjectId, collaborationData, liveIngestion };
 }

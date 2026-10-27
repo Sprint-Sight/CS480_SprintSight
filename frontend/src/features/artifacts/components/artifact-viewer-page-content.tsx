@@ -14,7 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
-import { getProjectGitMetrics, getProjectIngestion, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
+import { getProjectGitMetrics, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
 import { useArtifactTab } from "@/features/artifacts/hooks/use-artifact-tab";
@@ -170,7 +170,7 @@ export default function ArtifactViewerPageContent() {
   // Track user role and full name for anonymity, tab access, and upload attribution
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
   const [fullName, setFullName] = useState<string>("");
-  const { projectOptions, selectedProjectId, selectedSprintId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
+  const { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
 
   
   // Local state for documents to allow instant UI updates upon upload
@@ -232,15 +232,6 @@ export default function ArtifactViewerPageContent() {
           : "";
   const displayedTab = role === "student" ? "documents" : activeTab;
 
-  useEffect(() => {
-    const persisted = getProjectIngestion(selectedProjectId, selectedSprintId);
-    if (persisted.jira) {
-      setJiraSnapshot(persisted.jira);
-    } else {
-      setJiraSnapshot(null);
-    }
-  }, [selectedProjectId, selectedSprintId]);
-
   const selectedCourseId = projectOptions.find((project) => project.id === selectedProjectId)?.courseId ?? "";
 
   useEffect(() => {
@@ -248,9 +239,13 @@ export default function ArtifactViewerPageContent() {
     const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
     const applyRuns = (runs: RepoIngestionData[]) => {
       setGitRuns(runs);
-      const selectedGitRun = runs.find((run) => run.sprint_id === selectedSprintId) || null;
+      const selectedGitRun = [...runs].sort(
+        (left, right) => right.captured_at.localeCompare(left.captured_at),
+      )[0] || null;
       setGitMetrics(selectedGitRun);
-      setGitSprintId(selectedGitRun ? selectedGitRun.sprint_id : buildNextSprintId(runs.map((run) => run.sprint_id)));
+      setGitSprintId(
+        selectedGitRun?.sprint_id || buildNextSprintId(runs.map((run) => run.sprint_id)),
+      );
     };
     applyRuns(persistedGitRuns);
 
@@ -272,7 +267,7 @@ export default function ArtifactViewerPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [role, selectedProjectId, selectedCourseId, selectedSprintId]);
+  }, [role, selectedProjectId, selectedCourseId]);
 
   const gitSprintOptions = useMemo(() => {
     const existing = gitRuns.map((run) => run.sprint_id);
@@ -332,7 +327,9 @@ export default function ArtifactViewerPageContent() {
       try {
         const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`);
         setJiraRuns(runs);
-        const selectedCompleted = runs.find((run) => run.sprint_id === selectedSprintId && run.processing_status === "completed");
+        const selectedCompleted = [...runs]
+          .filter((run) => run.processing_status === "completed")
+          .sort((left, right) => right.captured_at.localeCompare(left.captured_at))[0];
         if (selectedCompleted) {
           await loadCleanedRun(selectedCompleted);
         } else {
@@ -347,7 +344,7 @@ export default function ArtifactViewerPageContent() {
     }
 
     loadProjectRuns();
-  }, [role, selectedProjectId, selectedSprintId]);
+  }, [role, selectedProjectId]);
 
   async function loadGitMetrics() {
     const sprint = gitSprintId.trim();

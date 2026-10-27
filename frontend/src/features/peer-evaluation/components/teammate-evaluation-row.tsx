@@ -8,7 +8,12 @@ import type { PeerEvaluationResponse, PeerTeammate } from "@/features/peer-evalu
 type TeammateEvaluationRowProps = {
   teammate: PeerTeammate;
   existing: PeerEvaluationResponse | null;
-  onSubmit: (data: { ratedId: string; score: number; remarks?: string }) => Promise<void>;
+  onSubmit: (data: {
+    evaluationId?: string;
+    ratedId: string;
+    score: number;
+    remarks?: string;
+  }) => Promise<void>;
 };
 
 export function TeammateEvaluationRow({ teammate, existing, onSubmit }: TeammateEvaluationRowProps) {
@@ -27,6 +32,7 @@ export function TeammateEvaluationRow({ teammate, existing, onSubmit }: Teammate
     setIsSubmitting(true);
     try {
       await onSubmit({
+        evaluationId: existing?.evaluation_id,
         ratedId: teammate.id,
         score,
         remarks: remarks.trim() || undefined,

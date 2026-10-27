@@ -1,42 +1,70 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { BarChart3 } from "lucide-react";
 import { EvaluationConfigPanel } from "@/features/peer-evaluation/components/evaluation-config-panel";
-import { EvaluationTable } from "@/features/peer-evaluation/components/evaluation-table";
+import { JiraContributionOutlierModal } from "@/features/peer-evaluation/components/jira-contribution-outlier-modal";
 import { MemberEvaluationPanel } from "@/features/peer-evaluation/components/member-evaluation-panel";
+import { useJiraContributionOutliers } from "@/features/peer-evaluation/hooks/use-jira-contribution-outliers";
+import { useProjectMemberEvaluations } from "@/features/peer-evaluation/hooks/use-project-member-evaluations";
 import { usePeerEvaluation } from "@/features/peer-evaluation/hooks/use-peer-evaluation";
 
 type InstructorEvaluationViewProps = {
   courseId: string;
+  projectId: string;
 };
 
-export function InstructorEvaluationView({ courseId }: InstructorEvaluationViewProps) {
+export function InstructorEvaluationView({ courseId, projectId }: InstructorEvaluationViewProps) {
   const {
     courseEvaluations,
+    projectEvaluations,
     evaluationConfig,
     isLoading,
     error,
-    memberEvaluations,
     loadCourseEvaluations,
+    loadProjectEvaluations,
     loadEvaluationConfig,
-    loadMemberEvaluations,
     updateEvaluationWindow,
     clearError,
   } = usePeerEvaluation();
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const jiraOutliers = useJiraContributionOutliers();
 
   useEffect(() => {
     loadEvaluationConfig(courseId);
     loadCourseEvaluations(courseId);
-  }, [courseId, loadEvaluationConfig, loadCourseEvaluations]);
+    jiraOutliers.loadReport(courseId);
+  }, [courseId, loadEvaluationConfig, loadCourseEvaluations, jiraOutliers.loadReport]);
 
-  const selectedProject = selectedProjectId
-    ? courseEvaluations?.projects.find((p) => p.project_id === selectedProjectId)
-    : courseEvaluations?.projects[0];
+  useEffect(() => {
+    loadProjectEvaluations(projectId);
+  }, [projectId, loadProjectEvaluations]);
 
-  const evaluations = selectedProject?.evaluations || [];
+  const ratedMemberIds = useMemo(
+    () => Array.from(
+      new Set(
+        projectEvaluations?.project_id === projectId
+          ? projectEvaluations.evaluations.map((evaluation) => evaluation.rated_id)
+          : [],
+      ),
+    ),
+    [projectEvaluations, projectId],
+  );
+  const selectedProjectEvaluations =
+    projectEvaluations?.project_id === projectId ? projectEvaluations : null;
+  const memberDetails = useProjectMemberEvaluations(projectId, ratedMemberIds);
+  const jiraOutlierStudentIds = useMemo(
+    () => new Set(
+      jiraOutliers.report?.students
+        .filter((student) => student.is_contribution_outlier)
+        .map((student) => student.student_id) ?? [],
+    ),
+    [jiraOutliers.report],
+  );
+  const selectedJiraStudentName =
+    jiraOutliers.report?.students.find(
+      (student) => student.student_id === jiraOutliers.selectedStudentId,
+    )?.student_full_name ?? "Student";
 
   return (
     <div className="space-y-6">
@@ -55,7 +83,7 @@ export function InstructorEvaluationView({ courseId }: InstructorEvaluationViewP
       <EvaluationConfigPanel
         config={evaluationConfig}
         isLoading={isLoading}
-        onUpdateConfig={(isOpen, expiresAt) => updateEvaluationWindow(courseId, isOpen, expiresAt)}
+        onUpdateConfig={(payload) => updateEvaluationWindow(courseId, payload)}
       />
 
       {/* Summary Stats */}
@@ -84,61 +112,34 @@ export function InstructorEvaluationView({ courseId }: InstructorEvaluationViewP
         </div>
       )}
 
-      {/* Project Selection */}
-      {courseEvaluations && courseEvaluations.projects.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-6">
-          <label className="block text-sm font-medium text-slate-700 mb-2">
-            Filter by Project
-          </label>
-          <select
-            value={selectedProjectId || ""}
-            onChange={(e) => setSelectedProjectId(e.target.value || null)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-          >
-            {courseEvaluations.projects.map((project) => (
-              <option key={project.project_id} value={project.project_id}>
-                {project.project_name} ({project.total_evaluations} evaluations)
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {/* Average Score */}
-      {selectedProject && selectedProject.average_score !== null && (
+      {selectedProjectEvaluations && selectedProjectEvaluations.average_score !== null && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-6">
           <div className="flex items-center gap-2 mb-2">
             <BarChart3 className="h-5 w-5 text-blue-600" />
             <p className="font-medium text-blue-900">Average Score</p>
           </div>
-          <p className="text-2xl font-bold text-blue-600">{selectedProject.average_score.toFixed(2)}/5</p>
+          <p className="text-2xl font-bold text-blue-600">{selectedProjectEvaluations.average_score.toFixed(2)}/5</p>
         </div>
       )}
 
       <MemberEvaluationPanel
-        projectId={selectedProject?.project_id ?? null}
-        members={[
-          ...evaluations.map((evaluation) => ({
-            id: evaluation.rated_id,
-            name: evaluation.rated_full_name,
-          })),
-          ...evaluations.map((evaluation) => ({
-            id: evaluation.rater_id,
-            name: evaluation.rater_full_name,
-          })),
-        ]}
-        detail={memberEvaluations}
-        isLoading={isLoading}
-        onSelectMember={loadMemberEvaluations}
+        members={memberDetails.members}
+        jiraOutlierStudentIds={jiraOutlierStudentIds}
+        isLoading={memberDetails.isLoading}
+        error={memberDetails.error}
+        jiraReportError={jiraOutliers.selectedStudentId ? null : jiraOutliers.error}
+        onViewJiraContribution={(studentId) => jiraOutliers.selectStudent(courseId, studentId)}
       />
 
-      {/* Evaluations Table */}
-      <div className="rounded-lg border border-slate-200 bg-white p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">
-          {selectedProject ? `${selectedProject.project_name} Evaluations` : "Course Evaluations"}
-        </h3>
-        <EvaluationTable evaluations={evaluations} isLoading={isLoading} />
-      </div>
+      <JiraContributionOutlierModal
+        isOpen={Boolean(jiraOutliers.selectedStudentId)}
+        studentName={selectedJiraStudentName}
+        studentDetail={jiraOutliers.studentDetail}
+        isLoading={jiraOutliers.isDetailLoading}
+        error={jiraOutliers.selectedStudentId ? jiraOutliers.error : null}
+        onClose={jiraOutliers.closeStudentDetail}
+      />
     </div>
   );
 }

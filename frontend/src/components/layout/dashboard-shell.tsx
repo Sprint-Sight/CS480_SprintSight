@@ -87,6 +87,13 @@ const instructorScopeRoutes = new Set([
   "/progress",
 ]);
 
+const routesWithoutSprintScope = new Set([
+  "/sprint-overview",
+  "/artifact-viewer",
+  "/collaboration",
+  "/peer-evaluation",
+]);
+
 function isActivePath(pathname: string, href: string) {
   if (href === "/") {
     return pathname === "/";
@@ -106,7 +113,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const isProjectsRoot = pathname === "/projects";
   const showsInstructorScope = instructorScopeRoutes.has(pathname);
-  const showsSprintScope = showsInstructorScope && pathname !== "/progress";
+  const showsSprintScope = showsInstructorScope && !routesWithoutSprintScope.has(pathname);
   const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings" || pathname === "/audit-log";
   const menuRef = useRef<HTMLDivElement | null>(null);
 

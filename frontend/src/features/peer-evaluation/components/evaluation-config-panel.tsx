@@ -2,13 +2,29 @@
 
 import { useState, useEffect } from "react";
 import { Lock, Unlock, Calendar, Loader2 } from "lucide-react";
-import type { PeerEvaluationConfigResponse } from "@/features/peer-evaluation/peer-evaluation-api";
+import type {
+  PeerEvaluationConfigResponse,
+  SetConfigPayload,
+} from "@/features/peer-evaluation/peer-evaluation-api";
 
 type EvaluationConfigPanelProps = {
   config: PeerEvaluationConfigResponse | null;
   isLoading: boolean;
-  onUpdateConfig: (isOpen: boolean, expiresAt?: string) => Promise<PeerEvaluationConfigResponse>;
+  onUpdateConfig: (payload: SetConfigPayload) => Promise<PeerEvaluationConfigResponse>;
 };
+
+function toDateTimeLocal(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+}
+
+function toISOStringOrNull(value: string): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
 
 export function EvaluationConfigPanel({
   config,
@@ -16,32 +32,39 @@ export function EvaluationConfigPanel({
   onUpdateConfig,
 }: EvaluationConfigPanelProps) {
   const [isOpen, setIsOpen] = useState(config?.is_open ?? false);
-  const [expiresAt, setExpiresAt] = useState(config?.expires_at ?? "");
+  const [opensAt, setOpensAt] = useState(toDateTimeLocal(config?.opens_at));
+  const [expiresAt, setExpiresAt] = useState(toDateTimeLocal(config?.expires_at));
   const [isSaving, setIsSaving] = useState(false);
 
   // Sync prop changes to local state (for page refresh and parent updates)
   useEffect(() => {
     if (config) {
       setIsOpen(config.is_open);
-      setExpiresAt(config.expires_at ?? "");
+      setOpensAt(toDateTimeLocal(config.opens_at));
+      setExpiresAt(toDateTimeLocal(config.expires_at));
     }
-  }, [config?.is_open, config?.expires_at]);
+  }, [config?.is_open, config?.opens_at, config?.expires_at]);
+
+  const createPayload = (nextIsOpen: boolean): SetConfigPayload => ({
+    is_open: nextIsOpen,
+    opens_at: toISOStringOrNull(opensAt),
+    expires_at: toISOStringOrNull(expiresAt),
+  });
 
   const handleToggle = async () => {
     setIsSaving(true);
     try {
-      await onUpdateConfig(!isOpen, expiresAt || undefined);
+      await onUpdateConfig(createPayload(!isOpen));
       setIsOpen(!isOpen);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleSetExpiry = async () => {
-    if (!expiresAt) return;
+  const handleSaveSchedule = async () => {
     setIsSaving(true);
     try {
-      await onUpdateConfig(isOpen, expiresAt);
+      await onUpdateConfig(createPayload(isOpen));
     } finally {
       setIsSaving(false);
     }
@@ -93,35 +116,59 @@ export function EvaluationConfigPanel({
           )}
         </button>
 
-        {/* Expiry Date */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
-            Expiry Date (optional)
-          </label>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-500 pointer-events-none" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="evaluation-opens-at" className="mb-2 block text-sm font-medium text-slate-700">
+              Opens at (optional)
+            </label>
+            <div className="relative">
+              <Calendar className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
               <input
+                id="evaluation-opens-at"
                 type="datetime-local"
-                value={expiresAt}
-                onChange={(e) => setExpiresAt(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 pl-10 text-sm focus:border-blue-500 focus:outline-none"
+                value={opensAt}
+                onChange={(event) => setOpensAt(event.target.value)}
+                disabled={isSaving || isLoading}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 pl-10 text-sm focus:border-blue-500 focus:outline-none disabled:bg-slate-100"
               />
             </div>
-            <button
-              type="button"
-              onClick={handleSetExpiry}
-              disabled={!expiresAt || isSaving || isLoading}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Set"}
-            </button>
+            {config?.opens_at && (
+              <p className="mt-2 text-xs text-slate-600">
+                Current opening: {new Date(config.opens_at).toLocaleString()}
+              </p>
+            )}
           </div>
-          {config?.expires_at && (
-            <p className="text-xs text-slate-600 mt-2">
-              Current expiry: {new Date(config.expires_at).toLocaleString()}
-            </p>
-          )}
+          <div>
+            <label htmlFor="evaluation-expires-at" className="mb-2 block text-sm font-medium text-slate-700">
+              Expires at (optional)
+            </label>
+            <div className="relative">
+              <Calendar className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+              <input
+                id="evaluation-expires-at"
+                type="datetime-local"
+                value={expiresAt}
+                onChange={(event) => setExpiresAt(event.target.value)}
+                disabled={isSaving || isLoading}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 pl-10 text-sm focus:border-blue-500 focus:outline-none disabled:bg-slate-100"
+              />
+            </div>
+            {config?.expires_at && (
+              <p className="mt-2 text-xs text-slate-600">
+                Current expiry: {new Date(config.expires_at).toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleSaveSchedule}
+            disabled={isSaving || isLoading}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save schedule"}
+          </button>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Plus, Search, Settings, SlidersHorizontal, Users, Upload } from "lucide-react";
+import { BookOpen, Plus, Search, SlidersHorizontal, Users, Upload } from "lucide-react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
@@ -55,7 +55,8 @@ export default function ProjectsPageContent() {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
   const [projectForMemberSelection, setProjectForMemberSelection] = useState<Project | null>(null);
-  const [selectedProjectMemberId, setSelectedProjectMemberId] = useState("");
+  const [selectedProjectMemberIds, setSelectedProjectMemberIds] = useState<string[]>([]);
+  const [isAddingProjectMembers, setIsAddingProjectMembers] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<{ projectId: string; userId: string; fullName: string } | null>(null);
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -237,20 +238,9 @@ export default function ProjectsPageContent() {
     return count;
   }, [appliedFilters]);
 
-  function handleOpenCreateCourse() {
+  function handleOpenCourseManagement() {
     setEditingCourse(null);
     setCourseForm({ code: "", name: "", section: "", year: new Date().getFullYear(), term: "Fall" });
-    setIsCourseModalOpen(true);
-  }
-
-  function handleOpenEditCourse() {
-    const selectedCourse = courses.find((course) => course.id === selectedCourseId) ?? null;
-    setEditingCourse(selectedCourse);
-    setCourseForm(
-      selectedCourse
-        ? { code: selectedCourse.code, name: selectedCourse.name, section: selectedCourse.section, year: selectedCourse.year, term: selectedCourse.term }
-        : { code: "", name: "", section: "", year: new Date().getFullYear(), term: "Fall" }
-    );
     setIsCourseModalOpen(true);
   }
 
@@ -518,8 +508,16 @@ export default function ProjectsPageContent() {
     const project = projects.find((candidate) => candidate.id === projectId);
     if (!project) return;
     await loadCourseStudents();
-    setSelectedProjectMemberId("");
+    setSelectedProjectMemberIds([]);
     setProjectForMemberSelection(project);
+  }
+
+  function handleToggleProjectMember(studentId: string) {
+    setSelectedProjectMemberIds((selectedIds) =>
+      selectedIds.includes(studentId)
+        ? selectedIds.filter((selectedId) => selectedId !== studentId)
+        : [...selectedIds, studentId],
+    );
   }
 
   function handleRemoveProjectMember(projectId: string, userId: string, event: React.MouseEvent) {
@@ -544,17 +542,56 @@ export default function ProjectsPageContent() {
   }
 
   async function handleConfirmAddProjectMember() {
-    if (!projectForMemberSelection || !selectedProjectMemberId) return;
+    if (
+      !projectForMemberSelection ||
+      selectedProjectMemberIds.length === 0 ||
+      isAddingProjectMembers
+    ) return;
 
+    setIsAddingProjectMembers(true);
+    const addedStudentIds: string[] = [];
+    const failedStudents: Array<{ id: string; message: string }> = [];
     try {
-      await apiRequest(`/projects/${projectForMemberSelection.id}/members/${selectedProjectMemberId}`, { method: "POST" });
-      await loadProjects();
-      notifyProjectsUpdated();
-      setProjectForMemberSelection(null);
-      setSelectedProjectMemberId("");
-      window.alert("Student added to the project.");
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to add project member.");
+      for (const studentId of selectedProjectMemberIds) {
+        try {
+          await apiRequest(
+            `/projects/${projectForMemberSelection.id}/members/${studentId}`,
+            { method: "POST" },
+          );
+          addedStudentIds.push(studentId);
+        } catch (error) {
+          failedStudents.push({
+            id: studentId,
+            message: error instanceof Error ? error.message : "Request failed",
+          });
+        }
+      }
+
+      if (addedStudentIds.length > 0) {
+        await loadProjects();
+        notifyProjectsUpdated();
+      }
+
+      if (failedStudents.length > 0) {
+        setSelectedProjectMemberIds(failedStudents.map(({ id }) => id));
+        const failureDetails = failedStudents.map(({ id, message }) => {
+          const studentName = courseStudents.find((student) => student.id === id)?.full_name ?? id;
+          return `${studentName}: ${message}`;
+        });
+        window.alert(
+          `${addedStudentIds.length} student${addedStudentIds.length === 1 ? "" : "s"} added. ` +
+          `${failedStudents.length} could not be added; failed students remain selected so you can retry.\n\n` +
+          failureDetails.join("\n"),
+        );
+      } else {
+        setProjectForMemberSelection(null);
+        setSelectedProjectMemberIds([]);
+        window.alert(
+          `${addedStudentIds.length} student${addedStudentIds.length === 1 ? "" : "s"} added to the project.`,
+        );
+      }
+    } finally {
+      setIsAddingProjectMembers(false);
     }
   }
 
@@ -574,10 +611,6 @@ export default function ProjectsPageContent() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100 h-11">
-            <button type="button" onClick={handleOpenCreateCourse} title="Create a new course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100">
-              <Plus className="h-4 w-4" />
-            </button>
-
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-0">
               <BookOpen className="h-4 w-4 text-slate-400" />
               <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="h-9 min-w-[220px] appearance-none bg-transparent pr-5 text-sm font-semibold text-slate-700 outline-none">
@@ -593,8 +626,13 @@ export default function ProjectsPageContent() {
               </select>
             </div>
 
-            <button type="button" onClick={handleOpenEditCourse} title="Edit selected course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
-              <Settings className="h-4 w-4" />
+            <button
+              type="button"
+              onClick={handleOpenCourseManagement}
+              title="Manage courses"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              Course Management
             </button>
           </div>
 
@@ -745,9 +783,13 @@ export default function ProjectsPageContent() {
             ? [{ ...student, projectName: assignedProject.team_name }]
             : [];
         })}
-        selectedStudentId={selectedProjectMemberId}
-        onClose={() => { setProjectForMemberSelection(null); setSelectedProjectMemberId(""); }}
-        onSelectStudent={setSelectedProjectMemberId}
+        selectedStudentIds={selectedProjectMemberIds}
+        isAddingMembers={isAddingProjectMembers}
+        onClose={() => {
+          setProjectForMemberSelection(null);
+          setSelectedProjectMemberIds([]);
+        }}
+        onToggleStudent={handleToggleProjectMember}
         onAddMember={handleConfirmAddProjectMember}
       />
 
