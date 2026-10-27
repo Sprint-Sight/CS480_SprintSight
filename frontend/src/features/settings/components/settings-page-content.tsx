@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { INITIAL_SETTINGS } from "@/features/settings/data";
-import type { RubricWeight, LlmEvaluationParameters } from "@/features/settings/types";
+import type { RubricWeight } from "@/features/settings/types";
 import { SettingsHeader } from "@/features/settings/components/settings-header";
 import { RubricSettings } from "@/features/settings/components/rubric-settings";
 import { LlmSettings } from "@/features/settings/components/llm-settings";
@@ -18,7 +18,6 @@ export default function SettingsPageContent() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [rubric, setRubric] = useState(INITIAL_SETTINGS.rubric);
-  const [llmParams, setLlmParams] = useState<LlmEvaluationParameters>(INITIAL_SETTINGS.llmParams);
   const [saveMessage, setSaveMessage] = useState("");
   const modelSelection = useModelSelection(isAuthorized);
   const jiraCredentials = useInstructorJiraCredentials(isAuthorized);
@@ -52,10 +51,8 @@ export default function SettingsPageContent() {
       <LlmSettings
         models={modelSelection.models}
         selectedModelId={modelSelection.selectedModelId}
-        params={llmParams}
         isDisabled={isModelSelectionUnavailable}
         onModelChange={updateSelectedModel}
-        onParamsChange={setLlmParams}
       />
       {modelSelection.isLoading && <p role="status" className="text-sm text-slate-600">Loading AI models...</p>}
       {modelSelection.error && <p role="alert" className="text-sm text-red-700">{modelSelection.error}</p>}

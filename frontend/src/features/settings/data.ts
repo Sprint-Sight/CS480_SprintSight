@@ -8,10 +8,4 @@ export const INITIAL_SETTINGS: SettingsSnapshot = {
     { id: "documentation", label: "Documentation", value: 15 },
     { id: "collaboration", label: "Collaboration", value: 20 },
   ],
-  llmParams: {
-    temperature: 0.2,
-    maxTokens: 1800,
-    topP: 0.95,
-    enableChainOfThought: true,
-  },
 };
