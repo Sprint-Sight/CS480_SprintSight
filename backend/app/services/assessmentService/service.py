@@ -114,24 +114,11 @@ def convert_ai_result_to_assessment_report(
 
     overall_score = ai_result.get("overall_score")
 
-    individual_scores = []
-    for member in ai_result.get("member_contributions", []) or []:
-        if isinstance(member, dict):
-            student_id = member.get("student_id")
-            contribution_score = member.get("contribution_score")
-            if not student_id:
-                continue
-            score = round((contribution_score or 0) * 10, 2)
-            rational_text = " | ".join(member.get("primary_contributions") or [])
-            if member.get("evidence"):
-                rational_text = rational_text + " Evidence: " + " | ".join(member.get("evidence") or [])
-            individual_scores.append(
-                StudentScore(
-                    student_id=str(student_id),
-                    score=score,
-                    rationale=rational_text or "AI-generated member contribution assessment.",
-                )
-            )
+    # Scoring is team-level: the whole team receives one grade and there are no
+    # per-member grades. member_contributions is intentionally not consumed for
+    # scoring (peer evaluation and per-member data may still be collected, just
+    # not graded), so individual_scores is always empty.
+    individual_scores: list[StudentScore] = []
 
     rubric_scores = {}
     strengths = list(ai_result.get("strengths") or [])

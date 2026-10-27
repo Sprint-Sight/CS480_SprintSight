@@ -149,8 +149,12 @@ _DIMENSION_ARTIFACT_FIELDS = {
     "documentation": ("commits", "jira_tickets"),
     "requirements": ("jira_tickets", "artifact_metrics"),
     "collaboration": (
+        # Peer evaluations are intentionally NOT a grading input: collaboration
+        # is scored team-level from artifacts (commits/PR activity, Jira usage,
+        # workload distribution). Peer-eval data is still collected and stored on
+        # the bundle, just not fed to the grader.
+        "commits",
         "jira_tickets",
-        "peer_evaluations",
         "collaboration_metrics",
     ),
     "cicd": ("commits", "artifact_metrics"),

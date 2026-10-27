@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     export,
     health,
     ingestion,
+    jira_outlier,
     manual_text,
     models,
     notifications,
@@ -26,6 +27,7 @@ api_router.include_router(settings.router)
 api_router.include_router(manual_text.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(ingestion.jira_ingestion_router)
+api_router.include_router(jira_outlier.router)
 api_router.include_router(assessment.router)
 api_router.include_router(models.router)
 api_router.include_router(audit.router)

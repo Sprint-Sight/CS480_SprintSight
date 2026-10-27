@@ -8,36 +8,28 @@ import type { PeerEvaluationResponse, PeerTeammate } from "@/features/peer-evalu
 type TeammateEvaluationRowProps = {
   teammate: PeerTeammate;
   existing: PeerEvaluationResponse | null;
-  onSubmit: (data: { ratedId: string; score: number; remarks?: string; reason: string }) => Promise<void>;
+  onSubmit: (data: { ratedId: string; score: number; remarks?: string }) => Promise<void>;
 };
 
 export function TeammateEvaluationRow({ teammate, existing, onSubmit }: TeammateEvaluationRowProps) {
   const [score, setScore] = useState(existing?.score ?? 3);
   const [remarks, setRemarks] = useState(existing?.remarks ?? "");
-  const [reason, setReason] = useState(existing?.reason ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [touched, setTouched] = useState(false);
 
   useEffect(() => {
     if (!existing) return;
     setScore(existing.score);
     setRemarks(existing.remarks ?? "");
-    setReason(existing.reason ?? "");
   }, [existing]);
-
-  const reasonMissing = reason.trim().length === 0;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setTouched(true);
-    if (reasonMissing) return;
     setIsSubmitting(true);
     try {
       await onSubmit({
         ratedId: teammate.id,
         score,
         remarks: remarks.trim() || undefined,
-        reason: reason.trim(),
       });
     } catch {
       // The error is surfaced by the page-level banner.
@@ -66,37 +58,15 @@ export function TeammateEvaluationRow({ teammate, existing, onSubmit }: Teammate
           <ScoreScale value={score} onChange={setScore} disabled={isSubmitting} />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-700">
-              Reason <span className="text-red-600">*</span>
-            </label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value.slice(0, 1000))}
-              placeholder="Explain why you gave this score..."
-              rows={3}
-              required
-              className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none ${
-                touched && reasonMissing
-                  ? "border-red-400 focus:border-red-500"
-                  : "border-slate-300 focus:border-blue-500"
-              }`}
-            />
-            {touched && reasonMissing && (
-              <p className="mt-1 text-xs text-red-600">A reason is required.</p>
-            )}
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-slate-700">Remarks (optional)</label>
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value.slice(0, 1000))}
-              placeholder="Any additional observations..."
-              rows={3}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </div>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700">Remarks (optional)</label>
+          <textarea
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value.slice(0, 1000))}
+            placeholder="Any additional observations..."
+            rows={3}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          />
         </div>
 
         <button

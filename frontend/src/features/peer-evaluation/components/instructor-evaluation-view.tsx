@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { EvaluationConfigPanel } from "@/features/peer-evaluation/components/evaluation-config-panel";
 import { EvaluationTable } from "@/features/peer-evaluation/components/evaluation-table";
+import { MemberEvaluationPanel } from "@/features/peer-evaluation/components/member-evaluation-panel";
 import { usePeerEvaluation } from "@/features/peer-evaluation/hooks/use-peer-evaluation";
 
 type InstructorEvaluationViewProps = {
@@ -16,8 +17,10 @@ export function InstructorEvaluationView({ courseId }: InstructorEvaluationViewP
     evaluationConfig,
     isLoading,
     error,
+    memberEvaluations,
     loadCourseEvaluations,
     loadEvaluationConfig,
+    loadMemberEvaluations,
     updateEvaluationWindow,
     clearError,
   } = usePeerEvaluation();
@@ -111,6 +114,23 @@ export function InstructorEvaluationView({ courseId }: InstructorEvaluationViewP
           <p className="text-2xl font-bold text-blue-600">{selectedProject.average_score.toFixed(2)}/5</p>
         </div>
       )}
+
+      <MemberEvaluationPanel
+        projectId={selectedProject?.project_id ?? null}
+        members={[
+          ...evaluations.map((evaluation) => ({
+            id: evaluation.rated_id,
+            name: evaluation.rated_full_name,
+          })),
+          ...evaluations.map((evaluation) => ({
+            id: evaluation.rater_id,
+            name: evaluation.rater_full_name,
+          })),
+        ]}
+        detail={memberEvaluations}
+        isLoading={isLoading}
+        onSelectMember={loadMemberEvaluations}
+      />
 
       {/* Evaluations Table */}
       <div className="rounded-lg border border-slate-200 bg-white p-6">

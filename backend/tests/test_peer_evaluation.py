@@ -1229,3 +1229,165 @@ def test_student_evaluation_status_when_closed(override_user_repository) -> None
         assert data["is_open"] is False
     finally:
         _clear_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Instructor: member received-evaluations + outlier stats
+# ---------------------------------------------------------------------------
+
+
+def _setup_course_with_four_students():
+    project_repository, course, user_repository, _project = _setup_course_with_project()
+    student_c = UserRecord(
+        id="u-student-c",
+        email="student.c@sprintsight.edu",
+        full_name="Student C",
+        role=Role.STUDENT,
+        hashed_password=hash_password("password123"),
+        student_number=103,
+    )
+    student_d = UserRecord(
+        id="u-student-d",
+        email="student.d@sprintsight.edu",
+        full_name="Student D",
+        role=Role.STUDENT,
+        hashed_password=hash_password("password123"),
+        student_number=104,
+    )
+    student_e = UserRecord(
+        id="u-student-e",
+        email="student.e@sprintsight.edu",
+        full_name="Student E",
+        role=Role.STUDENT,
+        hashed_password=hash_password("password123"),
+        student_number=105,
+    )
+    user_repository.create_user(student_c)
+    user_repository.create_user(student_d)
+    user_repository.create_user(student_e)
+    project_repository.set_members(
+        "proj-peer-1",
+        ["u-student-a", "u-student-b", "u-student-c", "u-student-d"],
+    )
+    project_repository.enroll_student(course.id, "u-student-c")
+    project_repository.enroll_student(course.id, "u-student-d")
+    project_repository.enroll_student(course.id, "u-student-e")
+    return project_repository, course, user_repository
+
+
+def test_instructor_gets_member_evaluations_with_outlier_stats(
+    override_user_repository,
+) -> None:
+    project_repository, course, user_repository = _setup_course_with_four_students()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    peer_eval_repo.save_config(
+        PeerEvaluationConfigRecord(
+            course_id=course.id,
+            is_open=True,
+            expires_at=None,
+            updated_by="u-faculty-1",
+            updated_at=datetime.now(UTC),
+        )
+    )
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        tokens = {
+            "a": _token_for("student.a@sprintsight.edu"),
+            "b": _token_for("student.b@sprintsight.edu"),
+            "c": _token_for("student.c@sprintsight.edu"),
+            "d": _token_for("student.d@sprintsight.edu"),
+        }
+
+        def submit(rater: str, rated_id: str, score: int, remarks: str) -> None:
+            response = client.post(
+                "/api/v1/peer-evaluation/evaluations",
+                json={
+                    "project_id": "proj-peer-1",
+                    "rated_id": rated_id,
+                    "score": score,
+                    "remarks": remarks,
+                },
+                headers={"Authorization": f"Bearer {tokens[rater]}"},
+            )
+            assert response.status_code in (200, 201), response.text
+
+        # Totals: A=15, B=12, C=7, D=13. Enrolled E has no evaluations (total 0).
+        submit("b", "u-student-a", 5, "Strong contributor")
+        submit("c", "u-student-a", 5, "Always delivers")
+        submit("d", "u-student-a", 5, "Reliable teammate")
+        submit("a", "u-student-b", 4, "Solid work")
+        submit("c", "u-student-b", 4, "Consistent")
+        submit("d", "u-student-b", 4, "Helpful")
+        submit("a", "u-student-c", 1, "Needs to participate more")
+        submit("b", "u-student-c", 1, "Rarely available")
+        submit("d", "u-student-c", 5, "Helped me on the demo")
+        submit("a", "u-student-d", 4, "Good communicator")
+        submit("b", "u-student-d", 4, "Met deadlines")
+        submit("c", "u-student-d", 5, "Led the sprint")
+
+        token_faculty = _token_for("faculty@sprintsight.edu")
+        headers_faculty = {"Authorization": f"Bearer {token_faculty}"}
+        response = client.get(
+            "/api/v1/peer-evaluation/projects/proj-peer-1/members/u-student-c/evaluations",
+            headers=headers_faculty,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+
+        assert data["member_id"] == "u-student-c"
+        assert data["member_full_name"] == "Student C"
+        assert data["total_score"] == 7
+        assert data["evaluation_count"] == 3
+        assert data["enrolled_student_count"] == 5
+        assert data["students_with_received_evaluations"] == 4
+        # Course mean of received totals is 11.75; C=7 and unevaluated E=0 are below it.
+        assert data["course_average_total"] == 11.75
+        assert data["students_below_course_average"] == 2
+        assert data["is_total_outlier"] is True
+        assert data["outlier_direction"] == "low"
+
+        remarks = {item["rater_id"]: item["remarks"] for item in data["evaluations"]}
+        assert remarks["u-student-a"] == "Needs to participate more"
+        assert remarks["u-student-b"] == "Rarely available"
+        assert remarks["u-student-d"] == "Helped me on the demo"
+
+        outlier_scores = [
+            item["score"] for item in data["evaluations"] if item["is_score_outlier"]
+        ]
+        assert outlier_scores == [5]
+    finally:
+        _clear_overrides()
+
+
+def test_student_cannot_get_member_evaluations(override_user_repository) -> None:
+    project_repository, course, user_repository, _project = _setup_course_with_project()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("student.a@sprintsight.edu")
+        response = client.get(
+            "/api/v1/peer-evaluation/projects/proj-peer-1/members/u-student-b/evaluations",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403, response.text
+    finally:
+        _clear_overrides()
+
+
+def test_member_evaluations_404_when_not_in_project(override_user_repository) -> None:
+    project_repository, course, user_repository = _setup_course_with_four_students()
+    peer_eval_repo = InMemoryPeerEvaluationRepository()
+    _override_repos(project_repository, user_repository, peer_eval_repo)
+
+    try:
+        token = _token_for("faculty@sprintsight.edu")
+        response = client.get(
+            "/api/v1/peer-evaluation/projects/proj-peer-1/members/u-student-e/evaluations",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404, response.text
+    finally:
+        _clear_overrides()
+

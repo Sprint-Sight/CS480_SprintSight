@@ -30,6 +30,7 @@ from app.schemas.auth import Role
 from app.schemas.peer_evaluation import (
     CoursePeerEvaluationSummary,
     EvaluationStatusResponse,
+    MemberPeerEvaluationDetail,
     PeerEvaluationConfigCreate,
     PeerEvaluationConfigResponse,
     PeerEvaluationCreate,
@@ -365,6 +366,34 @@ def get_project_peer_evaluations(
         action_audits=action_audits,
     )
     return service.get_project_evaluations(project_id, current_user.id)
+
+
+# ------------------------------------------------------------------
+# Instructor: view evaluations received by one group member
+# ------------------------------------------------------------------
+
+@router.get(
+    "/projects/{project_id}/members/{member_id}/evaluations",
+    response_model=MemberPeerEvaluationDetail,
+)
+def get_member_peer_evaluations(
+    project_id: str,
+    member_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    evaluations: Annotated[PeerEvaluationRepository, Depends(get_peer_evaluation_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+) -> MemberPeerEvaluationDetail:
+    """Instructor view: teammate scores, remarks, total, and course outlier stats for one member."""
+    service = _get_service(
+        current_user=current_user,
+        projects=projects,
+        users=users,
+        evaluations=evaluations,
+        action_audits=action_audits,
+    )
+    return service.get_member_evaluations(project_id, member_id, current_user.id)
 
 
 # ------------------------------------------------------------------

@@ -91,9 +91,11 @@ def render_dimension_prompt(
         at all.
 
     CRITICAL CITATION RULES:
-    1. Provide AT MOST 3 evidence_citations — pick the strongest evidence,
-        not every possible citation. Each item MUST be an object with
-        EXACTLY two fields: `identifier` and `reason`.
+    1. Cite AS MANY distinct, relevant pieces of evidence as you can find and
+        ground in the Student Artifacts, up to a maximum of 15. Include every 
+        commit, ticket, file, or metric that genuinely supports the score, but 
+        do NOT pad with weak, duplicate, or redundant citations. Each item MUST 
+        be an object with EXACTLY two fields: `identifier` and `reason`.
     2. `identifier` MUST be copied verbatim from Student Artifacts: a commit
         SHA, Jira ticket ID, filename, or supplied metric value. Never use
         placeholders such as "commit 1", and never invent an identifier.
