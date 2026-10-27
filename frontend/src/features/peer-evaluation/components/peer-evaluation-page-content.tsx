@@ -66,7 +66,7 @@ export default function PeerEvaluationPageContent() {
             Manage evaluation windows and review all peer evaluations in your course.
           </p>
         </div>
-        <InstructorEvaluationView courseId={scope.courseId} />
+        <InstructorEvaluationView courseId={scope.courseId} projectId={scope.projectId} />
       </div>
     );
   }

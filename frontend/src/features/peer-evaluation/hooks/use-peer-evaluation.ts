@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import {
   submitEvaluation,
+  updateEvaluation,
   getMyEvaluations,
   getEvaluationStatus,
   getCourseEvaluations,
@@ -16,11 +17,13 @@ import {
   type MemberPeerEvaluationDetail,
   type EvaluationStatusResponse,
   type PeerEvaluationConfigResponse,
+  type SetConfigPayload,
 } from "@/features/peer-evaluation/peer-evaluation-api";
 
 type EvaluationFormData = {
   projectId: string;
   ratedId: string;
+  evaluationId?: string;
   score: number;
   remarks?: string;
 };
@@ -129,12 +132,18 @@ export function usePeerEvaluation() {
       try {
         setIsLoading(true);
         setError(null);
-        const result = await submitEvaluation({
+        const payload = {
           project_id: formData.projectId,
           rated_id: formData.ratedId,
           score: formData.score,
           remarks: formData.remarks,
-        });
+        };
+        const result = formData.evaluationId
+          ? await updateEvaluation(formData.evaluationId, {
+              score: formData.score,
+              remarks: formData.remarks ?? null,
+            })
+          : await submitEvaluation(payload);
 
         setMyEvaluations((prev) => {
           const index = prev.findIndex((e) => e.rated_id === formData.ratedId);
@@ -157,14 +166,11 @@ export function usePeerEvaluation() {
   );
 
   const updateEvaluationWindow = useCallback(
-    async (courseId: string, isOpen: boolean, expiresAt?: string) => {
+    async (courseId: string, payload: SetConfigPayload) => {
       try {
         setIsLoading(true);
         setError(null);
-        const result = await setEvaluationConfig(courseId, {
-          is_open: isOpen,
-          expires_at: expiresAt,
-        });
+        const result = await setEvaluationConfig(courseId, payload);
         setEvaluationConfigState(result);
         return result;
       } catch (err) {

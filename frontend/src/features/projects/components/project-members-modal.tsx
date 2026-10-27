@@ -1,4 +1,4 @@
-import { UserPlus, X } from "lucide-react";
+import { Loader2, UserPlus, X } from "lucide-react";
 
 type Student = { id: string; email: string; full_name: string };
 type AssignedStudent = Student & { projectName: string };
@@ -9,9 +9,10 @@ type ProjectMembersModalProps = {
   hasEnrolledStudents: boolean;
   availableStudents: Student[];
   assignedStudents: AssignedStudent[];
-  selectedStudentId: string;
+  selectedStudentIds: string[];
+  isAddingMembers: boolean;
   onClose: () => void;
-  onSelectStudent: (studentId: string) => void;
+  onToggleStudent: (studentId: string) => void;
   onAddMember: () => void;
 };
 
@@ -21,9 +22,10 @@ export function ProjectMembersModal({
   hasEnrolledStudents,
   availableStudents,
   assignedStudents,
-  selectedStudentId,
+  selectedStudentIds,
+  isAddingMembers,
   onClose,
-  onSelectStudent,
+  onToggleStudent,
   onAddMember,
 }: ProjectMembersModalProps) {
   if (!isOpen) return null;
@@ -36,7 +38,7 @@ export function ProjectMembersModal({
             <h2 id="project-members-title" className="text-lg font-semibold text-slate-900">Add Project Member</h2>
             <p className="mt-0.5 text-sm text-slate-500">Choose an enrolled student for {projectName}.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close project member picker" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+          <button type="button" onClick={onClose} disabled={isAddingMembers} aria-label="Close project member picker" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -51,15 +53,34 @@ export function ProjectMembersModal({
                 : "No students are enrolled in this course yet. Use the Roster button to enroll an existing student first."}
             </p>
           ) : (
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">Enrolled student</span>
-              <select value={selectedStudentId} onChange={(event) => onSelectStudent(event.target.value)} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                <option value="">Select a student</option>
+            <fieldset disabled={isAddingMembers} className="space-y-2">
+              <legend className="mb-2 text-sm font-medium text-slate-700">
+                Select enrolled students
+              </legend>
+              <ul className="max-h-64 space-y-2 overflow-y-auto">
                 {availableStudents.map((student) => (
-                  <option key={student.id} value={student.id}>{student.full_name} ({student.email})</option>
+                  <li key={student.id}>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 hover:bg-slate-50 has-[:checked]:border-blue-300 has-[:checked]:bg-blue-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedStudentIds.includes(student.id)}
+                        onChange={() => onToggleStudent(student.id)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-slate-900">
+                          {student.full_name}
+                        </span>
+                        <span className="block text-xs text-slate-500">{student.email}</span>
+                      </span>
+                    </label>
+                  </li>
                 ))}
-              </select>
-            </label>
+              </ul>
+              <p className="text-xs text-slate-500" aria-live="polite">
+                {selectedStudentIds.length} student{selectedStudentIds.length === 1 ? "" : "s"} selected
+              </p>
+            </fieldset>
           )}
           {assignedStudents.length > 0 && (
             <div className="mt-4">
@@ -87,10 +108,10 @@ export function ProjectMembersModal({
         </div>
 
         <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
-          <button type="button" onClick={onClose} className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-          <button type="button" onClick={onAddMember} disabled={!selectedStudentId} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
-            <UserPlus className="h-4 w-4" />
-            Add to Project
+          <button type="button" onClick={onClose} disabled={isAddingMembers} className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={onAddMember} disabled={selectedStudentIds.length === 0 || isAddingMembers} className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
+            {isAddingMembers ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+            {isAddingMembers ? "Adding..." : `Add ${selectedStudentIds.length || ""} to Project`}
           </button>
         </div>
       </div>

@@ -73,6 +73,7 @@ export type MemberPeerEvaluationDetail = {
 export type EvaluationStatusResponse = {
   can_evaluate: boolean;
   is_open: boolean;
+  opens_at: string | null;
   expires_at: string | null;
   message: string;
 };
@@ -80,9 +81,50 @@ export type EvaluationStatusResponse = {
 export type PeerEvaluationConfigResponse = {
   course_id: string;
   is_open: boolean;
+  opens_at: string | null;
   expires_at: string | null;
   updated_by: string;
   updated_at: string;
+};
+
+export type JiraContributionTicket = {
+  ticket_id: string;
+  summary: string;
+  story_points: number;
+  status: string | null;
+  issue_type: string | null;
+  project_id: string | null;
+  sprint_id: string | null;
+};
+
+export type JiraContributionStudent = {
+  student_id: string;
+  student_full_name: string;
+  course_id: string;
+  project_id: string | null;
+  total_tickets: number;
+  total_story_points: number;
+  average_points_per_ticket: number;
+  course_average_total_points: number | null;
+  course_total_score_std_dev: number | null;
+  contribution_z_score: number | null;
+  is_contribution_outlier: boolean;
+  outlier_direction: "low" | "high" | null;
+  students_below_course_average: number;
+  enrolled_student_count: number;
+  students_with_jira_data: number;
+  tickets: JiraContributionTicket[];
+};
+
+export type JiraContributionOutlierReport = {
+  course_id: string;
+  course_average_total_points: number | null;
+  course_total_score_std_dev: number | null;
+  enrolled_student_count: number;
+  students_with_jira_data: number;
+  students_below_course_average: number;
+  outlier_count: number;
+  students: JiraContributionStudent[];
 };
 
 export type PeerTeammate = {
@@ -102,9 +144,15 @@ type SubmitEvaluationPayload = {
   remarks?: string;
 };
 
-type SetConfigPayload = {
+type UpdateEvaluationPayload = {
+  score?: number | null;
+  remarks?: string | null;
+};
+
+export type SetConfigPayload = {
   is_open: boolean;
-  expires_at?: string;
+  opens_at: string | null;
+  expires_at: string | null;
 };
 
 export const submitEvaluation = (
@@ -114,6 +162,19 @@ export const submitEvaluation = (
     method: "POST",
     body: JSON.stringify(payload),
   });
+};
+
+export const updateEvaluation = (
+  evaluationId: string,
+  payload: UpdateEvaluationPayload,
+): Promise<PeerEvaluationResponse> => {
+  return apiRequest<PeerEvaluationResponse>(
+    `/peer-evaluation/evaluations/${evaluationId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
 };
 
 export const getMyEvaluations = (
@@ -172,6 +233,27 @@ export const getMemberEvaluations = (
     {
       method: "GET",
     },
+  );
+};
+
+export const getJiraContributionOutliers = (
+  courseId: string,
+  onlyOutliers: boolean,
+): Promise<JiraContributionOutlierReport> => {
+  const query = onlyOutliers ? "?only_outliers=true" : "";
+  return apiRequest<JiraContributionOutlierReport>(
+    `/jira/contribution-outliers/courses/${courseId}${query}`,
+    { method: "GET" },
+  );
+};
+
+export const getStudentJiraContribution = (
+  courseId: string,
+  studentId: string,
+): Promise<JiraContributionStudent> => {
+  return apiRequest<JiraContributionStudent>(
+    `/jira/contribution-outliers/courses/${courseId}/students/${studentId}`,
+    { method: "GET" },
   );
 };
 
