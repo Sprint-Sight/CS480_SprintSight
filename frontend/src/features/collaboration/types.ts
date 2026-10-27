@@ -1,7 +1,10 @@
 export type MemberCommitMetric = {
   member: string;
   commits: number;
+  linesChanged: number;
 };
+
+export type CollaborationMetric = "commits" | "linesChanged";
 
 export type WorkloadSlice = {
   name: string;

@@ -106,6 +106,7 @@ export function saveJiraSnapshot(snapshot: PersistedJiraSnapshot) {
   writeIngestionState({
     selectedProjectId: snapshot.project_id,
     selectedCourseId: snapshot.course_id,
+    selectedSprintId: snapshot.sprint_id,
     jiraBySprint: { ...state.jiraBySprint, [`${snapshot.project_id}:${snapshot.sprint_id}`]: snapshot },
   });
 }

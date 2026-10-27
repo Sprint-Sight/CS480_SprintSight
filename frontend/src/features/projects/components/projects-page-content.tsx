@@ -15,6 +15,7 @@ import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
+import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
 const sortOptions = [
@@ -68,6 +69,8 @@ export default function ProjectsPageContent() {
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [studentDirectoryError, setStudentDirectoryError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
+  const [canUseInstructorCredentials, setCanUseInstructorCredentials] = useState(false);
+  const jiraCredentials = useInstructorJiraCredentials(canUseInstructorCredentials);
   const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
   const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
 
@@ -77,10 +80,8 @@ export default function ProjectsPageContent() {
     description: "",
     github_repo_url: "",
     local_repo_path: "",
-    jira_email: "",
     jira_domain: "",
     jira_project_key: "",
-    jira_api_token: "",
   });
 
   const [courseForm, setCourseForm] = useState({
@@ -92,6 +93,10 @@ export default function ProjectsPageContent() {
   });
 
   const [studentForm, setStudentForm] = useState({ email: "", full_name: "", password: "" });
+
+  useEffect(() => {
+    setCanUseInstructorCredentials(sessionStorage.getItem("sprintsight-auth-role") !== "student");
+  }, []);
 
   async function reloadCourses() {
     const token = getAuthToken();
@@ -251,7 +256,7 @@ export default function ProjectsPageContent() {
 
   function handleOpenCreateProject() {
     setEditingProject(null);
-    setProjectForm({ project_name: "", team_name: "", description: "", github_repo_url: "", local_repo_path: "", jira_email: getDefaultJiraEmail(), jira_domain: "", jira_project_key: "", jira_api_token: "" });
+    setProjectForm({ project_name: "", team_name: "", description: "", github_repo_url: "", local_repo_path: "", jira_domain: "", jira_project_key: "" });
     setIsProjectModalOpen(true);
   }
 
@@ -265,10 +270,8 @@ export default function ProjectsPageContent() {
       description: project.description || "",
       github_repo_url: project.github_repo_url || "",
       local_repo_path: project.local_repo_path || "",
-      jira_email: project.jira_email || getDefaultJiraEmail(),
       jira_domain: project.jira_domain || "",
       jira_project_key: project.jira_project_key || "",
-      jira_api_token: "",
     });
     setIsProjectModalOpen(true);
   }
@@ -295,10 +298,9 @@ export default function ProjectsPageContent() {
       const projectName = projectForm.project_name.trim();
       const teamName = projectForm.team_name.trim();
       const repositoryUrl = projectForm.github_repo_url.trim();
-      const jiraEmail = projectForm.jira_email.trim();
+      const jiraEmail = jiraCredentials.jiraEmail.trim();
       const jiraDomain = projectForm.jira_domain.trim();
       const jiraProjectKey = projectForm.jira_project_key.trim();
-      const jiraApiToken = projectForm.jira_api_token.trim();
 
       if (!projectName || !teamName) {
         throw new Error("Project name and team name are required.");
@@ -316,12 +318,23 @@ export default function ProjectsPageContent() {
         throw new Error("Load or select a valid course before creating a project.");
       }
 
-      const hasJiraConfiguration = Boolean(jiraDomain || jiraProjectKey || jiraApiToken);
-      if (hasJiraConfiguration && (!jiraEmail || !jiraDomain || !jiraProjectKey || !jiraApiToken)) {
-        throw new Error("Enter Jira email, domain, project key, and API token together.");
+      const hasJiraConfiguration = Boolean(jiraDomain || jiraProjectKey);
+      if (hasJiraConfiguration && (!jiraEmail || !jiraDomain || !jiraProjectKey)) {
+        throw new Error("Enter the shared Jira account email and this group's Jira domain and project key.");
+      }
+      if (
+        hasJiraConfiguration &&
+        !jiraCredentials.hasSavedToken &&
+        !jiraCredentials.jiraApiToken.trim()
+      ) {
+        throw new Error("Save a shared Jira API token in Settings before configuring Jira for this group.");
       }
 
-      const projectPayload = toProjectPayload(projectForm);
+      if (jiraCredentials.hasUnsavedChanges && !(await jiraCredentials.saveCredentials())) {
+        throw new Error(jiraCredentials.error || "Unable to save the shared Jira credentials.");
+      }
+
+      const projectPayload = toProjectPayload(projectForm, jiraEmail || getDefaultJiraEmail());
 
       if (editingProject) {
         const updatePayload = {
@@ -330,9 +343,7 @@ export default function ProjectsPageContent() {
           description: projectForm.description.trim() || undefined,
           github_repo_url: repositoryUrl || undefined,
           local_repo_path: projectForm.local_repo_path.trim() || undefined,
-          ...(hasJiraConfiguration
-            ? { jira_email: jiraEmail, jira_domain: jiraDomain, jira_project_key: jiraProjectKey, jira_api_token: jiraApiToken }
-            : {}),
+          ...(hasJiraConfiguration ? { jira_domain: jiraDomain, jira_project_key: jiraProjectKey } : {}),
         };
         await apiRequest(`/projects/${editingProject.id}`, {
           method: "PATCH",
@@ -647,7 +658,19 @@ export default function ProjectsPageContent() {
         </div>
       )}
 
-      <ProjectModal isOpen={isProjectModalOpen} editingProject={editingProject} projectForm={projectForm} onClose={() => setIsProjectModalOpen(false)} onSave={handleSaveProject} setProjectForm={setProjectForm} />
+      <ProjectModal
+        isOpen={isProjectModalOpen}
+        editingProject={editingProject}
+        projectForm={projectForm}
+        jiraEmail={jiraCredentials.jiraEmail}
+        jiraApiToken={jiraCredentials.jiraApiToken}
+        hasSavedJiraToken={jiraCredentials.hasSavedToken}
+        onClose={() => setIsProjectModalOpen(false)}
+        onSave={handleSaveProject}
+        onJiraEmailChange={jiraCredentials.setJiraEmail}
+        onJiraApiTokenChange={jiraCredentials.setJiraApiToken}
+        setProjectForm={setProjectForm}
+      />
 
       <CourseManagementModal
         isOpen={isCourseModalOpen}
