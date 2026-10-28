@@ -462,7 +462,7 @@ def _tickets_from_run(run: JiraIngestionRunRecord) -> list[_ContributionTicket]:
                 ticket_id=str(getattr(ticket, "ticket_id", "") or ""),
                 summary=str(getattr(ticket, "summary", "") or ""),
                 story_points=_coerce_story_points(getattr(ticket, "story_points", None)) or 0.0,
-                assignee_id=None,
+                assignee_id=getattr(ticket, "student_id", None),
                 assignee_name=getattr(ticket, "assignee", None),
                 assignee_email=None,
                 status=getattr(ticket, "status", None),

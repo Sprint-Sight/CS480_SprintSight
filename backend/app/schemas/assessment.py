@@ -68,6 +68,10 @@ class JiraTicket(BaseModel):
     ticket_id: str
     summary: str
     assignee: str | None = None
+    student_id: str | None = Field(
+        default=None,
+        description="Resolved SprintSight student ID, if matched to an enrolled student.",
+    )
     status: str | None = None
     issue_type: str | None = None
     story_points: float | None = Field(default=None, ge=0)

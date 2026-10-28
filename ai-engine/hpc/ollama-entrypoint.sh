@@ -12,7 +12,6 @@ done
 
 # alias|base model|Modelfile, mirrors docker-compose.yaml model-init
 for entry in \
-  "sprintsight-llama|llama3.2|Modelfile.llama" \
   "sprintsight-qwen|qwen3:8b|Modelfile.qwen" \
   "sprintsight-mistral|mistral:7b|Modelfile.mistral" \
   "sprintsight-gemma|gemma4:12b|Modelfile.gemma" \

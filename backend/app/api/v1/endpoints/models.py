@@ -54,8 +54,6 @@ class ModelCatalogResponse(BaseModel):
 # module constant (rather than imported from the AI engine) because the backend
 # and AI engine are separate services with no shared Python package.
 _MODEL_CATALOG: list[ModelOption] = [
-    ModelOption(id="sprintsight-llama", provider="Ollama", model="Llama 3",
-                description="Local general-purpose model (Llama 3)."),
     ModelOption(id="sprintsight-qwen", provider="Ollama", model="Qwen 3 8B",
                 description="Local general-purpose model (Qwen 3 8B). Default model."),
     ModelOption(id="sprintsight-mistral", provider="Ollama", model="Mistral 7B",
