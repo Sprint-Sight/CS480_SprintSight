@@ -94,32 +94,62 @@ def _resolve_student_id(
     assignee_id: str | None,
     assignee_name: str | None,
     assignee_email: str | None,
-    enrolled_ids: set[str],
+    project_member_ids: set[str],
     users_by_id: dict[str, UserRecord],
-    ids_by_email: dict[str, str],
-    ids_by_name: dict[str, str],
+    ids_by_email: dict[str, list[str]],
+    ids_by_name: dict[str, list[str]],
 ) -> str | None:
     """Resolve a Jira assignee to a SprintSight student ID.
 
-    Resolution order:
-      1. Jira account ID directly matches an enrolled student ID.
-      2. Jira account ID matches any user ID (then checked against enrollment).
-      3. Email match (case-insensitive) to an enrolled student.
-      4. Display-name match (case-insensitive) to an enrolled student — only when unambiguous.
+    Resolution rules:
+      1. Do NOT trust Jira account ID — it is not a reliable mapping to
+         SprintSight student IDs unless explicitly configured elsewhere.
+      2. Email match — only when exactly one active project member has that
+         email (case-insensitive). Duplicate emails → null.
+      3. Display-name match — only when exactly one active project member
+         has that name (case-insensitive). Duplicate names → null.
+      4. If email and name both match but to different students → null
+         (conflicting signals).
+      5. Otherwise → null (do not guess).
     """
-    if assignee_id:
-        if assignee_id in enrolled_ids:
-            return assignee_id
-        if assignee_id in users_by_id:
-            return assignee_id
+    matched_by_email: str | None = None
+    if assignee_email:
+        normalized_email = assignee_email.strip().lower()
+        email_candidates = [
+            sid
+            for sid in ids_by_email.get(normalized_email, [])
+            if sid in project_member_ids
+        ]
+        if len(email_candidates) == 1:
+            matched_by_email = email_candidates[0]
+        elif len(email_candidates) > 1:
+            return None  # ambiguous email
 
-    for candidate in (assignee_email, assignee_name):
-        if not candidate:
-            continue
-        normalized = candidate.strip().lower()
-        matched_id = ids_by_email.get(normalized) or ids_by_name.get(normalized)
-        if matched_id in enrolled_ids:
-            return matched_id
+    matched_by_name: str | None = None
+    if assignee_name:
+        normalized_name = assignee_name.strip().lower()
+        name_candidates = [
+            sid
+            for sid in ids_by_name.get(normalized_name, [])
+            if sid in project_member_ids
+        ]
+        if len(name_candidates) == 1:
+            matched_by_name = name_candidates[0]
+        elif len(name_candidates) > 1:
+            return None  # ambiguous name
+
+    # Both matched — they must agree
+    if matched_by_email and matched_by_name:
+        if matched_by_email != matched_by_name:
+            return None  # conflicting signals
+        return matched_by_email
+
+    # Only one matched
+    if matched_by_email:
+        return matched_by_email
+    if matched_by_name:
+        return matched_by_name
+
     return None
 
 
@@ -128,9 +158,9 @@ def normalize_jira_envelope(
     *,
     story_points_field: str | None = None,
     users_by_id: dict[str, UserRecord] | None = None,
-    ids_by_email: dict[str, str] | None = None,
-    ids_by_name: dict[str, str] | None = None,
-    enrolled_ids: set[str] | None = None,
+    ids_by_email: dict[str, list[str]] | None = None,
+    ids_by_name: dict[str, list[str]] | None = None,
+    project_member_ids: set[str] | None = None,
 ) -> JiraCleanedSnapshot:
     required = ("jira_project_key", "course_id", "project_id", "sprint_id", "captured_at", "issues")
     missing = [field for field in required if field not in envelope]
@@ -157,7 +187,7 @@ def normalize_jira_envelope(
             assignee_id,
             assignee_name,
             assignee_email,
-            enrolled_ids or set(),
+            project_member_ids or set(),
             users_by_id or {},
             ids_by_email or {},
             ids_by_name or {},

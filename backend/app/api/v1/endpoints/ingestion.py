@@ -13,6 +13,7 @@ from app.dependencies.auth import get_action_audit_repository, get_instructor_ji
 from app.repositories.interfaces import ActionAuditRepository, InstructorJiraCredentialsRepository, JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
 from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
+from app.schemas.auth import Role
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
@@ -151,27 +152,29 @@ def process_jira_run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found.")
     try:
         envelope = json.loads(storage.download(run.raw_bucket, run.raw_object_key))
-        # Build student lookup maps from enrolled students
-        enrolled_ids = projects.list_enrolled_student_ids(project.course_id)
-        enrolled_set = set(enrolled_ids)
+        # Build student lookup maps from project members only (active students
+        # who belong to this specific project).
+        member_ids = projects.list_member_ids(project.id)
+        project_member_ids: set[str] = set()
         users_by_id: dict[str, UserRecord] = {}
-        ids_by_email: dict[str, str] = {}
-        ids_by_name: dict[str, str] = {}
-        for student_id in enrolled_ids:
-            user = users.get_by_id(student_id)
-            if user:
-                users_by_id[student_id] = user
+        ids_by_email: dict[str, list[str]] = {}
+        ids_by_name: dict[str, list[str]] = {}
+        for member_id in member_ids:
+            user = users.get_by_id(member_id)
+            if user and user.is_active and user.role == Role.STUDENT:
+                project_member_ids.add(member_id)
+                users_by_id[member_id] = user
                 if user.email:
-                    ids_by_email[user.email.strip().lower()] = student_id
+                    ids_by_email.setdefault(user.email.strip().lower(), []).append(member_id)
                 if user.full_name:
-                    ids_by_name[user.full_name.strip().lower()] = student_id
+                    ids_by_name.setdefault(user.full_name.strip().lower(), []).append(member_id)
         snapshot = normalize_jira_envelope(
             envelope,
             story_points_field=get_settings().jira_story_points_field or None,
             users_by_id=users_by_id,
             ids_by_email=ids_by_email,
             ids_by_name=ids_by_name,
-            enrolled_ids=enrolled_set,
+            project_member_ids=project_member_ids,
         )
     except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
         runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(timezone.utc), None, str(exc), None)
