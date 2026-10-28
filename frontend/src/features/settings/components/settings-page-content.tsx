@@ -44,10 +44,24 @@ export default function SettingsPageContent() {
   };
   const isModelSelectionUnavailable = modelSelection.isLoading || modelSelection.isSaving || modelSelection.models.length === 0;
   const canSaveModelSelection = modelSelection.models.some((model) => model.id === modelSelection.selectedModelId);
-  const isSavingSettings = isModelSelectionUnavailable || jiraCredentials.isLoading || jiraCredentials.isSaving;
+  const isSavingSettings = modelSelection.isSaving || jiraCredentials.isSaving;
+  const isSaveUnavailable = isModelSelectionUnavailable || jiraCredentials.isLoading;
   return (
     <div className="space-y-5 p-8">
-      <SettingsHeader />
+      <div className="flex flex-wrap items-stretch justify-between gap-4">
+        <SettingsHeader />
+        <div className="flex flex-wrap items-stretch justify-end gap-3">
+          {saveMessage && <p role="status" className="text-sm text-emerald-600">{saveMessage}</p>}
+          <button
+            type="button"
+            onClick={saveSettings}
+            disabled={isSaveUnavailable || isSavingSettings || !canSaveModelSelection}
+            className="min-h-16 self-stretch rounded-xl bg-blue-900 px-6 text-sm font-semibold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSavingSettings ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
+      </div>
       <LlmSettings
         models={modelSelection.models}
         selectedModelId={modelSelection.selectedModelId}
@@ -56,7 +70,7 @@ export default function SettingsPageContent() {
       />
       {modelSelection.isLoading && <p role="status" className="text-sm text-slate-600">Loading AI models...</p>}
       {modelSelection.error && <p role="alert" className="text-sm text-red-700">{modelSelection.error}</p>}
-      <div className="grid min-w-0 grid-cols-1 items-stretch gap-5 lg:grid-cols-2">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <RubricSettings rubric={rubric} totalWeight={totalWeight} onChange={updateRubricWeight} />
         <ApiConnectionsSettings
           jiraEmail={jiraCredentials.jiraEmail}
@@ -65,17 +79,6 @@ export default function SettingsPageContent() {
           error={jiraCredentials.error}
           onJiraEmailChange={jiraCredentials.setJiraEmail}
         />
-      </div>
-      <div className="flex items-center justify-end gap-3">
-        {saveMessage && <p role="status" className="text-sm text-emerald-600">{saveMessage}</p>}
-        <button
-          type="button"
-          onClick={saveSettings}
-          disabled={isSavingSettings || !canSaveModelSelection}
-          className="h-10 rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {modelSelection.isSaving ? "Saving..." : "Save Settings"}
-        </button>
       </div>
     </div>
   );
