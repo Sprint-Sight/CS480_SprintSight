@@ -41,6 +41,7 @@ def test_normalizes_screenshot_ticket_fields_and_sorts_tickets() -> None:
         "ticket_id": "DS3-2",
         "summary": "Build report",
         "assignee": "Student One",
+        "student_id": None,
         "status": "In Progress",
         "issue_type": "Story",
         "story_points": 5.0,

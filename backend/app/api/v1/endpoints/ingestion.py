@@ -142,15 +142,37 @@ def process_jira_run(
     run_id: str,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
     runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
 ) -> JiraIngestionRun:
-    _authorized_project(project_id, current_user, projects)
+    project = _authorized_project(project_id, current_user, projects)
     run = runs.get_run(project_id, sprint_id, run_id)
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found.")
     try:
         envelope = json.loads(storage.download(run.raw_bucket, run.raw_object_key))
-        snapshot = normalize_jira_envelope(envelope, story_points_field=get_settings().jira_story_points_field or None)
+        # Build student lookup maps from enrolled students
+        enrolled_ids = projects.list_enrolled_student_ids(project.course_id)
+        enrolled_set = set(enrolled_ids)
+        users_by_id: dict[str, UserRecord] = {}
+        ids_by_email: dict[str, str] = {}
+        ids_by_name: dict[str, str] = {}
+        for student_id in enrolled_ids:
+            user = users.get_by_id(student_id)
+            if user:
+                users_by_id[student_id] = user
+                if user.email:
+                    ids_by_email[user.email.strip().lower()] = student_id
+                if user.full_name:
+                    ids_by_name[user.full_name.strip().lower()] = student_id
+        snapshot = normalize_jira_envelope(
+            envelope,
+            story_points_field=get_settings().jira_story_points_field or None,
+            users_by_id=users_by_id,
+            ids_by_email=ids_by_email,
+            ids_by_name=ids_by_name,
+            enrolled_ids=enrolled_set,
+        )
     except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
         runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(timezone.utc), None, str(exc), None)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Jira raw data could not be normalized.") from exc

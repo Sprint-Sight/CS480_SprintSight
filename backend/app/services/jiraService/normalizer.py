@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
 
+from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import JiraCleanedSnapshot, JiraTicket
 
 NORMALIZATION_VERSION = "jira-ticket-v1"
@@ -72,10 +73,64 @@ def _issue_matches_requested_sprint(issue: dict[str, Any], sprint_id: str | None
     return True
 
 
+def _assignee_from_fields(fields: dict) -> tuple[str | None, str | None, str | None]:
+    """Return (assignee id/account id, display name, email) for a raw issue."""
+    assignee = fields.get("assignee")
+    if isinstance(assignee, dict):
+        assignee_id = assignee.get("id") or assignee.get("accountId")
+        display_name = assignee.get("displayName")
+        email = assignee.get("emailAddress")
+        return (
+            str(assignee_id) if assignee_id else None,
+            str(display_name) if display_name else None,
+            str(email) if email else None,
+        )
+    if isinstance(assignee, str) and assignee.strip():
+        return None, assignee.strip(), None
+    return None, None, None
+
+
+def _resolve_student_id(
+    assignee_id: str | None,
+    assignee_name: str | None,
+    assignee_email: str | None,
+    enrolled_ids: set[str],
+    users_by_id: dict[str, UserRecord],
+    ids_by_email: dict[str, str],
+    ids_by_name: dict[str, str],
+) -> str | None:
+    """Resolve a Jira assignee to a SprintSight student ID.
+
+    Resolution order:
+      1. Jira account ID directly matches an enrolled student ID.
+      2. Jira account ID matches any user ID (then checked against enrollment).
+      3. Email match (case-insensitive) to an enrolled student.
+      4. Display-name match (case-insensitive) to an enrolled student — only when unambiguous.
+    """
+    if assignee_id:
+        if assignee_id in enrolled_ids:
+            return assignee_id
+        if assignee_id in users_by_id:
+            return assignee_id
+
+    for candidate in (assignee_email, assignee_name):
+        if not candidate:
+            continue
+        normalized = candidate.strip().lower()
+        matched_id = ids_by_email.get(normalized) or ids_by_name.get(normalized)
+        if matched_id in enrolled_ids:
+            return matched_id
+    return None
+
+
 def normalize_jira_envelope(
     envelope: dict[str, Any],
     *,
     story_points_field: str | None = None,
+    users_by_id: dict[str, UserRecord] | None = None,
+    ids_by_email: dict[str, str] | None = None,
+    ids_by_name: dict[str, str] | None = None,
+    enrolled_ids: set[str] | None = None,
 ) -> JiraCleanedSnapshot:
     required = ("jira_project_key", "course_id", "project_id", "sprint_id", "captured_at", "issues")
     missing = [field for field in required if field not in envelope]
@@ -96,11 +151,24 @@ def normalize_jira_envelope(
         if not isinstance(fields, dict):
             fields = {}
         summary = fields.get("summary") or ""
+        assignee_id, assignee_name, assignee_email = _assignee_from_fields(fields)
+
+        student_id = _resolve_student_id(
+            assignee_id,
+            assignee_name,
+            assignee_email,
+            enrolled_ids or set(),
+            users_by_id or {},
+            ids_by_email or {},
+            ids_by_name or {},
+        )
+
         tickets.append(
             JiraTicket(
                 ticket_id=str(issue["key"]),
                 summary=" ".join(str(summary).split()),
-                assignee=_nested_name(fields.get("assignee")),
+                assignee=assignee_name,
+                student_id=student_id,
                 status=_nested_name(fields.get("status")),
                 issue_type=_nested_name(fields.get("issuetype")),
                 story_points=_story_points(fields, story_points_field),
