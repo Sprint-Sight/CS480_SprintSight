@@ -26,6 +26,14 @@ export type HeatmapRow = {
   week4: number;
 };
 
+export type UnmatchedCommit = {
+  sha: string;
+  author: string;
+  timestamp: string;
+  linesAdded: number;
+  linesDeleted: number;
+};
+
 export type TeamRiskIndicator = {
   team: string;
   risk: "Low" | "Medium" | "High";
@@ -60,6 +68,7 @@ export type CollaborationDataset = {
   projectLabel: string;
   subtitle: string;
   commitsByMember: MemberCommitMetric[];
+  unmatchedCommits: UnmatchedCommit[];
   workloadDistribution: WorkloadSlice[];
   participationHeatmap: HeatmapRow[];
   riskIndicators: TeamRiskIndicator[];

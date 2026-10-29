@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CollaborationCharts } from "@/features/collaboration/components/collaboration-charts";
 import { CollaborationHeader } from "@/features/collaboration/components/collaboration-header";
 import { CollaborationHeatmap } from "@/features/collaboration/components/collaboration-heatmap";
+import { UnmatchedCommitsPanel } from "@/features/collaboration/components/unmatched-commits-panel";
 import { useCollaborationData } from "@/features/collaboration/hooks/use-collaboration-data";
 import type { CollaborationMetric } from "@/features/collaboration/types";
 
@@ -41,6 +42,7 @@ function InstructorCollaborationPage() {
           </p>
         </section>
       )}
+      <UnmatchedCommitsPanel commits={collaborationData.unmatchedCommits} />
       <CollaborationCharts
         commitsByMember={collaborationData.commitsByMember}
         workloadDistribution={collaborationData.workloadDistribution}

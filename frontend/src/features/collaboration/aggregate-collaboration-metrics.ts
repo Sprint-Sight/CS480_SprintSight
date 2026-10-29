@@ -2,6 +2,7 @@ import type {
   CollaborationDataset,
   HeatmapRow,
   MemberCommitMetric,
+  UnmatchedCommit,
   WorkloadSlice,
 } from "@/features/collaboration/types";
 import type {
@@ -23,7 +24,7 @@ export function aggregateCollaborationMetrics(
   memberNames: Map<string, string>,
 ): Pick<
   CollaborationDataset,
-  "commitsByMember" | "workloadDistribution" | "participationHeatmap" | "riskIndicators"
+  "commitsByMember" | "unmatchedCommits" | "workloadDistribution" | "participationHeatmap" | "riskIndicators"
 > | null {
   const commits = ingestion.git?.commits || [];
   const tickets = ingestion.jira?.tickets || [];
@@ -31,6 +32,7 @@ export function aggregateCollaborationMetrics(
 
   const commitMetrics = new Map<string, MemberCommitMetric>();
   const heatmapMetrics = new Map<string, HeatmapRow>();
+  const unmatchedCommits: UnmatchedCommit[] = [];
   const timestamps = commits
     .map((commit) => new Date(commit.timestamp).getTime())
     .filter(Number.isFinite);
@@ -38,10 +40,19 @@ export function aggregateCollaborationMetrics(
 
   for (const commit of commits) {
     const studentId = commit.student_id || null;
-    const displayName = studentId
-      ? displayStudentName(studentId, memberNames)
-      : `Unmatched Git: ${commit.author || "Unknown author"} (${commit.sha.slice(0, 7)})`;
-    const identity = studentId ? `student:${studentId}` : `unmatched-git:${commit.sha}`;
+    if (!studentId) {
+      unmatchedCommits.push({
+        sha: commit.sha,
+        author: commit.author || "Unknown author",
+        timestamp: commit.timestamp,
+        linesAdded: commit.lines_added,
+        linesDeleted: commit.lines_deleted,
+      });
+      continue;
+    }
+
+    const displayName = displayStudentName(studentId, memberNames);
+    const identity = `student:${studentId}`;
     const metric = commitMetrics.get(identity) || {
       id: identity,
       student_id: studentId,
@@ -109,6 +120,7 @@ export function aggregateCollaborationMetrics(
 
   return {
     commitsByMember,
+    unmatchedCommits,
     workloadDistribution,
     participationHeatmap,
     riskIndicators: [{

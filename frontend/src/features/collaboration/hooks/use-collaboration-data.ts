@@ -83,6 +83,7 @@ export function useCollaborationData() {
       ? "Analytics derived from the selected project's captured Git and Jira data."
       : "No collaboration data is available for the selected project.",
     commitsByMember: metrics?.commitsByMember || [],
+    unmatchedCommits: metrics?.unmatchedCommits || [],
     workloadDistribution: metrics?.workloadDistribution || [],
     participationHeatmap: metrics?.participationHeatmap || [],
     riskIndicators: metrics?.riskIndicators || [],

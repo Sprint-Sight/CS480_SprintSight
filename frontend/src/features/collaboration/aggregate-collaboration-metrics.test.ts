@@ -84,7 +84,7 @@ describe("aggregateCollaborationMetrics", () => {
     });
   });
 
-  it("keeps unmatched Git commits and Jira tickets visible as distinct entries", () => {
+  it("separates unmatched Git commits from member statistics without combining them", () => {
     const unmatchedGit: PersistedGitMetrics = {
       ...git,
       commits: git.commits.map((commit) => ({ ...commit, student_id: null })),
@@ -101,9 +101,9 @@ describe("aggregateCollaborationMetrics", () => {
       new Map(),
     );
 
-    expect(result?.commitsByMember).toHaveLength(2);
-    expect(result?.commitsByMember.every((metric) => metric.student_id === null)).toBe(true);
-    expect(result?.commitsByMember.every((metric) => metric.member.startsWith("Unmatched Git:"))).toBe(true);
+    expect(result?.commitsByMember).toEqual([]);
+    expect(result?.unmatchedCommits).toHaveLength(2);
+    expect(result?.unmatchedCommits.map((commit) => commit.sha)).toEqual(["sha-1", "sha-2"]);
     expect(result?.workloadDistribution).toHaveLength(2);
     expect(result?.workloadDistribution.every((slice) => slice.student_id === null)).toBe(true);
     expect(result?.workloadDistribution.every((slice) => slice.name.startsWith("Unmatched Jira:"))).toBe(true);
