@@ -1,23 +1,46 @@
-from typing import Annotated
-
 import json
-from datetime import date, datetime, time, timedelta, timezone
-from uuid import UUID, uuid4
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.core.credential_crypto import CredentialDecryptionError, decrypt_secret
 from app.core.storage import storage
-from app.dependencies.auth import get_action_audit_repository, get_instructor_jira_credentials_repository, get_jira_ingestion_repository, get_metrics_repository, get_project_repository, get_user_repository, require_faculty
-from app.repositories.interfaces import ActionAuditRepository, InstructorJiraCredentialsRepository, JiraIngestionRunRecord, JiraIngestionRunRepository, MetricsRepository, ProjectRepository, UserRepository
-from app.repositories.interfaces import UserRecord
-from app.schemas.assessment import IngestionDataResponse, IngestionRequest, JiraCleanedSnapshot, JiraIngestionRun, JiraRawSyncRequest, PaginationMetadata
+from app.dependencies.auth import (
+    get_action_audit_repository,
+    get_instructor_jira_credentials_repository,
+    get_jira_ingestion_repository,
+    get_metrics_repository,
+    get_project_repository,
+    get_user_repository,
+    require_faculty,
+)
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    InstructorJiraCredentialsRepository,
+    JiraIngestionRunRecord,
+    JiraIngestionRunRepository,
+    MetricsRepository,
+    ProjectRepository,
+    UserRecord,
+    UserRepository,
+)
+from app.schemas.assessment import (
+    IngestionDataResponse,
+    IngestionRequest,
+    JiraCleanedSnapshot,
+    JiraIngestionRun,
+    JiraRawSyncRequest,
+    PaginationMetadata,
+)
 from app.schemas.auth import Role
+from app.services.auditLogService.service import append_action_audit
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
-from app.services.auditLogService.service import append_action_audit
 
 router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
 jira_ingestion_router = APIRouter(prefix="/jira-ingestion", tags=["jira-ingestion"])
@@ -177,12 +200,117 @@ def process_jira_run(
             project_member_ids=project_member_ids,
         )
     except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
-        runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(timezone.utc), None, str(exc), None)
+        runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(UTC), None, str(exc), None)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Jira raw data could not be normalized.") from exc
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Jira raw data could not be retrieved from storage.") from exc
-    updated = runs.update_processed_run(project_id, sprint_id, run_id, "completed", datetime.now(timezone.utc), snapshot.normalization_version, None, snapshot)
+    updated = runs.update_processed_run(project_id, sprint_id, run_id, "completed", datetime.now(UTC), snapshot.normalization_version, None, snapshot)
     return _run_response(updated)
+
+
+class ReprocessRunResult(BaseModel):
+    run_id: str
+    sprint_id: str | None
+    status: str  # "processed", "failed", "skipped"
+    error: str | None = None
+
+
+@jira_ingestion_router.post("/runs/{project_id}/reprocess-all", response_model=list[ReprocessRunResult])
+def reprocess_all_jira_runs(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> list[ReprocessRunResult]:
+    """Re-process all Jira ingestion runs for a project with the current
+    student-matching logic.
+
+    This re-reads raw Jira data from storage and re-normalizes each run,
+    updating student_id matches on tickets. Old runs are preserved; their
+    cleaned snapshots are overwritten with the new results.
+    """
+    project = _authorized_project(project_id, current_user, projects)
+
+    all_runs = runs.list_project_runs(project.id)
+    if not all_runs:
+        return []
+
+    results: list[ReprocessRunResult] = []
+
+    for run in all_runs:
+        run_id = run.id
+        sprint_id = run.sprint_id
+        try:
+            envelope = json.loads(storage.download(run.raw_bucket, run.raw_object_key))
+
+            # Build student lookup maps from project members only
+            member_ids = projects.list_member_ids(project.id)
+            project_member_ids: set[str] = set()
+            users_by_id: dict[str, UserRecord] = {}
+            ids_by_email: dict[str, list[str]] = {}
+            ids_by_name: dict[str, list[str]] = {}
+            for member_id in member_ids:
+                user = users.get_by_id(member_id)
+                if user and user.is_active and user.role == Role.STUDENT:
+                    project_member_ids.add(member_id)
+                    users_by_id[member_id] = user
+                    if user.email:
+                        ids_by_email.setdefault(user.email.strip().lower(), []).append(member_id)
+                    if user.full_name:
+                        ids_by_name.setdefault(user.full_name.strip().lower(), []).append(member_id)
+
+            snapshot = normalize_jira_envelope(
+                envelope,
+                story_points_field=get_settings().jira_story_points_field or None,
+                users_by_id=users_by_id,
+                ids_by_email=ids_by_email,
+                ids_by_name=ids_by_name,
+                project_member_ids=project_member_ids,
+            )
+
+            runs.update_processed_run(
+                project_id,
+                sprint_id,
+                run_id,
+                "completed",
+                datetime.now(UTC),
+                snapshot.normalization_version,
+                None,
+                snapshot,
+            )
+            results.append(ReprocessRunResult(run_id=run_id, sprint_id=sprint_id, status="processed"))
+
+        except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
+            runs.update_processed_run(
+                project_id,
+                sprint_id,
+                run_id,
+                "failed",
+                datetime.now(UTC),
+                None,
+                str(exc),
+                None,
+            )
+            results.append(
+                ReprocessRunResult(
+                    run_id=run_id,
+                    sprint_id=sprint_id,
+                    status="failed",
+                    error=str(exc),
+                )
+            )
+        except Exception as exc:
+            results.append(
+                ReprocessRunResult(
+                    run_id=run_id,
+                    sprint_id=sprint_id,
+                    status="failed",
+                    error=str(exc),
+                )
+            )
+
+    return results
 
 
 @jira_ingestion_router.get("/runs/{project_id}/{sprint_id}/{run_id}/cleaned", response_model=JiraCleanedSnapshot)
@@ -241,9 +369,9 @@ def get_repo_ingestion_data(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="start_date and end_date must be provided together.",
         )
-    start_datetime = datetime.combine(start_date, time.min, tzinfo=timezone.utc) if start_date else None
+    start_datetime = datetime.combine(start_date, time.min, tzinfo=UTC) if start_date else None
     end_datetime = (
-        datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=UTC)
         if end_date
         else None
     )
