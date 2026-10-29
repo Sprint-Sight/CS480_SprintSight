@@ -1,4 +1,6 @@
 export type MemberCommitMetric = {
+  id: string;
+  student_id: string | null;
   member: string;
   commits: number;
   linesChanged: number;
@@ -7,17 +9,29 @@ export type MemberCommitMetric = {
 export type CollaborationMetric = "commits" | "linesChanged";
 
 export type WorkloadSlice = {
+  id: string;
+  student_id: string | null;
   name: string;
   value: number;
   color: string;
 };
 
 export type HeatmapRow = {
+  id: string;
+  student_id: string | null;
   member: string;
   week1: number;
   week2: number;
   week3: number;
   week4: number;
+};
+
+export type UnmatchedCommit = {
+  sha: string;
+  author: string;
+  timestamp: string;
+  linesAdded: number;
+  linesDeleted: number;
 };
 
 export type TeamRiskIndicator = {
@@ -54,6 +68,7 @@ export type CollaborationDataset = {
   projectLabel: string;
   subtitle: string;
   commitsByMember: MemberCommitMetric[];
+  unmatchedCommits: UnmatchedCommit[];
   workloadDistribution: WorkloadSlice[];
   participationHeatmap: HeatmapRow[];
   riskIndicators: TeamRiskIndicator[];

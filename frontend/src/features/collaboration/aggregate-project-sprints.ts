@@ -40,10 +40,7 @@ export function aggregateProjectSprints(
         pagination: {
           limit: null,
           offset: null,
-          total: gitRuns.reduce(
-            (total, run) => total + (run.pagination?.total ?? run.commits.length),
-            0,
-          ),
+          total: commitsBySha.size,
           has_more: gitRuns.some((run) => run.pagination?.has_more ?? false),
         },
       }

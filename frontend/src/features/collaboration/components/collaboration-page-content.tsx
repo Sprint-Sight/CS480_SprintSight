@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CollaborationCharts } from "@/features/collaboration/components/collaboration-charts";
 import { CollaborationHeader } from "@/features/collaboration/components/collaboration-header";
 import { CollaborationHeatmap } from "@/features/collaboration/components/collaboration-heatmap";
+import { UnmatchedCommitsPanel } from "@/features/collaboration/components/unmatched-commits-panel";
 import { useCollaborationData } from "@/features/collaboration/hooks/use-collaboration-data";
 import type { CollaborationMetric } from "@/features/collaboration/types";
 
@@ -16,9 +17,41 @@ export default function CollaborationPageContent() {
 }
 
 function InstructorCollaborationPage() {
-  const { collaborationData, liveIngestion } = useCollaborationData();
+  const { collaborationData, liveIngestion, isLoading, error, selectedProjectId } = useCollaborationData();
   const [comparisonMetric, setComparisonMetric] = useState<CollaborationMetric>("commits");
-  return <div className="space-y-6 p-8"><CollaborationHeader data={collaborationData} />{(liveIngestion.git || liveIngestion.jira) && <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4"><h2 className="text-lg font-semibold text-blue-950">Live Project Signals</h2><p className="mt-1 text-sm text-slate-700">{liveIngestion.git?.pagination?.total ?? liveIngestion.git?.commits.length ?? 0} Git commits, {liveIngestion.jira?.tickets.length ?? 0} Jira tickets, and {liveIngestion.documents} documents are available for this project.</p></section>}<CollaborationCharts commitsByMember={collaborationData.commitsByMember} workloadDistribution={collaborationData.workloadDistribution} comparisonMetric={comparisonMetric} onComparisonMetricChange={setComparisonMetric} /><CollaborationHeatmap rows={collaborationData.participationHeatmap} /></div>;
+  return (
+    <div className="space-y-6 p-8">
+      <CollaborationHeader data={collaborationData} />
+      {isLoading && <p role="status" className="text-sm text-slate-600">Loading project collaboration data...</p>}
+      {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</p>}
+      {!isLoading && !error && !selectedProjectId && (
+        <p role="status" className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
+          Select a project from the shared scope bar to view its collaboration data.
+        </p>
+      )}
+      {!isLoading && !error && selectedProjectId && !liveIngestion.git && !liveIngestion.jira && (
+        <p role="status" className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
+          No captured Git commits or processed Jira tickets are available for this project.
+        </p>
+      )}
+      {(liveIngestion.git || liveIngestion.jira) && (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
+          <h2 className="text-lg font-semibold text-blue-950">Live Project Signals</h2>
+          <p className="mt-1 text-sm text-slate-700">
+            {liveIngestion.git?.commits.length ?? 0} unique Git commits, {liveIngestion.jira?.tickets.length ?? 0} unique Jira tickets, and {liveIngestion.documents} documents are available for this project.
+          </p>
+        </section>
+      )}
+      <UnmatchedCommitsPanel commits={collaborationData.unmatchedCommits} />
+      <CollaborationCharts
+        commitsByMember={collaborationData.commitsByMember}
+        workloadDistribution={collaborationData.workloadDistribution}
+        comparisonMetric={comparisonMetric}
+        onComparisonMetricChange={setComparisonMetric}
+      />
+      <CollaborationHeatmap rows={collaborationData.participationHeatmap} />
+    </div>
+  );
 }
 
 function StudentCollaborationUnavailable() {
