@@ -71,7 +71,7 @@ export function CollaborationCharts({
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={workloadDistribution} dataKey="value" nameKey="name" innerRadius={48} outerRadius={84} paddingAngle={2}>
-                  {workloadDistribution.map((slice) => <Cell key={slice.name} fill={slice.color} />)}
+                  {workloadDistribution.map((slice) =>                   <Cell key={slice.id} fill={slice.color} />)}
                 </Pie>
                 <Tooltip formatter={(value: number) => `${value}%`} />
               </PieChart>
@@ -84,7 +84,7 @@ export function CollaborationCharts({
         </div>
         <div className="flex flex-wrap gap-3 text-xs text-slate-600">
           {workloadDistribution.map((slice) => (
-            <span key={slice.name} className="inline-flex items-center gap-1.5">
+            <span key={slice.id} className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
               {slice.name}
             </span>

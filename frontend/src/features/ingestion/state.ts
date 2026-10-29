@@ -14,6 +14,8 @@ export type PersistedGitMetrics = {
   commits: Array<{
     sha: string;
     author: string;
+    author_email?: string | null;
+    student_id?: string | null;
     message: string;
     timestamp: string;
     lines_added: number;
@@ -40,6 +42,7 @@ export type PersistedJiraSnapshot = {
     ticket_id: string;
     summary: string;
     assignee: string | null;
+    student_id?: string | null;
     status: string | null;
     issue_type: string | null;
     story_points: number | null;

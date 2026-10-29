@@ -20,6 +20,7 @@ const state: IngestionState = {
         {
           sha: "shared-sha",
           author: "Student One",
+          student_id: "student-one",
           message: "Earlier version",
           timestamp: "2026-10-01T09:00:00Z",
           lines_added: 5,
@@ -29,6 +30,7 @@ const state: IngestionState = {
         {
           sha: "sprint-1-sha",
           author: "Student Two",
+          student_id: "student-two",
           message: "First sprint work",
           timestamp: "2026-10-01T10:00:00Z",
           lines_added: 2,
@@ -53,6 +55,7 @@ const state: IngestionState = {
         {
           sha: "shared-sha",
           author: "Student One",
+          student_id: "student-one",
           message: "Latest version",
           timestamp: "2026-10-08T09:00:00Z",
           lines_added: 8,
@@ -62,6 +65,7 @@ const state: IngestionState = {
         {
           sha: "sprint-2-sha",
           author: "Student Two",
+          student_id: "student-two",
           message: "Second sprint work",
           timestamp: "2026-10-08T10:00:00Z",
           lines_added: 3,
@@ -86,6 +90,7 @@ const state: IngestionState = {
           ticket_id: "DEMO-1",
           summary: "Earlier summary",
           assignee: "Student One",
+          student_id: "student-one",
           status: "In Progress",
           issue_type: "Story",
           story_points: 3,
@@ -106,6 +111,7 @@ const state: IngestionState = {
           ticket_id: "DEMO-1",
           summary: "Latest summary",
           assignee: "Student One",
+          student_id: "student-one",
           status: "Done",
           issue_type: "Story",
           story_points: 3,
@@ -115,6 +121,7 @@ const state: IngestionState = {
           ticket_id: "DEMO-2",
           summary: "Another ticket",
           assignee: "Student Two",
+          student_id: "student-two",
           status: "To Do",
           issue_type: "Task",
           story_points: 2,
@@ -137,13 +144,15 @@ describe("aggregateProjectSprints", () => {
       "sprint-2-sha",
     ]);
     expect(result.git?.commits[1].message).toBe("Latest version");
+    expect(result.git?.commits[1].student_id).toBe("student-one");
     expect(result.git?.code_churn).toBe(35);
-    expect(result.git?.pagination?.total).toBe(4);
+    expect(result.git?.pagination?.total).toBe(3);
     expect(result.jira?.tickets.map((ticket) => ticket.ticket_id)).toEqual([
       "DEMO-1",
       "DEMO-2",
     ]);
     expect(result.jira?.tickets[0].summary).toBe("Latest summary");
+    expect(result.jira?.tickets[0].student_id).toBe("student-one");
     expect(result.documents).toBe(4);
   });
 
