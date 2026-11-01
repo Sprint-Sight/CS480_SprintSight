@@ -29,6 +29,7 @@ from app.repositories.interfaces import (
 from app.schemas.assessment import (
     AssessmentReport,
     AssessRequest,
+    EvidenceDetail,
     ManualAssessmentPatch,
     OverrideRequest,
     OverrideResponse,
@@ -37,7 +38,11 @@ from app.schemas.assessment import (
     TeamScore,
 )
 from app.services.documentsService.service import collect_project_context_documents
-from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
+from app.services.gitlabGithub.service import (
+    collect_repository_snapshot,
+    ingest_github_metrics,
+    resolve_local_repository_path,
+)
 from app.services.jiraService.service import enrich_jira_metrics
 from app.services.manualTextService.service import get_manual_text
 from app.services.middleManService.service import (
@@ -87,6 +92,23 @@ def _format_evidence_citations(evidence: object) -> list[str]:
         else:
             formatted.append(str(item))
     return formatted
+
+
+def _evidence_details(evidence: object) -> list[EvidenceDetail]:
+    """Keep the AI engine's resolved citation fields (file path, line range,
+    commit) in structured form; plain-string citations have none to keep."""
+    if not isinstance(evidence, list):
+        return []
+    details = []
+    for item in evidence:
+        if isinstance(item, dict) and item.get("identifier"):
+            try:
+                details.append(EvidenceDetail.model_validate(item))
+            except ValueError:
+                details.append(EvidenceDetail(
+                    identifier=str(item["identifier"]), reason=str(item.get("reason", "")),
+                ))
+    return details
 
 
 def convert_ai_result_to_assessment_report(
@@ -141,6 +163,7 @@ def convert_ai_result_to_assessment_report(
                     score=normalized_score,
                     justification=detail.get("justification") or "AI-generated rubric justification.",
                     evidence_citations=_format_evidence_citations(evidence),
+                    evidence_details=_evidence_details(evidence),
                 )
 
     recommendations = list(ai_result.get("key_recommendations") or [])
@@ -346,10 +369,24 @@ def run_assessment_job(
                 payload.project_id,
             )
 
+        # Snapshot the files at the ingested HEAD so the AI grades the final
+        # submission, not only the commit history. Like context documents, a
+        # failure here degrades to history-only grading instead of failing.
+        repo_snapshot: dict | None = None
+        try:
+            repo_snapshot = collect_repository_snapshot(repository_path, metrics.head_sha or "HEAD")
+        except Exception:
+            logger.exception(
+                "Failed to snapshot repository for project %s; "
+                "continuing with commit history only.",
+                payload.project_id,
+            )
+
         job_repo.update_job(job_id, status="building_payload", progress=50, current_stage="building_payload")
         job_repo.append_event(job_id, "progress", {"status": "building_payload", "progress": 50, "message": "Building AI payload."})
         middle_man_payload = build_assessment_payload(
             metrics, artifact_signals, manual_text, jira_tickets, project_context_documents,
+            repo_snapshot,
         )
 
         job_repo.update_job(job_id, status="ai_evaluating", progress=70, current_stage="ai_evaluating")
@@ -621,7 +658,10 @@ def update_manual_assessment(
         for key, detail in report.rubric_scores.items()
     }
     supplied_rubric_scores = patch.get("rubric_scores") or {}
-    rubric_scores.update(supplied_rubric_scores)
+    # Merge per dimension rather than replace: an editor that only sends
+    # score/justification/evidence_citations must not wipe evidence_details.
+    for dimension, supplied in supplied_rubric_scores.items():
+        rubric_scores[dimension] = {**rubric_scores.get(dimension, {}), **supplied}
     for dimension in ("requirements", "code_quality", "documentation", "collaboration"):
         score_key = f"{dimension}_score"
         justification_key = f"{dimension}_justification"

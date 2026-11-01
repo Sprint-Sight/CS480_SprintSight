@@ -3,12 +3,14 @@ actually calling the model.
 
 This answers the three recurring questions:
 
-  1. "What does the LLM see per dimension?" — prints the full bundle_data
-     JSON that `render_dimension_prompt` embeds under 'Student Artifacts',
-     after `_trim_commits` and `_select_representative_commits` have run.
+  1. "What does the LLM see per dimension?" — writes the exact prompt from
+     `llm_client.build_dimension_prompt`, the same function evaluate_dimension
+     uses, so it follows LLM_EVIDENCE_MODE (packed by default, or legacy).
 
-  2. "Are my commits being sampled, and if so which ones?" — prints before
-     and after counts, and lists the SHAs that survived the budget cut.
+  2. "How much of the project fits?" — in packed mode, reports how many
+     commits the ledger lists, how many files at HEAD are shown in full or
+     outlined, and how many diff excerpts (from how many authors) fit; in
+     legacy mode, the SHAs that survived the 30-commit sample.
 
   3. "Are Jira tickets actually flowing through?" — prints the ticket
      count, their status/type/assignee breakdown, and names the dimensions
@@ -37,9 +39,9 @@ from pathlib import Path
 from typing import Any
 
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
-from prompts.templates import render_dimension_prompt
 from research.eval.datasets import load_dataset
 from services import llm_client
+from services.evidence_packer import estimate_tokens
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("research.eval.inspect")
@@ -63,7 +65,13 @@ def _ticket_breakdown(tickets: list[dict]) -> dict:
     }
 
 
-def inspect(dataset_name: str, example_id: str, dimensions: list[str], out_dir: Path) -> dict:
+def inspect(
+    dataset_name: str,
+    example_id: str,
+    dimensions: list[str],
+    out_dir: Path,
+    model_name: str = "sprintsight-qwen",
+) -> dict:
     items, ds_hash, _ = load_dataset(dataset_name, subset=[example_id])
     if not items:
         raise LookupError(f"example '{example_id}' not in dataset '{dataset_name}'")
@@ -101,23 +109,17 @@ def inspect(dataset_name: str, example_id: str, dimensions: list[str], out_dir: 
             log.warning("Skipping unknown dimension: %s", dim)
             continue
         fields = llm_client._DIMENSION_ARTIFACT_FIELDS[dim]
+        built = llm_client.build_dimension_prompt(bundle, dim, DIMENSION_PROMPTS[dim], model_name)
         sampled = None
-        if "commits" in fields:
+        if "commits" in fields and built.index is None:
             sampled = llm_client._select_representative_commits(trimmed_commits, dim, budget)
-        bundle_data = llm_client._dimension_bundle_data(bundle, dim, sampled)
-        commit_facts = llm_client._compute_commit_facts(trimmed_commits, budget) if "commits" in fields else ""
-        jira_facts = llm_client._compute_jira_facts(full["jira_tickets"]) if "jira_tickets" in fields else ""
-        computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
-        project_context = llm_client._format_project_context_documents(bundle)
-        prompt = render_dimension_prompt(
-            dim, DIMENSION_PROMPTS[dim], bundle_data, computed_facts, project_context,
-        )
+        prompt = built.prompt
 
         prompt_path = out_dir / f"{example_id}__{dim}.prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
 
-        bundle_data_path = out_dir / f"{example_id}__{dim}.bundle_data.json"
-        bundle_data_path.write_text(bundle_data, encoding="utf-8")
+        bundle_data_path = out_dir / f"{example_id}__{dim}.bundle_data.txt"
+        bundle_data_path.write_text(built.bundle_data, encoding="utf-8")
 
         summary["per_dimension"][dim] = {
             "fields_included": list(fields),
@@ -126,10 +128,11 @@ def inspect(dataset_name: str, example_id: str, dimensions: list[str], out_dir: 
             "has_peer_evaluations": "peer_evaluations" in fields,
             "has_artifact_metrics": "artifact_metrics" in fields,
             "has_collaboration_metrics": "collaboration_metrics" in fields,
-            "commits_sent_to_model": len(sampled) if sampled is not None else 0,
+            "commits_sent_to_model": built.stats.get("commits_listed", 0),
             "commits_sampled_shas": [c.get("sha") for c in (sampled or [])],
+            "evidence": built.stats,
             "prompt_chars": len(prompt),
-            "prompt_approx_tokens": len(prompt) // 4,
+            "prompt_approx_tokens": estimate_tokens(prompt) + llm_client._SCHEMA_OVERHEAD_TOKENS,
             "prompt_file": str(prompt_path),
             "bundle_data_file": str(bundle_data_path),
         }
@@ -155,9 +158,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dimensions", default=",".join(DIMENSIONS),
                         help="Comma-separated dimensions to inspect (default: all 6).")
     parser.add_argument("--out", type=Path, default=Path("research/eval_inspection"))
+    parser.add_argument("--model", default="sprintsight-qwen",
+                        help="Model whose num_ctx sizes the evidence budget.")
     args = parser.parse_args(argv)
     dims = [d.strip() for d in args.dimensions.split(",") if d.strip()]
-    summary = inspect(args.dataset, args.example, dims, args.out)
+    summary = inspect(args.dataset, args.example, dims, args.out, args.model)
 
     # Terminal summary — the headline numbers you asked about.
     print("\n== Inspection summary ==")
@@ -175,6 +180,13 @@ def main(argv: list[str] | None = None) -> int:
         marks.append("jira=Y" if info["has_jira_tickets"] else "jira=—")
         marks.append("peer=Y" if info["has_peer_evaluations"] else "peer=—")
         marks.append(f"~{info['prompt_approx_tokens']}tok")
+        evidence = info["evidence"]
+        if evidence.get("mode") == "packed" and info["has_commits"]:
+            marks.append(
+                f"head={evidence['head_files_shown']}/{evidence['head_candidates']}"
+                f"+outline {evidence['outline_files']}  diffs={evidence['diff_excerpts']}"
+                f" by {evidence['diff_authors']} author(s)"
+            )
         warn = f"  {info['jira_warning']}" if "jira_warning" in info else ""
         print(f"  {dim:<16} {'  '.join(marks)}{warn}")
     print(f"\nFull prompts written under: {args.out}")

@@ -20,3 +20,17 @@ LOG_BUNDLE_DISPLAY=false
 # LLM config
 LLM_COMMIT_BUDGET=30
 LLM_MAX_FILES_PER_COMMIT=20
+
+# Evidence packing (services/evidence_packer.py). "packed" fits every commit,
+# line-numbered files at HEAD, and diff excerpts into the token budget;
+# "legacy" restores the old 30-commit JSON sample (LLM_COMMIT_BUDGET).
+LLM_EVIDENCE_MODE=packed
+# Prompt + answer tokens per dimension call, even if num_ctx allows more.
+LLM_EVIDENCE_CONTEXT_CAP=32000
+LLM_OUTPUT_RESERVE_TOKENS=2048
+# Token estimate ratio; lower it if audit logs show prompts near num_ctx.
+LLM_CHARS_PER_TOKEN=3.0
+# Optional: one line cap for every file category (default 120 source,
+# 150 tests, 250 docs, 200 CI/CD).
+# LLM_EVIDENCE_MAX_FILE_LINES=150
+LLM_EVIDENCE_MAX_DIFF_LINES=60

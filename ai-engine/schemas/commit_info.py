@@ -10,6 +10,11 @@ class FileDiff(BaseModel):
     change_type: Literal["added", "modified", "deleted", "renamed"] = "modified"
     lines_added: int = Field(default=0, ge=0)
     lines_deleted: int = Field(default=0, ge=0)
+    # Unified diff for this file, capped by the backend at ingestion. Lets the
+    # model read the actual change and cite new-file line numbers. None for
+    # noise/binary files and for bundles ingested before diffs were captured.
+    diff: str | None = None
+    diff_truncated: bool = False
 
 #sha provides exact ID the model needs for evidence citation
 class CommitInfo(BaseModel):

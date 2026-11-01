@@ -16,6 +16,12 @@ class FileDiff(BaseModel):
     change_type: Literal["added", "modified", "deleted", "renamed"] = "modified"
     lines_added: int = Field(default=0, ge=0)
     lines_deleted: int = Field(default=0, ge=0)
+    # Unified diff text for this file, capped at ingestion (see
+    # GIT_DIFF_MAX_CHARS_PER_FILE). None for noise/binary files or rows
+    # ingested before diffs were captured. Lets the AI engine read the
+    # actual code change and cite exact line numbers, not just +/- counts.
+    diff: str | None = None
+    diff_truncated: bool = False
 
 
 class CommitInfo(BaseModel):
@@ -134,10 +140,25 @@ class AssessmentJobEvent(BaseModel):
     data: dict
 
 
+class EvidenceDetail(BaseModel):
+    """Structured form of one AI evidence citation, resolved and verified by
+    the AI engine against the evidence the model was actually shown."""
+    identifier: str
+    reason: str = ""
+    kind: Literal["file_lines", "diff_lines", "file", "commit", "ticket", "other"] = "other"
+    file_path: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
+    commit_sha: str | None = None
+
+
 class RubricDimensionScoreDetail(BaseModel):
     score: float | int
     justification: str | None = None
     evidence_citations: list[str] = Field(default_factory=list)
+    # Same citations as evidence_citations, in structured form so a client can
+    # link straight to a file/line. Default [] keeps older rows valid.
+    evidence_details: list[EvidenceDetail] = Field(default_factory=list)
 
 
 class StudentScore(BaseModel):
