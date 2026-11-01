@@ -19,9 +19,30 @@ DimensionName = Literal["code_quality", "testing", "documentation",
                          "requirements", "collaboration", "cicd"]
 
 
+# Upper bound on citations per dimension (agreed with the team). Enforced by
+# trimming in coerce_citations rather than by failing validation, so a model
+# that over-cites loses its weakest tail instead of burning a retry.
+MAX_EVIDENCE_CITATIONS = 15
+
+
 class EvidenceCitation(BaseModel):
-    identifier: str = Field(description="Verbatim commit SHA, Jira ticket ID, filename, or metric value copied from Student Artifacts.")
+    identifier: str = Field(description="Verbatim citation anchor copied from Student Artifacts: a file/line anchor such as src/app.py:L10-L24 or src/app.py:L10-L24@abc1234, a commit SHA, a Jira ticket ID, a filename, or a metric value.")
     reason: str = Field(min_length=15, description="One short sentence tying this identifier to the score/feedback.")
+
+
+CitationKind = Literal["file_lines", "diff_lines", "file", "commit", "ticket", "other"]
+
+
+class ResolvedEvidenceCitation(EvidenceCitation):
+    """A citation after services/grounding.resolve_citations has matched it
+    to evidence the model was actually shown. Never asked of the model (it
+    only writes `identifier` and `reason`); the location fields are filled in
+    code so a client can link to the exact file and lines."""
+    kind: CitationKind = "other"
+    file_path: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
+    commit_sha: str | None = None
 
 
 def _normalize_citation(item: object) -> dict:
@@ -31,12 +52,14 @@ def _normalize_citation(item: object) -> dict:
     # whole EvidenceCitation repr lands in `identifier` with an empty
     # `reason`, which then fails reason's min_length=15 at validation.
     if isinstance(item, EvidenceCitation):
-        return {"identifier": item.identifier, "reason": item.reason}
+        return item.model_dump()
     if isinstance(item, str):
         identifier, separator, reason = item.partition("|")
         return {"identifier": identifier.strip(), "reason": reason.strip() if separator else ""}
     if not isinstance(item, dict):
         return {"identifier": str(item), "reason": ""}
+    if "identifier" in item and "reason" in item:
+        return dict(item)  # already well-formed; keeps any resolved location fields
 
     remaining = dict(item)
     identifier_value = None
@@ -78,7 +101,7 @@ class ModelOutput(BaseModel):
     and writing a justification to match it.
     """
     justification: str = Field(min_length=10, max_length=500)
-    evidence_citations: list[EvidenceCitation] = Field(max_length=15)
+    evidence_citations: list[EvidenceCitation] = Field(max_length=MAX_EVIDENCE_CITATIONS)
     score: int = Field(ge=1, le=10)
 
     @field_validator("evidence_citations", mode="before")
@@ -90,7 +113,7 @@ class ModelOutput(BaseModel):
         # the schema exactly or on a retry to fix it.
         if not isinstance(value, list):
             return value
-        return [_normalize_citation(item) for item in value]
+        return [_normalize_citation(item) for item in value[:MAX_EVIDENCE_CITATIONS]]
 
 
 class RubricDimensionScore(ModelOutput):
@@ -98,6 +121,11 @@ class RubricDimensionScore(ModelOutput):
     never sees: `dimension` (assigned in code from the dimension that was
     requested) and `evaluation_failed` (set only by evaluator.py's fallback
     path, to guarantee every dimension is present even after a failure)."""
+    # Same citations, after grounding has resolved each one to the file,
+    # lines, commit, or ticket it points at.
+    evidence_citations: list[ResolvedEvidenceCitation] = Field(  # type: ignore[assignment]
+        default_factory=list, max_length=MAX_EVIDENCE_CITATIONS,
+    )
     dimension: DimensionName
     # Set only by evaluator.py's fallback path, never by the model itself:
     # marks a synthesized placeholder used to guarantee all rubric dimensions are

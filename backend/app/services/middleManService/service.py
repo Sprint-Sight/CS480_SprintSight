@@ -10,6 +10,7 @@ def build_assessment_payload(
     manual_text: str | None,
     jira_tickets: list[dict] | None = None,
     project_context_documents: list[dict] | None = None,
+    repo_snapshot: dict | None = None,
 ) -> dict:
     # NOTE: `project_context_documents` carries extracted text from the files
     # uploaded via /api/v1/projects/{id}/documents. It is BACKGROUND CONTEXT
@@ -35,6 +36,10 @@ def build_assessment_payload(
         "jira_tickets": jira_tickets or [],
         "artifact_metrics": artifact_signals,
         "project_context_documents": project_context_documents or [],
+        # The repository's files at its latest commit (see
+        # collect_repository_snapshot), so the final submission is graded,
+        # not only the history. None when the snapshot could not be read.
+        "repo_snapshot": repo_snapshot,
         "instructor_expectations": manual_text or "No instructor guidance provided.",
     }
 

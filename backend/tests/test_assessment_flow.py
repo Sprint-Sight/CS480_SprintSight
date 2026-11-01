@@ -48,6 +48,43 @@ def test_convert_ai_result_to_assessment_report_maps_real_ai_payload() -> None:
     assert report.recommendations == ["Improve test coverage."]
 
 
+def test_convert_ai_result_keeps_structured_evidence_details() -> None:
+    ai_result = {
+        "overall_score": 7,
+        "rubric_scores": {
+            "code_quality": {
+                "dimension": "code_quality",
+                "score": 7,
+                "justification": "Clean service layer.",
+                "evidence_citations": [
+                    {
+                        "identifier": "src/app.py:L10-L24@abc1234",
+                        "reason": "Validation is isolated in one helper.",
+                        "kind": "diff_lines",
+                        "file_path": "src/app.py",
+                        "line_start": 10,
+                        "line_end": 24,
+                        "commit_sha": "abc1234def",
+                    },
+                    {"identifier": "ENG-7", "reason": "Ticket closed with the change."},
+                ],
+            },
+        },
+    }
+
+    payload = {"course_id": "c", "project_id": "p", "sprint_id": "s"}
+    report = convert_ai_result_to_assessment_report(payload, ai_result)
+
+    detail = report.rubric_scores["code_quality"]
+    assert detail.evidence_citations == [
+        "src/app.py:L10-L24@abc1234 — Validation is isolated in one helper.",
+        "ENG-7 — Ticket closed with the change.",
+    ]
+    assert detail.evidence_details[0].file_path == "src/app.py"
+    assert (detail.evidence_details[0].line_start, detail.evidence_details[0].line_end) == (10, 24)
+    assert detail.evidence_details[1].kind == "other"
+
+
 def faculty_token() -> str:
     response = client.post(
         "/api/v1/auth/login",

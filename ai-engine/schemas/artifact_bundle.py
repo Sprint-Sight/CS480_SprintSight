@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
 from schemas.peer_evaluation import PeerEvaluation
+from schemas.repo_snapshot import RepoSnapshot
 
 
 class ArtifactBundle(BaseModel):
@@ -24,4 +25,7 @@ class ArtifactBundle(BaseModel):
     # produced inside the project itself (README, docs/, code comments). The
     # prompt layer treats this field as context, not as rubric evidence.
     project_context_documents: list[dict[str, Any]] = Field(default_factory=list)
+    # Files at the submitted HEAD. Optional so older bundles (and the eval
+    # datasets) still validate; without it only commit diffs carry code.
+    repo_snapshot: RepoSnapshot | None = None
     instructor_expectations: str = "No instructor guidance provided."

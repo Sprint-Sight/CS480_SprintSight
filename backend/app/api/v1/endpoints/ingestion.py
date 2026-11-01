@@ -1,4 +1,5 @@
 import json
+from dataclasses import fields
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated
 from uuid import uuid4
@@ -331,7 +332,17 @@ def get_cleaned_jira_run(
     return run.cleaned_snapshot
 
 
-@router.get("/runs/{project_id}/{sprint_id}", response_model=IngestionDataResponse)
+# Diffs are captured for the AI engine only. Leaving them out of API
+# responses keeps the ingestion contract unchanged and stops every listing
+# the frontend fetches from carrying megabytes of diff text.
+_COMMIT_DIFF_FIELDS = {"files_changed": {"__all__": {"diff", "diff_truncated"}}}
+
+
+@router.get(
+    "/runs/{project_id}/{sprint_id}",
+    response_model=IngestionDataResponse,
+    response_model_exclude={"commits": {"__all__": _COMMIT_DIFF_FIELDS}},
+)
 def get_repo_ingestion_data(
     project_id: str,
     sprint_id: str,
@@ -445,6 +456,12 @@ def sync_repository_ingestion(
         details={"course_id": payload.course_id, "sprint_id": payload.sprint_id},
     )
     return {
-        "github_metrics": github_metrics,
+        "github_metrics": {
+            **{field.name: getattr(github_metrics, field.name) for field in fields(github_metrics)},
+            "commits": [
+                commit.model_dump(mode="json", exclude=_COMMIT_DIFF_FIELDS)
+                for commit in github_metrics.commits
+            ],
+        },
         "jira_metrics": jira_metrics,
     }

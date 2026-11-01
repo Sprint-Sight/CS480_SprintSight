@@ -30,7 +30,13 @@ from schemas.rubrics_dimension_score import (
 )
 from schemas.sprint_feedback import SprintFeedback
 from services.audit_logger import write_audit_record
-from services.grounding import find_ungrounded_citations
+from services.evidence_packer import (
+    EvidenceIndex,
+    estimate_tokens,
+    is_noise_path,
+    pack_dimension_evidence,
+)
+from services.grounding import find_ungrounded_citations, resolve_citations
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -103,18 +109,6 @@ def new_token_accumulator() -> dict:
 # extensions that are overwhelmingly non-code in this project's repos.
 _LOW_SIGNAL_EXTENSIONS = {".txt", ".json"}
 
-_NOISE_PATH_SEGMENTS = {
-    "node_modules/", "vendor/", "venv/", ".venv/", "env/",
-    "dist/", "build/", "out/", "__pycache__/", ".next/", ".nuxt/",
-    "target/", "bower_components/", ".gradle/", ".m2/", "Pods/",
-    "DerivedData/", ".terraform/", ".angular/", ".cache/",
-}
-_LOCKFILE_NAMES = {
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
-    "Pipfile.lock", "Cargo.lock", "go.sum", "composer.lock",
-    "Gemfile.lock", "shrinkwrap.yaml", "bun.lockb",
-}
-_GENERATED_EXTENSIONS = {".min.js", ".min.css", ".map", ".chunk.js", ".bundle.js"}
 _MAX_FILES_PER_COMMIT = int(os.getenv("LLM_MAX_FILES_PER_COMMIT", "20"))
 
 # Commit messages so generic they carry ~no information about what changed.
@@ -126,6 +120,27 @@ _GENERIC_COMMIT_MESSAGES = {
 }
 
 _COMMIT_BUDGET = int(os.getenv("LLM_COMMIT_BUDGET", "30"))
+
+# "packed" (default): services/evidence_packer.py fits the WHOLE commit
+# history, line-numbered file contents at HEAD, and diff excerpts into a
+# token budget, and citations are resolved to file/line locations.
+# "legacy": the old fixed sample of LLM_COMMIT_BUDGET commits as JSON, kept
+# as a rollback switch and so earlier eval runs stay reproducible.
+_EVIDENCE_MODE = os.getenv("LLM_EVIDENCE_MODE", "packed").strip().lower()
+
+# Total tokens (prompt + answer) a dimension call aims to use, even when the
+# model's num_ctx allows more. qwen3:8b (sprintsight-qwen) was trained on a
+# 32K window; past that, and generally as small models' prompts grow, they
+# attend less reliably to the middle of the prompt, and every extra token
+# costs latency on the GPU. Raise it for larger models once evals show the
+# extra context helps.
+_CONTEXT_CAP = int(os.getenv("LLM_EVIDENCE_CONTEXT_CAP", "32000"))
+# Room left for the model's JSON answer (15 citations + justification is
+# ~1-1.5K tokens) so a long prompt can never squeeze the output.
+_OUTPUT_RESERVE_TOKENS = int(os.getenv("LLM_OUTPUT_RESERVE_TOKENS", "2048"))
+# Instructor puts the JSON schema of ModelOutput into a system message.
+_SCHEMA_OVERHEAD_TOKENS = estimate_tokens(json.dumps(ModelOutput.model_json_schema())) + 200
+_MIN_EVIDENCE_TOKENS = 2000
 
 _DIMENSION_FILE_PATTERNS: dict[str, list[str] | None] = {
     "code_quality": None,
@@ -162,19 +177,13 @@ _DIMENSION_ARTIFACT_FIELDS = {
 
 
 def _is_noise_file(path: str) -> bool:
-    lower = path.lower().replace("\\", "/")
-    if any(seg in lower for seg in _NOISE_PATH_SEGMENTS):
-        return True
-    basename = lower.rsplit("/", 1)[-1]
-    if basename in _LOCKFILE_NAMES:
-        return True
-    return any(basename.endswith(ext) for ext in _GENERATED_EXTENSIONS)
+    return is_noise_path(path)
 
 
 def _trim_commits(raw_commits: list[dict]) -> list[dict]:
     result = []
     for c in raw_commits:
-        files = [fc["filename"] for fc in c["files_changed"]]
+        files = [fc["filename"].replace("\\", "/") for fc in c["files_changed"]]
         files = [f for f in files if not _is_noise_file(f)]
         if len(files) > _MAX_FILES_PER_COMMIT:
             files = files[:_MAX_FILES_PER_COMMIT]
@@ -448,8 +457,75 @@ def _request_extra_body(num_ctx: int | None) -> dict:
 
 
 def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> int:
-    """Rough token estimate (chars // 4) for one dimension's trimmed bundle."""
-    return len(_dimension_bundle_data(bundle, dimension_name)) // 4
+    """Rough token estimate for one dimension's legacy (unpacked) bundle."""
+    return estimate_tokens(_dimension_bundle_data(bundle, dimension_name))
+
+
+class DimensionPrompt:
+    """Everything evaluate_dimension sends for one dimension, built without
+    calling the model, so research/eval/inspect_bundle.py can show exactly
+    the same thing."""
+
+    def __init__(self, prompt: str, bundle_data: str, index: EvidenceIndex | None, stats: dict[str, Any]):
+        self.prompt = prompt
+        self.bundle_data = bundle_data
+        self.index = index
+        self.stats = stats
+
+
+def build_dimension_prompt(
+    bundle: ArtifactBundle,
+    dimension_name: str,
+    dimension_prompt: str,
+    model_name: str,
+    num_ctx: int | None = None,
+) -> DimensionPrompt:
+    fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name)
+    if fields is None:
+        raise ValueError(f"Unknown rubric dimension: {dimension_name}")
+    full_bundle = bundle.model_dump(mode="json")
+    packed = _EVIDENCE_MODE != "legacy"
+
+    # Facts always come from ALL commits, whatever is shown below them.
+    commit_facts = ""
+    sampled_commits: list[dict] | None = None
+    if "commits" in fields:
+        all_trimmed = _trim_commits(full_bundle["commits"])
+        if packed:
+            commit_facts = _compute_commit_facts(all_trimmed, budget=len(all_trimmed))
+        else:
+            commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
+            sampled_commits = _select_representative_commits(all_trimmed, dimension_name, _COMMIT_BUDGET)
+    jira_facts = _compute_jira_facts(full_bundle["jira_tickets"]) if "jira_tickets" in fields else ""
+    computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
+    project_context = _format_project_context_documents(bundle)
+
+    if not packed:
+        bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
+        prompt = render_dimension_prompt(
+            dimension_name, dimension_prompt, bundle_data, computed_facts, project_context,
+        )
+        stats = {"mode": "legacy", "commits_listed": len(sampled_commits or [])}
+        return DimensionPrompt(prompt, bundle_data, None, stats)
+
+    scaffold = render_dimension_prompt(
+        dimension_name, dimension_prompt, "", computed_facts, project_context,
+    )
+    context = min(num_ctx or MODEL_NUM_CTX.get(model_name, 49152), _CONTEXT_CAP)
+    budget = context - estimate_tokens(scaffold) - _SCHEMA_OVERHEAD_TOKENS - _OUTPUT_RESERVE_TOKENS
+    if budget < _MIN_EVIDENCE_TOKENS:
+        log.warning(
+            ">>> Dimension '%s': only ~%d tokens left for evidence after the prompt scaffold "
+            "(uploaded context documents are likely very long); packing %d anyway.",
+            dimension_name, budget, _MIN_EVIDENCE_TOKENS,
+        )
+        budget = _MIN_EVIDENCE_TOKENS
+    evidence = pack_dimension_evidence(full_bundle, dimension_name, fields, budget)
+    prompt = render_dimension_prompt(
+        dimension_name, dimension_prompt, evidence.text, computed_facts, project_context,
+    )
+    stats = {"mode": "packed", **evidence.stats.as_dict()}
+    return DimensionPrompt(prompt, evidence.text, evidence.index, stats)
 
 
 # Minimum num_ctx to fall back to when a sprint's bundle is small. Defaults to
@@ -522,6 +598,8 @@ async def _capture_response(response: httpx.Response) -> None:
             # OpenAI-compat endpoint returns `usage` on the chat completion;
             # instructor's retries each produce one response, so we sum
             # across all of them (retries legitimately burn tokens too).
+            _warn_if_prompt_truncated(raw_body, context)
+
             accumulator = _token_accumulator.get()
             if accumulator is not None:
                 try:
@@ -534,6 +612,26 @@ async def _capture_response(response: httpx.Response) -> None:
                     # Non-JSON body (streaming leftover, error page, etc.)
                     # — best-effort capture; skip without failing the call.
                     pass
+
+
+def _warn_if_prompt_truncated(raw_body: str, context: dict) -> None:
+    """Ollama does not error when a prompt exceeds num_ctx: it silently drops
+    the start of the prompt (the rubric and instructions). A reported
+    prompt_tokens at the num_ctx ceiling is the fingerprint of that, so flag
+    it loudly instead of trusting a grade made on a truncated prompt."""
+    num_ctx = context.get("num_ctx")
+    if not num_ctx:
+        return
+    try:
+        prompt_tokens = int((json.loads(raw_body).get("usage") or {}).get("prompt_tokens") or 0)
+    except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+        return
+    if prompt_tokens >= num_ctx * 0.98:
+        log.error(
+            ">>> Dimension '%s': prompt used %d of num_ctx=%d tokens; Ollama has most likely "
+            "truncated it. Lower LLM_EVIDENCE_CONTEXT_CAP or LLM_CHARS_PER_TOKEN.",
+            context.get("dimension"), prompt_tokens, num_ctx,
+        )
 
 
 def create_llm_client(provider="ollama"):
@@ -601,42 +699,14 @@ async def evaluate_dimension(
     num_ctx: int | None = None,
 ) -> RubricDimensionScore:
     # Evaluate a single rubric dimension.
-    fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name, ())
-    full_bundle = bundle.model_dump(mode="json")
+    built = build_dimension_prompt(bundle, dimension_name, dimention_prompt, model_name, num_ctx)
+    prompt, bundle_data = built.prompt, built.bundle_data
+    bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()
 
-    # ── Stats from ALL commits, then sample for the bundle ──
-    sampled_commits: list[dict] | None = None
-    if "commits" in fields:
-        all_trimmed = _trim_commits(full_bundle["commits"])
-        commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
-        sampled_commits = _select_representative_commits(
-            all_trimmed, dimension_name, _COMMIT_BUDGET,
-        )
-        log.info(
-            ">>> Dimension '%s': %d total commits -> %d sampled (budget=%d)",
-            dimension_name, len(all_trimmed), len(sampled_commits), _COMMIT_BUDGET,
-        )
-    else:
-        commit_facts = ""
-
-    jira_facts = (
-        _compute_jira_facts(full_bundle["jira_tickets"])
-        if "jira_tickets" in fields else ""
-    )
-
-    computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
-
-    bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
-    bundle_hash = hashlib.sha256(
-        bundle_data.encode("utf-8")
-    ).hexdigest()
-
-    approx_tokens = len(bundle_data) // 4
+    approx_tokens = estimate_tokens(prompt) + _SCHEMA_OVERHEAD_TOKENS
     log.info(
-        ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
-        dimension_name,
-        len(bundle_data),
-        approx_tokens,
+        ">>> Dimension '%s': prompt is %d chars (~%d tokens estimated); evidence: %s",
+        dimension_name, len(prompt), approx_tokens, built.stats,
     )
 
     effective_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
@@ -646,11 +716,6 @@ async def evaluate_dimension(
             "Output quality may degrade from silent truncation.",
             dimension_name, approx_tokens, effective_ctx,
         )
-
-    project_context = _format_project_context_documents(bundle)
-    prompt = render_dimension_prompt(
-        dimension_name, dimention_prompt, bundle_data, computed_facts, project_context,
-    )
 
     client = create_llm_client()  # Create a new client for this model
 
@@ -667,6 +732,9 @@ async def evaluate_dimension(
             "jira_ticket_count": len(bundle.jira_tickets),
             "peer_evaluation_count": len(bundle.peer_evaluations),
             "artifact_metric_keys": sorted(bundle.artifact_metrics),
+            "num_ctx": effective_ctx,
+            "estimated_prompt_tokens": approx_tokens,
+            "evidence": built.stats,
         }
     )
     try:
@@ -689,40 +757,38 @@ async def evaluate_dimension(
         )
 
         # Drop only fabricated/ungrounded citations rather than discarding
-        # the whole dimension over a single bad citation.
-        ungrounded = find_ungrounded_citations(
-            bundle_data,
-            result.evidence_citations or [],
-        )
-
-        if ungrounded:
-            log.warning(
-                "Dimension '%s': dropping %d ungrounded citation(s) "
-                "rather than failing the whole dimension: %r",
-                dimension_name,
-                len(ungrounded),
-                ungrounded,
+        # the whole dimension over a single bad citation. In packed mode each
+        # surviving citation is also resolved to its file/lines/commit.
+        downgraded = 0
+        if built.index is not None:
+            resolved, ungrounded, downgraded = resolve_citations(
+                result.evidence_citations or [], built.index,
             )
+            result = RubricDimensionScore.model_validate(
+                {**result.model_dump(), "evidence_citations": resolved}
+            )
+        else:
+            ungrounded = find_ungrounded_citations(bundle_data, result.evidence_citations or [])
+            result.evidence_citations = [
+                citation for citation in (result.evidence_citations or []) if citation not in ungrounded
+            ]
 
+        if ungrounded or downgraded:
+            log.warning(
+                "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the "
+                "whole dimension, and downgraded %d line citation(s) to file level: %r",
+                dimension_name, len(ungrounded), downgraded, ungrounded,
+            )
             write_audit_record(
                 {
                     **(_audit_context.get() or {}),
                     "ungrounded_citations_dropped": [
-                        (
-                            citation.model_dump()
-                            if hasattr(citation, "model_dump")
-                            else citation
-                        )
+                        (citation.model_dump() if hasattr(citation, "model_dump") else citation)
                         for citation in ungrounded
                     ],
+                    "line_citations_downgraded": downgraded,
                 }
             )
-
-            result.evidence_citations = [
-                citation
-                for citation in (result.evidence_citations or [])
-                if citation not in ungrounded
-            ]
 
         return result
 
