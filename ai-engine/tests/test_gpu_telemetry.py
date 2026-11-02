@@ -6,19 +6,10 @@ from types import SimpleNamespace
 
 import httpx
 
+from schemas.modelname import ModelName
 from services import audit_logger, evaluator, llm_client
 
 # ── services/llm_client.py ───────────────────────────────────────────────────
-
-def test_request_extra_body_adds_num_batch_only_when_configured(monkeypatch):
-    monkeypatch.setattr(llm_client, "_NUM_BATCH", None)
-    assert llm_client._request_extra_body(None) == {}
-    assert llm_client._request_extra_body(8192) == {"options": {"num_ctx": 8192}}
-
-    monkeypatch.setattr(llm_client, "_NUM_BATCH", 1024)
-    assert llm_client._request_extra_body(None) == {"options": {"num_batch": 1024}}
-    assert llm_client._request_extra_body(8192) == {"options": {"num_ctx": 8192, "num_batch": 1024}}
-
 
 def test_parse_loaded_models_reports_offload_ratio():
     loaded = llm_client.parse_loaded_models(
@@ -31,6 +22,8 @@ def test_parse_loaded_models_reports_offload_ratio():
     # The app names models without a tag; Ollama reports them with ":latest".
     assert llm_client.find_loaded_model(loaded, "sprintsight-qwen") is loaded[0]
     assert llm_client.find_loaded_model(loaded, "sprintsight-mistral") is None
+    # evaluate_sprint receives the ModelName enum, whose str() is "ModelName.SPRINTSIGHT_QWEN".
+    assert llm_client.find_loaded_model(loaded, ModelName.SPRINTSIGHT_QWEN) is loaded[0]
     assert llm_client.parse_loaded_models({}) == []
 
 
@@ -111,7 +104,7 @@ def test_log_gpu_offload_warns_on_partial_offload(monkeypatch, caplog):
     monkeypatch.setattr(evaluator.mlflow, "log_metrics", lambda metrics: logged.setdefault("metrics", metrics))
 
     with caplog.at_level(logging.WARNING, logger="sprintsight.evaluator"):
-        asyncio.run(evaluator._log_gpu_offload("sprintsight-r1-32b"))
+        asyncio.run(evaluator._log_gpu_offload(ModelName.SPRINTSIGHT_R1_32B))
 
     assert logged["dict"][1] == "gpu/ollama_ps.json"
     assert logged["metrics"] == {"gpu_offload_ratio": 0.6, "gpu_model_vram_bytes": 60}

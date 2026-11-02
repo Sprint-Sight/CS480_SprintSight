@@ -470,20 +470,17 @@ def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> 
     return "\n    ".join(lines)
 
 
-# Prompt tokens Ollama processes per prefill step (its `num_batch`, default
-# 512). Larger values can raise GPU throughput on long evidence prompts at the
-# cost of a bigger VRAM compute buffer. Unset = Ollama's default. Like
-# num_ctx, it must be the same on every request or Ollama reloads the model.
-_NUM_BATCH = int(os.getenv("LLM_NUM_BATCH", "0")) or None
-
-
+# NOTE: Ollama's OpenAI-compatible /v1 endpoint, which this client calls,
+# ignores `options` (checked on Ollama 0.34.4: a /v1 request with
+# options.num_ctx=1024 kept the model's 40960 context and an untruncated
+# prompt, while native /api/chat applied it). The context size actually used
+# is the Modelfile's PARAMETER num_ctx (capped at the model's maximum), and
+# other runtime settings such as num_thread are baked in by
+# hpc/ollama-entrypoint.sh.
 def _request_extra_body(num_ctx: int | None) -> dict:
-    options: dict[str, int] = {}
-    if num_ctx is not None:
-        options["num_ctx"] = num_ctx
-    if _NUM_BATCH is not None:
-        options["num_batch"] = _NUM_BATCH
-    return {"options": options} if options else {}
+    if num_ctx is None:
+        return {}
+    return {"options": {"num_ctx": num_ctx}}
 
 
 def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> int:
@@ -666,7 +663,6 @@ def _request_marker(
         "dimension": context.get("dimension"),
         "model": context.get("model"),
         "num_ctx": context.get("num_ctx"),
-        "num_batch": _NUM_BATCH,
         "started_at": context.get("request_started_utc"),
         "finished_at": finished_utc,
         "duration_ms": duration_ms,
@@ -1008,7 +1004,8 @@ def parse_loaded_models(ps_body: dict) -> list[dict]:
 
 
 def find_loaded_model(loaded: list[dict], model_name: str) -> dict | None:
-    wanted = _with_default_tag(model_name)
+    # Callers may pass a ModelName enum, whose str() is "ModelName.X", not the value.
+    wanted = _with_default_tag(str(getattr(model_name, "value", model_name)))
     return next((m for m in loaded if m["name"] and _with_default_tag(m["name"]) == wanted), None)
 
 

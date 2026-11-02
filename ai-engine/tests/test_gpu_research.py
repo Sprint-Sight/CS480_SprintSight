@@ -103,7 +103,9 @@ def test_gpu_report_separates_busy_time_from_idle_gaps(tmp_path):
     assert metrics["idle_gap_fraction"] == round(1 / 6, 4)  # only second 5 idle
     assert metrics["util_busy_mean"] == 90
     assert metrics["util_window_mean"] == 75
-    assert metrics["throttled_fraction"] == 0.2             # power-cap bit at second 3
+    assert metrics["throttled_fraction"] == 0               # 0x4 is power cap, not a slowdown
+    assert metrics["power_cap_fraction"] == 0.2             # power-cap bit at second 3
+    assert metrics["sm_clock_busy_median_mhz"] == 1695
     assert metrics["vram_peak_pct"] == round(100 * 20000 / 24576, 1)
     assert metrics["power_busy_pct"] == round(100 * 300 / 350, 1)
     assert metrics["output_tok_s"] == 120.0                 # 600 tokens over 5 s
@@ -136,3 +138,46 @@ def test_gpu_report_cli_writes_summary_and_plot(tmp_path, monkeypatch):
     assert summary.loc[0, "decode_bw_eff"] == pytest.approx(110 * 5e9 / 936e9, abs=1e-3)
     assert (out_dir / "summary.md").read_text().startswith("| model | concurrency |")
     assert (out_dir / "timeline_sprintsight-llama31_2.png").exists()
+
+
+def test_slowdown_bits_follow_nvml(tmp_path):
+    header = (
+        "timestamp, utilization.gpu [%], memory.used [MiB], memory.total [MiB], "
+        "clocks.current.sm [MHz], clocks_event_reasons.active"
+    )
+    rows = [
+        "2026/11/02 06:00:00.000, 50, 1, 2, 1695, 0x0000000000000020",  # SW thermal slowdown
+        "2026/11/02 06:00:01.000, 50, 1, 2, 1695, 0x0000000000000100",  # display clock: normal
+        "2026/11/02 06:00:02.000, 50, 1, 2, 1695, 0x0000000000000004",  # SW power cap: separate
+        "2026/11/02 06:00:03.000, 50, 1, 2, 1695, [N/A]",
+    ]
+    (tmp_path / "2.gpu.csv").write_text("\n".join([header, *rows]) + "\n")
+    samples = gpu_report.load_gpu_samples(tmp_path / "2.gpu.csv")
+    assert samples["slowdown"].tolist() == [True, False, False, False]
+    assert samples["power_cap"].tolist() == [False, False, True, False]
+    assert samples["clocks.sm"].tolist() == [1695] * 4         # newer drivers' column name
+
+
+def test_uncached_gives_every_request_a_unique_prefix():
+    messages = [{"role": "system", "content": "schema"}, {"role": "user", "content": "grade"}]
+    first, second = gpu_bench.uncached(messages), gpu_bench.uncached(messages)
+    assert first[0]["content"] != second[0]["content"]
+    assert first[0]["content"].endswith("\nschema")
+    assert first[1] == messages[1]
+    assert messages[0]["content"] == "schema"  # input left untouched
+
+
+def test_summary_table_starts_with_group_by_columns():
+    summary = pd.DataFrame([{"model": "m", "label": "threads4", "concurrency": 1, "decode_tok_s_median": 60.3}])
+    table = gpu_report.to_markdown(summary, ["model", "label"])
+    assert table.startswith("| model | label | concurrency | decode_tok_s_median |")
+    assert "| m | threads4 | 1 | 60.3 |" in table
+
+
+def test_build_native_request_format_and_thread_overrides():
+    prompt = {"messages": [{"role": "user", "content": "x"}], "temperature": 0, "format": "json"}
+    assert gpu_bench.build_native_request(prompt, "m", None, None)["format"] == "json"
+    unconstrained = gpu_bench.build_native_request(prompt, "m", None, None, num_thread=4, output_format="none")
+    assert "format" not in unconstrained
+    assert unconstrained["options"] == {"temperature": 0, "num_thread": 4}
+    assert "format" not in gpu_bench.build_native_request({**prompt, "format": None}, "m", None, None)

@@ -139,6 +139,15 @@ one-off copy you `cat >`'d by hand), remove your
 
 ## Tuning `num_ctx` for larger repositories
 
+> **Warning (verified 2026-11-02, Ollama 0.34.4):** the app calls Ollama's
+> OpenAI-compatible `/v1` endpoint, which **ignores** `options`. A `/v1` request
+> with `options.num_ctx=1024` kept the model's 40960 context and an
+> untruncated prompt; the native `/api/chat` endpoint applied it. So the
+> context actually used is the Modelfile's `PARAMETER num_ctx` (capped at the
+> model's own maximum, e.g. 40960 for qwen3:8b). The request-parameter route
+> below has no effect until the client changes endpoint. Change the Modelfile
+> instead; the GPU job recreates the models from the Modelfiles at every start.
+
 No enroot/GPU job changes are needed for this — `num_ctx` is sent as a
 runtime request parameter to Ollama (`options.num_ctx` in
 `llm_client._request_extra_body`), not something baked into the container or
@@ -254,7 +263,8 @@ sits idle. Nothing needs switching on.
 | `OLLAMA_NUM_PARALLEL` | GPU job (`.env.hpc`, forwarded by `hpc-dev.sh submit`) | 1 | Requests one loaded model decodes together. KV cache grows with `num_ctx` × this; the 32B models fit 1 at 16K |
 | `LLM_DIMENSION_CONCURRENCY` | `ai-engine/.env` | 1 | Dimensions the engine sends at once. Keep equal to `OLLAMA_NUM_PARALLEL` |
 | `OLLAMA_KV_CACHE_TYPE` | GPU job | q4_0 | `f16`/`q8_0` cost more VRAM but less quality loss; the 8B models have room |
-| `LLM_NUM_BATCH` | `ai-engine/.env` | Ollama's 512 | Prefill batch size. Larger can speed up long prompts but uses more VRAM |
+| `OLLAMA_MODEL_NUM_THREAD` | GPU job | the job's `--cpus-per-task` (4) | CPU threads per request, baked into every model by `ollama-entrypoint.sh` at job start (the app's `/v1` requests can't set it). Without it, Ollama sizes threads from the whole node and they contend for the job's 4 CPUs on every token: on qwen3-8b, decoding was ~3.5× slower (17 vs 60 tok/s) with GPU utilisation near 30% |
+| `num_batch` | `gpu_bench --num-batch` only | Ollama's 512 | Prefill batch size. Can be measured with the benchmark (native API); to use it in the app it would have to go in the Modelfiles |
 | `OLLAMA_KEEP_ALIVE` | GPU job | 30m | How long an idle model stays loaded |
 | `HPC_GPU_TYPE` | `.env.hpc` | unset | Pins the GPU model (`sinfo -o "%N %G"` lists types) so runs are comparable |
 
@@ -299,7 +309,16 @@ one run per group in the `sprintsight_gpu_utilisation` experiment.
   bandwidth, so this, not `util`, says how close one request is to the limit.
 - `offload_ratio_min` / `gpu_offload_ratio` below 1: the model doesn't fit;
   results from that run are not representative.
-- `throttled_fraction` above 0: power or thermal limits held the clocks down.
+- `throttled_fraction` above 0: thermal or hardware limits held the clocks down.
+- `power_cap_fraction`: the driver's software power-cap flag. This RTX 3090
+  sets it even when idle at ~28 W, so it only means something together with
+  `power_busy_pct` near 100% and a lower `sm_clock_busy_median_mhz`. That
+  combination means the card is at its power limit, i.e. fully used.
+- Benchmark runs add a unique first line to every prompt so Ollama can't reuse
+  a cached prompt; `--allow-cache` turns this off, but prefill speeds are then
+  meaningless.
+- Compare configurations by giving each `gpu_bench` run a `--label`, then
+  report with `--group-by model,label`.
 - Cross-check the same time window on the cluster's own dashboard:
   https://green.smu.edu.sg/gpustats (SMU network/VPN; node → GPU → time range).
 

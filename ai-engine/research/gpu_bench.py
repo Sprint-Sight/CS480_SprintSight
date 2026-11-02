@@ -17,6 +17,11 @@ Usage (from ai-engine/, venv active, HPC tunnel open; run an assessment with
 the same model first so the audit logs have prompts to replay):
 
     python -m research.gpu_bench --model sprintsight-llama31 --concurrency 1,2,4
+
+To find what limits decode speed, compare runs that change one thing:
+``--format none`` drops the JSON output constraint (grammar sampling runs on
+the CPU for every generated token), and ``--num-thread 4`` matches Ollama's
+CPU threads to the 4 CPUs the Slurm job reserves.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -98,20 +104,37 @@ def load_prompts(audit_dir: Path, source_model: str | None, limit: int | None) -
     return prompts
 
 
-def build_native_request(prompt: dict[str, Any], model: str, num_ctx: int | None, num_batch: int | None) -> dict[str, Any]:
+def uncached(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copy of `messages` with a unique first line. Ollama reuses the KV cache
+    for a prompt prefix it has just processed, so replaying the same prompt
+    twice (warm-up, --repeat, back-to-back configurations) would skip most of
+    prefill and report impossible prefill speeds."""
+    first, *rest = messages
+    tagged = {**first, "content": f"[benchmark request {uuid4().hex}]\n{first.get('content', '')}"}
+    return [tagged, *rest]
+
+
+def build_native_request(
+    prompt: dict[str, Any], model: str, num_ctx: int | None, num_batch: int | None,
+    num_thread: int | None = None, output_format: str = "recorded",
+) -> dict[str, Any]:
     options: dict[str, Any] = {"temperature": prompt.get("temperature", 0)}
     if num_ctx:
         options["num_ctx"] = num_ctx
     if num_batch:
         options["num_batch"] = num_batch
+    if num_thread:
+        options["num_thread"] = num_thread
     body: dict[str, Any] = {
         "model": model,
         "messages": prompt["messages"],
         "stream": False,
         "options": options,
     }
-    if prompt.get("format") is not None:
-        body["format"] = prompt["format"]
+    # "recorded" keeps whatever the app sent (instructor's JSON mode -> "json").
+    fmt = prompt.get("format") if output_format == "recorded" else (None if output_format == "none" else output_format)
+    if fmt is not None:
+        body["format"] = fmt
     return body
 
 
@@ -178,24 +201,29 @@ async def run_benchmark(args: argparse.Namespace) -> list[dict[str, Any]]:
     # One num_ctx for every request: Ollama reloads the model when it changes.
     num_ctx = args.num_ctx or max((p["options"].get("num_ctx") or 0 for p in prompts), default=0) or None
     num_batch = args.num_batch or None
+
+    def build(prompt: dict[str, Any]) -> dict[str, Any]:
+        if not args.allow_cache:
+            prompt = {**prompt, "messages": uncached(prompt["messages"])}
+        return build_native_request(prompt, args.model, num_ctx, num_batch, args.num_thread, args.format)
+
     levels = [int(level) for level in args.concurrency.split(",")]
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    print(f"{len(prompts)} prompt(s), num_ctx={num_ctx}, num_batch={num_batch or 'default'}, levels={levels}")
+    print(
+        f"{len(prompts)} prompt(s), num_ctx={num_ctx}, num_batch={num_batch or 'default'}, "
+        f"num_thread={args.num_thread or 'default'}, format={args.format}, levels={levels}"
+    )
     print("Reminder: the GPU job's OLLAMA_NUM_PARALLEL must be >= the highest level.")
 
     rows: list[dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=args.timeout) as client:
         # Warm-up loads the model with this num_ctx so level 1 doesn't pay for it.
-        warmup = build_native_request(prompts[0], args.model, num_ctx, num_batch)
+        warmup = build(prompts[0])
         await _replay(client, args.base_url, warmup, asyncio.Semaphore(1))
 
         for level in levels:
-            run_id = f"bench-{args.model}-c{level}-{stamp}"
-            bodies = [
-                build_native_request(prompt, args.model, num_ctx, num_batch)
-                for _ in range(args.repeat)
-                for prompt in prompts
-            ]
+            run_id = f"bench-{args.model}-c{level}-{args.label or 'default'}-{stamp}"
+            bodies = [build(prompt) for _ in range(args.repeat) for prompt in prompts]
             semaphore = asyncio.Semaphore(level)
             wall_start = time.perf_counter()
             results = await asyncio.gather(*(_replay(client, args.base_url, body, semaphore) for body in bodies))
@@ -211,6 +239,9 @@ async def run_benchmark(args: argparse.Namespace) -> list[dict[str, Any]]:
                     "concurrency": level,
                     "num_ctx": num_ctx,
                     "num_batch": num_batch,
+                    "num_thread": args.num_thread,
+                    "format": args.format,
+                    "label": args.label or "default",
                     "size_vram": loaded["size_vram"] if loaded else None,
                     "offload_ratio": loaded["offload_ratio"] if loaded else None,
                     **result,
@@ -255,13 +286,24 @@ def main() -> None:
     parser.add_argument("--repeat", type=int, default=1, help="Passes over the prompt set per level")
     parser.add_argument("--num-ctx", type=int, help="Override num_ctx (default: largest recorded)")
     parser.add_argument("--num-batch", type=int, help="Ollama num_batch for prefill (default: Ollama's)")
+    parser.add_argument("--num-thread", type=int, help="Ollama num_thread (CPU threads; default: Ollama's)")
+    parser.add_argument(
+        "--format", default="recorded",
+        help="Output constraint: 'recorded' (what the app sent), 'json', or 'none' (default recorded)",
+    )
+    parser.add_argument(
+        "--allow-cache", action="store_true",
+        help="Let Ollama reuse cached prompt prefixes (prefill speeds are then not meaningful)",
+    )
+    parser.add_argument("--label", help="Name for this configuration; report with --group-by model,label,concurrency")
     parser.add_argument("--timeout", type=float, default=1800, help="Per-request timeout in seconds")
     parser.add_argument("--out", help="Output JSONL (default gpu_logs/bench_<model>_<time>.jsonl)")
     args = parser.parse_args()
 
     rows = asyncio.run(run_benchmark(args))
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    out = Path(args.out or f"gpu_logs/bench_{args.model.replace(':', '_')}_{stamp}.jsonl")
+    label = f"_{args.label}" if args.label else ""
+    out = Path(args.out or f"gpu_logs/bench_{args.model.replace(':', '_')}{label}_{stamp}.jsonl")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     print(f"Wrote {len(rows)} rows to {out}")

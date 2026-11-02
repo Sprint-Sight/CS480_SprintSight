@@ -16,7 +16,10 @@ moment. Per (model, concurrency) group the report gives:
                       to client-side work between calls, not to the GPU
   vram_peak_pct       peak memory.used / memory.total
   power_busy_pct      mean power.draw while in flight / power.limit
-  throttled_fraction  in-flight samples with a power/thermal clock slowdown
+  throttled_fraction  in-flight samples with a thermal or hardware clock slowdown
+  power_cap_fraction  in-flight samples flagged SW power cap (0x4). Origami's
+                      RTX 3090 sets this bit even idle at ~28 W, so it is
+                      reported apart and is not evidence of throttling alone
   output_tok_s        generated tokens / run wall-clock (throughput)
   decode_bw_eff       (gpu_bench rows only) decode tok/s per request x model
                       bytes in VRAM / memory bandwidth: how close single-stream
@@ -40,10 +43,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-# Clock-slowdown bits that mean the GPU was held back (nvidia-smi
-# clocks_throttle_reasons / clocks_event_reasons). GpuIdle (0x1) and
-# application-clock settings (0x2) are normal and not counted.
-_SLOWDOWN_MASK = 0x4 | 0x8 | 0x40 | 0x80 | 0x100  # SW power cap, HW slowdown, SW/HW thermal, power brake
+# nvidia-smi clocks_throttle_reasons / clocks_event_reasons bits (NVML).
+# Thermal and hardware slowdowns mean the GPU was held back. GpuIdle (0x1),
+# application clocks (0x2), sync boost (0x10) and display clock (0x100) are
+# normal. SW power cap (0x4) is kept separate: this driver sets it at idle.
+_SW_POWER_CAP = 0x4
+_SLOWDOWN_MASK = 0x8 | 0x20 | 0x40 | 0x80  # HW slowdown, SW thermal, HW thermal, HW power brake
 
 # Peak memory bandwidth (GB/s) by GPU name; most specific names first.
 _MEMORY_BANDWIDTH_GBS = [
@@ -55,9 +60,11 @@ _MEMORY_BANDWIDTH_GBS = [
 
 
 def _column_key(name: str) -> str:
-    """'utilization.gpu [%]' -> 'utilization.gpu'; throttle field renames unified."""
+    """'utilization.gpu [%]' -> 'utilization.gpu'; driver-dependent field names unified."""
     key = re.sub(r"\s*\[.*\]$", "", name.strip())
-    return "throttle_reasons" if key.startswith(("clocks_throttle_reasons", "clocks_event_reasons")) else key
+    if key.startswith(("clocks_throttle_reasons", "clocks_event_reasons")):
+        return "throttle_reasons"
+    return "clocks.sm" if key == "clocks.current.sm" else key
 
 
 def load_gpu_samples(path: Path, clock_offset_s: float = 0.0) -> pd.DataFrame:
@@ -72,15 +79,17 @@ def load_gpu_samples(path: Path, clock_offset_s: float = 0.0) -> pd.DataFrame:
         if column in df:
             df[column] = pd.to_numeric(df[column], errors="coerce")  # "[N/A]" -> NaN
     if "throttle_reasons" in df:
-        df["slowdown"] = df["throttle_reasons"].map(_is_slowdown)
+        bits = df["throttle_reasons"].map(_reason_bits)
+        df["slowdown"] = (bits & _SLOWDOWN_MASK) != 0
+        df["power_cap"] = (bits & _SW_POWER_CAP) != 0
     return df.drop(columns=["timestamp"])
 
 
-def _is_slowdown(value: Any) -> bool:
+def _reason_bits(value: Any) -> int:
     try:
-        return bool(int(str(value).strip(), 16) & _SLOWDOWN_MASK)
+        return int(str(value).strip(), 16)
     except ValueError:
-        return False
+        return 0
 
 
 def load_gpu_info(path: Path) -> dict[str, Any]:
@@ -168,6 +177,8 @@ def summarise_group(
         "power_busy_mean_w": mean(busy, "power.draw"),
         "power_limit_w": power_limit,
         "throttled_fraction": round(float(busy["slowdown"].mean()), 4) if "slowdown" in busy and len(busy) else None,
+        "power_cap_fraction": round(float(busy["power_cap"].mean()), 4) if "power_cap" in busy and len(busy) else None,
+        "sm_clock_busy_median_mhz": float(busy["clocks.sm"].median()) if "clocks.sm" in busy and len(busy) else None,
         "output_tok_s": round(float(output_tokens) / window_s, 2) if window_s else None,
     }
     if metrics["vram_peak_mib"] and metrics["vram_total_mib"]:
@@ -213,13 +224,16 @@ def plot_timeline(window: pd.DataFrame, title: str, path: Path) -> None:
 
 _TABLE_COLUMNS = [
     "model", "concurrency", "runs", "requests", "seconds_per_run", "util_busy_mean", "util_window_mean",
-    "idle_gap_fraction", "vram_peak_pct", "power_busy_pct", "throttled_fraction", "output_tok_s",
+    "idle_gap_fraction", "vram_peak_pct", "power_busy_pct", "sm_clock_busy_median_mhz", "throttled_fraction",
+    "power_cap_fraction", "output_tok_s",
     "prefill_tok_s_median", "decode_tok_s_median", "offload_ratio_min", "decode_bw_eff",
 ]
 
 
-def to_markdown(summary: pd.DataFrame) -> str:
-    columns = [c for c in _TABLE_COLUMNS if c in summary]
+def to_markdown(summary: pd.DataFrame, group_by: list[str] | None = None) -> str:
+    # The group-by fields come first so every row says which configuration it is.
+    keys = group_by or ["model", "concurrency"]
+    columns = keys + [c for c in _TABLE_COLUMNS if c in summary and c not in keys]
     lines = ["| " + " | ".join(columns) + " |", "|" + "---|" * len(columns)]
     for _, row in summary.iterrows():
         lines.append("| " + " | ".join("" if pd.isna(row[c]) else str(row[c]) for c in columns) + " |")
@@ -276,8 +290,8 @@ def main() -> None:
 
     summary = pd.DataFrame(rows)
     summary.to_csv(out_dir / "summary.csv", index=False)
-    (out_dir / "summary.md").write_text(to_markdown(summary), encoding="utf-8")
-    print(to_markdown(summary))
+    (out_dir / "summary.md").write_text(to_markdown(summary, group_by), encoding="utf-8")
+    print(to_markdown(summary, group_by))
     print(f"Wrote {out_dir}/summary.csv, summary.md" + ("" if args.no_plots else " and timeline_*.png"))
 
 
