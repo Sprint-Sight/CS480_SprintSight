@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -287,6 +288,150 @@ def _read_blobs(repository_path: Path, object_ids: list[str]) -> dict[str, bytes
         blobs[header[0].decode()] = output[position:position + size]
         position += size + 1
     return blobs
+
+
+# ── Reading single artifacts for the in-app evidence viewer ───────────────
+#
+# Unlike ingestion, these read one file or commit on demand straight from the
+# Git object store, so the viewer shows exactly the code that was graded.
+
+# A full or abbreviated SHA, or HEAD. Anything else (branch names, ranges,
+# "-" options) is rejected before it reaches git.
+_REVISION_PATTERN = re.compile(r"^(?:[0-9a-fA-F]{4,40}|HEAD)$")
+_DIFF_HEADER = re.compile(r"^diff --git ", re.MULTILINE)
+
+
+class ArtifactNotFoundError(LookupError):
+    """The requested commit or file does not exist in the repository."""
+
+
+def resolve_commit(repository_path: Path, revision: str = "HEAD") -> str:
+    """Full SHA of `revision`, or ArtifactNotFoundError if it names no commit."""
+    if not _REVISION_PATTERN.match(revision):
+        raise ArtifactNotFoundError(f"'{revision}' is not a commit SHA.")
+    result = subprocess.run(
+        ["git", "-C", str(repository_path), "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise ArtifactNotFoundError(f"Commit {revision} was not found in the repository.")
+    return result.stdout.strip()
+
+
+def normalize_repository_file_path(path: str) -> str:
+    normalized = path.replace("\\", "/").strip().strip("/").removeprefix("./")
+    if not normalized or any(segment in {"", ".", ".."} for segment in normalized.split("/")):
+        raise ArtifactNotFoundError(f"'{path}' is not a valid repository file path.")
+    return normalized
+
+
+def read_file_at_revision(repository_path: Path, path: str, revision: str = "HEAD") -> tuple[str, str, bytes]:
+    """Returns (commit SHA, normalized path, file bytes) for `path` at `revision`."""
+    commit_sha = resolve_commit(repository_path, revision)
+    normalized = normalize_repository_file_path(path)
+    result = subprocess.run(
+        ["git", "-C", str(repository_path), "cat-file", "blob", f"{commit_sha}:{normalized}"],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise ArtifactNotFoundError(f"{normalized} does not exist at commit {commit_sha[:7]}.")
+    return commit_sha, normalized, result.stdout
+
+
+def repository_remote_url(repository_path: Path, remote: str = "origin") -> str | None:
+    """The URL the clone was taken from, or None if it has no such remote."""
+    result = subprocess.run(
+        ["git", "-C", str(repository_path), "config", "--get", f"remote.{remote}.url"],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() or None
+
+
+def list_tracked_paths(repository_path: Path, revision: str = "HEAD") -> set[str]:
+    commit_sha = resolve_commit(repository_path, revision)
+    listing = _git_output(repository_path, "-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "--full-tree", commit_sha)
+    return {line for line in listing.splitlines() if line}
+
+
+def read_commit(repository_path: Path, revision: str, max_chars_per_file: int, max_chars_per_commit: int) -> dict:
+    """Metadata and per-file diffs for one commit. Merge commits are diffed
+    against their first parent, matching what the branch actually gained."""
+    commit_sha = resolve_commit(repository_path, revision)
+    meta = _git_output(
+        repository_path, "show", "-s", "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%B", commit_sha,
+    )
+    sha, parents, author, author_email, authored_at, message = meta.split("\0", 5)
+    patch = _git_output(
+        repository_path, "-c", "core.quotePath=false", "show", "--format=", "--patch", "--no-color",
+        "-M", "--diff-merges=first-parent", commit_sha,
+    )
+    files = []
+    remaining_commit_chars = max_chars_per_commit
+    for parsed in _parse_patch(patch):
+        diff = parsed.pop("diff")
+        diff_truncated = False
+        if diff and not _is_noise_path(parsed["filename"]):
+            if remaining_commit_chars <= 0:
+                diff, diff_truncated = None, True
+            else:
+                diff, diff_truncated = _cap_text(diff, min(max_chars_per_file, remaining_commit_chars))
+                remaining_commit_chars -= len(diff)
+        else:
+            diff = None
+        files.append({**parsed, "diff": diff, "diff_truncated": diff_truncated})
+    return {
+        "commit_sha": sha.strip(),
+        "parent_shas": parents.split(),
+        "author": author or author_email,
+        "author_email": _normalize_email(author_email),
+        "timestamp": _as_utc(datetime.fromisoformat(authored_at.strip())),
+        "message": message.strip(),
+        "lines_added": sum(file["lines_added"] for file in files),
+        "lines_deleted": sum(file["lines_deleted"] for file in files),
+        "files_changed": files,
+    }
+
+
+def _parse_patch(patch: str) -> list[dict]:
+    """Split `git show --patch` output into one dict per file. `diff` holds
+    the hunks only (from the first "@@"), the same shape pydriller gives
+    ingestion, or None for binary/mode-only changes."""
+    files = []
+    for block in _DIFF_HEADER.split(patch)[1:]:
+        lines = block.rstrip("\n").split("\n")
+        old_path = new_path = None
+        change_type = "modified"
+        hunk_start = len(lines)
+        for index, line in enumerate(lines[1:], start=1):
+            if line.startswith("@@"):
+                hunk_start = index
+                break
+            if line.startswith("new file mode"):
+                change_type = "added"
+            elif line.startswith("deleted file mode"):
+                change_type = "deleted"
+            elif line.startswith("rename from "):
+                change_type, old_path = "renamed", line.removeprefix("rename from ")
+            elif line.startswith("rename to "):
+                new_path = line.removeprefix("rename to ")
+            elif line.startswith("--- a/"):
+                old_path = old_path or line.removeprefix("--- a/")
+            elif line.startswith("+++ b/"):
+                new_path = new_path or line.removeprefix("+++ b/")
+        # Binary and mode-only changes have no ---/+++ lines; fall back to
+        # the "a/<path> b/<path>" header.
+        filename = new_path or old_path or lines[0].rsplit(" b/", 1)[-1]
+        hunks = lines[hunk_start:]
+        files.append({
+            "filename": filename,
+            "change_type": change_type,
+            "lines_added": sum(1 for line in hunks if line.startswith("+")),
+            "lines_deleted": sum(1 for line in hunks if line.startswith("-")),
+            "diff": "\n".join(hunks) + "\n" if hunks else None,
+        })
+    return files
 
 
 def _as_utc(value: datetime) -> datetime:
