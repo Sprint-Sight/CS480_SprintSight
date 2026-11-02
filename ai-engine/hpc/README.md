@@ -323,6 +323,20 @@ one run per group in the `sprintsight_gpu_utilisation` experiment.
   https://green.smu.edu.sg/gpustats (SMU network/VPN; node → GPU → time range).
 
 **Before using a faster setting for grading:** batched decoding isn't
-guaranteed bit-identical to one request at a time. Re-run the same sprints at
-concurrency 1 and at the new setting, and compare the per-dimension scores
-first.
+guaranteed bit-identical to one request at a time. Re-run the same sprint with
+the old and the new setting, then compare the two runs:
+
+```bash
+python -m research.compare_runs --list                 # find the run IDs
+python -m research.compare_runs <old-run> <new-run>    # exits 1 if any score changed
+```
+
+It compares each dimension's raw model answer, retries included, and reports:
+- whether the evidence was the same
+- whether the answers are byte-identical
+- the scores
+- citation overlap and justification similarity where the answers differ
+
+A change that only affects speed (such as the CPU thread count) should come
+out **IDENTICAL**: on qwen3-8b, the 4-thread fix cut 689 s to 188 s with every
+answer byte-for-byte unchanged.
