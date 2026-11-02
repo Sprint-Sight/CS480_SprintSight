@@ -1,7 +1,7 @@
 # SprintSight AI Engine — Development Shortcuts
 # Run from ai-engine/ directory.
 
-.PHONY: help hpc hpc-status hpc-models hpc-tunnel hpc-submit hpc-stop \
+.PHONY: help hpc hpc-status hpc-models hpc-tunnel hpc-submit hpc-stop hpc-gpu-logs \
         local local-stop health logs
 
 help: ## Show this help
@@ -26,6 +26,9 @@ hpc-submit: ## Submit the Slurm GPU job on the cluster
 
 hpc-stop: ## Stop Docker services, show tunnel teardown
 	bash hpc/hpc-dev.sh stop
+
+hpc-gpu-logs: ## Copy the running job's GPU telemetry into gpu_logs/
+	bash hpc/hpc-dev.sh gpu-logs
 
 # ── Local workflow (Ollama in Docker, no GPU) ────────────────────────────────
 

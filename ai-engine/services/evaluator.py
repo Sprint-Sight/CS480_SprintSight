@@ -14,16 +14,29 @@ from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
 from services.llm_client import (
     evaluate_dimension,
+    find_loaded_model,
     generate_sprint_feedback,
+    run_context,
     select_run_num_ctx,
+    snapshot_loaded_models,
 )
 
 '''
-Receives a bundle, evaluates each rubric dimension serially, generates general
+Receives a bundle, evaluates each rubric dimension (serially unless
+LLM_DIMENSION_CONCURRENCY is raised), generates general
 sprint feedback, and returns a SprintAssessment.
 '''
 #start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
 log = logging.getLogger("sprintsight.evaluator")
+
+# How many rubric dimensions call Ollama at once. 1 (default) runs them one
+# after another. Higher values let one loaded model decode several dimensions
+# together, which keeps the GPU busy while the client prepares and validates
+# other calls. Ollama only runs OLLAMA_NUM_PARALLEL requests at once (set on
+# the GPU job), so keep the two equal; extra requests just queue on the server.
+# Batched decoding is not guaranteed bit-identical to one-at-a-time, so check
+# scores against a concurrency-1 run before using a higher value for grading.
+DIMENSION_CONCURRENCY = max(1, int(os.getenv("LLM_DIMENSION_CONCURRENCY", "1")))
 
 async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int | None, semaphore: asyncio.Semaphore) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
     # Acquire the semaphore HERE, around the actual LLM call, so it genuinely
@@ -52,6 +65,30 @@ async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_na
         )
         return result
 
+async def _log_gpu_offload(model_name: str) -> None:
+    # Records how much of the model Ollama holds in VRAM, right after the
+    # dimension calls (when it is certainly loaded). Telemetry only: a failure
+    # here must never fail the assessment.
+    try:
+        loaded = await snapshot_loaded_models()
+        mlflow.log_dict({"loaded_models": loaded}, "gpu/ollama_ps.json")
+        entry = find_loaded_model(loaded, model_name)
+        if entry is None or entry["offload_ratio"] is None:
+            log.warning("Model '%s' was not in Ollama's loaded models (/api/ps): %s", model_name, loaded)
+            return
+        mlflow.log_metrics({
+            "gpu_offload_ratio": entry["offload_ratio"],
+            "gpu_model_vram_bytes": entry["size_vram"],
+        })
+        if entry["offload_ratio"] < 1:
+            log.warning(
+                ">>> Model '%s' is only %.0f%% on the GPU; Ollama put the rest on the CPU, which "
+                "slows every token. Lower num_ctx / OLLAMA_NUM_PARALLEL or use a smaller KV cache type.",
+                model_name, entry["offload_ratio"] * 100,
+            )
+    except Exception:  # telemetry must not break grading
+        log.warning("Could not record GPU offload for model '%s'.", model_name, exc_info=True)
+
 # Evaluates each rubric dimension, then generates project-level sprint feedback.
 async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str) -> SprintAssessment:
 
@@ -68,14 +105,17 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     # would force a reload before nearly every one of the ~6-7 calls here.
     run_num_ctx = select_run_num_ctx(bundle, model_name, DIMENSIONS)
 
-    with mlflow.start_run(run_name=f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}", nested=True):
+    # run_context tags every request marker with this MLflow run, so GPU
+    # telemetry can be matched to the run it belongs to.
+    with mlflow.start_run(run_name=f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}", nested=True) as run, \
+            run_context(run_id=run.info.run_id, concurrency=DIMENSION_CONCURRENCY):
         with mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN):
+            mlflow.log_param("dimension_concurrency", DIMENSION_CONCURRENCY)
             start_time = time.time() # Start time for entire evaluation process
             mlflow.openai.autolog() # Logs everything, will create child AsyncCompletions span under LLM span
 
-            # Cap no. of concurrent calls to avoid overwhelming the LLM service (if your computer can take it, you can increase this 
-            # number or remove the bounded evaluate function and semaphore entirely to allow full concurrency)
-            semaphore = asyncio.Semaphore(1)
+            # Cap no. of concurrent calls to the LLM service (LLM_DIMENSION_CONCURRENCY, see top of file)
+            semaphore = asyncio.Semaphore(DIMENSION_CONCURRENCY)
 
             # 2. Create one task per dimension. Each task acquires the semaphore
             #    itself (inside _bounded_evaluate), so at most `semaphore` value
@@ -126,6 +166,8 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             except Exception as e:  # noqa: BLE001 - translate concurrent-task failure into a domain error
                 # mlflow.set_tag("error", str(e))
                 raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
+
+            await _log_gpu_offload(model_name)
 
             if len(failed_dimensions) == len(DIMENSIONS):
                 raise AllDimensionsFailedError(failed_dimensions)
