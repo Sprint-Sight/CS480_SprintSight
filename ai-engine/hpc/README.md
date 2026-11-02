@@ -231,3 +231,79 @@ while yours is running.
 `OLLAMA_KV_CACHE_TYPE=q8_0` in `ollama_gpu.sbatch`'s `--env` list — this
 roughly halves KV cache size at a small quality cost. local copy first:
 `rm ai-engine/hpc/<file>` then `git pull` again.
+
+## Measuring GPU utilisation
+
+Every GPU job now records telemetry, and every assessment records request
+timings, so you can show how hard each model drives the GPU and where it
+sits idle. Nothing needs switching on.
+
+**What gets recorded**
+
+| Where | What | Written by |
+|---|---|---|
+| `~/sprintsight/gpu-logs/<jobid>.gpu.csv` (cluster) | `nvidia-smi` every second: utilisation, memory-bus utilisation, VRAM, power, SM clock, temperature, clock-slowdown reasons. Timestamps in UTC | `ollama_gpu.sbatch` |
+| `~/sprintsight/gpu-logs/<jobid>.gpu-info.csv` | GPU name, driver, VRAM, power limit | `ollama_gpu.sbatch` |
+| `ai-engine/audit_logs/request_markers.jsonl` | One line per Ollama request: UTC start/end, model, dimension, MLflow run ID, concurrency, token counts | `services/llm_client.py` |
+| MLflow run of each assessment | `gpu_offload_ratio` (share of the model in VRAM; below 1 means some layers on the CPU), `gpu/ollama_ps.json`, `dimension_concurrency` param | `services/evaluator.py` |
+
+**Settings you can sweep**
+
+| Setting | Where | Default | Notes |
+|---|---|---|---|
+| `OLLAMA_NUM_PARALLEL` | GPU job (`.env.hpc`, forwarded by `hpc-dev.sh submit`) | 1 | Requests one loaded model decodes together. KV cache grows with `num_ctx` × this; the 32B models fit 1 at 16K |
+| `LLM_DIMENSION_CONCURRENCY` | `ai-engine/.env` | 1 | Dimensions the engine sends at once. Keep equal to `OLLAMA_NUM_PARALLEL` |
+| `OLLAMA_KV_CACHE_TYPE` | GPU job | q4_0 | `f16`/`q8_0` cost more VRAM but less quality loss; the 8B models have room |
+| `LLM_NUM_BATCH` | `ai-engine/.env` | Ollama's 512 | Prefill batch size. Larger can speed up long prompts but uses more VRAM |
+| `OLLAMA_KEEP_ALIVE` | GPU job | 30m | How long an idle model stays loaded |
+| `HPC_GPU_TYPE` | `.env.hpc` | unset | Pins the GPU model (`sinfo -o "%N %G"` lists types) so runs are comparable |
+
+Server settings (`OLLAMA_*`) only change when the job restarts:
+`scancel --me`, then `hpc-dev.sh submit` again.
+
+**Procedure for one model**
+
+```bash
+# 1. GPU job with the settings under test (example: 4 parallel slots)
+OLLAMA_NUM_PARALLEL=4 bash hpc/hpc-dev.sh submit
+bash hpc/hpc-dev.sh status                    # wait for RUNNING
+bash start.sh                                 # from the repo root
+
+# 2. Real assessments: set LLM_DIMENSION_CONCURRENCY=4 in ai-engine/.env,
+#    restart sprintsight_ai, run assessments for the model from the app.
+#    And/or a controlled sweep replaying the recorded prompts:
+python -m research.gpu_bench --model sprintsight-llama31 --concurrency 1,2,4
+
+# 3. Fetch the telemetry and build the report
+bash hpc/hpc-dev.sh gpu-logs                  # -> gpu_logs/<jobid>.gpu.csv + clock offset
+python -m research.gpu_report --gpu-csv gpu_logs/<jobid>.gpu.csv \
+    --markers audit_logs/request_markers.jsonl gpu_logs/bench_*.jsonl --mlflow
+```
+
+The report writes `summary.md`/`summary.csv` and a timeline plot per
+(model, concurrency) into `gpu_logs/report_<time>/`. With `--mlflow`, it logs
+one run per group in the `sprintsight_gpu_utilisation` experiment.
+
+**Reading the numbers**
+
+- `util_busy_mean`: GPU utilisation while a request was running.
+  `util_window_mean` includes the gaps between requests. A big difference
+  between them means the GPU waits on the client, not that it is weak.
+- `idle_gap_fraction`: share of a run with no request in flight. Raising
+  concurrency is what shrinks it.
+- `utilization.gpu` is the share of time *any* kernel ran, not how much of
+  the chip was used. Judge saturation by throughput: `output_tok_s` should
+  stop rising as concurrency goes up (the knee), or VRAM should be near full.
+- `decode_bw_eff` (sweep rows only): decode speed per request against the
+  card's memory-bandwidth ceiling. Single-stream decode is limited by memory
+  bandwidth, so this, not `util`, says how close one request is to the limit.
+- `offload_ratio_min` / `gpu_offload_ratio` below 1: the model doesn't fit;
+  results from that run are not representative.
+- `throttled_fraction` above 0: power or thermal limits held the clocks down.
+- Cross-check the same time window on the cluster's own dashboard:
+  https://green.smu.edu.sg/gpustats (SMU network/VPN; node → GPU → time range).
+
+**Before using a faster setting for grading:** batched decoding isn't
+guaranteed bit-identical to one request at a time. Re-run the same sprints at
+concurrency 1 and at the new setting, and compare the per-dimension scores
+first.

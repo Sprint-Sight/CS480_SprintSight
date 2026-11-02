@@ -208,7 +208,8 @@ grades.
 | Which process holds VRAM | `bash ai-engine/hpc/hpc-dev.sh gpu --processes` | Only Ollama |
 | Cluster dashboard | https://green.smu.edu.sg/gpustats (node → GPU → time range) | Matches the above |
 
-Full measurement and tuning method: [gpu-utilisation-plan.md](gpu-utilisation-plan.md).
+To measure utilisation and tune it per model, see "Measuring GPU utilisation"
+in [ai-engine/hpc/README.md](../ai-engine/hpc/README.md).
 
 ---
 
@@ -232,7 +233,7 @@ shared GPU until its 8-hour limit runs out, so cancel it when you finish.
 | `No running Slurm job named 'sprintsight-ollama'` | No GPU reserved *for you* (jobs aren't shared), job expired, or still `PENDING` | §5 steps 2–3 |
 | Build fails: `failed to resolve source metadata for docker.io` / `pypi.org` | Building on the VPN | Build off-VPN (§3.1) |
 | `/health` stays `degraded` | Models still loading on the GPU | Wait, then check `hpc-dev.sh status` |
-| Assessment very slow, low GPU usage | Model partly on CPU, or a cold model load | §7 first row; see the GPU plan |
+| Assessment very slow, low GPU usage | Model partly on CPU, or a cold model load | §7 first row; MLflow metric `gpu_offload_ratio` below 1 |
 | "Local repository path must remain inside…" / "…not a Git repository" | Path outside `repo/`, or not a clone | §4 step 4 |
 | Commits not attributed to students | Author email ≠ student account email | §4 step 3 |
 | Job killed early | `project` queue pre-emption | Resubmit; models are cached |
