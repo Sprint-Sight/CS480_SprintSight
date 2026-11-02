@@ -39,6 +39,10 @@ LLM_EVIDENCE_MAX_DIFF_LINES=60
 # Rubric dimensions sent to Ollama at once; keep equal to the GPU job's
 # OLLAMA_NUM_PARALLEL. 1 = one after another (the default).
 LLM_DIMENSION_CONCURRENCY=1
+# Most tokens a model may generate per call (sent as max_tokens, which /v1 does
+# honour). Stops runaway answers: uncapped, a looping model only stopped at the
+# 20-minute client timeout. Normal answers are 250-4,100 tokens.
+LLM_MAX_OUTPUT_TOKENS=8192
 # CPU threads and context size are NOT set here: Ollama's /v1 endpoint ignores
 # per-request options. The GPU job bakes num_thread into each model (see
 # hpc/ollama-entrypoint.sh); num_ctx comes from the Modelfiles.

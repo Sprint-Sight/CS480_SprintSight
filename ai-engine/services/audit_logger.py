@@ -42,7 +42,7 @@ def write_audit_record(record: dict[str, Any]) -> None:
     metadata = {
         key: value
         for key, value in record.items()
-        if key not in {"request", "raw_response", "error", "request_started_at"}
+        if key not in {"request", "raw_response", "error", "request_started_at", "awaiting_response"}
     }
     request = record.get("request")
     raw_response = record.get("raw_response", "")

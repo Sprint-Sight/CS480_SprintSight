@@ -92,11 +92,14 @@ def load_prompts(audit_dir: Path, source_model: str | None, limit: int | None) -
         if digest in seen:
             continue
         seen.add(digest)
+        options = dict(request.get("options") or {})
+        if request.get("max_tokens"):
+            options["num_predict"] = request["max_tokens"]  # the app's answer cap, in native form
         prompts.append({
             "dimension": metadata.get("dimension"),
             "messages": request["messages"],
             "temperature": request.get("temperature", 0),
-            "options": request.get("options") or {},
+            "options": options,
             "format": _native_format(request),
         })
         if limit and len(prompts) >= limit:
@@ -119,6 +122,8 @@ def build_native_request(
     num_thread: int | None = None, output_format: str = "recorded",
 ) -> dict[str, Any]:
     options: dict[str, Any] = {"temperature": prompt.get("temperature", 0)}
+    if (prompt.get("options") or {}).get("num_predict"):
+        options["num_predict"] = prompt["options"]["num_predict"]
     if num_ctx:
         options["num_ctx"] = num_ctx
     if num_batch:
@@ -155,6 +160,8 @@ def timing_fields(response: dict[str, Any], num_ctx: int | None) -> dict[str, An
         "decode_tok_s": round(output_tokens / decode_s, 2) if decode_s else None,
         # Ollama drops the start of an over-long prompt without an error.
         "prompt_truncated": bool(num_ctx and prompt_tokens >= num_ctx * 0.98),
+        # "length" = stopped by the answer cap, as /v1's finish_reason reports it.
+        "finish_reason": response.get("done_reason"),
     }
 
 

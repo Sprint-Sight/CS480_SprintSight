@@ -52,6 +52,75 @@ def test_write_request_marker_appends_jsonl(tmp_path, monkeypatch):
     assert [json.loads(line)["request_id"] for line in path.read_text().splitlines()] == ["a", "b"]
 
 
+def _chat_request() -> httpx.Request:
+    return httpx.Request("POST", "http://ollama/v1/chat/completions", content=b'{"messages": []}')
+
+
+def test_request_with_no_response_is_recorded_when_retried(tmp_path, monkeypatch, caplog):
+    path = tmp_path / "request_markers.jsonl"
+    monkeypatch.setattr(audit_logger, "REQUEST_MARKERS_PATH", path)
+    token = llm_client._audit_context.set({"request_id": "r1", "dimension": "documentation", "model": "m"})
+    try:
+        asyncio.run(llm_client._capture_request(_chat_request()))   # times out, no response hook
+        with caplog.at_level(logging.ERROR, logger="services.llm_client"):
+            asyncio.run(llm_client._capture_request(_chat_request()))  # the client's retry
+        llm_client._record_unanswered(llm_client._audit_context.get() or {})  # retry still pending
+    finally:
+        llm_client._audit_context.reset(token)
+
+    markers = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [(m["http_status"], m["error"]) for m in markers] == [(0, "no response"), (0, "no response")]
+    assert markers[0]["started_at"] and markers[0]["finished_at"]
+    assert "no response from Ollama" in caplog.text
+
+
+def test_answered_request_writes_no_unanswered_marker(tmp_path, monkeypatch):
+    path = tmp_path / "request_markers.jsonl"
+    monkeypatch.setattr(audit_logger, "REQUEST_MARKERS_PATH", path)
+    monkeypatch.setattr(llm_client, "write_audit_record", lambda record: None)
+    body = json.dumps({
+        "choices": [{"message": {"content": "{}"}, "finish_reason": "length"}],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 8192},
+    }).encode()
+    token = llm_client._audit_context.set({"request_id": "r1", "dimension": "testing", "model": "m"})
+    try:
+        request = _chat_request()
+        asyncio.run(llm_client._capture_request(request))
+        asyncio.run(llm_client._capture_response(httpx.Response(200, content=body, request=request)))
+        llm_client._record_unanswered(llm_client._audit_context.get() or {})
+    finally:
+        llm_client._audit_context.reset(token)
+
+    [marker] = [json.loads(line) for line in path.read_text().splitlines()]
+    assert marker["http_status"] == 200
+    assert marker["finish_reason"] == "length"   # stopped by LLM_MAX_OUTPUT_TOKENS
+
+
+def test_prompt_truncation_is_detected_two_ways():
+    def usage(prompt_tokens: int) -> str:
+        return json.dumps({"usage": {"prompt_tokens": prompt_tokens}})
+
+    sent = {"dimension": "code_quality", "num_ctx": 32768, "estimated_prompt_tokens": 30000}
+    assert llm_client._prompt_truncated(usage(16387), sent) is True    # mistral: shrank to half
+    assert llm_client._prompt_truncated(usage(32500), sent) is True    # filled the context
+    assert llm_client._prompt_truncated(usage(27400), sent) is False   # denser/lighter tokenizer
+    assert llm_client._prompt_truncated(usage(31000), sent) is False   # retry resends more
+    assert llm_client._prompt_truncated("not json", sent) is False
+
+
+def test_prompt_budget_only_shrinks_models_whose_context_would_overflow():
+    cap = llm_client._CONTEXT_CAP
+    # Room to spare: budgets (and so prompts) unchanged.
+    for model in ("sprintsight-qwen", "sprintsight-llama31", "sprintsight-gemma", ModelName.SPRINTSIGHT_QWEN):
+        assert llm_client._prompt_context(model, None) == cap
+    # Dense tokenizer or small context: the budget, in real tokens, fits the context.
+    for model in ("sprintsight-mistral", "sprintsight-qwen25-32b", "sprintsight-r1-32b"):
+        budget = llm_client._prompt_context(model, None)
+        real_tokens = budget * llm_client.CHARS_PER_TOKEN / llm_client.MODEL_CHARS_PER_TOKEN[model]
+        assert budget < cap
+        assert real_tokens <= llm_client.MODEL_NUM_CTX[model]
+
+
 # ── services/evaluator.py ────────────────────────────────────────────────────
 
 def test_bounded_evaluate_caps_concurrent_llm_calls(monkeypatch):
@@ -107,7 +176,7 @@ def test_log_gpu_offload_warns_on_partial_offload(monkeypatch, caplog):
         asyncio.run(evaluator._log_gpu_offload(ModelName.SPRINTSIGHT_R1_32B))
 
     assert logged["dict"][1] == "gpu/ollama_ps.json"
-    assert logged["metrics"] == {"gpu_offload_ratio": 0.6, "gpu_model_vram_bytes": 60}
+    assert logged["metrics"] == {"gpu_offload_ratio": 0.6, "gpu_model_vram_bytes": 60, "gpu_context_length": 16384}
     assert "only 60% on the GPU" in caplog.text
 
 
