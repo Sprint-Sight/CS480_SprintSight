@@ -1,7 +1,7 @@
 FROM qwen3:8b
 
 PARAMETER temperature 0
-PARAMETER num_ctx 49152
+PARAMETER num_ctx 40960
 
 SYSTEM """
 You are a strict, automated CS203 Academic Grading Assistant.

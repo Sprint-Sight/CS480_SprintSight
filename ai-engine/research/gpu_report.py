@@ -21,6 +21,11 @@ moment. Per (model, concurrency) group the report gives:
                       RTX 3090 sets this bit even idle at ~28 W, so it is
                       reported apart and is not evidence of throttling alone
   output_tok_s        generated tokens / run wall-clock (throughput)
+  unanswered_requests requests that got no response (client timeout): the
+  unanswered_s        GPU was busy, usually generating without end, for
+                      unanswered_s seconds of work that was thrown away
+  truncated_prompts   requests whose prompt Ollama cut to fit its context
+  length_capped       answers stopped at LLM_MAX_OUTPUT_TOKENS (runaway output)
   decode_bw_eff       (gpu_bench rows only) decode tok/s per request x model
                       bytes in VRAM / memory bandwidth: how close single-stream
                       decode is to the card's bandwidth ceiling
@@ -142,6 +147,19 @@ def _within(times: pd.Series, starts: pd.Series, ends: pd.Series) -> np.ndarray:
     return mask
 
 
+def _wasted_work(markers: pd.DataFrame) -> dict[str, Any]:
+    """GPU time that produced nothing usable (see the module docstring)."""
+    status = pd.to_numeric(markers["http_status"], errors="coerce") if "http_status" in markers else None
+    unanswered = markers[status == 0] if status is not None else markers.iloc[0:0]
+    unanswered_ms = pd.to_numeric(unanswered["duration_ms"], errors="coerce").sum() if len(unanswered) else 0
+    return {
+        "unanswered_requests": len(unanswered),
+        "unanswered_s": round(float(unanswered_ms) / 1000, 1),
+        "truncated_prompts": int(markers["prompt_truncated"].eq(True).sum()) if "prompt_truncated" in markers else 0,
+        "length_capped": int(markers["finish_reason"].eq("length").sum()) if "finish_reason" in markers else 0,
+    }
+
+
 def summarise_group(
     samples: pd.DataFrame, markers: pd.DataFrame, gpu_info: dict[str, Any], bandwidth_gbs: float | None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
@@ -180,6 +198,7 @@ def summarise_group(
         "power_cap_fraction": round(float(busy["power_cap"].mean()), 4) if "power_cap" in busy and len(busy) else None,
         "sm_clock_busy_median_mhz": float(busy["clocks.sm"].median()) if "clocks.sm" in busy and len(busy) else None,
         "output_tok_s": round(float(output_tokens) / window_s, 2) if window_s else None,
+        **_wasted_work(markers),
     }
     if metrics["vram_peak_mib"] and metrics["vram_total_mib"]:
         metrics["vram_peak_pct"] = round(100 * metrics["vram_peak_mib"] / metrics["vram_total_mib"], 1)
@@ -225,7 +244,7 @@ def plot_timeline(window: pd.DataFrame, title: str, path: Path) -> None:
 _TABLE_COLUMNS = [
     "model", "concurrency", "runs", "requests", "seconds_per_run", "util_busy_mean", "util_window_mean",
     "idle_gap_fraction", "vram_peak_pct", "power_busy_pct", "sm_clock_busy_median_mhz", "throttled_fraction",
-    "power_cap_fraction", "output_tok_s",
+    "power_cap_fraction", "output_tok_s", "unanswered_requests", "unanswered_s", "truncated_prompts", "length_capped",
     "prefill_tok_s_median", "decode_tok_s_median", "offload_ratio_min", "decode_bw_eff",
 ]
 

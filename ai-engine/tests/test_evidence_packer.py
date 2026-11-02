@@ -310,3 +310,15 @@ def test_evaluate_dimension_returns_resolved_file_line_citations(monkeypatch, tm
     ]
     assert result.evidence_citations[1].commit_sha == bob_sha
     assert any("ungrounded_citations_dropped" in p.read_text(encoding="utf-8") for p in tmp_path.glob("*.txt"))
+
+
+@pytest.mark.parametrize("model", ["sprintsight-mistral", "sprintsight-qwen25-32b"])
+def test_full_prompt_fits_the_real_context_of_dense_tokenizers(model):
+    # The packer counts chars / 3.0; mistral's tokenizer makes ~21% more real
+    # tokens than that, which overflowed its 32K context before.
+    bundle = ArtifactBundle.model_validate(_bundle(600))
+    for dimension in DIMENSIONS:
+        built = llm_client.build_dimension_prompt(bundle, dimension, DIMENSION_PROMPTS[dimension], model)
+        estimated = estimate_tokens(built.prompt) + llm_client._SCHEMA_OVERHEAD_TOKENS
+        real = estimated * llm_client.CHARS_PER_TOKEN / llm_client.MODEL_CHARS_PER_TOKEN[model]
+        assert real + llm_client._OUTPUT_RESERVE_TOKENS <= llm_client.MODEL_NUM_CTX[model]

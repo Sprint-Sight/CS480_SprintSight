@@ -181,3 +181,30 @@ def test_build_native_request_format_and_thread_overrides():
     assert "format" not in unconstrained
     assert unconstrained["options"] == {"temperature": 0, "num_thread": 4}
     assert "format" not in gpu_bench.build_native_request({**prompt, "format": None}, "m", None, None)
+
+
+def test_wasted_work_counts_unanswered_truncated_and_capped_requests():
+    markers = pd.DataFrame([
+        {"http_status": 200, "duration_ms": 10_000, "prompt_truncated": False, "finish_reason": "stop"},
+        {"http_status": 0, "duration_ms": 1_200_000, "prompt_truncated": None, "finish_reason": None},
+        {"http_status": 200, "duration_ms": 5_000, "prompt_truncated": True, "finish_reason": "length"},
+    ])
+    assert gpu_report._wasted_work(markers) == {
+        "unanswered_requests": 1, "unanswered_s": 1200.0, "truncated_prompts": 1, "length_capped": 1,
+    }
+    # Markers written before these fields existed still summarise.
+    assert gpu_report._wasted_work(pd.DataFrame([{"duration_ms": 1}]))["unanswered_requests"] == 0
+
+
+def test_bench_replays_the_apps_answer_cap():
+    prompt = {"messages": [{"role": "user", "content": "x"}], "temperature": 0, "options": {"num_predict": 8192}}
+    assert gpu_bench.build_native_request(prompt, "m", None, None)["options"]["num_predict"] == 8192
+    assert gpu_bench.timing_fields({"done_reason": "length"}, None)["finish_reason"] == "length"
+
+
+def test_load_prompts_maps_max_tokens_to_num_predict(tmp_path, monkeypatch):
+    monkeypatch.setattr(audit_logger, "AUDIT_LOG_DIR", tmp_path)
+    request = {"model": "m", "messages": [{"role": "user", "content": "x"}], "max_tokens": 8192}
+    audit_logger.write_audit_record({"request_id": "r", "dimension": "testing", "model": "m", "request": request})
+    [prompt] = gpu_bench.load_prompts(tmp_path, "m", None)
+    assert prompt["options"] == {"num_predict": 8192}
