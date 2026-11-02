@@ -8,7 +8,21 @@ from threading import Lock
 from typing import Any
 
 AUDIT_LOG_DIR = Path(os.getenv("LLM_AUDIT_LOG_DIR", "/app/audit_logs"))
+# One JSON line per Ollama request with wall-clock start/end, so
+# research/gpu_report.py can tell GPU samples taken while a request was in
+# flight from samples taken while the GPU had nothing to do.
+REQUEST_MARKERS_PATH = Path(
+    os.getenv("LLM_REQUEST_MARKERS_PATH", str(AUDIT_LOG_DIR / "request_markers.jsonl"))
+)
 _write_lock = Lock()
+
+
+def write_request_marker(marker: dict[str, Any]) -> None:
+    """Append one request's timing marker to the JSONL file."""
+    REQUEST_MARKERS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(marker, default=str)
+    with _write_lock, REQUEST_MARKERS_PATH.open("a", encoding="utf-8") as markers:
+        markers.write(line + "\n")
 
 
 def write_audit_record(record: dict[str, Any]) -> None:
