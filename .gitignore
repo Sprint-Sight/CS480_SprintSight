@@ -53,6 +53,7 @@ uploads/
 artifacts_temp/
 ai-engine/audit_logs/*
 !ai-engine/audit_logs/.gitkeep
+ai-engine/gpu_logs/
 
 # ==========================================
 # 5. IDEs, Editors & OS Metadata

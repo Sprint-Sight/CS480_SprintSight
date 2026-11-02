@@ -1,7 +1,8 @@
 import contextvars, hashlib, json, logging, os, time, httpx, instructor, mlflow
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
@@ -18,7 +19,7 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import DimensionName, ModelOutput, RubricDimensionScore
 from schemas.sprint_feedback import SprintFeedback
-from services.audit_logger import write_audit_record
+from services.audit_logger import write_audit_record, write_request_marker
 from services.evidence_packer import (
     EvidenceIndex,
     estimate_tokens,
@@ -104,6 +105,24 @@ def new_token_accumulator() -> dict:
     """Fresh accumulator dict the caller sets on the ContextVar before the
     evaluate_sprint call it wants token totals for."""
     return {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
+
+
+# Per-assessment-run tags (run_id, concurrency) copied onto every request
+# marker, so research/gpu_report.py can group GPU samples by run and by
+# concurrency setting. Set once in evaluator.evaluate_sprint; the dimension
+# tasks asyncio.gather creates inherit it.
+_run_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "run_context", default=None
+)
+
+
+@contextmanager
+def run_context(**fields: Any) -> Iterator[None]:
+    token = _run_context.set(fields)
+    try:
+        yield
+    finally:
+        _run_context.reset(token)
 
 # Extensions treated as data/generated output rather than authored logic when
 # computing the "meaningful lines changed" fact below — e.g. exported test
@@ -451,7 +470,15 @@ def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> 
 
     return "\n    ".join(lines)
 
-def request_extra_body(num_ctx: int | None) -> dict:
+
+# NOTE: Ollama's OpenAI-compatible /v1 endpoint, which this client calls,
+# ignores `options` (checked on Ollama 0.34.4: a /v1 request with
+# options.num_ctx=1024 kept the model's 40960 context and an untruncated
+# prompt, while native /api/chat applied it). The context size actually used
+# is the Modelfile's PARAMETER num_ctx (capped at the model's maximum), and
+# other runtime settings such as num_thread are baked in by
+# hpc/ollama-entrypoint.sh.
+def _request_extra_body(num_ctx: int | None) -> dict:
     if num_ctx is None:
         return {}
     return {"options": {"num_ctx": num_ctx}}
@@ -505,6 +532,7 @@ async def _capture_request(request: httpx.Request) -> None:
         context = _audit_context.get()
         if context is not None:
             context["request_started_at"] = time.perf_counter()
+            context["request_started_utc"] = datetime.now(UTC).isoformat()
             context["request"] = request.content.decode("utf-8", errors="replace")
 
 async def _capture_response(response: httpx.Response) -> None:
@@ -513,6 +541,8 @@ async def _capture_response(response: httpx.Response) -> None:
         if context is not None:
             body = await response.aread()
             started_at = context.get("request_started_at", time.perf_counter())
+            duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            finished_utc = datetime.now(UTC).isoformat()
             raw_body = body.decode("utf-8", errors="replace")
             write_audit_record(
                 {
@@ -520,8 +550,12 @@ async def _capture_response(response: httpx.Response) -> None:
                     "request": json.loads(context.get("request", "{}")),
                     "raw_response": raw_body,
                     "http_status": response.status_code,
-                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                    "duration_ms": duration_ms,
+                    "request_finished_utc": finished_utc,
                 }
+            )
+            write_request_marker(
+                _request_marker(context, raw_body, response.status_code, duration_ms, finished_utc)
             )
 
             # Opt-in token capture: only accumulates when the caller has
@@ -543,6 +577,30 @@ async def _capture_response(response: httpx.Response) -> None:
                     # Non-JSON body (streaming leftover, error page, etc.)
                     # — best-effort capture; skip without failing the call.
                     pass
+
+
+def _request_marker(
+    context: dict, raw_body: str, http_status: int, duration_ms: float, finished_utc: str,
+) -> dict:
+    try:
+        usage = json.loads(raw_body).get("usage") or {}
+    except (json.JSONDecodeError, AttributeError):
+        usage = {}
+    return {
+        **(_run_context.get() or {}),
+        "request_id": context.get("request_id"),
+        "team_id": context.get("team_id"),
+        "sprint_id": context.get("sprint_id"),
+        "dimension": context.get("dimension"),
+        "model": context.get("model"),
+        "num_ctx": context.get("num_ctx"),
+        "started_at": context.get("request_started_utc"),
+        "finished_at": finished_utc,
+        "duration_ms": duration_ms,
+        "http_status": http_status,
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+    }
 
 
 def _warn_if_prompt_truncated(raw_body: str, context: dict) -> None:
@@ -913,3 +971,40 @@ async def pull_model_if_missing(model_name: str) -> None:
     except Exception as e:
         log.error("Failed to pull model '%s': %s", model_name, e)
         raise
+
+def _with_default_tag(name: str) -> str:
+    return name if ":" in name else f"{name}:latest"
+
+
+def parse_loaded_models(ps_body: dict) -> list[dict]:
+    """Ollama's /api/ps body -> one dict per loaded model. `offload_ratio` is
+    the share of the model's memory in VRAM: below 1.0 Ollama has put some
+    layers on the CPU, and every generated token then waits on the CPU."""
+    loaded = []
+    for entry in ps_body.get("models") or []:
+        size = int(entry.get("size") or 0)
+        size_vram = int(entry.get("size_vram") or 0)
+        loaded.append({
+            "name": entry.get("name") or entry.get("model"),
+            "size": size,
+            "size_vram": size_vram,
+            "context_length": entry.get("context_length"),
+            "offload_ratio": round(size_vram / size, 4) if size else None,
+        })
+    return loaded
+
+
+def find_loaded_model(loaded: list[dict], model_name: str) -> dict | None:
+    # Callers may pass a ModelName enum, whose str() is "ModelName.X", not the value.
+    wanted = _with_default_tag(str(getattr(model_name, "value", model_name)))
+    return next((m for m in loaded if m["name"] and _with_default_tag(m["name"]) == wanted), None)
+
+
+async def snapshot_loaded_models() -> list[dict]:
+    """Which models Ollama has loaded right now, and how much of each is on
+    the GPU. Raises on connection/HTTP errors; callers treat it as optional."""
+    ps_url = OLLAMA_BASE_URL.replace("/v1", "") + "/api/ps"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(ps_url)
+        response.raise_for_status()
+        return parse_loaded_models(response.json())

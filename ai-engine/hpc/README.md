@@ -139,6 +139,15 @@ one-off copy you `cat >`'d by hand), remove your
 
 ## Tuning `num_ctx` for larger repositories
 
+> **Warning (verified 2026-11-02, Ollama 0.34.4):** the app calls Ollama's
+> OpenAI-compatible `/v1` endpoint, which **ignores** `options`. A `/v1` request
+> with `options.num_ctx=1024` kept the model's 40960 context and an
+> untruncated prompt; the native `/api/chat` endpoint applied it. So the
+> context actually used is the Modelfile's `PARAMETER num_ctx` (capped at the
+> model's own maximum, e.g. 40960 for qwen3:8b). The request-parameter route
+> below has no effect until the client changes endpoint. Change the Modelfile
+> instead; the GPU job recreates the models from the Modelfiles at every start.
+
 No enroot/GPU job changes are needed for this — `num_ctx` is sent as a
 runtime request parameter to Ollama (`options.num_ctx` in
 `llm_client._request_extra_body`), not something baked into the container or
@@ -232,11 +241,102 @@ while yours is running.
 roughly halves KV cache size at a small quality cost. local copy first:
 `rm ai-engine/hpc/<file>` then `git pull` again.
 
-## Updated E2E workflow for AI engine
-Step by step process once user clicks 'assess sprint':
-1. When user clicks 'assess sprint', register all 6 dimension prompts.
-2. Check every prompt returned from search_prompt and if none of the prompt matches the current, register the prompt. 
-3. If no prompt exists, set the prompt's alias to 'production'. else set the prompt's alias to the default
-4. After all prompts are registered, run evaluate sprint to get SprintAssessment to be returned to UI (UI needs the sprintassessment results asap to be displayed and it can't wait for anything else)
-5. Run judge is called automatically on the traces that were created in the evaluation sprint
-6. As judge assesses each trace, based on the both the code-based scorers metrics (for code-based scorer, check first if the team's sprint has been graded before and hence its gold exists, else don't use code-based scorer) and llm judge assessment, compare the current trace's prompt to the prompt with same dimension_name but of alias 'production', determine if the former should replace the latter as the 'production' (can consider mlflow.genai.optimize_prompt instead)
+## Measuring GPU utilisation
+
+Every GPU job now records telemetry, and every assessment records request
+timings, so you can show how hard each model drives the GPU and where it
+sits idle. Nothing needs switching on.
+
+**What gets recorded**
+
+| Where | What | Written by |
+|---|---|---|
+| `~/sprintsight/gpu-logs/<jobid>.gpu.csv` (cluster) | `nvidia-smi` every second: utilisation, memory-bus utilisation, VRAM, power, SM clock, temperature, clock-slowdown reasons. Timestamps in UTC | `ollama_gpu.sbatch` |
+| `~/sprintsight/gpu-logs/<jobid>.gpu-info.csv` | GPU name, driver, VRAM, power limit | `ollama_gpu.sbatch` |
+| `ai-engine/audit_logs/request_markers.jsonl` | One line per Ollama request: UTC start/end, model, dimension, MLflow run ID, concurrency, token counts | `services/llm_client.py` |
+| MLflow run of each assessment | `gpu_offload_ratio` (share of the model in VRAM; below 1 means some layers on the CPU), `gpu/ollama_ps.json`, `dimension_concurrency` param | `services/evaluator.py` |
+
+**Settings you can sweep**
+
+| Setting | Where | Default | Notes |
+|---|---|---|---|
+| `OLLAMA_NUM_PARALLEL` | GPU job (`.env.hpc`, forwarded by `hpc-dev.sh submit`) | 1 | Requests one loaded model decodes together. KV cache grows with `num_ctx` × this; the 32B models fit 1 at 16K |
+| `LLM_DIMENSION_CONCURRENCY` | `ai-engine/.env` | 1 | Dimensions the engine sends at once. Keep equal to `OLLAMA_NUM_PARALLEL` |
+| `OLLAMA_KV_CACHE_TYPE` | GPU job | q4_0 | `f16`/`q8_0` cost more VRAM but less quality loss; the 8B models have room |
+| `OLLAMA_MODEL_NUM_THREAD` | GPU job | the job's `--cpus-per-task` (4) | CPU threads per request, baked into every model by `ollama-entrypoint.sh` at job start (the app's `/v1` requests can't set it). Without it, Ollama sizes threads from the whole node and they contend for the job's 4 CPUs on every token: on qwen3-8b, decoding was ~3.5× slower (17 vs 60 tok/s) with GPU utilisation near 30% |
+| `num_batch` | `gpu_bench --num-batch` only | Ollama's 512 | Prefill batch size. Can be measured with the benchmark (native API); to use it in the app it would have to go in the Modelfiles |
+| `OLLAMA_KEEP_ALIVE` | GPU job | 30m | How long an idle model stays loaded |
+| `HPC_GPU_TYPE` | `.env.hpc` | unset | Pins the GPU model (`sinfo -o "%N %G"` lists types) so runs are comparable |
+
+Server settings (`OLLAMA_*`) only change when the job restarts:
+`scancel --me`, then `hpc-dev.sh submit` again.
+
+**Procedure for one model**
+
+```bash
+# 1. GPU job with the settings under test (example: 4 parallel slots)
+OLLAMA_NUM_PARALLEL=4 bash hpc/hpc-dev.sh submit
+bash hpc/hpc-dev.sh status                    # wait for RUNNING
+bash start.sh                                 # from the repo root
+
+# 2. Real assessments: set LLM_DIMENSION_CONCURRENCY=4 in ai-engine/.env,
+#    restart sprintsight_ai, run assessments for the model from the app.
+#    And/or a controlled sweep replaying the recorded prompts:
+python -m research.gpu_bench --model sprintsight-llama31 --concurrency 1,2,4
+
+# 3. Fetch the telemetry and build the report
+bash hpc/hpc-dev.sh gpu-logs                  # -> gpu_logs/<jobid>.gpu.csv + clock offset
+python -m research.gpu_report --gpu-csv gpu_logs/<jobid>.gpu.csv \
+    --markers audit_logs/request_markers.jsonl gpu_logs/bench_*.jsonl --mlflow
+```
+
+The report writes `summary.md`/`summary.csv` and a timeline plot per
+(model, concurrency) into `gpu_logs/report_<time>/`. With `--mlflow`, it logs
+one run per group in the `sprintsight_gpu_utilisation` experiment.
+
+**Reading the numbers**
+
+- `util_busy_mean`: GPU utilisation while a request was running.
+  `util_window_mean` includes the gaps between requests. A big difference
+  between them means the GPU waits on the client, not that it is weak.
+- `idle_gap_fraction`: share of a run with no request in flight. Raising
+  concurrency is what shrinks it.
+- `utilization.gpu` is the share of time *any* kernel ran, not how much of
+  the chip was used. Judge saturation by throughput: `output_tok_s` should
+  stop rising as concurrency goes up (the knee), or VRAM should be near full.
+- `decode_bw_eff` (sweep rows only): decode speed per request against the
+  card's memory-bandwidth ceiling. Single-stream decode is limited by memory
+  bandwidth, so this, not `util`, says how close one request is to the limit.
+- `offload_ratio_min` / `gpu_offload_ratio` below 1: the model doesn't fit;
+  results from that run are not representative.
+- `throttled_fraction` above 0: thermal or hardware limits held the clocks down.
+- `power_cap_fraction`: the driver's software power-cap flag. This RTX 3090
+  sets it even when idle at ~28 W, so it only means something together with
+  `power_busy_pct` near 100% and a lower `sm_clock_busy_median_mhz`. That
+  combination means the card is at its power limit, i.e. fully used.
+- Benchmark runs add a unique first line to every prompt so Ollama can't reuse
+  a cached prompt; `--allow-cache` turns this off, but prefill speeds are then
+  meaningless.
+- Compare configurations by giving each `gpu_bench` run a `--label`, then
+  report with `--group-by model,label`.
+- Cross-check the same time window on the cluster's own dashboard:
+  https://green.smu.edu.sg/gpustats (SMU network/VPN; node → GPU → time range).
+
+**Before using a faster setting for grading:** batched decoding isn't
+guaranteed bit-identical to one request at a time. Re-run the same sprint with
+the old and the new setting, then compare the two runs:
+
+```bash
+python -m research.compare_runs --list                 # find the run IDs
+python -m research.compare_runs <old-run> <new-run>    # exits 1 if any score changed
+```
+
+It compares each dimension's raw model answer, retries included, and reports:
+- whether the evidence was the same
+- whether the answers are byte-identical
+- the scores
+- citation overlap and justification similarity where the answers differ
+
+A change that only affects speed (such as the CPU thread count) should come
+out **IDENTICAL**: on qwen3-8b, the 4-thread fix cut 689 s to 188 s with every
+answer byte-for-byte unchanged.
