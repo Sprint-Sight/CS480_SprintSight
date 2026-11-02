@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Plus, Search, Settings, SlidersHorizontal, Users, Upload } from "lucide-react";
+import { BookOpen, Plus, Search, SlidersHorizontal, Users, Upload } from "lucide-react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
@@ -15,6 +15,7 @@ import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
+import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
 const sortOptions = [
@@ -54,7 +55,8 @@ export default function ProjectsPageContent() {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
   const [projectForMemberSelection, setProjectForMemberSelection] = useState<Project | null>(null);
-  const [selectedProjectMemberId, setSelectedProjectMemberId] = useState("");
+  const [selectedProjectMemberIds, setSelectedProjectMemberIds] = useState<string[]>([]);
+  const [isAddingProjectMembers, setIsAddingProjectMembers] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<{ projectId: string; userId: string; fullName: string } | null>(null);
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -68,6 +70,8 @@ export default function ProjectsPageContent() {
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [studentDirectoryError, setStudentDirectoryError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
+  const [canUseInstructorCredentials, setCanUseInstructorCredentials] = useState(false);
+  const jiraCredentials = useInstructorJiraCredentials(canUseInstructorCredentials);
   const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
   const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
 
@@ -77,10 +81,8 @@ export default function ProjectsPageContent() {
     description: "",
     github_repo_url: "",
     local_repo_path: "",
-    jira_email: "",
     jira_domain: "",
     jira_project_key: "",
-    jira_api_token: "",
   });
 
   const [courseForm, setCourseForm] = useState({
@@ -92,6 +94,10 @@ export default function ProjectsPageContent() {
   });
 
   const [studentForm, setStudentForm] = useState({ email: "", full_name: "", password: "" });
+
+  useEffect(() => {
+    setCanUseInstructorCredentials(sessionStorage.getItem("sprintsight-auth-role") !== "student");
+  }, []);
 
   async function reloadCourses() {
     const token = getAuthToken();
@@ -232,26 +238,15 @@ export default function ProjectsPageContent() {
     return count;
   }, [appliedFilters]);
 
-  function handleOpenCreateCourse() {
+  function handleOpenCourseManagement() {
     setEditingCourse(null);
     setCourseForm({ code: "", name: "", section: "", year: new Date().getFullYear(), term: "Fall" });
     setIsCourseModalOpen(true);
   }
 
-  function handleOpenEditCourse() {
-    const selectedCourse = courses.find((course) => course.id === selectedCourseId) ?? null;
-    setEditingCourse(selectedCourse);
-    setCourseForm(
-      selectedCourse
-        ? { code: selectedCourse.code, name: selectedCourse.name, section: selectedCourse.section, year: selectedCourse.year, term: selectedCourse.term }
-        : { code: "", name: "", section: "", year: new Date().getFullYear(), term: "Fall" }
-    );
-    setIsCourseModalOpen(true);
-  }
-
   function handleOpenCreateProject() {
     setEditingProject(null);
-    setProjectForm({ project_name: "", team_name: "", description: "", github_repo_url: "", local_repo_path: "", jira_email: getDefaultJiraEmail(), jira_domain: "", jira_project_key: "", jira_api_token: "" });
+    setProjectForm({ project_name: "", team_name: "", description: "", github_repo_url: "", local_repo_path: "", jira_domain: "", jira_project_key: "" });
     setIsProjectModalOpen(true);
   }
 
@@ -265,10 +260,8 @@ export default function ProjectsPageContent() {
       description: project.description || "",
       github_repo_url: project.github_repo_url || "",
       local_repo_path: project.local_repo_path || "",
-      jira_email: project.jira_email || getDefaultJiraEmail(),
       jira_domain: project.jira_domain || "",
       jira_project_key: project.jira_project_key || "",
-      jira_api_token: "",
     });
     setIsProjectModalOpen(true);
   }
@@ -295,10 +288,9 @@ export default function ProjectsPageContent() {
       const projectName = projectForm.project_name.trim();
       const teamName = projectForm.team_name.trim();
       const repositoryUrl = projectForm.github_repo_url.trim();
-      const jiraEmail = projectForm.jira_email.trim();
+      const jiraEmail = jiraCredentials.jiraEmail.trim();
       const jiraDomain = projectForm.jira_domain.trim();
       const jiraProjectKey = projectForm.jira_project_key.trim();
-      const jiraApiToken = projectForm.jira_api_token.trim();
 
       if (!projectName || !teamName) {
         throw new Error("Project name and team name are required.");
@@ -316,12 +308,23 @@ export default function ProjectsPageContent() {
         throw new Error("Load or select a valid course before creating a project.");
       }
 
-      const hasJiraConfiguration = Boolean(jiraDomain || jiraProjectKey || jiraApiToken);
-      if (hasJiraConfiguration && (!jiraEmail || !jiraDomain || !jiraProjectKey || !jiraApiToken)) {
-        throw new Error("Enter Jira email, domain, project key, and API token together.");
+      const hasJiraConfiguration = Boolean(jiraDomain || jiraProjectKey);
+      if (hasJiraConfiguration && (!jiraEmail || !jiraDomain || !jiraProjectKey)) {
+        throw new Error("Enter the shared Jira account email and this group's Jira domain and project key.");
+      }
+      if (
+        hasJiraConfiguration &&
+        !jiraCredentials.hasSavedToken &&
+        !jiraCredentials.jiraApiToken.trim()
+      ) {
+        throw new Error("Save a shared Jira API token in Settings before configuring Jira for this group.");
       }
 
-      const projectPayload = toProjectPayload(projectForm);
+      if (jiraCredentials.hasUnsavedChanges && !(await jiraCredentials.saveCredentials())) {
+        throw new Error(jiraCredentials.error || "Unable to save the shared Jira credentials.");
+      }
+
+      const projectPayload = toProjectPayload(projectForm, jiraEmail || getDefaultJiraEmail());
 
       if (editingProject) {
         const updatePayload = {
@@ -330,9 +333,7 @@ export default function ProjectsPageContent() {
           description: projectForm.description.trim() || undefined,
           github_repo_url: repositoryUrl || undefined,
           local_repo_path: projectForm.local_repo_path.trim() || undefined,
-          ...(hasJiraConfiguration
-            ? { jira_email: jiraEmail, jira_domain: jiraDomain, jira_project_key: jiraProjectKey, jira_api_token: jiraApiToken }
-            : {}),
+          ...(hasJiraConfiguration ? { jira_domain: jiraDomain, jira_project_key: jiraProjectKey } : {}),
         };
         await apiRequest(`/projects/${editingProject.id}`, {
           method: "PATCH",
@@ -507,8 +508,16 @@ export default function ProjectsPageContent() {
     const project = projects.find((candidate) => candidate.id === projectId);
     if (!project) return;
     await loadCourseStudents();
-    setSelectedProjectMemberId("");
+    setSelectedProjectMemberIds([]);
     setProjectForMemberSelection(project);
+  }
+
+  function handleToggleProjectMember(studentId: string) {
+    setSelectedProjectMemberIds((selectedIds) =>
+      selectedIds.includes(studentId)
+        ? selectedIds.filter((selectedId) => selectedId !== studentId)
+        : [...selectedIds, studentId],
+    );
   }
 
   function handleRemoveProjectMember(projectId: string, userId: string, event: React.MouseEvent) {
@@ -533,17 +542,56 @@ export default function ProjectsPageContent() {
   }
 
   async function handleConfirmAddProjectMember() {
-    if (!projectForMemberSelection || !selectedProjectMemberId) return;
+    if (
+      !projectForMemberSelection ||
+      selectedProjectMemberIds.length === 0 ||
+      isAddingProjectMembers
+    ) return;
 
+    setIsAddingProjectMembers(true);
+    const addedStudentIds: string[] = [];
+    const failedStudents: Array<{ id: string; message: string }> = [];
     try {
-      await apiRequest(`/projects/${projectForMemberSelection.id}/members/${selectedProjectMemberId}`, { method: "POST" });
-      await loadProjects();
-      notifyProjectsUpdated();
-      setProjectForMemberSelection(null);
-      setSelectedProjectMemberId("");
-      window.alert("Student added to the project.");
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to add project member.");
+      for (const studentId of selectedProjectMemberIds) {
+        try {
+          await apiRequest(
+            `/projects/${projectForMemberSelection.id}/members/${studentId}`,
+            { method: "POST" },
+          );
+          addedStudentIds.push(studentId);
+        } catch (error) {
+          failedStudents.push({
+            id: studentId,
+            message: error instanceof Error ? error.message : "Request failed",
+          });
+        }
+      }
+
+      if (addedStudentIds.length > 0) {
+        await loadProjects();
+        notifyProjectsUpdated();
+      }
+
+      if (failedStudents.length > 0) {
+        setSelectedProjectMemberIds(failedStudents.map(({ id }) => id));
+        const failureDetails = failedStudents.map(({ id, message }) => {
+          const studentName = courseStudents.find((student) => student.id === id)?.full_name ?? id;
+          return `${studentName}: ${message}`;
+        });
+        window.alert(
+          `${addedStudentIds.length} student${addedStudentIds.length === 1 ? "" : "s"} added. ` +
+          `${failedStudents.length} could not be added; failed students remain selected so you can retry.\n\n` +
+          failureDetails.join("\n"),
+        );
+      } else {
+        setProjectForMemberSelection(null);
+        setSelectedProjectMemberIds([]);
+        window.alert(
+          `${addedStudentIds.length} student${addedStudentIds.length === 1 ? "" : "s"} added to the project.`,
+        );
+      }
+    } finally {
+      setIsAddingProjectMembers(false);
     }
   }
 
@@ -563,10 +611,6 @@ export default function ProjectsPageContent() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100 h-11">
-            <button type="button" onClick={handleOpenCreateCourse} title="Create a new course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 transition hover:bg-blue-100">
-              <Plus className="h-4 w-4" />
-            </button>
-
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-0">
               <BookOpen className="h-4 w-4 text-slate-400" />
               <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="h-9 min-w-[220px] appearance-none bg-transparent pr-5 text-sm font-semibold text-slate-700 outline-none">
@@ -582,8 +626,13 @@ export default function ProjectsPageContent() {
               </select>
             </div>
 
-            <button type="button" onClick={handleOpenEditCourse} title="Edit selected course" className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">
-              <Settings className="h-4 w-4" />
+            <button
+              type="button"
+              onClick={handleOpenCourseManagement}
+              title="Manage courses"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              Course Management
             </button>
           </div>
 
@@ -647,7 +696,19 @@ export default function ProjectsPageContent() {
         </div>
       )}
 
-      <ProjectModal isOpen={isProjectModalOpen} editingProject={editingProject} projectForm={projectForm} onClose={() => setIsProjectModalOpen(false)} onSave={handleSaveProject} setProjectForm={setProjectForm} />
+      <ProjectModal
+        isOpen={isProjectModalOpen}
+        editingProject={editingProject}
+        projectForm={projectForm}
+        jiraEmail={jiraCredentials.jiraEmail}
+        jiraApiToken={jiraCredentials.jiraApiToken}
+        hasSavedJiraToken={jiraCredentials.hasSavedToken}
+        onClose={() => setIsProjectModalOpen(false)}
+        onSave={handleSaveProject}
+        onJiraEmailChange={jiraCredentials.setJiraEmail}
+        onJiraApiTokenChange={jiraCredentials.setJiraApiToken}
+        setProjectForm={setProjectForm}
+      />
 
       <CourseManagementModal
         isOpen={isCourseModalOpen}
@@ -722,9 +783,13 @@ export default function ProjectsPageContent() {
             ? [{ ...student, projectName: assignedProject.team_name }]
             : [];
         })}
-        selectedStudentId={selectedProjectMemberId}
-        onClose={() => { setProjectForMemberSelection(null); setSelectedProjectMemberId(""); }}
-        onSelectStudent={setSelectedProjectMemberId}
+        selectedStudentIds={selectedProjectMemberIds}
+        isAddingMembers={isAddingProjectMembers}
+        onClose={() => {
+          setProjectForMemberSelection(null);
+          setSelectedProjectMemberIds([]);
+        }}
+        onToggleStudent={handleToggleProjectMember}
         onAddMember={handleConfirmAddProjectMember}
       />
 

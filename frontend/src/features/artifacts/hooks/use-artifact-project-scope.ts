@@ -20,20 +20,17 @@ type Project = { id: string; team_name: string; project_name: string; jira_proje
 export function useArtifactProjectScope(role: "student" | "instructor" | null) {
   const [projectOptions, setProjectOptions] = useState<ArtifactProjectOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [selectedSprintId, setSelectedSprintId] = useState("sprint-1");
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [projectLoadError, setProjectLoadError] = useState("");
 
   useEffect(() => {
     if (role !== "instructor") return;
-    const refreshScope = () => {
-      const state = readIngestionState();
-      setSelectedProjectId(state.selectedProjectId || "");
-      setSelectedSprintId(state.selectedSprintId || "sprint-1");
+    const refreshSelectedProject = () => {
+      setSelectedProjectId(readIngestionState().selectedProjectId || "");
     };
-    refreshScope();
-    window.addEventListener("sprintsight-ingestion-updated", refreshScope);
-    return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope);
+    refreshSelectedProject();
+    window.addEventListener("sprintsight-ingestion-updated", refreshSelectedProject);
+    return () => window.removeEventListener("sprintsight-ingestion-updated", refreshSelectedProject);
   }, [role]);
 
   const [refreshKey, setRefreshKey] = useState(0);
@@ -67,7 +64,6 @@ export function useArtifactProjectScope(role: "student" | "instructor" | null) {
           }));
           setProjectOptions(options);
           setSelectedProjectId((current) => (options.some((project) => project.id === current) ? current : options[0]?.id || ""));
-          setSelectedSprintId("sprint-1");
           return;
         }
 
@@ -89,7 +85,6 @@ export function useArtifactProjectScope(role: "student" | "instructor" | null) {
         setSelectedProjectId(options.some((project) => project.id === savedProjectId)
           ? savedProjectId
           : options[0]?.id || "");
-        setSelectedSprintId(persisted.selectedSprintId || "sprint-1");
       } catch (error) {
         if (cancelled) return;
         setProjectOptions([]);
@@ -103,5 +98,5 @@ export function useArtifactProjectScope(role: "student" | "instructor" | null) {
     return () => { cancelled = true; };
   }, [role, refreshKey]);
 
-  return { projectOptions, selectedProjectId, selectedSprintId, isLoadingProjects, projectLoadError };
+  return { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError };
 }

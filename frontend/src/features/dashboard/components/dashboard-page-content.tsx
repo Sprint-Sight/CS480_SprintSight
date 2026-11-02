@@ -20,11 +20,21 @@ export default function DashboardPageContent() {
   if (!dashboard.mounted) return null;
 
   if (dashboard.role === "student") {
-    return <div className="mx-auto min-h-screen max-w-7xl space-y-8 bg-slate-50 p-8"><DashboardHeader role={dashboard.role} fullName={dashboard.fullName} /><StudentDashboardSummary project={studentContext.project} report={studentContext.report} isLoading={studentContext.isLoading} error={studentContext.error} /></div>;
+    return (
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 bg-slate-50 p-4 sm:space-y-8 sm:p-6 lg:p-8">
+        <DashboardHeader role={dashboard.role} fullName={dashboard.fullName} />
+        <StudentDashboardSummary
+          project={studentContext.project}
+          report={studentContext.report}
+          isLoading={studentContext.isLoading}
+          error={studentContext.error}
+        />
+      </div>
+    );
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-7xl space-y-8 bg-slate-50 p-8">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 bg-slate-50 p-4 sm:space-y-8 sm:p-6 lg:p-8">
       <DashboardHeader
         role={dashboard.role}
         fullName={dashboard.fullName}
@@ -32,8 +42,8 @@ export default function DashboardPageContent() {
       {dashboard.isLoading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading ingested project data...</div>}
       {dashboard.loadError && <p className="text-sm text-rose-600">{dashboard.loadError}</p>}
       <DashboardMetrics gitMetrics={dashboard.gitMetrics} jiraSnapshot={dashboard.jiraSnapshot} />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2"><CommitActivityChart commits={dashboard.gitMetrics?.commits || []} /></div>
+      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="min-w-0 lg:col-span-2"><CommitActivityChart commits={dashboard.gitMetrics?.commits || []} /></div>
         <JiraWorkList jiraSnapshot={dashboard.jiraSnapshot} isLoading={dashboard.isLoading} />
       </div>
       <RecentGitEvidence commits={dashboard.gitMetrics?.commits || []} isLoading={dashboard.isLoading} />

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 # Matches identifier-like substrings: commit SHAs, JIRA keys ("ENG-123"),
 # filenames, metric names — the kind of hard anchor a real citation should
@@ -102,3 +103,147 @@ def find_ungrounded_citations(bundle_data: str, citations: list) -> list:
             continue
         ungrounded.append(citation)
     return ungrounded
+
+# ── Resolving citations against the packed evidence ───────────────────────
+#
+# The evidence packer (services/evidence_packer.py) records every anchor it
+# shows the model in an EvidenceIndex. resolve_citations matches each model
+# citation against that index, rather than against free text, so a citation
+# survives only if it points at something the model actually saw, and the
+# result carries a structured location (file, lines, commit) for the UI.
+
+_LINE_ANCHOR = re.compile(
+    r"(?P<path>[\w.@+\-/]*[\w\-]\.?[\w\-]*)"           # path (must contain a dot or slash, checked below)
+    r"(?::|#)L?(?P<start>\d+)(?:\s*[-–]\s*L?(?P<end>\d+))?"
+    r"(?:\s*@\s*(?P<sha>[0-9a-fA-F]{7,40}))?"
+)
+# The same thing written as prose: "src/app.py lines 10-24", "app.py (line 7)".
+_PROSE_LINES = re.compile(
+    r"(?P<path>[\w.@+\-/]+\.\w+)[`'\"]?\s*[,(]?\s*lines?\s+L?(?P<start>\d+)"
+    r"(?:\s*(?:-|–|to)\s*L?(?P<end>\d+))?",
+    re.IGNORECASE,
+)
+_SHA =re.compile(r"\b[0-9a-fA-F]{7,40}\b")
+_TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+_PATH_TOKEN = re.compile(r"[\w.@+\-]+(?:/[\w.@+\-]+)*")
+
+
+def _overlap(start: int, end: int, ranges: list[tuple[int, int]]) -> tuple[int, int] | None:
+    """The largest piece of [start, end] that lies inside one shown range."""
+    best: tuple[int, int] | None = None
+    for low, high in ranges:
+        lo, hi = max(start, low), min(end, high)
+        if lo <= hi and (best is None or hi - lo > best[1] - best[0]):
+            best = (lo, hi)
+    return best
+
+
+def _match_path(candidate: str, index: Any) -> str | None:
+    candidate = candidate.strip().strip("`'\"").removeprefix("./").removeprefix("/")
+    if candidate in index.known_paths:
+        return candidate
+    # Basename or path suffix only, when it is unambiguous.
+    matches = [p for p in index.known_paths if p.endswith("/" + candidate)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _resolve_line_anchor(identifier: str, index: Any) -> dict | None:
+    matches = [*_LINE_ANCHOR.finditer(identifier), *_PROSE_LINES.finditer(identifier)]
+    for match in matches:
+        raw_path = match.group("path")
+        if "/" not in raw_path and "." not in raw_path:
+            continue
+        path = _match_path(raw_path, index)
+        if path is None:
+            continue
+        start = int(match.group("start"))
+        end = int(match.group("end") or start)
+        start, end = min(start, end), max(start, end)
+        sha_text = match.groupdict().get("sha")
+        sha = index.find_commit(sha_text) if sha_text else None
+
+        candidates: list[tuple[str | None, list[tuple[int, int]]]]
+        if sha is not None:
+            candidates = [(sha, index.diff_lines.get((path, sha), []))]
+        elif sha_text:
+            candidates = []  # names a commit the model was never shown
+        else:
+            # No commit given: HEAD contents first, then any diff that showed
+            # these lines (most recent first).
+            candidates = [(None, index.head_lines.get(path, []))]
+            candidates += sorted(
+                ((s, r) for (p, s), r in index.diff_lines.items() if p == path),
+                key=lambda item: -index.commit_shas.index(item[0]) if item[0] in index.commit_shas else 0,
+            )
+        for commit_sha, ranges in candidates:
+            clamped = _overlap(start, end, ranges)
+            if clamped:
+                lo, hi = clamped
+                lines = f"L{lo}" if lo == hi else f"L{lo}-L{hi}"
+                return {
+                    "kind": "diff_lines" if commit_sha else "file_lines",
+                    "identifier": f"{path}:{lines}" + (f"@{commit_sha[:7]}" if commit_sha else ""),
+                    "file_path": path,
+                    "line_start": lo,
+                    "line_end": hi,
+                    # HEAD lines carry the snapshot's SHA so a link pins the
+                    # exact code that was graded, even after later pushes.
+                    "commit_sha": commit_sha or index.head_sha,
+                }
+        # Real file, but those lines were never shown: keep it as a file
+        # citation rather than trust model-invented line numbers.
+        return {"kind": "file", "identifier": path, "file_path": path, "commit_sha": sha, "downgraded": True}
+    return None
+
+
+def resolve_citation(identifier: str, index: Any) -> dict | None:
+    """Match one citation identifier to the EvidenceIndex. Returns the
+    resolved location fields (including a canonical `identifier`), or None
+    when it points at nothing the model was shown."""
+    resolved = _resolve_line_anchor(identifier, index)
+    if resolved:
+        return resolved
+    for token in _SHA.findall(identifier):
+        sha = index.find_commit(token)
+        if sha:
+            return {"kind": "commit", "identifier": sha[:7], "commit_sha": sha}
+    for ticket in _TICKET.findall(identifier):
+        if ticket in index.tickets:
+            return {"kind": "ticket", "identifier": ticket}
+    for token in sorted(_PATH_TOKEN.findall(identifier), key=len, reverse=True):
+        if ("/" in token or "." in token) and (path := _match_path(token, index)):
+            return {"kind": "file", "identifier": path, "file_path": path}
+    # A named metric that was shown, e.g. "completion_percent: 80". Matched by
+    # name, since short values like 80 are too common to verify on their own.
+    lowered = identifier.lower().replace(" ", "_")
+    for name, value in index.metrics.items():
+        if name.lower() in lowered:
+            return {"kind": "other", "identifier": f"{name}={value}"}
+    # Anything else: fall back to the value-corpus check over the non-commit
+    # inputs the model was shown.
+    if not find_ungrounded_citations(index.other_values_json, [{"identifier": identifier}]):
+        return {"kind": "other", "identifier": identifier}
+    return None
+
+
+def resolve_citations(citations: list, index: Any) -> tuple[list[dict], list, int]:
+    """Resolve every citation. Returns (resolved citation dicts, dropped
+    citations, number downgraded from line- to file-level). Duplicates of an
+    already-resolved location are dropped too."""
+    resolved: list[dict] = []
+    dropped: list = []
+    downgraded = 0
+    seen: set[str] = set()
+    for citation in citations:
+        data = citation.model_dump() if hasattr(citation, "model_dump") else dict(citation)
+        location = resolve_citation(str(data.get("identifier", "")), index)
+        if location is None:
+            dropped.append(citation)
+            continue
+        if location.pop("downgraded", False):
+            downgraded += 1
+        if location["identifier"] in seen:
+            continue
+        seen.add(location["identifier"])
+        resolved.append({"reason": data.get("reason", ""), **location})
+    return resolved, dropped, downgraded

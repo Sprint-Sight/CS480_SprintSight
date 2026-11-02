@@ -10,6 +10,7 @@ from app.dependencies.auth import (
     get_action_audit_repository,
     get_assessment_repository,
     get_current_user,
+    get_instructor_jira_credentials_repository,
     get_jira_ingestion_repository,
     get_notification_repository,
     get_notification_service,
@@ -22,6 +23,7 @@ from app.dependencies.auth import (
 from app.repositories.interfaces import (
     ActionAuditRepository,
     AssessmentRepository,
+    InstructorJiraCredentialsRepository,
     NotificationRepository,
     ProjectRecord,
     ProjectRepository,
@@ -712,6 +714,10 @@ def create_project(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    instructor_jira_credentials: Annotated[
+        InstructorJiraCredentialsRepository,
+        Depends(get_instructor_jira_credentials_repository),
+    ],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> ProjectResponse:
@@ -735,6 +741,9 @@ def create_project(
         _validate_student_project_assignment(repository, course_id, member_id)
         members.append(member_id)
 
+    has_shared_jira_credentials = bool(
+        instructor_jira_credentials.get_credentials(current_user.id)
+    )
     project = ProjectRecord(
         id=str(uuid4()),
         project_name=payload.project_name,
@@ -746,10 +755,18 @@ def create_project(
         local_repo_path=payload.local_repo_path,
         created_by=current_user.id,
         created_at=datetime.now(timezone.utc),
-        jira_email=str(payload.jira_email) if payload.jira_email else None,
+        jira_email=(
+            None
+            if has_shared_jira_credentials
+            else str(payload.jira_email) if payload.jira_email else None
+        ),
         jira_domain=payload.jira_domain,
         jira_project_key=payload.jira_project_key,
-        jira_api_token_encrypted=_encrypted_jira_token(payload.jira_api_token, None, True),
+        jira_api_token_encrypted=(
+            None
+            if has_shared_jira_credentials
+            else _encrypted_jira_token(payload.jira_api_token, None, True)
+        ),
     )
     try:
         repository.create_project(project, members)

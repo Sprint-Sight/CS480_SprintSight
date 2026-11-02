@@ -7,17 +7,20 @@ from schemas.fixtures import (
     struggling_team,
 )
 from schemas.member_contribution import MemberContribution
-from schemas.rubrics_dimension_score import EvidenceCitation, RubricDimensionScore
+from schemas.rubrics_dimension_score import (
+    ResolvedEvidenceCitation,
+    RubricDimensionScore,
+)
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
 
 
-def _cite(text: str) -> EvidenceCitation:
+def _cite(text: str) -> ResolvedEvidenceCitation:
     """Wrap a hand-authored benchmark citation sentence as an EvidenceCitation --
     reused for both `identifier` and `reason` since these gold citations are
     already full sentences, not the (identifier, reason) pairs a real model
     produces."""
-    return EvidenceCitation(identifier=text, reason=text)
+    return ResolvedEvidenceCitation(identifier=text, reason=text)
 
 
 high_performing_grade = SprintAssessment(

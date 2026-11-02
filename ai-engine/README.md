@@ -86,7 +86,6 @@ The compose file now contains a lightweight `model-init` service that waits for
 Ollama to be reachable and only creates the SprintSight aliases when they are
 missing:
 
-- `sprintsight-llama` from `models/Modelfile.llama`
 - `sprintsight-qwen` from `models/Modelfile.qwen`
 - `sprintsight-mistral` from `models/Modelfile.mistral`
 - `sprintsight-gemma` from `models/Modelfile.gemma`
@@ -102,7 +101,7 @@ You can still verify the installed models with:
 docker compose exec ollama ollama list
 ```
 
-The default model is `sprintsight-llama`. Override it with
+The default model is `sprintsight-qwen`. Override it with
 `DEFAULT_MODEL_NAME` in `.env` or the compose environment.
 
 ## API
@@ -110,7 +109,7 @@ The default model is `sprintsight-llama`. Override it with
 The AI engine accepts the backend canonical payload route:
 
 ```http
-POST /assess/sprint/data?modelname=sprintsight-llama
+POST /assess/sprint/data?modelname=sprintsight-qwen
 Content-Type: application/json
 ```
 
@@ -174,14 +173,40 @@ The endpoint returns a `SprintAssessment` containing:
   payload to `api/assessment.py`.
 2. `api/assessment.py` validates the payload and builds an `ArtifactBundle`.
 3. `services/evaluator.py` starts one task per rubric dimension.
-4. `services/llm_client.py` serializes the full `ArtifactBundle` and sends
-   rubric-specific prompt to Ollama.
+4. `services/llm_client.py` builds each dimension's prompt: computed facts
+   over ALL commits, then `services/evidence_packer.py` fills the token
+   budget with the evidence that dimension needs (see below).
 5. Instructor validates the response as `RubricDimensionScore`, retrying up to
-   three times for a dimension-level failure.
+   three times for a dimension-level failure. `services/grounding.py` then
+   resolves every citation against the evidence the model was shown: it
+   keeps exact file/line anchors, clamps ranges to the lines shown,
+   downgrades unseen line numbers to file level, and drops anything else.
 6. The evaluator collects successful dimensions, calculates their average, and
    builds `SprintAssessment`.
 7. MLflow records traces and the average score. The HTTP client hooks write
    request/response audit files under `audit_logs/`.
+
+## Evidence packing
+
+The backend sends, besides commits and Jira data, per-file diffs (captured at
+ingestion) and `repo_snapshot`: every tracked file at the submitted HEAD.
+For each dimension the packer renders, within
+`min(num_ctx, LLM_EVIDENCE_CONTEXT_CAP)` minus the prompt scaffold and the
+answer reserve:
+
+| Section | What | Dimensions |
+|---|---|---|
+| Fixed inputs | Instructor expectations, Jira tickets (one JSON per line), metrics | per `_DIMENSION_ARTIFACT_FIELDS` |
+| Commit ledger | One line per commit for the whole history; shorter format, then most-relevant subset, only if it cannot fit | all except requirements |
+| File tree | Every file at HEAD with line counts | code_quality, testing, documentation, cicd |
+| HEAD contents | Line-numbered files of the dimension's category, ranked by churn and spread across modules | same |
+| Code outline | Definition/test-name lines of files not shown in full | code_quality, testing |
+| Diff excerpts | New-file line-numbered hunks, round-robin across authors | code_quality, testing, documentation, cicd |
+
+Every file and diff block carries a `cite as path:Lx-Ly[@sha7]` anchor, and the
+resolved citation (kind, file_path, line_start, line_end, commit_sha) is
+returned in `evidence_citations`. Inspect what any dataset example would send
+with `python -m research.eval.inspect_bundle --example <id>`.
 
 ## Audit records
 
@@ -202,14 +227,14 @@ Smoke-test one model first:
 
 ```powershell
 docker compose exec sprintsight_ai python -m research.validation_harness `
-    --models sprintsight-llama --repeats 1
+    --models sprintsight-qwen --repeats 1
 ```
 
 Run a broader comparison:
 
 ```powershell
 docker compose exec sprintsight_ai python -m research.validation_harness `
-    --models sprintsight-llama sprintsight-mistral sprintsight-qwen sprintsight-gemma `
+    --models sprintsight-qwen sprintsight-mistral sprintsight-gemma `
     --repeats 5
 ```
 
@@ -237,10 +262,13 @@ The main environment variables are:
 ```text
 OLLAMA_BASE_URL=http://ollama:11434/v1
 OLLAMA_TIMEOUT_SECONDS=300
-DEFAULT_MODEL_NAME=sprintsight-llama
+DEFAULT_MODEL_NAME=sprintsight-qwen
 MLFLOW_TRACKING_URI=http://mlflow_service:5000
 MLFLOW_EXPERIMENT_NAME=sprintsight_experiment
 LLM_AUDIT_LOG_DIR=/app/audit_logs
+LLM_EVIDENCE_MODE=packed            # or legacy (30-commit JSON sample)
+LLM_EVIDENCE_CONTEXT_CAP=32000      # prompt + answer tokens per call
+LLM_CHARS_PER_TOKEN=3.0             # calibrated from audit_logs usage
 ```
 
 For a clean FastAPI image rebuild:

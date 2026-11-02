@@ -95,8 +95,8 @@ Gaps in the current implementation that this closes:
 6. No bias measurement. Position bias, verbosity bias and self-preference
    bias were all unmeasured and unmentioned. Parts 6 and 7 measure the first
    two; ``assert_judge_independence`` refuses to run the third by default --
-   relevant here because every candidate in this repo is a llama3.2
-   derivative, so a llama judge grades its own family.
+   relevant here because a judge drawn from the same model family as the
+   candidates would grade its own family.
 7. No consistency measurement. ``LLM_TEMPERATURE`` defaults to 0 and is
    assumed to make the judge deterministic; Part 7 measures whether it does.
 8. Statistics without inference. ``analysis.py`` computes a bootstrap CI but
@@ -131,7 +131,7 @@ Usage
     python -m research.eval.mlflow_judge_eval selftest
 
     # Real run against local Ollama:
-    python -m research.eval.mlflow_judge_eval evaluate --judge-model llama3.2:latest
+    python -m research.eval.mlflow_judge_eval evaluate --judge-model phi4:14b
 """
 
 from __future__ import annotations
@@ -206,10 +206,10 @@ RUBRIC_MAX = 5
 JUDGE_EXPERIMENT = os.getenv("SPRINTSIGHT_JUDGE_EXPERIMENT", "sprintsight-judge-eval")
 
 # The judge MUST come from a different model family than the candidates
-# under test. Every candidate in this project is a llama3.2 derivative
-# (models/Modelfile.*, schemas/modelname.py), so a llama judge grades its own
-# family and self-preference bias -- a judge's measured tendency to prefer
-# text from its own family -- becomes indistinguishable from real quality.
+# under test (models/Modelfile.*, schemas/modelname.py); otherwise a judge
+# grading its own family introduces self-preference bias -- a judge's measured
+# tendency to prefer text from its own family -- that becomes indistinguishable
+# from real quality.
 #
 # phi4:14b is the default because the existing judge code already reaches for
 # the phi family (`SPRINTSIGHT_JUDGE_MODEL` defaults to "sprintsight-judge-phi"

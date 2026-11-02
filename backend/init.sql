@@ -337,6 +337,40 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_commits_student_id ON ingestion_commits
 CREATE INDEX IF NOT EXISTS idx_ingestion_commits_run_timestamp_sha
     ON ingestion_commits(ingestion_run_id, timestamp, sha);
 
+-- =============================================================
+-- PEER EVALUATIONS
+-- Students rate their project group members (1-5) with remarks and reason.
+-- Instructors control the evaluation window and view all evaluations.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS peer_evaluations (
+    evaluation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    rater_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    rated_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 5),
+    remarks TEXT,
+    reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (rater_id, rated_id, project_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_peer_eval_project
+    ON peer_evaluations(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_peer_eval_rater
+    ON peer_evaluations(rater_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_peer_eval_rated
+    ON peer_evaluations(rated_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS peer_evaluation_configs (
+    course_id UUID PRIMARY KEY REFERENCES courses(course_id) ON DELETE CASCADE,
+    is_open BOOLEAN NOT NULL DEFAULT FALSE,
+    opens_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    updated_by UUID NOT NULL REFERENCES users(user_id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Audit history is retained independently from users and other business rows.
 CREATE TABLE IF NOT EXISTS action_audit_events (
     audit_id TEXT PRIMARY KEY,
@@ -368,6 +402,21 @@ CREATE INDEX IF NOT EXISTS idx_override_audit_timestamp
     ON override_audit_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_override_audit_instructor_timestamp
     ON override_audit_events(instructor_id, timestamp DESC);
+
+-- =============================================================
+-- INSTRUCTOR MODEL SELECTION
+-- Each instructor's chosen AI model for sprint assessment (one row per
+-- instructor). Absence of a row means the instructor falls back to the
+-- configured default (DEFAULT_MODEL_NAME, currently sprintsight-qwen), so a
+-- newly created instructor defaults to sprintsight-qwen until they pick another
+-- model. Mirrors ensure_instructor_model_selection_schema() in
+-- repositories/postgres.py (kept in sync so a fresh DB has the table at init).
+-- =============================================================
+CREATE TABLE IF NOT EXISTS instructor_model_selections (
+    user_id UUID PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    model_id VARCHAR(255) NOT NULL DEFAULT 'sprintsight-qwen',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE OR REPLACE FUNCTION guard_audit_events_immutable()
 RETURNS TRIGGER AS $$

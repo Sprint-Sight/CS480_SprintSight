@@ -16,6 +16,7 @@ import {
   GitCompare,
   LayoutDashboard,
   Menu,
+  MessageSquare,
   Search,
   Settings,
   User,
@@ -60,6 +61,7 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
+  { label: "Peer Evaluation", href: "/peer-evaluation", icon: MessageSquare },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
   { label: "Settings", href: "/settings", icon: Settings },
@@ -71,6 +73,7 @@ const studentNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Results & Feedback", href: "/assessment-report", icon: FileText },
+  { label: "Peer Evaluation", href: "/peer-evaluation", icon: MessageSquare },
   { label: "Progress", href: "/progress", icon: GitCompare },
 ];
 
@@ -80,7 +83,15 @@ const instructorScopeRoutes = new Set([
   "/artifact-viewer",
   "/collaboration",
   "/assessment-report",
+  "/peer-evaluation",
   "/progress",
+]);
+
+const routesWithoutSprintScope = new Set([
+  "/sprint-overview",
+  "/artifact-viewer",
+  "/collaboration",
+  "/peer-evaluation",
 ]);
 
 function isActivePath(pathname: string, href: string) {
@@ -102,7 +113,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const isProjectsRoot = pathname === "/projects";
   const showsInstructorScope = instructorScopeRoutes.has(pathname);
-  const showsSprintScope = showsInstructorScope && pathname !== "/progress";
+  const showsSprintScope = showsInstructorScope && !routesWithoutSprintScope.has(pathname);
   const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings" || pathname === "/audit-log";
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -282,8 +293,8 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <>
-      <div className="min-h-screen bg-slate-50 text-slate-900">
-        <div className="grid min-h-screen grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="h-dvh overflow-hidden bg-slate-50 text-slate-900">
+        <div className="grid h-full min-h-0 min-w-0 grid-cols-1 overflow-hidden md:grid-cols-[240px_minmax(0,1fr)]">
           {/* Mobile Overlay */}
           {isSidebarOpen && (
             <div
@@ -295,7 +306,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
           {/* Sidebar */}
           <aside
-            className={`fixed inset-y-0 left-0 z-50 w-64 transform border-r border-slate-200 bg-white transition-transform duration-300 md:static md:z-auto md:transform-none md:w-auto ${
+            className={`fixed inset-y-0 left-0 z-50 w-64 transform overflow-hidden border-r border-slate-200 bg-white transition-transform duration-300 md:static md:z-auto md:transform-none md:w-auto ${
               isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
             }`}
           >
@@ -320,7 +331,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 </button>
               </div>
 
-              <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+              <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
                 {navItems.map((item) => {
                   const active = isActivePath(pathname, item.href);
                   return (
@@ -353,9 +364,9 @@ export default function DashboardShell({ children }: DashboardShellProps) {
             </div>
           </aside>
 
-          <section className="min-w-0">
-            <header className="border-b border-slate-200 bg-white px-3 py-3 sm:px-6">
-              <div className="flex items-center justify-between gap-3 sm:gap-4">
+          <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <header className="min-w-0 shrink-0 border-b border-slate-200 bg-white px-3 py-3 sm:px-6">
+              <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
                 {/* Mobile Menu Button */}
                 <button
                   type="button"
@@ -368,7 +379,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 </button>
 
                 {/* Search Bar - Hidden on small screens */}
-                <div className="relative hidden w-full max-w-xl sm:block">
+                <div className="relative hidden min-w-0 w-full max-w-xl flex-1 sm:block">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
@@ -378,7 +389,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 </div>
 
                 {/* Top right actions */}
-                <div className="ml-auto flex items-center gap-2 sm:gap-3">
+                <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
                   {/* Notifications */}
                   <div className="relative">
                     <button
@@ -472,7 +483,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
               </div>
 
               {role === "instructor" && showsInstructorScope && (
-                <div className="mt-4 flex flex-row flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 overflow-hidden">
+                <div className="mt-4 flex min-w-0 flex-row flex-wrap items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
                   <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 flex-shrink-0">
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
                     Scope
@@ -486,7 +497,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     <>
                       {/* Semester Select */}
                       {semesterOptions.length > 0 && (
-                        <div className="relative w-auto min-w-[140px] max-w-xs">
+                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
                           <select
                             value={selectedSemester}
                             onChange={(e) => setSelectedSemester(e.target.value)}
@@ -504,7 +515,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
                       {/* Section Select */}
                       {sections.length > 0 && (
-                        <div className="relative w-auto min-w-[140px] max-w-xs">
+                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
                           <select
                             value={selectedSectionId}
                             onChange={(e) => setSelectedSectionId(e.target.value)}
@@ -522,7 +533,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
                       {/* Team Select */}
                       {teamsInSelectedSection.length > 0 && (
-                        <div className="relative w-auto min-w-[140px] max-w-xs">
+                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
                           <select
                             value={selectedTeamId}
                             onChange={(e) => setSelectedTeamId(e.target.value)}
@@ -538,7 +549,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                         </div>
                       )}
                       {showsSprintScope && (
-                        <div className="relative w-auto min-w-[140px] max-w-xs">
+                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
                           <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
                             {Array.from({ length: 10 }, (_, index) => `sprint-${index + 1}`).map((sprintId) => <option key={sprintId} value={sprintId}>{sprintId}</option>)}
                           </select>
@@ -548,9 +559,9 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     </>
                   )}
 
-                  <div className="ml-auto flex items-center gap-3 flex-shrink-0">
+                  <div className="ml-auto flex min-w-0 max-w-full items-center gap-3 sm:flex-shrink-0">
                     {currentTeamStats && (
-                      <div className="flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs sm:text-sm text-blue-700 overflow-hidden">
+                      <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs text-blue-700 sm:text-sm">
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" />
                         <span className="truncate">{currentTeamStats.status} · {currentTeamStats.studentCount} students · avg {currentTeamStats.averageScore}</span>
                       </div>
@@ -559,7 +570,9 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 </div>
               )}
             </header>
-            <main>{children}</main>
+            <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+              {children}
+            </main>
           </section>
         </div>
       </div>

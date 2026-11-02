@@ -21,7 +21,7 @@ def test_convert_ai_result_to_assessment_report_maps_real_ai_payload() -> None:
         "course_id": "cs480",
         "project_id": "proj-a",
         "sprint_id": "sp1",
-        "model_name": "sprintsight-llama",
+        "model_name": "sprintsight-qwen",
     }
     ai_result = {
         "overall_score": 8,
@@ -44,9 +44,45 @@ def test_convert_ai_result_to_assessment_report_maps_real_ai_payload() -> None:
     assert report.sprint_id == "sp1"
     assert report.team_score.score == 80.0
     assert report.team_score.rationale == "Strong sprint delivery."
-    assert report.individual_scores[0].student_id == "stu-001"
-    assert report.individual_scores[0].score == 80.0
+    assert report.individual_scores == []
     assert report.recommendations == ["Improve test coverage."]
+
+
+def test_convert_ai_result_keeps_structured_evidence_details() -> None:
+    ai_result = {
+        "overall_score": 7,
+        "rubric_scores": {
+            "code_quality": {
+                "dimension": "code_quality",
+                "score": 7,
+                "justification": "Clean service layer.",
+                "evidence_citations": [
+                    {
+                        "identifier": "src/app.py:L10-L24@abc1234",
+                        "reason": "Validation is isolated in one helper.",
+                        "kind": "diff_lines",
+                        "file_path": "src/app.py",
+                        "line_start": 10,
+                        "line_end": 24,
+                        "commit_sha": "abc1234def",
+                    },
+                    {"identifier": "ENG-7", "reason": "Ticket closed with the change."},
+                ],
+            },
+        },
+    }
+
+    payload = {"course_id": "c", "project_id": "p", "sprint_id": "s"}
+    report = convert_ai_result_to_assessment_report(payload, ai_result)
+
+    detail = report.rubric_scores["code_quality"]
+    assert detail.evidence_citations == [
+        "src/app.py:L10-L24@abc1234 — Validation is isolated in one helper.",
+        "ENG-7 — Ticket closed with the change.",
+    ]
+    assert detail.evidence_details[0].file_path == "src/app.py"
+    assert (detail.evidence_details[0].line_start, detail.evidence_details[0].line_end) == (10, 24)
+    assert detail.evidence_details[1].kind == "other"
 
 
 def faculty_token() -> str:
@@ -79,10 +115,10 @@ def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_t
         lambda: SimpleNamespace(ai_engine_url="http://host.docker.internal:8001/", default_model_name="mock-rubric-v1"),
     )
 
-    result = send_assessment_to_ai_engine({"sprint_context": {"project_id": "demo"}}, "sprintsight-llama")
+    result = send_assessment_to_ai_engine({"sprint_context": {"project_id": "demo"}}, "sprintsight-qwen")
 
     assert result == {"status": "ok"}
-    assert called["url"] == "http://host.docker.internal:8001/assess/sprint/data?modelname=sprintsight-llama"
+    assert called["url"] == "http://host.docker.internal:8001/assess/sprint/data?modelname=sprintsight-qwen"
     assert called["json"] == {"sprint_context": {"project_id": "demo"}}
     assert called["timeout"] is None
 

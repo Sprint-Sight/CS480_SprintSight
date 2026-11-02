@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    artifacts,
     assessment,
     audit,
     auth,
@@ -8,11 +9,13 @@ from app.api.v1.endpoints import (
     export,
     health,
     ingestion,
+    jira_outlier,
     manual_text,
     models,
     notifications,
     peer_evaluation,
     projects,
+    settings,
     users,
 )
 
@@ -21,10 +24,13 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(projects.router)
+api_router.include_router(settings.router)
 api_router.include_router(manual_text.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(ingestion.jira_ingestion_router)
+api_router.include_router(jira_outlier.router)
 api_router.include_router(assessment.router)
+api_router.include_router(artifacts.router)
 api_router.include_router(models.router)
 api_router.include_router(audit.router)
 api_router.include_router(documents.router)

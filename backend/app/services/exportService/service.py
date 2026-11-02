@@ -74,19 +74,14 @@ class ExportService:
                 f"project {request.project_id}, sprint {request.sprint_id}."
             )
 
-        # Resolve instructor name for the watermark.
-        instructor_name = self._resolve_instructor_name(current_user_id)
-
         if request.format == ExportFormat.PDF:
             file_bytes = self._build_pdf(
                 report,
-                instructor_name=instructor_name,
                 include_student_emails=request.include_student_emails,
             )
         else:
             file_bytes = self._build_csv(
                 report,
-                instructor_name=instructor_name,
                 include_student_emails=request.include_student_emails,
             )
 
@@ -165,34 +160,18 @@ class ExportService:
         reports = repository.list_reports(course_id, project_id, sprint_id)
         return reports[0] if reports else None
 
-    def _resolve_instructor_name(self, user_id: str) -> str:
-        if self._user_repository is None:
-            return "Instructor"
-        user = self._user_repository.get_by_id(user_id)
-        return user.full_name if user else "Instructor"
-
     # ------------------------------------------------------------------
-    # PDF generation (with watermark)
+    # PDF generation
     # ------------------------------------------------------------------
 
     def _build_pdf(
         self,
         report,
-        instructor_name: str,
         include_student_emails: bool,
     ) -> bytes:
         buffer = io.BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
-
-        # Watermark: instructor name, drawn diagonally across each page.
-        pdf.setFillColorRGB(0.85, 0.85, 0.85)
-        pdf.setFont("Helvetica", 40)
-        pdf.saveState()
-        pdf.translate(width / 2, height / 2)
-        pdf.rotate(45)
-        pdf.drawCentredString(0, 0, f"Exported by {instructor_name}")
-        pdf.restoreState()
 
         # --- Header ---
         pdf.setFont("Helvetica-Bold", 16)
@@ -207,13 +186,8 @@ class ExportService:
             height - 140,
             f"Generated: {report.generated_at.strftime('%Y-%m-%d %H:%M UTC')}",
         )
-        pdf.drawString(
-            50,
-            height - 155,
-            f"Exported by: {instructor_name}",
-        )
 
-        y = height - 190
+        y = height - 180
 
         # --- Team score ---
         pdf.setFont("Helvetica-Bold", 12)
@@ -288,31 +262,21 @@ class ExportService:
             pdf.drawString(70, y, "No recommendations available.")
             y -= 14
 
-        # --- Footer with watermark repetition and expiry ---
-        pdf.setFont("Helvetica-Oblique", 8)
-        pdf.drawString(50, 40, f"Exported by {instructor_name}")
-        pdf.drawRightString(width - 50, 40, "Confidential - For instructor use only")
-
         pdf.showPage()
         pdf.save()
         return buffer.getvalue()
 
     # ------------------------------------------------------------------
-    # CSV generation (with watermark)
+    # CSV generation
     # ------------------------------------------------------------------
 
     def _build_csv(
         self,
         report,
-        instructor_name: str,
         include_student_emails: bool,
     ) -> bytes:
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-
-        # Watermark row.
-        writer.writerow([f"Exported by {instructor_name} - SprintSight Assessment Report"])
-        writer.writerow([])
 
         # Metadata.
         writer.writerow(["Report ID", report.report_id])
@@ -320,7 +284,6 @@ class ExportService:
         writer.writerow(["Project", report.project_id])
         writer.writerow(["Sprint", report.sprint_id])
         writer.writerow(["Generated", report.generated_at.isoformat()])
-        writer.writerow(["Exported by", instructor_name])
         writer.writerow([])
 
         # Team score.
@@ -367,10 +330,6 @@ class ExportService:
                 writer.writerow([rec])
         else:
             writer.writerow(["No recommendations available"])
-
-        # Footer watermark.
-        writer.writerow([])
-        writer.writerow([f"Exported by {instructor_name} - Confidential - For instructor use only"])
 
         return buffer.getvalue().encode("utf-8")
 

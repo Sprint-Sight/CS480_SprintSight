@@ -109,8 +109,7 @@ export function useAssessmentReport() {
     if (!scope || !isUuid(scope.projectId)) { setAssessmentError("The selected course, project, and sprint must refer to the same project scope."); return; }
     setAssessmentError(""); setIsGenerating(true); setAssessmentProgress(0); setAssessmentMessage("Starting assessment...");
     try {
-      const modelName = localStorage.getItem("sprintsight-selected-model") || "sprintsight-llama";
-      const job = await apiRequest<{ job_id: string }>("/assessments/assess", { method: "POST", body: JSON.stringify({ course_id: scope.courseId, project_id: scope.projectId, sprint_id: scope.sprintId, model_name: modelName }) });
+      const job = await apiRequest<{ job_id: string }>("/assessments/assess", { method: "POST", body: JSON.stringify({ course_id: scope.courseId, project_id: scope.projectId, sprint_id: scope.sprintId }) });
       saveActiveAssessmentJob({ jobId: job.job_id, courseId: scope.courseId, projectId: scope.projectId, sprintId: scope.sprintId });
       await monitorJob(job);
     } catch (error) { setAssessmentError(error instanceof Error ? error.message : "Assessment generation failed."); }

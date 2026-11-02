@@ -29,6 +29,7 @@ from app.repositories.interfaces import (
 from app.schemas.assessment import (
     AssessmentReport,
     AssessRequest,
+    EvidenceDetail,
     ManualAssessmentPatch,
     OverrideRequest,
     OverrideResponse,
@@ -37,7 +38,11 @@ from app.schemas.assessment import (
     TeamScore,
 )
 from app.services.documentsService.service import collect_project_context_documents
-from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
+from app.services.gitlabGithub.service import (
+    collect_repository_snapshot,
+    ingest_github_metrics,
+    resolve_local_repository_path,
+)
 from app.services.jiraService.service import enrich_jira_metrics
 from app.services.manualTextService.service import get_manual_text
 from app.services.middleManService.service import (
@@ -89,6 +94,23 @@ def _format_evidence_citations(evidence: object) -> list[str]:
     return formatted
 
 
+def _evidence_details(evidence: object) -> list[EvidenceDetail]:
+    """Keep the AI engine's resolved citation fields (file path, line range,
+    commit) in structured form; plain-string citations have none to keep."""
+    if not isinstance(evidence, list):
+        return []
+    details = []
+    for item in evidence:
+        if isinstance(item, dict) and item.get("identifier"):
+            try:
+                details.append(EvidenceDetail.model_validate(item))
+            except ValueError:
+                details.append(EvidenceDetail(
+                    identifier=str(item["identifier"]), reason=str(item.get("reason", "")),
+                ))
+    return details
+
+
 def convert_ai_result_to_assessment_report(
     payload: AssessRequest | dict,
     ai_result: dict,
@@ -114,24 +136,11 @@ def convert_ai_result_to_assessment_report(
 
     overall_score = ai_result.get("overall_score")
 
-    individual_scores = []
-    for member in ai_result.get("member_contributions", []) or []:
-        if isinstance(member, dict):
-            student_id = member.get("student_id")
-            contribution_score = member.get("contribution_score")
-            if not student_id:
-                continue
-            score = round((contribution_score or 0) * 10, 2)
-            rational_text = " | ".join(member.get("primary_contributions") or [])
-            if member.get("evidence"):
-                rational_text = rational_text + " Evidence: " + " | ".join(member.get("evidence") or [])
-            individual_scores.append(
-                StudentScore(
-                    student_id=str(student_id),
-                    score=score,
-                    rationale=rational_text or "AI-generated member contribution assessment.",
-                )
-            )
+    # Scoring is team-level: the whole team receives one grade and there are no
+    # per-member grades. member_contributions is intentionally not consumed for
+    # scoring (peer evaluation and per-member data may still be collected, just
+    # not graded), so individual_scores is always empty.
+    individual_scores: list[StudentScore] = []
 
     rubric_scores = {}
     strengths = list(ai_result.get("strengths") or [])
@@ -154,6 +163,7 @@ def convert_ai_result_to_assessment_report(
                     score=normalized_score,
                     justification=detail.get("justification") or "AI-generated rubric justification.",
                     evidence_citations=_format_evidence_citations(evidence),
+                    evidence_details=_evidence_details(evidence),
                 )
 
     recommendations = list(ai_result.get("key_recommendations") or [])
@@ -359,10 +369,24 @@ def run_assessment_job(
                 payload.project_id,
             )
 
+        # Snapshot the files at the ingested HEAD so the AI grades the final
+        # submission, not only the commit history. Like context documents, a
+        # failure here degrades to history-only grading instead of failing.
+        repo_snapshot: dict | None = None
+        try:
+            repo_snapshot = collect_repository_snapshot(repository_path, metrics.head_sha or "HEAD")
+        except Exception:
+            logger.exception(
+                "Failed to snapshot repository for project %s; "
+                "continuing with commit history only.",
+                payload.project_id,
+            )
+
         job_repo.update_job(job_id, status="building_payload", progress=50, current_stage="building_payload")
         job_repo.append_event(job_id, "progress", {"status": "building_payload", "progress": 50, "message": "Building AI payload."})
         middle_man_payload = build_assessment_payload(
             metrics, artifact_signals, manual_text, jira_tickets, project_context_documents,
+            repo_snapshot,
         )
 
         job_repo.update_job(job_id, status="ai_evaluating", progress=70, current_stage="ai_evaluating")
@@ -634,7 +658,10 @@ def update_manual_assessment(
         for key, detail in report.rubric_scores.items()
     }
     supplied_rubric_scores = patch.get("rubric_scores") or {}
-    rubric_scores.update(supplied_rubric_scores)
+    # Merge per dimension rather than replace: an editor that only sends
+    # score/justification/evidence_citations must not wipe evidence_details.
+    for dimension, supplied in supplied_rubric_scores.items():
+        rubric_scores[dimension] = {**rubric_scores.get(dimension, {}), **supplied}
     for dimension in ("requirements", "code_quality", "documentation", "collaboration"):
         score_key = f"{dimension}_score"
         justification_key = f"{dimension}_justification"

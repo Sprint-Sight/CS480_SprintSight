@@ -337,7 +337,6 @@ def test_export_csv_generates_download_url(override_user_repository) -> None:
         file_bytes, _, fmt = _EXPORT_STORE[download_token]
         assert fmt.value == "csv"
         content = file_bytes.decode("utf-8")
-        assert "Exported by" in content  # watermark
         assert "rpt-export-1" in content
         assert "85.0" in content
     finally:
@@ -568,7 +567,7 @@ def test_export_download_410_when_expired(override_user_repository) -> None:
         _clear_overrides()
 
 
-def test_export_pdf_contains_instructor_watermark(override_user_repository) -> None:
+def test_export_pdf_generates_valid_pdf(override_user_repository) -> None:
     project_repository, course = _setup_course_and_project()
     assessment_repository = InMemoryAssessmentRepository()
     export_log_repository = InMemoryExportLogRepository()
@@ -603,7 +602,7 @@ def test_export_pdf_contains_instructor_watermark(override_user_repository) -> N
         download_token = download_url.split("/")[-1]
         file_bytes, _, _ = _EXPORT_STORE[download_token]
         assert file_bytes.startswith(b"%PDF")
-        assert len(file_bytes) > 100  # non-trivial PDF with watermark and content
+        assert len(file_bytes) > 100  # non-trivial PDF with content
     finally:
         _clear_overrides()
 

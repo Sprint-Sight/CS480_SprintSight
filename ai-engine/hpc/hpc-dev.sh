@@ -295,7 +295,6 @@ ensure_models() {
 
     info "Ensuring all SprintSight models exist on remote Ollama..."
     echo ""
-    create_model_via_api "sprintsight-llama"   "llama3.2"    "Modelfile.llama"
     create_model_via_api "sprintsight-qwen"    "qwen3:8b"    "Modelfile.qwen"
     create_model_via_api "sprintsight-mistral" "mistral:7b"  "Modelfile.mistral"
     create_model_via_api "sprintsight-gemma"   "gemma4:12b"  "Modelfile.gemma"

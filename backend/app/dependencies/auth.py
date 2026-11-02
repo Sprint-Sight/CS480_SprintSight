@@ -11,6 +11,7 @@ from app.repositories.in_memory import (
     InMemoryEmailOutboxRepository,
     audit_action_repo,
     audit_repo,
+    instructor_jira_credentials_repo,
     instructor_model_selection_repo,
     jira_ingestion_repo,
     manual_text_repo,
@@ -24,6 +25,7 @@ from app.repositories.interfaces import (
     AuditRetentionConfigRepository,
     DocumentRepository,
     ExportLogRepository,
+    InstructorJiraCredentialsRepository,
     InstructorModelSelectionRepository,
     JiraIngestionRunRepository,
     ManualTextRepository,
@@ -113,6 +115,10 @@ def get_rubric_weights_repository(request: Request) -> RubricWeightsRepository:
 
 def get_instructor_model_selection_repository(request: Request) -> InstructorModelSelectionRepository:
     return getattr(request.app.state, "instructor_model_selection_repository", instructor_model_selection_repo)
+
+
+def get_instructor_jira_credentials_repository(request: Request) -> InstructorJiraCredentialsRepository:
+    return getattr(request.app.state, "instructor_jira_credentials_repository", instructor_jira_credentials_repo)
 
 
 def get_current_user(

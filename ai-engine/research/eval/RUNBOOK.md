@@ -74,8 +74,8 @@ http://localhost:5000
 ## 2. Pull the judge model
 
 The judge must come from a **different model family** than the candidates.
-Every candidate here is a `llama3.2` derivative, so a llama judge grades its
-own family; `assert_judge_independence()` will refuse to run.
+A judge from the same family as a candidate grades its own family, so
+`assert_judge_independence()` will refuse to run in that case.
 
 On the cluster, inside the running Ollama container:
 ```bash

@@ -147,7 +147,7 @@ async def health_check():
         200 OK:   {"status": "degraded", "ollama": {"status": "ok", "available": false}}
         503:      {"status": "error", "ollama": {"status": "error", "error": "..."}}
     """
-    model_name = os.getenv("DEFAULT_MODEL_NAME", "sprintsight-llama")
+    model_name = os.getenv("DEFAULT_MODEL_NAME", "sprintsight-qwen")
     ollama_status = await check_ollama_health(model_name)
  
     if ollama_status.get("status") == "error":

@@ -10,3 +10,7 @@ mypy_path = "."
 [[tool.mypy.overrides]]
 module = ["judges.citation_ground_custom_judge", "judges.run_judges", "research.judge_canary"]
 ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

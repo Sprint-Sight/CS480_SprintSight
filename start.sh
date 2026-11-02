@@ -68,7 +68,7 @@ fi
 #    host ports (host.docker.internal), so they never need to share a project.
 echo ""
 echo "[4/4] Starting the application stack..."
-docker compose -p backend -f "$BE/docker-compose.yml" up -d
+docker compose -p backend -f "$BE/docker-compose.yml" up -d --build
 
 echo ""
 echo "========================================="
