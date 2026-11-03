@@ -1,4 +1,5 @@
 from collections import OrderedDict
+
 from schemas.artifact_bundle import ArtifactBundle
 
 _MAX = 32

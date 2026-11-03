@@ -1,12 +1,8 @@
-import json
-from typing import Any
 
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
     Feedback,
-    SpanType,
-    Trace,
 )
 from mlflow.genai.scorers import scorer
 
@@ -56,12 +52,12 @@ def numeric_grade_accuracy(outputs: dict, expectations: dict) -> list[Feedback]:
 
     # Coverage check: if any dimension is missing/failed, report it
     feedbacks.append(Feedback(name="coverage_check", value=round(scored_dimensions / total_dimensions, 4),
-                              rationale=f"Missing/failed dimensions count as MAX_ERROR (fixed penalty)", source=_CODE_SOURCE))
+                              rationale="Missing/failed dimensions count as MAX_ERROR (fixed penalty)", source=_CODE_SOURCE))
 
     # Penalised MAE: Missing dim counts as worst possible error
     penalised = (sum(abs_errors) + (total_dimensions - scored_dimensions) * MAX_ERROR) / total_dimensions
     feedbacks.append(Feedback(name="grade_penalised_mae", value=round(penalised, 4),
-                              rationale=f"Missing dimensions count as the worst error", source=_CODE_SOURCE))
+                              rationale="Missing dimensions count as the worst error", source=_CODE_SOURCE))
 
     if scored_dimensions:
         feedbacks += [

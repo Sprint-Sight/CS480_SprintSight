@@ -1,8 +1,10 @@
 from pathlib import Path
+
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.sprint_assessment import SprintAssessment
-from schemas.rubrics_score import RubricsScore, RubricDimensionScore
 from schemas.member_contribution import MemberContribution
+from schemas.rubrics_score import RubricDimensionScore, RubricsScore
+from schemas.sprint_assessment import SprintAssessment
+
 
 # Citations must be dicts: ModelOutput.coerce_citations mangles EvidenceCitation objects
 # (identifier=str(obj), reason="") and then fails the 15-char reason minimum.

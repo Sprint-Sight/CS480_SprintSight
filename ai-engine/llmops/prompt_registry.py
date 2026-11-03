@@ -1,6 +1,9 @@
 import logging
+
 from mlflow import MlflowClient
+from mlflow.exceptions import MlflowException
 from mlflow.genai import load_prompt, register_prompt, set_prompt_alias
+
 from prompts.templates import render_sprint_feedback_prompt
 from schemas.rubrics_dimension_score import DimensionName
 
@@ -12,9 +15,9 @@ PRODUCTION_ALIAS = "production"
 def get_production_prompt(prompt_name):
     try:
         return load_prompt(f"prompts:/{prompt_name}@{PRODUCTION_ALIAS}")
-    except Exception as e:
-        log.warning(f"No production prompt for '{prompt_name}': {e}")
-        print("No production prompt for '{prompt_name}': {e}")
+    except MlflowException as e:
+        log.warning("No production prompt for '%s': %s", prompt_name, e)
+        print(f"No production prompt for '{prompt_name}': {e}")
         return None
 
 def assign_prompt_alias(name: DimensionName, alias: str, version: str):

@@ -8,15 +8,19 @@ triggered here genuinely exercises the same path the live endpoint uses.
 Usage:
     docker compose exec sprintsight_ai python -m research.run_ab_trial --model sprintsight-qwen
 """
-import argparse, asyncio, json, mlflow
+import argparse
+import asyncio
+import json
 from pathlib import Path
+
+import mlflow
 from fastapi import BackgroundTasks
 
-from schemas.artifact_bundle import ArtifactBundle
-from prompts.dimension_criteria import DIMENSIONS
-from services.evaluator import evaluate_sprint
 from judges.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
+from prompts.dimension_criteria import DIMENSIONS
+from schemas.artifact_bundle import ArtifactBundle
+from services.evaluator import evaluate_sprint
 
 CS203g6_BUNDLE_PATH = Path(__file__).parent / "cs203g6_AB.json"
 CS203jy_BUNDLE_PATH = Path(__file__).parent / "cs203jy_AB.json"
