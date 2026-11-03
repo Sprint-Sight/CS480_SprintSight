@@ -1,0 +1,90 @@
+{
+  "sprint_id": "2026-08-10_to_2026-08-21",
+  "team_id": "Team_Gamma",
+  "prompt_version": "v1.0",
+  "overall_score": 2.0,
+  "rubric_scores": {
+    "code_quality": {
+      "dimension": "code_quality", "score": 3, "evaluation_failed": false,
+      "justification": "8 commits add only +79/-6 lines; the largest is 'Attempt to implement API' (+30). Messages are vague ('fix', 'update', 'Refactor API' for a +5/-1 change), 7 of 8 commits land between 22:00 and 01:15, and .DS_Store is committed twice. Some real schema, model and route code exists, which keeps this just above 1-2.",
+      "evidence_citations": [
+        {"identifier": "343c4a837fdb4c7f67ec682a9d8990e64a95ae9b", "reason": "'Attempt to implement API' (+30) is the largest commit of the sprint and its message signals unfinished work."},
+        {"identifier": "3220fec4333b1fe9f36ffa0fa09602de4a38aa5d", "reason": "'fix' (+2/-2 on api/routes.py) three minutes after 'Refactor API' is an uninformative trial-and-error commit."},
+        {"identifier": "e6fe0583186b63d33cd1d97205bc7272a02612c0", "reason": "'update' (+3/-1 on db/models.py) also re-commits .DS_Store, a macOS junk file."}
+      ],
+      "strengths": ["Each member committed some code", "Schema, models and routes are separated into modules"],
+      "areas_for_improvement": ["Write messages that say what changed and why", "Commit earlier in the sprint instead of near midnight", "Add .DS_Store and __pycache__/ to .gitignore"]
+    },
+    "testing": {
+      "dimension": "testing", "score": 2, "evaluation_failed": false,
+      "justification": "No test file appears in any of the 8 commits; only db/, api/ and junk files change. The only testing evidence is DB-3 'Write DB Tests', which is still To Do. Scored 2 rather than 1 because testing was at least planned as a ticket.",
+      "evidence_citations": [
+        {"identifier": "DB-3", "reason": "'Write DB Tests' (2 points, Hank) is still To Do at sprint end, so the planned testing never started."},
+        {"identifier": "9a747db6b3444485d2cce7856161533de5f94d47", "reason": "'add models' adds db/models.py with no accompanying test file."},
+        {"identifier": "f47bc256d27e5da5129c068fd91beb4f669ca7ab", "reason": "'Refactor API' changes api/routes.py with no test to show behaviour was preserved."}
+      ],
+      "strengths": ["A testing ticket exists in the backlog"],
+      "areas_for_improvement": ["Start DB-3 and add tests for db/schema.py and api/routes.py", "Add at least one test with every feature commit"]
+    },
+    "documentation": {
+      "dimension": "documentation", "score": 1, "evaluation_failed": false,
+      "justification": "No README, docs/ or comment-only change exists in any of the 8 commits, and Jira summaries are two-word labels ('Design DB', 'Setup ORM') with no description of the intended work. No documentation effort is recorded in any system.",
+      "evidence_citations": [
+        {"identifier": "DB-1", "reason": "'Design DB' is a two-word summary with no detail on what the schema should contain."},
+        {"identifier": "DB-2", "reason": "'Setup ORM' gives no description or acceptance criteria for the task."},
+        {"identifier": "53e5d69ef75e4658cb372ae0f364965d41e77ef5", "reason": "'Start DB schema' adds db/schema.py with no README or docs explaining the design."}
+      ],
+      "strengths": [],
+      "areas_for_improvement": ["Add a README with setup steps and the schema design", "Write ticket summaries that describe the deliverable"]
+    },
+    "requirements": {
+      "dimension": "requirements", "score": 2, "evaluation_failed": false,
+      "justification": "0 of 3 tickets are Done: DB-1 'Design DB' (5 points) is In Progress, while DB-2 'Setup ORM' (3) and DB-3 'Write DB Tests' (2) are still To Do. 0 of 10 story points delivered. Scored 2 rather than 1 only because DB-1 shows some progress.",
+      "evidence_citations": [
+        {"identifier": "DB-1", "reason": "'Design DB' (5 points) is still In Progress at sprint end."},
+        {"identifier": "DB-2", "reason": "'Setup ORM' (3 points) never left To Do."},
+        {"identifier": "DB-3", "reason": "'Write DB Tests' (2 points) never left To Do."}
+      ],
+      "strengths": ["All tickets estimated and assigned"],
+      "areas_for_improvement": ["Break DB-1 into smaller tickets that can be finished within the sprint", "Move tickets as work starts so the board reflects reality"]
+    },
+    "collaboration": {
+      "dimension": "collaboration", "score": 3, "evaluation_failed": false,
+      "justification": "Peer ratings average 2.67 (16/30, only 2s and 3s) and comments describe slow responses and minimal effort ('Hank did the bare minimum'). Tickets are spread one per member (5/3/2 points), but none is Done, so the even split reflects shared under-delivery rather than teamwork. Band 3-5 by rating, scored at its floor.",
+      "evidence_citations": [
+        {"identifier": "Hank -> Greg (2/5)", "reason": "'Greg didn't contribute much' is one of two 2/5 ratings in the team."},
+        {"identifier": "Frank -> Hank (3/5)", "reason": "'Hank did the bare minimum' shows low trust in a teammate's effort."},
+        {"identifier": "DB-2", "reason": "Frank's 3-point ticket is still To Do, consistent with 'Frank was slow to respond'."}
+      ],
+      "strengths": ["Every member was assigned a ticket"],
+      "areas_for_improvement": ["Hold short stand-ups to surface blockers", "Pair on DB-1 so the schema is finished together"]
+    },
+    "cicd": {
+      "dimension": "cicd", "score": 1, "evaluation_failed": false,
+      "justification": "None of the 8 commits touches a workflow, Dockerfile, docker-compose or any build or deploy file; changes are limited to db/schema.py, db/models.py, api/routes.py and junk files. No CI/CD practice is evident.",
+      "evidence_citations": [
+        {"identifier": "53e5d69ef75e4658cb372ae0f364965d41e77ef5", "reason": "'Start DB schema' sets up the repo with no pipeline or build configuration."},
+        {"identifier": "440641154794edfdcfb5de88165a8ad90d7dc82c", "reason": "'Merge branch main' integrates work with no automated check of any kind."},
+        {"identifier": "3421bf9b12d5bebc51d7f229a3a12b7d1fb06dde", "reason": "'Fix DB schema' fixes code manually; no CI exists to catch the original error."}
+      ],
+      "strengths": [],
+      "areas_for_improvement": ["Add a minimal GitHub Actions workflow that installs dependencies and runs tests", "Containerise the app once it runs"]
+    }
+  },
+  "member_contributions": [
+    {"student_id": "Greg", "contribution_score": 3,
+     "primary_contributions": ["Started the DB schema (DB-1, In Progress)"],
+     "evidence": ["3 commits (1 merge), +25/-2", "53e5d69ef75e4658cb372ae0f364965d41e77ef5 Start DB schema", "Peer ratings 3 and 2"]},
+    {"student_id": "Frank", "contribution_score": 3,
+     "primary_contributions": ["Draft API routes (not his assigned DB-2 ticket)"],
+     "evidence": ["3 commits, +37/-3", "343c4a837fdb4c7f67ec682a9d8990e64a95ae9b Attempt to implement API", "Peer ratings 3 and 2"]},
+    {"student_id": "Hank", "contribution_score": 2,
+     "primary_contributions": ["Small db/models.py file"],
+     "evidence": ["2 commits, +17/-1", "9a747db6b3444485d2cce7856161533de5f94d47 add models", "Assigned DB-3 (tests) is still To Do"]}
+  ],
+  "executive_summary": "In the 2026-08-10 to 2026-08-21 sprint Team_Gamma produced 8 small, late-night commits (+79/-6) touching a DB schema, models and API routes, but finished none of its 3 tickets (0/10 points). There are no tests, no documentation and no CI/CD, commit messages are vague, and peers rate each other 2.67/5 on average.",
+  "strengths": ["Each member committed some code", "Tickets are estimated and assigned"],
+  "weaknesses": ["Zero tickets Done", "No tests, documentation or CI/CD", "Vague commit messages and late-night commits", "Low mutual peer ratings"],
+  "key_recommendations": ["Split DB-1 into tickets small enough to finish and pair on them.", "Write at least one test per feature commit and start DB-3.", "Use descriptive commit messages and commit throughout the sprint.", "Add a README and a basic CI workflow that runs the tests."],
+  "failed_dimensions": []
+}

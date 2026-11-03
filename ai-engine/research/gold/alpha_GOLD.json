@@ -1,0 +1,90 @@
+{
+  "sprint_id": "2026-08-10_to_2026-08-21",
+  "team_id": "Team_Alpha",
+  "prompt_version": "v1.0",
+  "overall_score": 8.67,
+  "rubric_scores": {
+    "code_quality": {
+      "dimension": "code_quality", "score": 9, "evaluation_failed": false,
+      "justification": "8 commits (+867/-31) split across all three members (Alice 2, Bob 3, Charlie 3). Every feature commit is single-purpose and prefixed with its Jira key (e.g. 'AUTH-3: Implement refresh-token rotation and revocation list'), and AUTH-1 reached main through a reviewed PR (#4). Only nit: a .DS_Store file was committed with the AUTH-1 middleware.",
+      "evidence_citations": [
+        {"identifier": "8f99f180560b8f4806660af960820b9df89fed5d", "reason": "'AUTH-3: Implement refresh-token rotation and revocation list' (+214/-18) ships the feature and its own test file in one focused commit."},
+        {"identifier": "87f13cb9e574f1b37396e8c96dc5894ec5a8558f", "reason": "'AUTH-1: Add JWT issue/verify middleware with configurable expiry' (+154/-3) is a substantial, clearly described core contribution."},
+        {"identifier": "09aedf3df2810e64804d89e28396cda937d19c94", "reason": "Bob merging Alice's feature/AUTH-1 branch via PR #4 shows peer review before the code reached main."}
+      ],
+      "strengths": ["Descriptive, ticket-keyed commit messages throughout", "Small single-purpose commits from every member", "Feature branch merged through a pull request"],
+      "areas_for_improvement": ["Add .DS_Store to .gitignore (committed in the AUTH-1 commit)", "Only one PR merge is visible; route every feature branch through a PR"]
+    },
+    "testing": {
+      "dimension": "testing", "score": 9, "evaluation_failed": false,
+      "justification": "AUTH-2, a dedicated testing ticket, is Done, and three explicit test commits add 322 test lines: unit tests for token issue/expiry/tampering, refresh-rotation tests, and an integration test of the login -> refresh -> logout flow. The AUTH-4 CI workflow runs pytest on every PR. No coverage figure is reported.",
+      "evidence_citations": [
+        {"identifier": "AUTH-2", "reason": "Dedicated testing ticket 'Unit and integration tests for auth middleware and refresh flow' is Done, assigned to Bob."},
+        {"identifier": "561dd19259f86355bcb4d6a98265625c7c77d7e0", "reason": "'AUTH-2: Add unit tests for token issue, expiry and tampered signatures' adds tests/test_middleware.py and tests/conftest.py (+142)."},
+        {"identifier": "678ac359590714c637a8fea6408fa5f27efce058", "reason": "'AUTH-2: Add integration tests for login -> refresh -> logout flow' adds tests/integration/test_auth_flow.py (+103)."}
+      ],
+      "strengths": ["Testing tracked as its own ticket and completed", "Both unit and integration tests", "Tests shipped alongside AUTH-3 in the same commit"],
+      "areas_for_improvement": ["No coverage percentage is reported", "Integration tests arrived on day 8, after most features were merged"]
+    },
+    "documentation": {
+      "dimension": "documentation", "score": 8, "evaluation_failed": false,
+      "justification": "'Document auth endpoints, env vars and local setup in README' (+152/-6) explicitly updates README.md and adds docs/auth-api.md, and every Jira summary states its deliverable precisely. Held below 9 because all documentation landed in one end-of-sprint commit with no ticket key, so docs lagged the features and the work is untracked in Jira.",
+      "evidence_citations": [
+        {"identifier": "62a42b1f00d2c4e668f37328995f6db99ecb67da", "reason": "'Document auth endpoints, env vars and local setup in README' updates README.md and adds docs/auth-api.md (+152/-6)."},
+        {"identifier": "AUTH-1", "reason": "'JWT issue/verify middleware with configurable expiry' clearly documents what the completed ticket delivered."},
+        {"identifier": "AUTH-4", "reason": "'CI pipeline: lint, test and Docker build on every PR' is precise, but no ticket covers the README/API docs work."}
+      ],
+      "strengths": ["Dedicated README and API documentation file", "Specific, informative Jira summaries"],
+      "areas_for_improvement": ["Track documentation as a ticket and update docs with each feature", "Documentation arrived only on day 10 in a single commit"]
+    },
+    "requirements": {
+      "dimension": "requirements", "score": 9, "evaluation_failed": false,
+      "justification": "All 4 Jira tickets (AUTH-1 to AUTH-4) are Done, delivering 21 of 21 story points across two Stories and two Tasks, with nothing left In Progress, In Review or Blocked. Held at 9 rather than 10 only because the committed scope is modest (4 tickets, 21 points) for a three-person, two-week sprint.",
+      "evidence_citations": [
+        {"identifier": "AUTH-1", "reason": "Story 'JWT issue/verify middleware with configurable expiry' (8 points) is Done."},
+        {"identifier": "AUTH-3", "reason": "Story 'Refresh-token rotation and revocation' (5 points) is Done."},
+        {"identifier": "AUTH-4", "reason": "Task 'CI pipeline: lint, test and Docker build on every PR' (3 points) is Done."}
+      ],
+      "strengths": ["100% of tickets and story points completed", "Every ticket estimated and assigned"],
+      "areas_for_improvement": ["Scope is modest; consider committing to more points next sprint", "Add a ticket for documentation work"]
+    },
+    "collaboration": {
+      "dimension": "collaboration", "score": 9, "evaluation_failed": false,
+      "justification": "Peer ratings average 4.67 (28/30: four 5s, two 4s) and every comment cites specific work (PR reviews, tests that caught a bug, CI on day one). Workload is near-even by story points: Alice 8 (AUTH-1), Charlie 8 (AUTH-3, AUTH-4), Bob 5 (AUTH-2). The two 4/5 ratings carry constructive critique, which is a healthy signal.",
+      "evidence_citations": [
+        {"identifier": "Charlie -> Alice (5/5)", "reason": "'Reviewed my refresh-rotation PR within a few hours' shows active cross-member code review."},
+        {"identifier": "Charlie -> Bob (4/5)", "reason": "'Could have started the integration tests earlier' is honest, specific constructive feedback."},
+        {"identifier": "AUTH-2", "reason": "Bob's 5-point testing ticket sits beside Alice's 8 and Charlie's 8 points, so no member is idle."}
+      ],
+      "strengths": ["High, specific peer ratings for every member", "Story points spread across all three members"],
+      "areas_for_improvement": ["Bob carries fewer points (5 vs 8); balance estimates next sprint", "Act on the PR-description feedback"]
+    },
+    "cicd": {
+      "dimension": "cicd", "score": 8, "evaluation_failed": false,
+      "justification": "'AUTH-4: Add GitHub Actions CI running pytest and flake8 on PRs' lands on day one, and 'AUTH-4: Build and push Docker image in CI after tests pass' extends .github/workflows/ci.yml and adds a Dockerfile, so every PR is linted, tested and containerised. Minor gap: no deployment stage, so this is CI without CD.",
+      "evidence_citations": [
+        {"identifier": "aac3376ed68d10d4f24780e0bdf4b340b744ceff", "reason": "'AUTH-4: Add GitHub Actions CI running pytest and flake8 on PRs' adds .github/workflows/ci.yml on the first day of the sprint."},
+        {"identifier": "b939b75409cb5f3a9d504476ad06bfc9acedf232", "reason": "'AUTH-4: Build and push Docker image in CI after tests pass' adds a Dockerfile and gates the image build on tests."},
+        {"identifier": ".github/workflows/ci.yml", "reason": "Added on 08-10 and extended on 08-18, showing the pipeline evolved with the code."}
+      ],
+      "strengths": ["CI in place from day one", "Docker image build gated on passing tests"],
+      "areas_for_improvement": ["Add a deploy stage (staging) to complete CD", "Publish test/coverage results as pipeline artifacts"]
+    }
+  },
+  "member_contributions": [
+    {"student_id": "Alice", "contribution_score": 9,
+     "primary_contributions": ["JWT issue/verify middleware (AUTH-1, 8 points)", "README and docs/auth-api.md"],
+     "evidence": ["2 commits, +306/-9", "87f13cb9e574f1b37396e8c96dc5894ec5a8558f AUTH-1: Add JWT issue/verify middleware with configurable expiry", "Peer ratings 5 and 5"]},
+    {"student_id": "Bob", "contribution_score": 8,
+     "primary_contributions": ["Unit and integration test suite (AUTH-2, 5 points)", "Reviewed and merged the AUTH-1 PR (#4)"],
+     "evidence": ["3 commits (1 PR merge), +245/-0", "561dd19259f86355bcb4d6a98265625c7c77d7e0 AUTH-2: Add unit tests for token issue, expiry and tampered signatures", "Peer ratings 5 and 4"]},
+    {"student_id": "Charlie", "contribution_score": 9,
+     "primary_contributions": ["Refresh-token rotation (AUTH-3)", "GitHub Actions CI and Docker build (AUTH-4)"],
+     "evidence": ["3 commits, +316/-22", "8f99f180560b8f4806660af960820b9df89fed5d AUTH-3: Implement refresh-token rotation and revocation list", "Peer ratings 5 and 4"]}
+  ],
+  "executive_summary": "In the 2026-08-10 to 2026-08-21 sprint Team_Alpha delivered all 4 tickets (21/21 points) for a JWT auth service: middleware, refresh-token rotation, a unit and integration test suite, and a GitHub Actions pipeline that lints, tests and builds a Docker image on every PR. Commits are descriptive and ticket-keyed, work is evenly shared, and peers rate each other 4.67/5 on average. Gaps are minor: no deploy stage, late untracked documentation and no coverage report.",
+  "strengths": ["100% ticket completion with ticket-keyed commits", "Tests and CI built alongside the features", "Even workload and specific, high peer ratings"],
+  "weaknesses": ["No deployment stage in the pipeline", "Documentation delivered late in one untracked commit", "No coverage figure"],
+  "key_recommendations": ["Add a staging deploy job to ci.yml so the pipeline covers CD.", "Report test coverage in CI and set a minimum threshold.", "Create a documentation ticket and update docs with each feature PR.", "Route every feature branch through a reviewed PR, not just AUTH-1."],
+  "failed_dimensions": []
+}
