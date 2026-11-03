@@ -14,7 +14,10 @@ moment. Per (model, concurrency) group the report gives:
   util_window_mean    mean utilization.gpu over the whole run, idle gaps included
   idle_gap_fraction   share of the run with NO request in flight: time lost
                       to client-side work between calls, not to the GPU
-  vram_peak_pct       peak memory.used / memory.total
+  vram_peak_pct       peak memory.used / memory.total (includes any model still
+                      loaded from an earlier run)
+  vram_model_pct      VRAM taken by this run's own model: the rise in
+                      memory.used when it loaded (median over the group's runs)
   power_busy_pct      mean power.draw while in flight / power.limit
   throttled_fraction  in-flight samples with a thermal or hardware clock slowdown
   power_cap_fraction  in-flight samples flagged SW power cap (0x4). Origami's
@@ -160,6 +163,28 @@ def _wasted_work(markers: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def model_vram_mib(samples: pd.DataFrame, run_markers: pd.DataFrame) -> float | None:
+    """VRAM held by one run's own model, in MiB.
+
+    memory.used also counts models still resident from earlier runs, so this
+    takes the largest rise above the running minimum between just before the
+    run and the end of its first request, which is when the model loads (after
+    any other model was unloaded to make room). A model that was already
+    loaded shows no rise; then nothing else was loaded, so the run's median is
+    its own size."""
+    start = run_markers["started_at"].min()
+    first_end = run_markers.sort_values("started_at")["finished_at"].iloc[0]
+    memory = samples.set_index("time")["memory.used"]
+    load_window = memory[start - pd.Timedelta(seconds=10): first_end]
+    if load_window.empty:
+        return None
+    rise = float((load_window - load_window.cummin()).max())
+    if rise >= 100:
+        return rise
+    during = memory[start: run_markers["finished_at"].max()]
+    return float(during.median()) if not during.empty else None
+
+
 def summarise_group(
     samples: pd.DataFrame, markers: pd.DataFrame, gpu_info: dict[str, Any], bandwidth_gbs: float | None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
@@ -202,6 +227,12 @@ def summarise_group(
     }
     if metrics["vram_peak_mib"] and metrics["vram_total_mib"]:
         metrics["vram_peak_pct"] = round(100 * metrics["vram_peak_mib"] / metrics["vram_total_mib"], 1)
+        own = [
+            v for _, run_markers in markers.groupby("run_id")
+            if (v := model_vram_mib(samples, run_markers)) is not None
+        ]
+        if own:
+            metrics["vram_model_pct"] = round(100 * float(np.median(own)) / metrics["vram_total_mib"], 1)
     if metrics["power_busy_mean_w"] and power_limit:
         metrics["power_busy_pct"] = round(100 * metrics["power_busy_mean_w"] / power_limit, 1)
 
@@ -243,7 +274,7 @@ def plot_timeline(window: pd.DataFrame, title: str, path: Path) -> None:
 
 _TABLE_COLUMNS = [
     "model", "concurrency", "runs", "requests", "seconds_per_run", "util_busy_mean", "util_window_mean",
-    "idle_gap_fraction", "vram_peak_pct", "power_busy_pct", "sm_clock_busy_median_mhz", "throttled_fraction",
+    "idle_gap_fraction", "vram_peak_pct", "vram_model_pct", "power_busy_pct", "sm_clock_busy_median_mhz", "throttled_fraction",
     "power_cap_fraction", "output_tok_s", "unanswered_requests", "unanswered_s", "truncated_prompts", "length_capped",
     "prefill_tok_s_median", "decode_tok_s_median", "offload_ratio_min", "decode_bw_eff",
 ]
