@@ -2,12 +2,22 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies.auth import get_action_audit_repository, get_manual_text_repository, get_project_repository, require_instructor
-from app.repositories.interfaces import ActionAuditRepository, ManualTextRepository, ProjectRepository, UserRecord
-from app.schemas.auth import Role
+from app.dependencies.auth import (
+    get_action_audit_repository,
+    get_manual_text_repository,
+    get_project_repository,
+    require_instructor,
+)
+from app.repositories.interfaces import (
+    ActionAuditRepository,
+    ManualTextRepository,
+    ProjectRepository,
+    UserRecord,
+)
 from app.schemas.assessment import ManualTextPayload
-from app.services.manualTextService.service import get_manual_text, upsert_manual_text
+from app.schemas.auth import Role
 from app.services.auditLogService.service import append_action_audit
+from app.services.manualTextService.service import get_manual_text, upsert_manual_text
 
 router = APIRouter(prefix="/manual-text", tags=["manual-text"])
 

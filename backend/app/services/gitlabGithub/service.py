@@ -2,15 +2,20 @@ import os
 import re
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydriller import Repository
 
 from app.repositories.in_memory import metrics_repo
-from app.repositories.interfaces import IngestionMetricBundle, MetricsRepository, ProjectRepository, UserRepository
-from app.schemas.auth import Role
+from app.repositories.interfaces import (
+    IngestionMetricBundle,
+    MetricsRepository,
+    ProjectRepository,
+    UserRepository,
+)
 from app.schemas.assessment import CommitInfo, FileDiff, IngestionRequest
+from app.schemas.auth import Role
 
 # Diff caps keep one huge commit (e.g. an initial scaffold) from bloating the
 # ingestion_commits rows and the AI payload. The AI engine budgets what it
@@ -175,7 +180,7 @@ def ingest_github_metrics(
         commits=commits,
         local_repo_path=str(repository_path) if repository_path else None,
         head_sha=_repository_head(repository_path) if repository_path else None,
-        captured_at=datetime.now(timezone.utc),
+        captured_at=datetime.now(UTC),
     )
     (metrics_repository or metrics_repo).save_metrics(metrics)
     return metrics
@@ -435,4 +440,4 @@ def _parse_patch(patch: str) -> list[dict]:
 
 
 def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

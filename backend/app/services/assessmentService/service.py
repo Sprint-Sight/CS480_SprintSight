@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -10,7 +10,6 @@ from app.repositories.in_memory import (
     assessment_repo,
     instructor_model_selection_repo,
     job_repo,
-    metrics_repo,
     overrides_repo,
     rubric_weights_repo,
 )
@@ -204,7 +203,7 @@ def convert_ai_result_to_assessment_report(
         course_id=course_id,
         project_id=project_id,
         sprint_id=sprint_id,
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         rubric_weights=effective_weights,
         team_score=TeamScore(
             score=team_score_value,
@@ -709,7 +708,7 @@ def override_student_score(
         new_score=payload.new_score,
         reason_comment=payload.reason_comment,
         instructor_id=instructor_id,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     original_entry.score = payload.new_score
     overrides_repo.save_override(override_record)

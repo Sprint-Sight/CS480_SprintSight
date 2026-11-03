@@ -892,11 +892,6 @@ class PostgresProjectRepository(ProjectRepository):
             rows = connection.execute("SELECT user_id FROM course_students WHERE course_id = %s ORDER BY enrolled_at", (UUID(course_id),)).fetchall()
         return [str(row["user_id"]) for row in rows]
 
-    def list_student_course_codes(self, user_id: str) -> list[str]:
-        with self._pool.connection() as connection:
-            rows = connection.execute("SELECT c.code FROM course_students cs JOIN courses c ON c.course_id = cs.course_id WHERE cs.user_id = %s", (UUID(user_id),)).fetchall()
-        return [row["code"] for row in rows]
-
     def update_course(self, course_id: str, code: str, name: str, section: str, year: int, term: str) -> CourseRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute("""UPDATE courses SET code = %s, name = %s, section = %s, year = %s, term = %s
@@ -1769,7 +1764,6 @@ class PostgresMetricsRepository(MetricsRepository):
                     "DELETE FROM ingestion_runs WHERE project_id = %s AND sprint_id = %s",
                     (UUID(metrics.project_id), metrics.sprint_id),
                 )
-                head_sha = metrics.commits[0].sha if metrics.commits else None
                 run = connection.execute(
                     """INSERT INTO ingestion_runs
                     (course_id, project_id, sprint_id, local_repo_path, head_sha,

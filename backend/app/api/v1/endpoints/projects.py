@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
@@ -16,8 +16,6 @@ from app.dependencies.auth import (
     get_notification_service,
     get_project_repository,
     get_user_repository,
-    require_admin,
-    require_faculty,
     require_instructor,
 )
 from app.repositories.interfaces import (
@@ -754,7 +752,7 @@ def create_project(
         github_repo_url=payload.github_repo_url,
         local_repo_path=payload.local_repo_path,
         created_by=current_user.id,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         jira_email=(
             None
             if has_shared_jira_credentials
