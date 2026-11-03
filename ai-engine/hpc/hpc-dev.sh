@@ -110,7 +110,7 @@ submit_job() {
     # Forward Ollama server settings set on this machine (or in .env.hpc) to
     # the job; ollama_gpu.sbatch falls back to its own defaults for any unset.
     local job_env="" name
-    for name in OLLAMA_NUM_PARALLEL OLLAMA_KV_CACHE_TYPE OLLAMA_KEEP_ALIVE OLLAMA_MODEL_NUM_THREAD GPU_SAMPLE_MS; do
+    for name in OLLAMA_NUM_PARALLEL OLLAMA_KV_CACHE_TYPE OLLAMA_KEEP_ALIVE OLLAMA_MAX_LOADED_MODELS OLLAMA_MODEL_NUM_THREAD GPU_SAMPLE_MS; do
         if [[ -n "${!name:-}" ]]; then
             job_env+="${name}=${!name} "
         fi
