@@ -314,6 +314,21 @@ one run per group in the `sprintsight_gpu_utilisation` experiment.
   sets it even when idle at ~28 W, so it only means something together with
   `power_busy_pct` near 100% and a lower `sm_clock_busy_median_mhz`. That
   combination means the card is at its power limit, i.e. fully used.
+- `unanswered_requests` / `unanswered_s`: requests that got no response
+  before the client timeout. Ollama keeps generating until the client gives
+  up, so this is GPU time spent on output that was thrown away. Before the
+  answer cap (`LLM_MAX_OUTPUT_TOKENS`, default 8192), llama3.1 and mistral
+  each ran 20-minute runaway answers at full power.
+- `length_capped`: answers stopped by `LLM_MAX_OUTPUT_TOKENS` (runaway output
+  cut off instead of running for 20 minutes). `instructor` doesn't re-ask an
+  incomplete answer, so the engine re-asks it `LLM_LENGTH_REASKS` times (default
+  1) with a "reply concisely" note. If the dimension still fails, the engine
+  log shows `failed after`.
+- `truncated_prompts`: prompts Ollama cut to fit the model's context, so the
+  grade saw partial evidence. Any non-zero value is a grading problem, not just
+  a performance one. Each model's tokenizer density is in
+  `MODEL_CHARS_PER_TOKEN` (`schemas/modelname.py`, measured), and the prompt
+  budget uses it so prompts fit the real context.
 - Benchmark runs add a unique first line to every prompt so Ollama can't reuse
   a cached prompt; `--allow-cache` turns this off, but prefill speeds are then
   meaningless.

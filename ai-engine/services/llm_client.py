@@ -11,16 +11,22 @@ from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
 from dotenv import load_dotenv
+from instructor.core import IncompleteOutputException
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
 from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.modelname import MODEL_NUM_CTX
-from schemas.rubrics_dimension_score import DimensionName, ModelOutput, RubricDimensionScore
+from schemas.modelname import MODEL_CHARS_PER_TOKEN, MODEL_NUM_CTX
+from schemas.rubrics_dimension_score import (
+    DimensionName,
+    ModelOutput,
+    RubricDimensionScore,
+)
 from schemas.sprint_feedback import SprintFeedback
 from services.audit_logger import write_audit_record, write_request_marker
 from services.evidence_packer import (
+    CHARS_PER_TOKEN,
     EvidenceIndex,
     estimate_tokens,
     is_noise_path,
@@ -160,6 +166,26 @@ _CONTEXT_CAP = int(os.getenv("LLM_EVIDENCE_CONTEXT_CAP", "32000"))
 # Room left for the model's JSON answer (15 citations + justification is
 # ~1-1.5K tokens) so a long prompt can never squeeze the output.
 _OUTPUT_RESERVE_TOKENS = int(os.getenv("LLM_OUTPUT_RESERVE_TOKENS", "2048"))
+# Most tokens a model may generate per call, sent as OpenAI `max_tokens`
+# (which Ollama's /v1 endpoint does honour, unlike `options`). Normal answers
+# are 250-4,100 tokens. Uncapped, a model that starts looping only stops at the
+# client timeout (OLLAMA_TIMEOUT_SECONDS, 20 min) with the GPU at full power
+# the whole time, as llama3.1 and mistral did.
+_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "8192"))
+# instructor does not re-ask a capped (incomplete) answer: it raises
+# IncompleteOutputException and the dimension fails. So a capped answer is
+# re-asked here, up to this many times, with a note asking for a concise
+# answer. Resending the identical prompt at temperature 0 would most likely
+# loop the same way; the note changes the prompt.
+_LENGTH_REASKS = int(os.getenv("LLM_LENGTH_REASKS", "1"))
+_LENGTH_REASK_NOTE = (
+    "\n\nIMPORTANT: your previous answer to this request was cut off at the length "
+    "limit because it kept repeating itself. Reply with ONE complete JSON object "
+    "only, keep every text field short, and do not repeat any item."
+)
+# Safety margin when a model's real context is converted into the evidence
+# packer's estimated token units (see _prompt_context).
+_TOKENIZER_MARGIN = 0.95
 # Instructor puts the JSON schema of ModelOutput into a system message.
 _SCHEMA_OVERHEAD_TOKENS = estimate_tokens(json.dumps(ModelOutput.model_json_schema())) + 200
 _MIN_EVIDENCE_TOKENS = 2000
@@ -484,8 +510,92 @@ def _request_extra_body(num_ctx: int | None) -> dict:
     return {"options": {"num_ctx": num_ctx}}
 
 def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> int:
-    """Rough token estimate (chars // 4) for one dimension's trimmed bundle."""
-    return len(_dimension_bundle_data(bundle, dimension_name)) // 4
+    """Rough token estimate for one dimension's legacy (unpacked) bundle."""
+    return estimate_tokens(_dimension_bundle_data(bundle, dimension_name))
+
+
+class DimensionPrompt:
+    """Everything evaluate_dimension sends for one dimension, built without
+    calling the model, so research/eval/inspect_bundle.py can show exactly
+    the same thing."""
+
+    def __init__(self, prompt: str, bundle_data: str, index: EvidenceIndex | None, stats: dict[str, Any]):
+        self.prompt = prompt
+        self.bundle_data = bundle_data
+        self.index = index
+        self.stats = stats
+
+
+def _prompt_context(model_name: str, num_ctx: int | None) -> int:
+    """Token budget for a whole dimension call, in the packer's estimated units.
+
+    _CONTEXT_CAP is a deliberate size target in those units. The model's
+    context is a hard limit in *real* tokens, so for a tokenizer denser than
+    the packer assumes (MODEL_CHARS_PER_TOKEN below LLM_CHARS_PER_TOKEN) it is
+    converted into estimated units, with a margin, before taking the smaller of
+    the two. Models with room to spare keep the cap, so their prompts are
+    unchanged; mistral (32K context) and the 32B models (16K) get less.
+    """
+    model_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
+    chars_per_token = MODEL_CHARS_PER_TOKEN.get(str(getattr(model_name, "value", model_name)))
+    if chars_per_token and chars_per_token < CHARS_PER_TOKEN:
+        model_ctx = int(model_ctx * chars_per_token / CHARS_PER_TOKEN * _TOKENIZER_MARGIN)
+    return min(model_ctx, _CONTEXT_CAP)
+
+
+def build_dimension_prompt(
+    bundle: ArtifactBundle,
+    dimension_name: str,
+    dimension_prompt: str,
+    model_name: str,
+    num_ctx: int | None = None,
+) -> DimensionPrompt:
+    fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name)
+    if fields is None:
+        raise ValueError(f"Unknown rubric dimension: {dimension_name}")
+    full_bundle = bundle.model_dump(mode="json")
+    packed = _EVIDENCE_MODE != "legacy"
+
+    # Facts always come from ALL commits, whatever is shown below them.
+    commit_facts = ""
+    sampled_commits: list[dict] | None = None
+    if "commits" in fields:
+        all_trimmed = _trim_commits(full_bundle["commits"])
+        if packed:
+            commit_facts = _compute_commit_facts(all_trimmed, budget=len(all_trimmed))
+        else:
+            commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
+            sampled_commits = _select_representative_commits(all_trimmed, dimension_name, _COMMIT_BUDGET)
+    jira_facts = _compute_jira_facts(full_bundle["jira_tickets"]) if "jira_tickets" in fields else ""
+    computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
+    project_context = _format_project_context_documents(bundle)
+
+    if not packed:
+        bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
+        prompt = render_dimension_prompt(
+            dimension_name, dimension_prompt, bundle_data, computed_facts, project_context,
+        )
+        stats = {"mode": "legacy", "commits_listed": len(sampled_commits or [])}
+        return DimensionPrompt(prompt, bundle_data, None, stats)
+
+    scaffold = render_dimension_prompt(
+        dimension_name, dimension_prompt, "", computed_facts, project_context,
+    )
+    context = _prompt_context(model_name, num_ctx)
+    budget = context - estimate_tokens(scaffold) - _SCHEMA_OVERHEAD_TOKENS - _OUTPUT_RESERVE_TOKENS
+    if budget < _MIN_EVIDENCE_TOKENS:
+        log.warning(
+            ">>> Dimension '%s': only ~%d tokens left for evidence after the prompt scaffold "
+            "(uploaded context documents are likely very long); packing %d anyway.",
+            dimension_name, budget, _MIN_EVIDENCE_TOKENS,
+        )
+        budget = _MIN_EVIDENCE_TOKENS
+    evidence = pack_dimension_evidence(full_bundle, dimension_name, fields, budget)
+    prompt = render_dimension_prompt(
+        dimension_name, dimension_prompt, evidence.text, computed_facts, project_context,
+    )
+    stats = {"mode": "packed", **evidence.stats.as_dict()}
+    return DimensionPrompt(prompt, evidence.text, evidence.index, stats)
 
 
 # Minimum num_ctx to fall back to when a sprint's bundle is small. Defaults to
@@ -531,8 +641,11 @@ async def _capture_request(request: httpx.Request) -> None:
     if request.url.path.endswith("/chat/completions"):
         context = _audit_context.get()
         if context is not None:
+            # A previous attempt that never got a response is being retried.
+            _record_unanswered(context)
             context["request_started_at"] = time.perf_counter()
             context["request_started_utc"] = datetime.now(UTC).isoformat()
+            context["awaiting_response"] = True
             context["request"] = request.content.decode("utf-8", errors="replace")
 
 async def _capture_response(response: httpx.Response) -> None:
@@ -540,6 +653,7 @@ async def _capture_response(response: httpx.Response) -> None:
         context = _audit_context.get()
         if context is not None:
             body = await response.aread()
+            context["awaiting_response"] = False
             started_at = context.get("request_started_at", time.perf_counter())
             duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
             finished_utc = datetime.now(UTC).isoformat()
@@ -554,16 +668,23 @@ async def _capture_response(response: httpx.Response) -> None:
                     "request_finished_utc": finished_utc,
                 }
             )
-            write_request_marker(
-                _request_marker(context, raw_body, response.status_code, duration_ms, finished_utc)
+            marker = _request_marker(
+                context, raw_body, response.status_code, duration_ms, finished_utc,
+                prompt_truncated=_prompt_truncated(raw_body, context),
             )
+            write_request_marker(marker)
+            if marker["finish_reason"] == "length":
+                log.warning(
+                    ">>> Dimension '%s': answer hit LLM_MAX_OUTPUT_TOKENS=%d (likely runaway "
+                    "generation); the answer is incomplete.",
+                    context.get("dimension"), _MAX_OUTPUT_TOKENS,
+                )
 
             # Opt-in token capture: only accumulates when the caller has
             # set _token_accumulator for this ContextVar scope. Ollama's
             # OpenAI-compat endpoint returns `usage` on the chat completion;
             # instructor's retries each produce one response, so we sum
             # across all of them (retries legitimately burn tokens too).
-            _warn_if_prompt_truncated(raw_body, context)
 
             accumulator = _token_accumulator.get()
             if accumulator is not None:
@@ -579,13 +700,35 @@ async def _capture_response(response: httpx.Response) -> None:
                     pass
 
 
+def _record_unanswered(context: dict) -> None:
+    """Marker for an attempt that got no response (client timeout or dropped
+    connection), so reports count that time as GPU work, not idle: Ollama
+    keeps generating until the client gives up."""
+    if not context.get("awaiting_response"):
+        return
+    context["awaiting_response"] = False
+    duration_ms = round((time.perf_counter() - context.get("request_started_at", time.perf_counter())) * 1000, 2)
+    log.error(
+        ">>> Dimension '%s': no response from Ollama after %.0f s (client timeout or dropped "
+        "connection); the model was most likely still generating.",
+        context.get("dimension"), duration_ms / 1000,
+    )
+    write_request_marker({
+        **_request_marker(context, "", 0, duration_ms, datetime.now(UTC).isoformat()),
+        "error": "no response",
+    })
+
+
 def _request_marker(
     context: dict, raw_body: str, http_status: int, duration_ms: float, finished_utc: str,
+    prompt_truncated: bool | None = None,
 ) -> dict:
     try:
-        usage = json.loads(raw_body).get("usage") or {}
-    except (json.JSONDecodeError, AttributeError):
-        usage = {}
+        body = json.loads(raw_body)
+        usage = body.get("usage") or {}
+        finish_reason = (body.get("choices") or [{}])[0].get("finish_reason")
+    except (json.JSONDecodeError, AttributeError, IndexError, TypeError):
+        usage, finish_reason = {}, None
     return {
         **(_run_context.get() or {}),
         "request_id": context.get("request_id"),
@@ -600,27 +743,36 @@ def _request_marker(
         "http_status": http_status,
         "prompt_tokens": usage.get("prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
+        "finish_reason": finish_reason,
+        "prompt_truncated": prompt_truncated,
     }
 
 
-def _warn_if_prompt_truncated(raw_body: str, context: dict) -> None:
-    """Ollama does not error when a prompt exceeds num_ctx: it silently drops
-    the start of the prompt (the rubric and instructions). A reported
-    prompt_tokens at the num_ctx ceiling is the fingerprint of that, so flag
-    it loudly instead of trusting a grade made on a truncated prompt."""
-    num_ctx = context.get("num_ctx")
-    if not num_ctx:
-        return
+def _prompt_truncated(raw_body: str, context: dict) -> bool:
+    """Ollama does not error when a prompt exceeds its context: it silently
+    drops the start of the prompt (the rubric and instructions) and reports
+    the shortened length. Two fingerprints: prompt_tokens at the num_ctx
+    ceiling, or far fewer prompt tokens than were sent (mistral's ~36K-token
+    prompts arrived as 16,387). Retries resend the prompt plus the failed
+    answer, so they are never legitimately shorter. Flag it loudly instead of
+    trusting a grade made on partial evidence."""
     try:
         prompt_tokens = int((json.loads(raw_body).get("usage") or {}).get("prompt_tokens") or 0)
     except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
-        return
-    if prompt_tokens >= num_ctx * 0.98:
+        return False
+    if not prompt_tokens:
+        return False
+    num_ctx = context.get("num_ctx")
+    sent = context.get("estimated_prompt_tokens")
+    at_ceiling = isinstance(num_ctx, int) and num_ctx > 0 and prompt_tokens >= num_ctx * 0.98
+    shrunk = isinstance(sent, int) and sent > 0 and prompt_tokens < sent * 0.75
+    if at_ceiling or shrunk:
         log.error(
-            ">>> Dimension '%s': prompt used %d of num_ctx=%d tokens; Ollama has most likely "
-            "truncated it. Lower LLM_EVIDENCE_CONTEXT_CAP or LLM_CHARS_PER_TOKEN.",
-            context.get("dimension"), prompt_tokens, num_ctx,
+            ">>> Dimension '%s': Ollama reported %d prompt tokens (~%s sent, num_ctx=%s); the "
+            "prompt was most likely truncated, so this grade saw partial evidence.",
+            context.get("dimension"), prompt_tokens, sent, num_ctx,
         )
+    return at_ceiling or shrunk
 
 
 def create_llm_client(provider="ollama"):
@@ -662,6 +814,28 @@ def create_llm_client(provider="ollama"):
         mode=instructor.Mode.JSON, # ensures that the response is parsed as JSON, returned as a Pydantic model
     )
     return client
+
+async def _create_with_length_reask(client: Any, prompt: str, **kwargs: Any) -> Any:
+    """client.chat.completions.create for a single user prompt, re-asking with
+    _LENGTH_REASK_NOTE when the answer hits _MAX_OUTPUT_TOKENS (see there).
+    Answers that finish normally are never affected."""
+    content = prompt
+    for attempt in range(_LENGTH_REASKS + 1):
+        try:
+            return await client.chat.completions.create(
+                messages=[{"role": "user", "content": content}], **kwargs,
+            )
+        except IncompleteOutputException:
+            if attempt == _LENGTH_REASKS:
+                raise
+            log.warning(
+                ">>> Dimension '%s': re-asking for a concise answer after hitting the length cap "
+                "(%d of %d).",
+                (_audit_context.get() or {}).get("dimension"), attempt + 1, _LENGTH_REASKS,
+            )
+            content = prompt + _LENGTH_REASK_NOTE
+    raise AssertionError("unreachable")
+
 
 # # Each child span of the parent span (Evaluate_Complete_Sprint)
 # @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
@@ -761,12 +935,13 @@ async def evaluate_dimension(
     )
     try:
         # The transport hooks capture the exact request and raw Ollama response.
-        model_output = await client.chat.completions.create(
+        model_output = await _create_with_length_reask(
+            client, prompt,
             model=model_name,
             response_model=ModelOutput,
-            messages=[{"role": "user", "content": prompt}],
             temperature=LLM_TEMPERATURE,
             max_retries=3,
+            max_tokens=_MAX_OUTPUT_TOKENS,
             extra_body=_request_extra_body(num_ctx),
         )
 
@@ -848,8 +1023,10 @@ async def evaluate_dimension(
             )
             raise
 
-        finally:
-            _audit_context.reset(audit_token)
+    finally:
+        # Every attempt failed without a response (e.g. the last one timed out).
+        _record_unanswered(_audit_context.get() or {})
+        _audit_context.reset(audit_token)
 
 async def generate_sprint_feedback( # Generate strengths, weakenesses, & recommendations for whole sprint
     bundle: ArtifactBundle,
@@ -890,15 +1067,17 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
                 ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
                 "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
             )
-            return await client.chat.completions.create(
+            return await _create_with_length_reask(
+            client, prompt,
                 model=model_name,
                 response_model=SprintFeedback,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=LLM_TEMPERATURE,
+                    temperature=LLM_TEMPERATURE,
                 max_retries=3,
+            max_tokens=_MAX_OUTPUT_TOKENS,
                 extra_body=request_extra_body(num_ctx),
             )
         finally:
+        _record_unanswered(_audit_context.get() or {})
             _audit_context.reset(audit_token)
 
 async def check_ollama_health(model_name: str) -> dict:

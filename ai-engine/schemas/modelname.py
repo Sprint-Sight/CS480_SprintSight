@@ -21,9 +21,12 @@ class ModelName(str, Enum):
 
 # Must match each model's `PARAMETER num_ctx` in models/Modelfile.* — kept here
 # so llm_client.py never has to hardcode a single value for every model.
+# Ollama caps num_ctx at the model's own maximum, so these must not exceed it:
+# qwen3:8b supports 40960 and mistral:7b 32768 (both seen as `context_length`
+# in Ollama's /api/ps; 49152 was configured before and silently capped).
 MODEL_NUM_CTX: dict[str, int] = {
-    ModelName.SPRINTSIGHT_QWEN.value: 49152,     # models/Modelfile.qwen
-    ModelName.SPRINTSIGHT_MISTRAL.value: 49152,  # models/Modelfile.mistral
+    ModelName.SPRINTSIGHT_QWEN.value: 40960,     # models/Modelfile.qwen (qwen3:8b maximum)
+    ModelName.SPRINTSIGHT_MISTRAL.value: 32768,  # models/Modelfile.mistral (mistral:7b maximum)
     ModelName.SPRINTSIGHT_GEMMA.value: 49152,    # models/Modelfile.gemma
     ModelName.SPRINTSIGHT_JUDGE_PHI.value: 49152, # models/Modelfile.phi
     # Round-2 benchmark models. Real per-dimension grading prompts were measured
@@ -35,4 +38,20 @@ MODEL_NUM_CTX: dict[str, int] = {
     ModelName.SPRINTSIGHT_QWEN25_32B.value: 16384,  # models/Modelfile.qwen25-32b
     ModelName.SPRINTSIGHT_R1_32B.value: 16384,      # models/Modelfile.deepseek-r1
     ModelName.SPRINTSIGHT_CODER_32B.value: 16384,   # models/Modelfile.qwen25-coder
+}
+
+# Characters per token of each model's tokenizer, measured on the same
+# 60,000-character slice of a real grading prompt (2026-11-02). The evidence
+# packer counts tokens as chars / LLM_CHARS_PER_TOKEN (3.0); a model whose
+# tokenizer is denser than that turns a packed prompt into more real tokens,
+# and Ollama silently drops the start of a prompt that overflows its context.
+# The 32B models are assumed to match qwen (they use the Qwen2.5 tokenizer).
+MODEL_CHARS_PER_TOKEN: dict[str, float] = {
+    ModelName.SPRINTSIGHT_QWEN.value: 2.81,
+    ModelName.SPRINTSIGHT_MISTRAL.value: 2.48,
+    ModelName.SPRINTSIGHT_GEMMA.value: 2.69,
+    ModelName.SPRINTSIGHT_LLAMA31.value: 3.28,
+    ModelName.SPRINTSIGHT_QWEN25_32B.value: 2.81,
+    ModelName.SPRINTSIGHT_R1_32B.value: 2.81,
+    ModelName.SPRINTSIGHT_CODER_32B.value: 2.81,
 }

@@ -5,6 +5,7 @@ from llmops.prompt_registry import register_all_dimension_prompts, register_spri
 from prompts.dimension_criteria import SPRINT_FEEDBACK_PROMPT_NAME, DIMENSION_PROMPTS, DIMENSIONS#, WORSE_DIMENSION_PROMPTS
 from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
+from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
@@ -78,7 +79,16 @@ async def _log_gpu_offload(model_name: str) -> None:
         mlflow.log_metrics({
             "gpu_offload_ratio": entry["offload_ratio"],
             "gpu_model_vram_bytes": entry["size_vram"],
+            **({"gpu_context_length": entry["context_length"]} if entry.get("context_length") else {}),
         })
+        configured = MODEL_NUM_CTX.get(model_name)
+        if configured and entry.get("context_length") and entry["context_length"] != configured:
+            log.warning(
+                ">>> Model '%s' is loaded with a %d-token context but MODEL_NUM_CTX says %d; "
+                "prompts are budgeted for the configured size. Align schemas/modelname.py and "
+                "the Modelfile with the loaded value.",
+                model_name, entry["context_length"], configured,
+            )
         if entry["offload_ratio"] < 1:
             log.warning(
                 ">>> Model '%s' is only %.0f%% on the GPU; Ollama put the rest on the CPU, which "

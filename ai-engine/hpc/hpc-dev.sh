@@ -552,19 +552,29 @@ fetch_gpu_logs() {
     # accurate to the transfer time (well under the 1 s sample interval for a
     # few MB). gpu_report.py applies it so GPU samples line up with the AI
     # engine's request timestamps.
+    # Unpacked into a fresh folder first, so a failed transfer can never leave
+    # an older copy in gpu_logs/ looking like the latest (it did once: the
+    # report then found no requests inside the stale log's time range).
+    local tmp="$dest/.fetch-${jobid}"
+    rm -rf "$tmp" && mkdir -p "$tmp"
     local remote_epoch local_epoch
-    remote_epoch=$(ssh_hpc "date +%s.%N; cd ~/sprintsight/gpu-logs && tar -cf - ${jobid}.gpu.csv ${jobid}.gpu-info.csv 2>/dev/null" \
-        | { IFS= read -r first; printf '%s' "$first"; tar -xf - -C "$dest" 2>/dev/null; }) || true
+    remote_epoch=$(ssh_hpc "date +%s.%N; cd ~/sprintsight/gpu-logs && tar -cf - ${jobid}.gpu.csv ${jobid}.gpu-info.csv" \
+        | { IFS= read -r first; printf '%s' "$first"; tar -xf - -C "$tmp"; }) || true
     # Python, not `date +%s.%N`: macOS date has no %N.
     local_epoch=$($PY -c "import time; print(time.time())")
 
-    if [[ ! -s "$dest/${jobid}.gpu.csv" ]]; then
-        fail "No telemetry found for job ${jobid} in ~/sprintsight/gpu-logs on the cluster."
+    if [[ ! -s "$tmp/${jobid}.gpu.csv" ]]; then
+        rm -rf "$tmp"
+        fail "No telemetry received for job ${jobid} (see any tar/ssh error above). Check on the cluster:"
+        echo "    ls -la ~/sprintsight/gpu-logs/${jobid}.* && tail -1 ~/sprintsight/gpu-logs/${jobid}.gpu.csv"
         return 1
     fi
+    mv -f "$tmp/${jobid}.gpu.csv" "$tmp/${jobid}.gpu-info.csv" "$dest/" && rm -rf "$tmp"
     $PY -c "import sys; print(f'{float(sys.argv[1]) - float(sys.argv[2]):.3f}')" \
         "$remote_epoch" "$local_epoch" > "$dest/${jobid}.clock-offset.txt"
     ok "Saved to ${dest}/${jobid}.gpu.csv"
+    # The range shows at a glance whether the log covers the runs you made.
+    info "Samples (UTC): $(sed -n 2p "$dest/${jobid}.gpu.csv" | cut -d, -f1) -> $(tail -1 "$dest/${jobid}.gpu.csv" | cut -d, -f1) ($(( $(wc -l < "$dest/${jobid}.gpu.csv") - 1 )) rows)"
     info "Cluster clock minus local clock: $(cat "$dest/${jobid}.clock-offset.txt") s"
 }
 
