@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -70,6 +70,20 @@ class JiraRawSyncRequest(BaseModel):
     jql: str | None = None
 
 
+class JiraIssueChangeItem(BaseModel):
+    field: str | None = None
+    field_id: str | None = None
+    from_value: str | None = None
+    to_value: str | None = None
+    from_string: str | None = None
+    to_string: str | None = None
+
+
+class JiraIssueChange(BaseModel):
+    created: datetime
+    items: list[JiraIssueChangeItem] = Field(default_factory=list)
+
+
 class JiraTicket(BaseModel):
     ticket_id: str
     summary: str
@@ -83,6 +97,7 @@ class JiraTicket(BaseModel):
     story_points: float | None = Field(default=None, ge=0)
     sprint_id: str | None = None
     timestamp: datetime | None = None
+    changelog: list[JiraIssueChange] = Field(default_factory=list)
 
 
 class JiraCleanedSnapshot(BaseModel):
@@ -93,6 +108,14 @@ class JiraCleanedSnapshot(BaseModel):
     project_id: str
     sprint_id: str
     captured_at: datetime
+    sprint_start_date: date | None = None
+    sprint_end_date: date | None = None
+    sprint_field: str = "customfield_10020"
+    story_points_field: str | None = None
+    completion_date_field: str | None = None
+    sprint_start_date_field: str | None = None
+    sprint_end_date_field: str | None = None
+    changelog_captured: bool = False
     tickets: list[JiraTicket]
 
 

@@ -1,9 +1,17 @@
 from datetime import UTC, datetime
+from typing import TypedDict
 
 import pytest
 
 from app.repositories.interfaces import Role, UserRecord
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
+
+
+class _MemberLookupMaps(TypedDict):
+    users_by_id: dict[str, UserRecord]
+    ids_by_email: dict[str, list[str]]
+    ids_by_name: dict[str, list[str]]
+    project_member_ids: set[str]
 
 
 def envelope(issues: list[dict]) -> dict:
@@ -18,7 +26,7 @@ def envelope(issues: list[dict]) -> dict:
     }
 
 
-def _member_map(student_id: str, email: str, name: str) -> dict[str, object]:
+def _member_map(student_id: str, email: str, name: str) -> _MemberLookupMaps:
     """Build the lookup maps for a single project member."""
     return {
         "users_by_id": {student_id: UserRecord(
@@ -61,8 +69,9 @@ def test_normalizes_screenshot_ticket_fields_and_sorts_tickets() -> None:
         "story_points": 5.0,
         "sprint_id": "sprint-2",
         "timestamp": None,
+        "changelog": [],
     }
-    assert result.normalization_version == "jira-ticket-v1"
+    assert result.normalization_version == "jira-ticket-v2"
 
 
 def test_missing_values_are_preserved_as_null() -> None:
@@ -72,6 +81,123 @@ def test_missing_values_are_preserved_as_null() -> None:
     assert result.tickets[0].status is None
     assert result.tickets[0].issue_type is None
     assert result.tickets[0].story_points is None
+
+
+def test_timestamp_uses_resolution_date_not_last_update_for_open_issues() -> None:
+    result = normalize_jira_envelope(
+        envelope(
+            [
+                {
+                    "key": "DS3-OPEN",
+                    "fields": {
+                        "status": {"name": "In Progress"},
+                        "statuscategorychangedate": "2026-11-02T10:00:00.000+0000",
+                        "updated": "2026-11-02T11:00:00.000+0000",
+                        "created": "2026-11-01T09:00:00.000+0000",
+                    },
+                },
+                {
+                    "key": "DS3-DONE",
+                    "fields": {
+                        "status": {"name": "Done"},
+                        "resolutiondate": "2026-11-02T12:00:00.000+0000",
+                        "updated": "2026-11-03T11:00:00.000+0000",
+                    },
+                },
+            ]
+        )
+    )
+
+    tickets = {ticket.ticket_id: ticket for ticket in result.tickets}
+    assert tickets["DS3-OPEN"].timestamp is None
+    assert tickets["DS3-DONE"].timestamp == datetime.fromisoformat(
+        "2026-11-02T12:00:00+00:00"
+    )
+
+
+def test_normalizes_sprint_dates_and_changelog_history() -> None:
+    data = envelope(
+        [
+            {
+                "key": "DS3-4",
+                "fields": {
+                    "customfield_10020": [
+                        {
+                            "id": 1,
+                            "name": "Sprint 2",
+                            "startDate": "2026-11-02T00:00:00.000Z",
+                            "endDate": "2026-11-16T00:00:00.000Z",
+                        }
+                    ],
+                    "status": {"name": "Done"},
+                    "customfield_10016": 3,
+                },
+                "changelog": {
+                    "histories": [
+                        {
+                            "created": "2026-11-05T14:00:00.000+0000",
+                            "items": [
+                                {
+                                    "field": "status",
+                                    "fieldId": "status",
+                                    "fromString": "In Progress",
+                                    "toString": "Done",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+    data["sprint_id"] = "sprint-2"
+    data["changelog_captured"] = True
+
+    result = normalize_jira_envelope(data, story_points_field="customfield_10016")
+
+    assert result.sprint_start_date.isoformat() == "2026-11-02"
+    assert result.sprint_end_date.isoformat() == "2026-11-16"
+    assert result.changelog_captured is True
+    change = result.tickets[0].changelog[0]
+    assert change.created == datetime.fromisoformat("2026-11-05T14:00:00+00:00")
+    assert change.items[0].to_string == "Done"
+
+
+def test_configured_csv_dates_override_jira_sprint_and_resolution_dates() -> None:
+    data = envelope(
+        [
+            {
+                "key": "DS3-CSV",
+                "fields": {
+                    "customfield_10020": [
+                        {
+                            "id": 2,
+                            "name": "Sprint 2",
+                            "startDate": "2026-11-02T00:00:00.000Z",
+                            "endDate": "2026-11-16T00:00:00.000Z",
+                        }
+                    ],
+                    "customfield_10050": "2024-10-01",
+                    "customfield_10051": "2024-10-14",
+                    "customfield_10052": "2024-10-08",
+                    "resolutiondate": "2026-11-03T11:00:00.000+0000",
+                    "status": {"name": "Done"},
+                },
+            }
+        ]
+    )
+    data["sprint_id"] = "sprint-2"
+
+    result = normalize_jira_envelope(
+        data,
+        completion_date_field="customfield_10052",
+        sprint_start_date_field="customfield_10050",
+        sprint_end_date_field="customfield_10051",
+    )
+
+    assert result.sprint_start_date.isoformat() == "2024-10-01"
+    assert result.sprint_end_date.isoformat() == "2024-10-14"
+    assert result.tickets[0].timestamp == datetime(2024, 10, 8, tzinfo=UTC)
 
 
 def test_rejects_issue_without_key() -> None:
