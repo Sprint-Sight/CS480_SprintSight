@@ -7,7 +7,6 @@ from schemas.rubrics_score import RubricsScore
 class SprintAssessment(BaseModel):
     sprint_id: str
     team_id: str
-    prompt_version: str # links to prompt registry
     # Float, not rounded to an int: the backend multiplies this by 10 for its
     # /100 team_score, so rounding here to a 1-10 integer first would collapse
     # the /100 score down to multiples of 10 and throw away real resolution.
