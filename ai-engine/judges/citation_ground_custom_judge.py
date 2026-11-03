@@ -1,22 +1,31 @@
-import asyncio, os, time, mlflow
+import asyncio
+import os
+import time
 from typing import Literal
 
-from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, Trace, SpanType
+import mlflow
+from mlflow.entities import (
+    AssessmentSource,
+    AssessmentSourceType,
+    Feedback,
+    SpanType,
+    Trace,
+)
 from mlflow.genai.scorers import scorer
 from pydantic import BaseModel, Field, model_validator
-from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 
 from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
+from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 from schemas.artifact_bundle import ArtifactBundle
+from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
-from schemas.bundle_registry import get_bundle
 from services.llm_client import (
     LLM_TEMPERATURE,
+    _request_extra_body,
     audit_scope,
     create_llm_client,
-    _request_extra_body,
 )
 
 GROUNDING_PROMPT_VERSION = "grounding-v1"
@@ -154,7 +163,7 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
             bundle = _bundle_of(trace, team)
             rubric, dropped = read_candidate(trace, bundle) # Get the candidate's rubric scores and any citations dropped by code
             result = asyncio.run(judge_assessment(bundle, rubric, JUDGE_MODEL)) # Run the judge on the candidate's rubric scores
-        except Exception as e: # Judge call can fail in many ways; must not crash the eval run
+        except Exception as e:  # noqa: BLE001 - a judge failure must not crash the eval run
             print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
             mlflow.update_current_trace(response_preview=f"Error: {e}")
             return [Feedback(name="citation_hallucination_rate", error=e, source=source)]

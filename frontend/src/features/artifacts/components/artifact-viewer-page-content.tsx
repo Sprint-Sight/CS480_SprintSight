@@ -21,6 +21,7 @@ import { useArtifactTab } from "@/features/artifacts/hooks/use-artifact-tab";
 import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
+import { JiraBurndownChart, type JiraBurndownResponse } from "@/features/artifacts/components/jira-burndown-chart";
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
@@ -190,6 +191,10 @@ export default function ArtifactViewerPageContent() {
   const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
   const [jiraError, setJiraError] = useState("");
+  const [jiraBurndown, setJiraBurndown] = useState<JiraBurndownResponse | null>(null);
+  const [jiraBurndownError, setJiraBurndownError] = useState("");
+  const [isLoadingBurndown, setIsLoadingBurndown] = useState(false);
+  const jiraBurndownRequestId = useRef(0);
   const [isLoadingJira, setIsLoadingJira] = useState(false);
   const [isSyncingJira, setIsSyncingJira] = useState(false);
   const [gitSprintId, setGitSprintId] = useState("");
@@ -310,19 +315,29 @@ export default function ArtifactViewerPageContent() {
   }, [role, selectedProjectId, isLoadingProjects]);
 
   useEffect(() => {
+    jiraBurndownRequestId.current += 1;
+    setIsLoadingBurndown(false);
     if (role !== "instructor") {
       setJiraRuns([]);
       setJiraSnapshot(null);
+      setJiraBurndown(null);
+      setJiraError("");
+      setJiraBurndownError("");
       return;
     }
     if (!isUuid(selectedProjectId)) {
       setJiraRuns([]);
       setJiraSnapshot(null);
+      setJiraBurndown(null);
+      setJiraError("");
+      setJiraBurndownError("");
       return;
     }
 
     async function loadProjectRuns() {
       setJiraError("");
+      setJiraBurndownError("");
+      setJiraBurndown(null);
       setIsLoadingJira(true);
       try {
         const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`);
@@ -374,11 +389,38 @@ export default function ArtifactViewerPageContent() {
   }
 
   async function loadCleanedRun(run: JiraIngestionRun) {
-    const snapshot = await apiRequest<JiraCleanedSnapshot>(
-      `/jira-ingestion/runs/${run.project_id}/${run.sprint_id}/${run.run_id}/cleaned`
-    );
-    setJiraSnapshot(snapshot);
-    saveJiraSnapshot(snapshot);
+    const requestId = jiraBurndownRequestId.current + 1;
+    jiraBurndownRequestId.current = requestId;
+    setJiraError("");
+    setJiraBurndownError("");
+    setJiraBurndown(null);
+    setIsLoadingBurndown(true);
+    try {
+      const snapshot = await apiRequest<JiraCleanedSnapshot>(
+        `/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}/cleaned`
+      );
+      if (requestId !== jiraBurndownRequestId.current) return;
+      setJiraSnapshot(snapshot);
+      saveJiraSnapshot(snapshot);
+      try {
+        const burndown = await apiRequest<JiraBurndownResponse>(
+          `/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}/burndown`
+        );
+        if (requestId === jiraBurndownRequestId.current) setJiraBurndown(burndown);
+      } catch (error) {
+        if (requestId === jiraBurndownRequestId.current) {
+          setJiraBurndownError(
+            error instanceof Error ? error.message : "Failed to load the Jira burndown chart.",
+          );
+        }
+      }
+    } catch (error) {
+      if (requestId === jiraBurndownRequestId.current) {
+        setJiraError(error instanceof Error ? error.message : "Failed to load Jira data.");
+      }
+    } finally {
+      if (requestId === jiraBurndownRequestId.current) setIsLoadingBurndown(false);
+    }
   }
 
   async function loadSprintRuns(sprint: string) {
@@ -403,10 +445,12 @@ export default function ArtifactViewerPageContent() {
       return;
     }
 
-    const sprint = sprintId || buildNextSprintId(jiraRuns.map((run) => run.sprint_id));
+    const sprint = sprintId.trim() || buildNextSprintId(jiraRuns.map((run) => run.sprint_id));
     setJiraError("");
     setIsSyncingJira(true);
     setJiraSnapshot(null);
+    setJiraBurndown(null);
+    setJiraBurndownError("");
     try {
       const rawRun = await apiRequest<JiraIngestionRun>(`/jira-ingestion/raw/${selectedProjectId}`, {
         method: "POST",
@@ -664,16 +708,30 @@ export default function ArtifactViewerPageContent() {
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
               <div className="space-y-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</span>
-                <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700">
-                  {sprintId || "sprint-1"}
-                </div>
+                <label htmlFor="jira-sprint-id" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</label>
+                <input
+                  id="jira-sprint-id"
+                  type="text"
+                  value={sprintId}
+                  onChange={(event) => setSprintId(event.target.value)}
+                  placeholder="Sprint 2"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+                <p className="text-xs text-slate-500">Enter the Jira sprint name, for example “Sprint 2”.</p>
               </div>
             </div>
 
             {jiraError && <p className="text-sm text-rose-600">{jiraError}</p>}
+            {isLoadingBurndown && <p className="text-sm text-slate-500">Loading Jira burndown...</p>}
 
             <JiraIngestionRunsTable runs={jiraRuns} onLoadCleanedRun={loadCleanedRun} />
+
+            {jiraBurndownError && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Burndown unavailable: {jiraBurndownError}
+              </p>
+            )}
+            {jiraBurndown && <JiraBurndownChart burndown={jiraBurndown} />}
 
             {jiraSnapshot ? (
               jiraSnapshot.tickets.map((ticket) => (

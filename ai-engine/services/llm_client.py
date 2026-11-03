@@ -1,4 +1,9 @@
-import contextvars, hashlib, json, logging, os, time, httpx, instructor, mlflow
+import contextvars
+import hashlib
+import json
+import logging
+import os
+import time
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -7,9 +12,9 @@ from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-from mlflow.entities import SpanType
-from openai import AsyncOpenAI
-
+import httpx
+import instructor
+import mlflow
 from dotenv import load_dotenv
 from instructor.core import IncompleteOutputException
 from mlflow.entities import SpanType
@@ -860,7 +865,7 @@ async def evaluate_dimension(
     dimension_prompt,
     num_ctx: int | None = None,
 ) -> RubricDimensionScore:
-    with mlflow.start_span(name=f"Evaluate_Dimension_{dimension_name}", span_type=SpanType.LLM) as span:
+    with mlflow.start_span(name=f"Evaluate_Dimension_{dimension_name}", span_type=SpanType.LLM):
         built = build_dimension_prompt(bundle, dimension_name, dimension_prompt, model_name, num_ctx)
         prompt, bundle_data = built.prompt, built.bundle_data
         bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()

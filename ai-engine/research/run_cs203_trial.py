@@ -8,15 +8,19 @@ triggered here genuinely exercises the same path the live endpoint uses.
 Usage:
     docker compose exec sprintsight_ai python -m research.run_ab_trial --model sprintsight-qwen
 """
-import argparse, asyncio, json, mlflow
+import argparse
+import asyncio
+import json
 from pathlib import Path
+
+import mlflow
 from fastapi import BackgroundTasks
 
-from schemas.artifact_bundle import ArtifactBundle
-from prompts.dimension_criteria import DIMENSIONS
-from services.evaluator import evaluate_sprint
 from judges.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
+from prompts.dimension_criteria import DIMENSIONS
+from schemas.artifact_bundle import ArtifactBundle
+from services.evaluator import evaluate_sprint
 
 CS203g6_BUNDLE_PATH = Path(__file__).parent / "cs203g6_AB.json"
 CS203jy_BUNDLE_PATH = Path(__file__).parent / "cs203jy_AB.json"
@@ -30,7 +34,7 @@ def _bundles(dataset: str) -> list[ArtifactBundle]:
     return [load_ab_bundle(p) for p in (CS203g6_BUNDLE_PATH, CS203jy_BUNDLE_PATH)]
 
 def _production_prompts() -> dict[str, str]:
-    prompts = {}
+    prompts: dict[str, str] = {}
     for dim in DIMENSIONS:
         production = get_production_prompt(f"Evaluate_Dimension_{dim}")
         if production is None:
@@ -46,7 +50,7 @@ async def run_trial(model_name: str, experiment_name: str = DEFAULT_EXPERIMENT_N
         bundle = load_ab_bundle(ab_bundle_path)
         for i in range(repeats):
             print(f"[{i + 1}/{repeats}] Evaluating '{model_name}' against {bundle.team_id}...")
-            trace_ids = []  # fresh per run so a judge task only sees its own traces
+            trace_ids: list[str] = []
             assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
             print(f"  trace_ids={trace_ids}  overall_score={assessment.overall_score}")
             trace_id = trace_ids[0]
