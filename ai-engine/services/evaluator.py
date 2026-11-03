@@ -112,7 +112,14 @@ async def _log_gpu_offload(model_name: str) -> None:
         log.warning("Could not record GPU offload for model '%s'.", model_name, exc_info=True)
 
 # Evaluates each rubric dimension, then generates project-level sprint feedback.
-async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient, trace_ids, dimension_prompts=None) -> SprintAssessment:
+async def evaluate_sprint(
+    bundle: ArtifactBundle,
+    model_name: str,
+    experiment_name: str,
+    mlflow_client: mlflow.MlflowClient,
+    trace_ids: list[str],
+    dimension_prompts: dict[str, str] | None = None,
+) -> tuple[SprintAssessment, dict[str, str]]:
 
     remember_bundle(bundle)  # Store the bundle in a global registry for later retrieval by the judge
 
@@ -270,9 +277,9 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
         )
 
         mlflow.log_metric("overall_score", average_score)
-        for dim, score in scores_by_dim.items():
+        for dimension_name, score in scores_by_dim.items():
             if not score.evaluation_failed:
-                mlflow.log_metric(f"{dim}_score", score.score)
+                mlflow.log_metric(f"{dimension_name}_score", score.score)
         mlflow.log_metric("failed_dimensions_count", len(failed_dimensions))
         mlflow.log_metric("evaluation_duration_seconds", time.time() - start_time)
 

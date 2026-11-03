@@ -2,14 +2,13 @@ from pathlib import Path
 
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.member_contribution import MemberContribution
+from schemas.rubrics_dimension_score import ResolvedEvidenceCitation
 from schemas.rubrics_score import RubricDimensionScore, RubricsScore
 from schemas.sprint_assessment import SprintAssessment
 
 
-# Citations must be dicts: ModelOutput.coerce_citations mangles EvidenceCitation objects
-# (identifier=str(obj), reason="") and then fails the 15-char reason minimum.
-def cite(identifier: str, reason: str) -> dict:
-    return {"identifier": identifier, "reason": reason}
+def cite(identifier: str, reason: str) -> ResolvedEvidenceCitation:
+    return ResolvedEvidenceCitation(identifier=identifier, reason=reason)
 
 CS203G6_BUNDLE = ArtifactBundle.model_validate_json(
     (Path(__file__).resolve().parent.parent / "research" / "cs203g6_AB.json").read_text()

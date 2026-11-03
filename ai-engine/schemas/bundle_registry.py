@@ -12,4 +12,6 @@ def remember_bundle(bundle: ArtifactBundle) -> None:
         _BUNDLES.popitem(last=False)
 
 def get_bundle(team_id: str | None, sprint_id: str | None) -> ArtifactBundle | None:
+    if team_id is None or sprint_id is None:
+        return None
     return _BUNDLES.get((team_id, sprint_id))
