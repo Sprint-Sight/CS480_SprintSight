@@ -861,43 +861,14 @@ async def evaluate_dimension(
     num_ctx: int | None = None,
 ) -> RubricDimensionScore:
     with mlflow.start_span(name=f"Evaluate_Dimension_{dimension_name}", span_type=SpanType.LLM) as span:
-        # Evaluate a single rubric dimension.
-        fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name, ())
-        full_bundle = bundle.model_dump(mode="json")
-
-        # Stats from ALL commits, then sample for the bundle
-        sampled_commits: list[dict] | None = None
-        if "commits" in fields:
-            all_trimmed = _trim_commits(full_bundle["commits"])
-            commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
-            sampled_commits = _select_representative_commits(
-                all_trimmed, dimension_name, _COMMIT_BUDGET,
-            )
-            log.info(
-                ">>> Dimension '%s': %d total commits -> %d sampled (budget=%d)",
-                dimension_name, len(all_trimmed), len(sampled_commits), _COMMIT_BUDGET,
-            )
-        else:
-            commit_facts = ""
-
-        jira_facts = (
-            _compute_jira_facts(full_bundle["jira_tickets"])
-            if "jira_tickets" in fields else ""
-        )
-
-        computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
-
-        bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
-        bundle_hash = hashlib.sha256(
-            bundle_data.encode("utf-8")
-        ).hexdigest()
-
-        approx_tokens = len(bundle_data) // 4
+        built = build_dimension_prompt(bundle, dimension_name, dimension_prompt, model_name, num_ctx)
+        prompt, bundle_data = built.prompt, built.bundle_data
+        bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()
+    
+        approx_tokens = estimate_tokens(prompt) + _SCHEMA_OVERHEAD_TOKENS
         log.info(
-            ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
-            dimension_name,
-            len(bundle_data),
-            approx_tokens,
+            ">>> Dimension '%s': prompt is %d chars (~%d tokens estimated); evidence: %s",
+            dimension_name, len(prompt), approx_tokens, built.stats,
         )
 
         effective_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
@@ -908,107 +879,79 @@ async def evaluate_dimension(
                 dimension_name, approx_tokens, effective_ctx,
             )
 
-        project_context = _format_project_context_documents(bundle)
-        prompt = render_dimension_prompt(
-            dimension_name, dimension_prompt, bundle_data, computed_facts, project_context,
-        )
-
         client = create_llm_client()  # Create a new client for this model
 
-    audit_token = _audit_context.set(
-        {
-            "request_id": str(uuid4()),
-            "team_id": bundle.team_id,
-            "sprint_id": bundle.sprint_id,
-            "dimension": dimension_name,
-            "model": model_name,
-            "bundle_hash": bundle_hash,
-            "bundle_bytes": len(bundle_data.encode("utf-8")),
-            "commit_count": len(bundle.commits),
-            "jira_ticket_count": len(bundle.jira_tickets),
-            "peer_evaluation_count": len(bundle.peer_evaluations),
-            "artifact_metric_keys": sorted(bundle.artifact_metrics),
-            "num_ctx": effective_ctx,
-            "estimated_prompt_tokens": approx_tokens,
-            "evidence": built.stats,
-        }
-    )
-    try:
-        # The transport hooks capture the exact request and raw Ollama response.
-        model_output = await _create_with_length_reask(
-            client, prompt,
-            model=model_name,
-            response_model=ModelOutput,
-            temperature=LLM_TEMPERATURE,
-            max_retries=3,
-            max_tokens=_MAX_OUTPUT_TOKENS,
-            extra_body=_request_extra_body(num_ctx),
-        )
-
-        # dimension/evaluation_failed are assigned here, in code, rather than
-        # asked of the model — it can't get the dimension wrong if it's never
-        # given the chance to answer it.
-        result = RubricDimensionScore(
-            dimension=dimension_name,
-            **model_output.model_dump(),
-        )
-
-        # Drop only fabricated/ungrounded citations rather than discarding
-        # the whole dimension over a single bad citation. In packed mode each
-        # surviving citation is also resolved to its file/lines/commit.
-        downgraded = 0
-        if built.index is not None:
-            resolved, ungrounded, downgraded = resolve_citations(
-                result.evidence_citations or [], built.index,
-            )
-            result = RubricDimensionScore.model_validate(
-                {**result.model_dump(), "evidence_citations": resolved}
-            )
-        else:
-            ungrounded = find_ungrounded_citations(bundle_data, result.evidence_citations or [])
-            result.evidence_citations = [
-                citation for citation in (result.evidence_citations or []) if citation not in ungrounded
-            ]
-
-        if ungrounded or downgraded:
-            log.warning(
-                "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the "
-                "whole dimension, and downgraded %d line citation(s) to file level: %r",
-                dimension_name, len(ungrounded), downgraded, ungrounded,
-            )
-            write_audit_record(
-                {
-                    **(_audit_context.get() or {}),
-                    "ungrounded_citations_dropped": [
-                        (citation.model_dump() if hasattr(citation, "model_dump") else citation)
-                        for citation in ungrounded
-                    ],
-                    "line_citations_downgraded": downgraded,
-                }
-            )
-
-            mlflow.log_feedback(
-                trace_id=mlflow.get_current_active_span().trace_id,
-                name='citation_grounding',
-                value=False,
-                rationale=f"Dropped {len(ungrounded)} ungrounded citation(s) from dimension '{dimension_name}'",
-                span_id=span.span_id,
-            )
-
-            span.set_inputs({
+        audit_token = _audit_context.set(
+            {
+                "request_id": str(uuid4()),
+                "team_id": bundle.team_id,
+                "sprint_id": bundle.sprint_id,
                 "dimension": dimension_name,
                 "model": model_name,
-                "num_ctx": effective_ctx,
                 "bundle_hash": bundle_hash,
-                "approx_prompt_tokens": approx_tokens,
-            })
-            span.set_outputs({
-                **result.model_dump(mode="json"),
-                "ungrounded_citations_dropped": len(ungrounded),
-            })
+                "bundle_bytes": len(bundle_data.encode("utf-8")),
+                "commit_count": len(bundle.commits),
+                "jira_ticket_count": len(bundle.jira_tickets),
+                "peer_evaluation_count": len(bundle.peer_evaluations),
+                "artifact_metric_keys": sorted(bundle.artifact_metrics),
+                "num_ctx": effective_ctx,
+                "estimated_prompt_tokens": approx_tokens,
+                "evidence": built.stats,
+            }
+        )
 
-            log.info('>>> Dimension "%s" evaluation complete. Ungrounded citations dropped: %d', dimension_name, len(ungrounded))
-            print(f"Dimension '{dimension_name}' evaluation complete. Ungrounded citations dropped: {len(ungrounded)}\n")
+        try: # The transport hooks capture the exact request and raw Ollama response.
+            model_output = await _create_with_length_reask(
+                client, prompt,
+                model=model_name,
+                response_model=ModelOutput,
+                temperature=LLM_TEMPERATURE,
+                max_retries=3,
+                max_tokens=_MAX_OUTPUT_TOKENS,
+                extra_body=_request_extra_body(num_ctx),
+            )
+
+            # dimension/evaluation_failed are assigned here, in code, rather than
+            # asked of the model — it can't get the dimension wrong if it's never
+            # given the chance to answer it.
+            result = RubricDimensionScore(
+                dimension=dimension_name,
+                **model_output.model_dump(),
+            )
+
+            # Drop only fabricated/ungrounded citations rather than discarding
+            # the whole dimension over a single bad citation. In packed mode each
+            # surviving citation is also resolved to its file/lines/commit.
+            downgraded = 0
+            if built.index is not None:
+                resolved, ungrounded, downgraded = resolve_citations(
+                    result.evidence_citations or [], built.index,
+                )
+                result = RubricDimensionScore.model_validate(
+                    {**result.model_dump(), "evidence_citations": resolved}
+                )
+            else:
+                ungrounded = find_ungrounded_citations(bundle_data, result.evidence_citations or [])
+                result.evidence_citations = [
+                    citation for citation in (result.evidence_citations or []) if citation not in ungrounded
+                ]
+
+            if ungrounded or downgraded:
+                log.warning(
+                    "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the "
+                    "whole dimension, and downgraded %d line citation(s) to file level: %r",
+                    dimension_name, len(ungrounded), downgraded, ungrounded,
+                )
+                write_audit_record(
+                    {
+                        **(_audit_context.get() or {}),
+                        "ungrounded_citations_dropped": [
+                            (citation.model_dump() if hasattr(citation, "model_dump") else citation)
+                            for citation in ungrounded
+                        ],
+                        "line_citations_downgraded": downgraded,
+                    }
+                )
 
             return result
 
@@ -1023,10 +966,9 @@ async def evaluate_dimension(
             )
             raise
 
-    finally:
-        # Every attempt failed without a response (e.g. the last one timed out).
-        _record_unanswered(_audit_context.get() or {})
-        _audit_context.reset(audit_token)
+        finally: # Every attempt failed without a response (e.g. the last one timed out).
+            _record_unanswered(_audit_context.get() or {})
+            _audit_context.reset(audit_token)
 
 async def generate_sprint_feedback( # Generate strengths, weakenesses, & recommendations for whole sprint
     bundle: ArtifactBundle,
@@ -1037,7 +979,14 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
 ) -> SprintFeedback:
     with mlflow.start_span(name=sprint_feedback_prompt_name or "Generate_Sprint_Feedback", span_type=SpanType.LLM) as span:
         scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
-
+        project_context = _format_project_context_documents(bundle)
+        prompt = render_sprint_feedback_prompt(
+            bundle.team_id,
+            bundle.sprint_id,
+            scores_data,
+            bundle.instructor_expectations,
+            project_context,
+        )
         span.set_attributes({'sprint_feedback_prompt': sprint_feedback_prompt_name or "Generate_Sprint_Feedback"})
         audit_token = _audit_context.set(
             {
@@ -1050,16 +999,6 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
             }
         )
 
-        scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
-        project_context = _format_project_context_documents(bundle)
-        prompt = render_sprint_feedback_prompt(
-            bundle.team_id,
-            bundle.sprint_id,
-            scores_data,
-            bundle.instructor_expectations,
-            project_context,
-        )
-
         try:
             client = create_llm_client()
             full_prompt_chars = len(prompt)
@@ -1068,16 +1007,16 @@ async def generate_sprint_feedback( # Generate strengths, weakenesses, & recomme
                 "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
             )
             return await _create_with_length_reask(
-            client, prompt,
+                client, prompt,
                 model=model_name,
                 response_model=SprintFeedback,
-                    temperature=LLM_TEMPERATURE,
+                temperature=LLM_TEMPERATURE,
                 max_retries=3,
-            max_tokens=_MAX_OUTPUT_TOKENS,
-                extra_body=request_extra_body(num_ctx),
+                max_tokens=_MAX_OUTPUT_TOKENS,
+                extra_body=_request_extra_body(num_ctx),
             )
         finally:
-        _record_unanswered(_audit_context.get() or {})
+            _record_unanswered(_audit_context.get() or {})
             _audit_context.reset(audit_token)
 
 async def check_ollama_health(model_name: str) -> dict:
@@ -1154,7 +1093,6 @@ async def pull_model_if_missing(model_name: str) -> None:
 def _with_default_tag(name: str) -> str:
     return name if ":" in name else f"{name}:latest"
 
-
 def parse_loaded_models(ps_body: dict) -> list[dict]:
     """Ollama's /api/ps body -> one dict per loaded model. `offload_ratio` is
     the share of the model's memory in VRAM: below 1.0 Ollama has put some
@@ -1172,12 +1110,10 @@ def parse_loaded_models(ps_body: dict) -> list[dict]:
         })
     return loaded
 
-
 def find_loaded_model(loaded: list[dict], model_name: str) -> dict | None:
     # Callers may pass a ModelName enum, whose str() is "ModelName.X", not the value.
     wanted = _with_default_tag(str(getattr(model_name, "value", model_name)))
     return next((m for m in loaded if m["name"] and _with_default_tag(m["name"]) == wanted), None)
-
 
 async def snapshot_loaded_models() -> list[dict]:
     """Which models Ollama has loaded right now, and how much of each is on

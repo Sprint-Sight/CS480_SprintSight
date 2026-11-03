@@ -89,7 +89,8 @@ async def assess_backend_data_endpoint(
 
         mlflow_client = mlflow.MlflowClient()
 
-        assessment, prompt_versions_registered = await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client)
+        trace_ids = []  # fresh per run so a judge task only sees its own traces
+        assessment, prompt_versions_registered = await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
         trace_id = mlflow.get_last_active_trace_id() # trace evaluate_sprint just created
 
         # Add a background task to promote the trace to production after evaluation, or handle it in the evaluator itself.
