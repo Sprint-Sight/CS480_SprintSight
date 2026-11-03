@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
@@ -29,7 +29,7 @@ def setup_project(repository, member_ids: list[str] | None = None) -> None:
             github_repo_url=None,
             local_repo_path=None,
             created_by="u-faculty-1",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         ),
         member_ids or [],
     )

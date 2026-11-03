@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -8,7 +8,6 @@ from app.main import app
 from app.repositories.in_memory import InMemoryMetricsRepository
 from app.repositories.interfaces import IngestionMetricBundle, ProjectRecord
 from app.schemas.assessment import CommitInfo, FileDiff
-
 
 client = TestClient(app)
 
@@ -36,14 +35,14 @@ def test_retrieve_stored_commits_and_file_changes(override_user_repository) -> N
             github_repo_url=None,
             local_repo_path="cs-203-project",
             created_by="u-faculty-1",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         ),
         [],
     )
     project_repository.assign_instructor("course-retrieval", "u-faculty-1")
 
     metrics_repository = InMemoryMetricsRepository()
-    captured_at = datetime(2026, 1, 15, 12, tzinfo=timezone.utc)
+    captured_at = datetime(2026, 1, 15, 12, tzinfo=UTC)
     metrics_repository.save_metrics(
         IngestionMetricBundle(
             course_id="course-retrieval",

@@ -29,7 +29,6 @@ def project_payload(project_name: str, team_name: str, **extra: object) -> dict[
 
 
 def test_admin_assigns_instructor_and_instructor_creates_student_and_project() -> None:
-    admin_headers = headers(token("admin@sprintsight.edu"))
     instructor_headers = headers(token("faculty@sprintsight.edu"))
     course = client.post("/api/v1/courses", json={"code": "CS480", "name": "Capstone", "section": "001", "year": 2026, "term": "Fall"}, headers=instructor_headers)
     assert course.status_code == 201

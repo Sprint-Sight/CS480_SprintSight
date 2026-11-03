@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -54,7 +54,7 @@ def test_course_and_project_additions_notify_student(override_user_repository) -
         github_repo_url=None,
         local_repo_path=None,
         created_by="u-faculty-1",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     override_user_repository.create_project(project, [])
     assigned = client.post(
@@ -326,7 +326,7 @@ def test_user_cannot_mark_another_users_notification_read(
             event_type="private",
             title="Private",
             message="Not for students",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
     )
     response = client.patch(
