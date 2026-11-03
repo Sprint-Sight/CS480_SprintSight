@@ -1,15 +1,15 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
-from app.repositories.interfaces import UserRecord, Role
+from app.repositories.interfaces import Role, UserRecord
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
 
 
 def envelope(issues: list[dict]) -> dict:
     return {
         "source": "jira",
-        "captured_at": datetime(2026, 9, 2, tzinfo=timezone.utc),
+        "captured_at": datetime(2026, 9, 2, tzinfo=UTC),
         "jira_project_key": "DS3",
         "course_id": "course-1",
         "project_id": "project-1",

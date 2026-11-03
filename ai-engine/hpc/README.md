@@ -270,6 +270,7 @@ sits idle. Nothing needs switching on.
 | `OLLAMA_MODEL_NUM_THREAD` | GPU job | the job's `--cpus-per-task` (4) | CPU threads per request, baked into every model by `ollama-entrypoint.sh` at job start (the app's `/v1` requests can't set it). Without it, Ollama sizes threads from the whole node and they contend for the job's 4 CPUs on every token: on qwen3-8b, decoding was ~3.5× slower (17 vs 60 tok/s) with GPU utilisation near 30% |
 | `num_batch` | `gpu_bench --num-batch` only | Ollama's 512 | Prefill batch size. Can be measured with the benchmark (native API); to use it in the app it would have to go in the Modelfiles |
 | `OLLAMA_KEEP_ALIVE` | GPU job | 30m | How long an idle model stays loaded |
+| `OLLAMA_MAX_LOADED_MODELS` | GPU job | 1 | Models resident at once. Keep 1: with three resident during a model sweep, Ollama held a mistral request for 19m34s with the GPU idle, until an idle model's 30-minute keep-alive ran out. With 1, switching models unloads the old one immediately, and VRAM readings belong to one model |
 | `HPC_GPU_TYPE` | `.env.hpc` | unset | Pins the GPU model (`sinfo -o "%N %G"` lists types) so runs are comparable |
 
 Server settings (`OLLAMA_*`) only change when the job restarts:

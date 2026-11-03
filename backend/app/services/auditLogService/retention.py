@@ -16,8 +16,8 @@ from app.repositories.postgres import (
     PostgresAuditRepository,
     PostgresAuditRetentionConfigRepository,
     create_user_pool,
-    ensure_audit_schema,
     ensure_audit_retention_config_schema,
+    ensure_audit_schema,
 )
 
 logger = logging.getLogger(__name__)

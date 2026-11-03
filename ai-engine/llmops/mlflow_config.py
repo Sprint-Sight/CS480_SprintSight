@@ -3,14 +3,10 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
 
 import mlflow
 from dotenv import load_dotenv
 from mlflow import MlflowClient
-from mlflow.entities import SpanType
-from mlflow.entities.trace_location import MlflowExperimentLocation
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -32,7 +28,7 @@ _lock = threading.Lock()  # Ensure thread-safe initialization of MLflow tracking
 _configured = False # Global variable to track if MLflow has been configured
 _experiment_ids: dict[str, str] = {}  # Cache experiment IDs to avoid repeated lookups
 
-def configure_mlflow(): # Call this once per process to set up MLflow tracking and prompt registry
+def configure_mlflow() -> None: # Call this once per process to set up MLflow tracking and prompt registry
     global _configured
     with _lock: # Ensure thread-safe initialization
         if not _configured: # Only configure MLflow if it hasn't been configured yet
@@ -40,7 +36,7 @@ def configure_mlflow(): # Call this once per process to set up MLflow tracking a
             log.info("MLflow tracking URI set to: %s", mlflow.get_tracking_uri())
             _configured = True
 
-def get_experiment_id(experiment_name: str): 
+def get_experiment_id(experiment_name: str) -> str:
     configure_mlflow() # Ensure MLflow is configured before accessing experiments
     with _lock: # Ensure thread-safe access to experiment IDs
         if experiment_name in _experiment_ids: # Return cached experiment ID if available
@@ -62,37 +58,9 @@ def get_experiment_id(experiment_name: str):
         _experiment_ids[experiment_name] = experiment_id # Cache the experiment ID for future use
         return experiment_id
 
-@contextmanager # Context manager to create a new MLflow run within an experiment
-def experiment_run(experiment_name, run_name, root_span_name, *, tags: dict[str, str] | None = None, span_type: str = SpanType.CHAIN) -> Iterator[mlflow.ActiveRun]:
-
-    experiment_id = get_experiment_id(experiment_name) # Get the experiment ID for the given name
-    client = MlflowClient()
-    run_tags = dict(tags or {})
-    parent = mlflow.active_run() # Get the current active run to set as parent
-    if parent is not None: # If there is a parent run, set it as the parent
-        run_tags["mlflow.parentRunId"] = parent.info.run_id # Set the parent run ID in the tags
-    
-    run_id = client.create_run(experiment_id, run_name=run_name, tags=run_tags).info.run_id # Create a new run in the experiment
-    status = "FINISHED"
-    try:
-        with mlflow.start_span(name=root_span_name, run_id=run_id, span_type=span_type,
-                               trace_destination=MlflowExperimentLocation(experiment_id)): # Start a new span for tracing
-            active_run = mlflow.active_run()
-            if active_run is None:
-                raise RuntimeError("No active MLflow run found inside experiment_run")
-
-            yield active_run
-    except BaseException as e: # If an exception occurs, mark the run as failed
-        status = "FAILED"
-        client.set_tag(run_id, "mlflow.runStatus", f"{type(e).__name__}: {e}"[:250]) # Set the run status to FAILED
-        raise
-    finally:
-        client.set_terminated(run_id, status=status) # Terminate the run with the appropriate status
-
-
 def start_mlflow(experiment_name, name: str | None = None,
                  template: str | None = None, commit_message: str | None = None,
-                 tags: dict | None = None):
+                 tags: dict | None = None) -> None:
     configure_mlflow() # Ensure MLflow is configured before starting a run
     if name and template: # If a prompt name and template are provided, register the prompt
         register_prompt(name, template, commit_message=commit_message or "Initial commit", tags=tags or {"author": "SprintSight"})
@@ -104,8 +72,3 @@ def register_prompt(name, template, commit_message="Initial commit", tags: dict 
         commit_message=commit_message, # Commit message for this version of the prompt
         tags=tags or {"author": "SprintSight"}
     )
-
-def format_prompt(name):
-    loaded = mlflow.genai.get_prompt(name) # Load the prompt template from MLflow Prompt Registry
-    prompt_filled = loaded.format()
-    return prompt_filled

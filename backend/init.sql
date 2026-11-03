@@ -8,7 +8,6 @@
 -- EXTENSIONS
 -- =============================================================
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";   -- gen_random_uuid()
-CREATE EXTENSION IF NOT EXISTS "vector";     -- pgvector for LLM embeddings
 
 -- =============================================================
 -- 1. USERS & AUTHENTICATION

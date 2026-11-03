@@ -1,5 +1,5 @@
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -148,7 +148,7 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
             github_repo_url=None,
             local_repo_path="cs-203-project",
             created_by="u-faculty-1",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         ),
         [],
     )
@@ -183,7 +183,7 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
             course_id="cs480",
             project_id="proj-a",
             sprint_id="sp1",
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
             rubric_weights={"delivery": 0.35, "collaboration": 0.30, "quality": 0.20, "documentation": 0.15},
             team_score=TeamScore(score=80.0, rationale="Initial team assessment."),
             individual_scores=[StudentScore(student_id="stu-001", score=80.0, rationale="Initial contribution.")],
@@ -383,7 +383,7 @@ def test_assessment_job_contract_returns_accepted_and_job_id(monkeypatch, tmp_pa
             github_repo_url=None,
             local_repo_path="cs-203-project",
             created_by="u-faculty-1",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         ),
         [],
     )

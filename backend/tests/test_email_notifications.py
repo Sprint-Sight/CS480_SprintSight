@@ -6,8 +6,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
-from app.dependencies.auth import get_assessment_repository
-from app.dependencies.auth import get_project_repository
+from app.dependencies.auth import get_assessment_repository, get_project_repository
 from app.main import app
 from app.repositories.in_memory import InMemoryProjectRepository, InMemoryUserRepository
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
