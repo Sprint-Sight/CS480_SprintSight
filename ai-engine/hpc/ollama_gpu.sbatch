@@ -32,6 +32,12 @@ OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q4_0}"
 # Ollama's default 5-minute idle unload makes the next call pay a full model
 # load; keep the model resident across a session's assessment runs.
 OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
+# Models resident at once. With more, idle models pile up under that keep-alive
+# when assessments switch models, and Ollama held a request for 19.5 min with
+# the GPU idle until an idle model's keep-alive expired and freed memory. With
+# 1, switching models unloads the previous one straight away (a few seconds
+# for 8B, ~20 s for 32B), and each run's VRAM reading is its own model's.
+OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
 # CPU threads per request, baked into each model by ollama-entrypoint.sh.
 # Matches the CPUs this job reserves; Ollama's own default counts the whole
 # node's cores and the threads then contend for these few CPUs.
@@ -71,7 +77,7 @@ trap 'kill "$SAMPLER_PID" 2>/dev/null || true' EXIT
 echo "Ollama will be reachable on: $(hostname):11434"
 echo "From your laptop, open a tunnel through the login node:"
 echo "  ssh -L 11434:$(hostname):11434 <netid>@origami.smu.edu.sg"
-echo "Ollama settings: NUM_PARALLEL=$OLLAMA_NUM_PARALLEL KV_CACHE_TYPE=$OLLAMA_KV_CACHE_TYPE KEEP_ALIVE=$OLLAMA_KEEP_ALIVE MODEL_NUM_THREAD=$OLLAMA_MODEL_NUM_THREAD"
+echo "Ollama settings: NUM_PARALLEL=$OLLAMA_NUM_PARALLEL KV_CACHE_TYPE=$OLLAMA_KV_CACHE_TYPE KEEP_ALIVE=$OLLAMA_KEEP_ALIVE MAX_LOADED_MODELS=$OLLAMA_MAX_LOADED_MODELS MODEL_NUM_THREAD=$OLLAMA_MODEL_NUM_THREAD"
 echo "GPU telemetry: $GPU_LOG (every ${GPU_SAMPLE_MS} ms)"
 
 srun enroot start --rw \
@@ -82,6 +88,7 @@ srun enroot start --rw \
   --env OLLAMA_KV_CACHE_TYPE="$OLLAMA_KV_CACHE_TYPE" \
   --env OLLAMA_NUM_PARALLEL="$OLLAMA_NUM_PARALLEL" \
   --env OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE" \
+  --env OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS" \
   --env OLLAMA_MODEL_NUM_THREAD="$OLLAMA_MODEL_NUM_THREAD" \
   --mount "$DATA_DIR:/root/.ollama" \
   --mount "$MODELS_DIR:/mnt/models" \
