@@ -77,10 +77,3 @@ def register_prompt_if_changed(
 
     prompt = register_prompt(name=name, template=template, commit_message=commit_message, tags=tags)
     set_prompt_alias(name, alias, prompt.version)
-
-def load_dimension_prompt(dimension_name: str, alias: str = "production") -> str | None:
-    try:
-        return load_prompt(f"prompts:/Evaluate_{dimension_name}@{alias}")
-    except Exception as e:  # noqa: BLE001 - prompt lookup failure must not crash the caller
-        print(f"Error loading prompt for dimension '{dimension_name}': {e}")
-        return None  # Return None if prompt not found or any error occurs

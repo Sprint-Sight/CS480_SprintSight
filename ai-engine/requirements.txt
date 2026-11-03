@@ -49,7 +49,7 @@ requests
 # Structured JSON logging
 structlog
 
-# Async PostgresSQL ORM
+# Async PostgreSQL ORM
 sqlalchemy[asyncio]
 
 # Retry logic with exponential backoff + jitter
