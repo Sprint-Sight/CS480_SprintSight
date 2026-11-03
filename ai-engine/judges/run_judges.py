@@ -7,16 +7,12 @@ from mlflow.exceptions import RestException
 from judges.code_based_scorer import numeric_grade_accuracy
 from judges.citation_ground_custom_judge import llm_judge_citation_grounding, JUDGE_MODEL
 from judges.trace_adapters import read_candidate
-from schemas.cs203_groundtruth import CS203G6_GOLD, CS203JY_GOLD
+from research.cs203_groundtruth import CS203_GOLD
+from research.fixtures import FIXTURES_GOLD
 from prompts.dimension_criteria import DIMENSIONS
 from llmops.review_queue import add_to_review_queue
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
-
-GOLD_BY_TEAM = {
-    CS203G6_GOLD.team_id: CS203G6_GOLD,
-    CS203JY_GOLD.team_id: CS203JY_GOLD,
-}
 
 GRADE_COL = "grade_penalised_mae/value"
 MAE_COL = "grade_mae_scored_only/value"
@@ -31,6 +27,8 @@ MIN_GROUNDED_RATE = 0.5
 
 KEEP_ASSESSMENTS = {'gold', 'citation_grounding'} # not produced by the judge
 
+ALL_GOLD = {**CS203_GOLD, **FIXTURES_GOLD} # All available golds, keyed by team_id
+
 def _log(msg):
     print(msg, flush=True)
 
@@ -40,23 +38,49 @@ def grade_accuracy_from_trace(trace: Trace, expectations: dict): # expects the g
     outputs = {"rubric_scores": {d: (getattr(rubric, d).model_dump() if getattr(rubric, d) else None) for d in DIMENSIONS}}
     return numeric_grade_accuracy.run(outputs=outputs, expectations=expectations)
 
+def _root_outputs(trace: Trace) -> dict:
+    root = next((s for s in trace.data.spans if s.parent_id is None), None)
+    out = root.outputs if root is not None else None
+    return out if isinstance(out, dict) else {}
+
+def _sprint_of(trace: Trace) -> str | None: # trace tag first, then the root span's output
+    return trace.info.tags.get("sprint_id") or _root_outputs(trace).get("sprint_id")
+
+def _team_of(trace: Trace) -> str | None: # trace tag first, then the root span's output; lowercased to match GOLD_BY_TEAM
+    team = trace.info.tags.get("team_id") or _root_outputs(trace).get("team_id")
+    return team.strip().lower() if isinstance(team, str) else None
+
 def find_gold(trace: Trace):
-    team, sprint = trace.info.tags.get("team_id"), trace.info.tags.get("sprint_id")
-    return GOLD_BY_TEAM.get(team) if sprint else None
+    """Gold for this trace's team AND sprint, or None -> only the LLM judge applies."""
+    gold = ALL_GOLD.get(_team_of(trace))
+    if gold is None:
+        return None
+    sprint = _sprint_of(trace)
+    if sprint is not None and sprint != gold.sprint_id: # a gold grades one sprint; another sprint's MAE would be meaningless
+        _log(f"  {trace.info.trace_id}: sprint '{sprint}' != gold sprint '{gold.sprint_id}' -> gold skipped")
+        return None
+    return gold
 
 # Either trace_ids is provided (explicitly select traces) or model/team_id is provided (filter by tags). If both are provided, trace_ids takes precedence.
-def select_traces(client: MlflowClient, experiment_id: str, *, trace_ids=None, model=None, team_id=None, max_results=100):
+def select_traces(client, experiment_id, *, trace_ids=None, model=None, team_id=None, max_results=100):
     if trace_ids:
-        return [client.get_trace(trace_id) for trace_id in trace_ids]
+        found = []
+        for tid in trace_ids:
+            try:
+                found.append(client.get_trace(tid))
+            except RestException as e:          # e.g. "not fully exported yet"
+                _log(f"  skip {tid}: {e}")
+        return found
     clauses = ["trace.status = 'OK'"]
     if team_id:
         clauses.append(f"tags.team_id = '{team_id}'")
     if model:
-        clauses.append(f"tags.model = '{model}'") # the GRADED model
+        clauses.append(f"tags.model = '{model}'")
     traces, token = [], None
-    while True: # search_traces() returns a page at a time
-        page = client.search_traces(experiment_id=[experiment_id], filter=f" AND ".join(clauses), max_results=max_results, order_by=['timestamp_ms DESC'],page_token=token)
-        traces.extend(page)
+    while True:
+        page = client.search_traces(locations=[experiment_id], filter_string=" AND ".join(clauses),
+                                    max_results=100, order_by=["timestamp_ms DESC"], page_token=token)
+        traces.extend(t for t in page if "judge_model" not in t.info.tags)   # judge traces carry candidate tags
         token = page.token
         if not token or len(traces) >= max_results:
             return traces[:max_results]
@@ -135,6 +159,9 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
             _log(f"{label}: failed to fetch trace: {e}")
             add_to_review_queue(f"review_queue_{trace_id}", [trace_id])
             continue
+        if gold is not None and not any(a.name == "gold" for a in (fresh.info.assessments or [])):
+            _log(f"{label}: gold not visible after logging -> LLM judge only") # avoids a silent scorer failure
+            gold = None
         (with_gold if gold is not None else without_gold).append(fresh)
 
     if not (with_gold or without_gold):
@@ -152,6 +179,8 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
              "(the LLM judge takes minutes per trace)...")
         with mlflow.start_run(run_name=f"{base_name}_{group_name}"): # evaluate() reuses the active run
             result = mlflow.genai.evaluate(data=group, scorers=scorers)
+        if result.result_df is None:
+            raise RuntimeError("evaluate() returned no result; df; cannot flag traces for review.")
         _flag_for_review(result.result_df, with_judge)
         results.append(result)
     _log(f"[4/4] Done in {time.perf_counter() - start:.0f}s. Metrics: {[r.metrics for r in results]}")
