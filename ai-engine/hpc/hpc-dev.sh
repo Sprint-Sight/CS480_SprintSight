@@ -319,6 +319,9 @@ ensure_models() {
     create_model_via_api "sprintsight-qwen25-32b"  "qwen2.5:32b"       "Modelfile.qwen25-32b"
     create_model_via_api "sprintsight-r1-32b"      "deepseek-r1:32b"   "Modelfile.deepseek-r1"
     create_model_via_api "sprintsight-coder-32b"   "qwen2.5-coder:32b" "Modelfile.qwen25-coder"
+    # Judge model for evaluation
+    create_model_via_api "sprintsight-judge-phi"   "phi4:14b"  "Modelfile.phi"
+
     echo ""
     info "Remote models:"
     list_models

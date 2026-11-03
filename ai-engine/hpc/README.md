@@ -197,9 +197,11 @@ per-run context below this ceiling for small bundles; it can't exceed it.
 
 Ollama already estimates a safe default from available VRAM at startup —
 visible in your own job log:
+
 ```
 msg="vram-based default context" total_vram="23.6 GiB" default_num_ctx=32768
 ```
+
 That's a conservative baseline for whatever model it considered first.
 Anything configured above it (we already push to 49152) isn't pre-validated
 — it either loads or OOMs, so treat this as a starting point, not a limit.
@@ -225,9 +227,11 @@ srun --pty --partition=project --qos=cs480qos --mem=8G --cpus-per-task=4 \
   --gres=gpu:1 --jobid=<jobid> \
   enroot start --rw --mount ~/sprintsight/ollama_data:/root/.ollama ollama sh
 ```
+
 Inside, load the model at increasing `num_ctx` values (e.g. via a `curl`-free
 request with `ollama run <model> --verbose`, or by hitting the API through
 `sprintsight_ai`) while watching:
+
 - `ollama ps` — shows the currently loaded model's VRAM size
 - `nvidia-smi` — actual GPU memory usage on the node
 
@@ -348,6 +352,7 @@ python -m research.compare_runs <old-run> <new-run>    # exits 1 if any score ch
 ```
 
 It compares each dimension's raw model answer, retries included, and reports:
+
 - whether the evidence was the same
 - whether the answers are byte-identical
 - the scores
@@ -356,3 +361,97 @@ It compares each dimension's raw model answer, retries included, and reports:
 A change that only affects speed (such as the CPU thread count) should come
 out **IDENTICAL**: on qwen3-8b, the 4-thread fix cut 689 s to 188 s with every
 answer byte-for-byte unchanged.
+
+## Research using CS203 bundles and Fixture teams
+
+Two CLI scripts in `ai-engine/research/` run the same grade → judge → promote
+path as the API, without the frontend or backend. They replace the old
+`run_ab_trial.py`.
+
+| Script | Teams | Gold |
+|---|---|---|
+| `research.run_fixture_trial` | 5 synthetic teams: `Team_Alpha`, `Team_Delta`, `Team_Epsilon`, `Team_Theta`, `Team_Gamma` (sprint `2026-08-10_to_2026-08-21`, 7-8 commits each) | `research/gold/{alpha,delta,epsilon,theta,gemma}_GOLD.json` (expected overall 8.67 / 6.17 / 6.67 / 3.33 / 2.00) |
+| `research.run_cs203_trial` | 2 real bundles: `cs203g6` (31 commits, expected overall 4.0) and `cs203jy` (id `fa7d4476-…`, 6.5) | `research/cs203_groundtruth.py`, `research/gold/cs203jy_GOLD.json` |
+
+### Prerequisites
+
+1. GPU job running and tunnel open (sections 3-5, or `bash hpc/hpc-dev.sh submit`,
+   `status`, then `bash start.sh`).
+2. `curl http://localhost:8001/health` returns `ok`; MLflow is up at http://localhost:5000.
+3. The model you grade with **and** the judge (`sprintsight-judge-phi`, override with
+   `SPRINTSIGHT_JUDGE_MODEL`) exist on the cluster (`bash hpc/hpc-dev.sh models`).
+4. A `production` alias exists for each `Evaluate_<dimension>` prompt in the MLflow
+   prompt registry. Both scripts grade with the production prompts and exit if one is missing.
+
+### Quick way to run them (separately) and see their results, see Judge evaluation too
+
+```bash
+cd ai-engine
+
+# Fixture teams (fast: 5 teams x 7-8 commits) if u want to run fixture teams
+docker compose exec sprintsight_ai python -m research.run_fixture_trial \
+    --model sprintsight-qwen25-32b --experiment-name "Fixture test 4/11/26"
+
+# CS203 bundles (cs203g6, then cs203jy) if you want to run CS203 bundles
+docker compose exec sprintsight_ai python -m research.run_cs203_trial \
+    --model sprintsight-qwen25-32b --experiment-name "CS203 research 4/11/26"
+```
+
+| Argument | Meaning |
+|---|---|
+| `--model` (required) | Ollama tag to grade with, e.g. `sprintsight-llama31`, `sprintsight-qwen25-32b` |
+| `--experiment-name` | MLflow experiment (default `Fixture test 3/11/26` in both scripts; always pass your own) |
+| `--repeats` | Grade each team this many times (default 1) |
+
+Use a new experiment name per run so traces stay separate. The prompt registry is
+global, though: prompt aliases are shared by every experiment.
+
+### What happens
+
+1. Production prompts are loaded from the registry.
+2. **Grade all teams first.** For each team, `evaluate_sprint()` runs the six rubric
+   dimensions plus sprint feedback and creates one trace. The trace id is queued.
+3. **Then judge all.** After grading, the queued `judge_and_promote_trace()` calls run
+   one at a time. Each runs the code-based scorer against gold and the LLM citation
+   judge, then the promotion check. This order keeps one model loaded on the GPU
+   while grading and swaps once to the judge, instead of swapping per team.
+
+### What you should see
+
+- Console: `trace_id=… overall_score=… prompts={Evaluate_x: n, …}` per team; then
+  `[judge] … done`, `passed all checks` or `flagged for review`, and
+  `Promoted '<prompt>' version N to production` when promotion fires.
+- MLflow, experiment page: one `Evaluate_Complete_Sprint` trace per team, tagged
+  `team_id`, `sprint_id`, `model` and `prompt.Evaluate_<dimension>` (the version used);
+  judge runs `judge_<trace_id>_gold|no_gold`; review queues `review_queue_*`.
+- MLflow, Prompts tab: `Evaluate_<dimension>` versions with aliases `challenger` /
+  `production` and a `judge_results` tag (running means per `team|sprint|model`).
+- Raw prompts and responses: `ai-engine/audit_logs/`.
+
+### Promotion rules (`judges/promote.py`)
+
+| Rule | Value |
+|---|---|
+| Absolute gates (per dimension) | abs error ≤ 2.0, hallucination rate ≤ 0.1, ≥ 3 citations |
+| No production prompt yet | first version that passes the gates is promoted |
+| Otherwise | challenger must share ≥ 2 `team|sprint|model` inputs with production, cut mean abs error by ≥ 0.2, and not raise hallucination by > 0.02 on any shared input |
+| Skipped | a dimension that failed in the trace; whole trace if all six failed |
+
+Re-judging the same trace is not double-counted.
+
+### Other changes in this branch
+
+- **Prompt registry:** `main.py` no longer registers prompts at startup.
+  `register_all_dimension_prompts(prompts, client)` is called from `evaluate_sprint`.
+  The sprint-feedback prompt name is `SPRINT_FEEDBACK_PROMPT_NAME`.
+- **`evaluate_sprint(bundle, model, experiment, client, trace_ids, dimension_prompts=None)`:**
+  appends its root trace id to `trace_ids`, and `dimension_prompts` lets a caller
+  grade with other templates (used for production/baseline prompts).
+- **Judge bundle source:** the judge reads the bundle from the trace, else
+  `schemas/bundle_registry.py` (in-memory, last 32, same process only), else the
+  CS203 and fixture bundles. Re-judging an old trace from a *different* process
+  therefore works only for those teams.
+- **Gold lookup:** by lowercased team id and exact sprint; a different sprint skips gold.
+- **Schema:** `SprintAssessment.prompt_version` is optional. If all six dimensions
+  fail, `evaluate_sprint` no longer raises (`AllDimensionsFailedError` is commented out).
+- **Removed:** `research/run_ab_trial.py` (replaced by the two scripts above).

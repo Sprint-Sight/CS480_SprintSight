@@ -1,23 +1,22 @@
-import asyncio
-import os
-import time
+import asyncio, os, time, mlflow
 from typing import Literal
 
-from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, Trace
+from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, Trace, SpanType
 from mlflow.genai.scorers import scorer
 from pydantic import BaseModel, Field, model_validator
-from schemas.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
+from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 
 from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
+from schemas.bundle_registry import get_bundle
 from services.llm_client import (
     LLM_TEMPERATURE,
     audit_scope,
     create_llm_client,
-    request_extra_body,
+    _request_extra_body,
 )
 
 GROUNDING_PROMPT_VERSION = "grounding-v1"
@@ -35,6 +34,13 @@ Labels:
 - hallucinated: the identifier does not exist in RAW_BUNDLE, or the claim contradicts it.
 
 Return exactly one verdict for EVERY claim id given. Never skip or repeat one."""
+
+BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
+JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
+
+FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
+                  "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
+CODE_SOURCE = AssessmentSource(source_type=AssessmentSourceType.CODE, source_id="find_ungrounded_citations")
 
 class JudgeContextTooSmall(RuntimeError):
     """Prompt would not fit in the judge's context window; the row must be treated as invalid."""
@@ -107,13 +113,13 @@ async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_mod
             response_model=make_grounding_verdict_model(set(citations)),
             temperature=LLM_TEMPERATURE,
             max_retries=3,
-            extra_body=request_extra_body(ctx),
+            extra_body=_request_extra_body(ctx),
             messages=[
                 {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
         )
-
+ 
 async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str) -> dict:
     """Harness entry point. Raises if the judge can't give a complete verdict, so no rate is ever
     computed over a subset. Zero citations returns citation_count=0 with all rates None."""
@@ -121,29 +127,60 @@ async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, 
     if not citations:
         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None, "citation_count": 0}
     verdict = await run_grounding_judge(bundle, citations, judge_model)
-    return {**summarize_verdict(citations, verdict), "citation_count": len(citations)}
-
-BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
-JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
-
-FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
-                  "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
-CODE_SOURCE = AssessmentSource(source_type=AssessmentSourceType.CODE, source_id="find_ungrounded_citations")
+    by_dim: dict[str, list[str]] = {}
+    for v in verdict.citation_verdicts: # Judge emit a rate per dimension
+        by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v.label)
+    per_dim = {f"hallucination_rate_{d}": round(l.count("hallucinated") / len(l), 4) for d, l in by_dim.items()}
+    return {**summarize_verdict(citations, verdict), **per_dim, "citation_count": len(citations)}
 
 @scorer(name="llm_judge_citation_grounding")
 def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
+    '''
+    1. Collect all citations from the candidate's rubric scores.
+    2. Ask the judge to label each citation as grounded, partially grounded, or halluc
+    3. Summarize the verdict into coverage, hallucination_rate, grounded_rate, and citation_count.
+    4. Return Feedback objects for each of these metrics, with the judge's source.
+    '''
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"ollama:/{JUDGE_MODEL}")
     team, model = trace.info.tags.get("team_id"), trace.info.tags.get("model")
-    print(f"  [judge] {JUDGE_MODEL} checking {model} / {team}...", flush=True)
+    print(f"\n[judge] {JUDGE_MODEL} checking {model} / {team}...", flush=True)
     start = time.perf_counter()
-    try:
-        bundle = BUNDLE_BY_TEAM[team]
-        rubric, dropped = read_candidate(trace, bundle)
-        result = asyncio.run(judge_assessment(bundle, rubric, JUDGE_MODEL))
-    except Exception as e:  # noqa: BLE001 - one bad judge call must not kill the eval run
-        print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
-        return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
-    print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
-    return [Feedback(name=FEEDBACK_NAMES[k], value=v, source=source) for k, v in result.items()] + [
-        Feedback(name="citations_dropped_by_code", value=dropped, source=CODE_SOURCE)]
+    with mlflow.start_span(name=f"llm_judge_citation_grounding on {model} / {team}", span_type=SpanType.LLM):
+        mlflow.update_current_trace(
+            request_preview=f"llm_judge_citation_grounding on {model} / {team}",
+            tags={"team_id": team, "model": model, "judge_model": JUDGE_MODEL, "dimension": "judge_grounding"},
+        )
+        try:
+            bundle = _bundle_of(trace, team)
+            rubric, dropped = read_candidate(trace, bundle) # Get the candidate's rubric scores and any citations dropped by code
+            result = asyncio.run(judge_assessment(bundle, rubric, JUDGE_MODEL)) # Run the judge on the candidate's rubric scores
+        except Exception as e: # Judge call can fail in many ways; must not crash the eval run
+            print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
+            mlflow.update_current_trace(response_preview=f"Error: {e}")
+            return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
+        mlflow.update_current_trace(response_preview=f"Result: {result}")
+        print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
+        return [Feedback(name=_feedback_name(k), value=v, source=source) for k, v in result.items()] + [
+            Feedback(name="citations_dropped_by_code", value=dropped, source=CODE_SOURCE)]
 
+_BUNDLES: dict[tuple, ArtifactBundle] = {}
+def remember_bundle(bundle: ArtifactBundle):
+    _BUNDLES[(bundle.team_id, bundle.sprint_id)] = bundle     # call in api/assessment.py and run_ab_trial.py before evaluating
+
+def _fixture_bundle(team: str | None):
+    from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
+    from research.fixtures import FIXTURES_TEAMS
+    return {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE, *FIXTURES_TEAMS)}.get(team)
+
+def _bundle_of(trace: Trace, team: str | None) -> ArtifactBundle:
+    root = next((s for s in trace.data.spans if s.parent_id is None), None)
+    inputs = (root.inputs or {}) if root is not None and isinstance(root.inputs, dict) else {}
+    if inputs.get("bundle"):
+        return ArtifactBundle.model_validate(inputs["bundle"])
+    bundle = get_bundle(team, inputs.get("sprint_id")) or _fixture_bundle(team)
+    if bundle is None:
+        raise KeyError(f"no bundle for team={team!r} sprint={inputs.get('sprint_id')!r}")
+    return bundle
+
+def _feedback_name(key: str) -> str: # known keys keep their names
+    return FEEDBACK_NAMES.get(key, f'citation_{key}')

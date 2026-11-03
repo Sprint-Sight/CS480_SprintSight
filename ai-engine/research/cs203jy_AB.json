@@ -1,0 +1,3400 @@
+{
+  "team_id": "fa7d4476-78fd-4013-8d66-1e290a65fe1c",
+  "sprint_id": "sprint-1",
+  "commits": [
+    {
+      "sha": "232ba172c550896e47b54fbad34bf8ca18c62159",
+      "author": "student1",
+      "message": "Initial commit",
+      "timestamp": "2024-08-30T06:00:17Z",
+      "lines_added": 1,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "README.md",
+          "change_type": "added",
+          "lines_added": 1,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "326a7a22cc237ab35e4120ec0bf3ea21e914789f",
+      "author": "student1",
+      "message": "Initial Commit",
+      "timestamp": "2024-09-02T11:40:33Z",
+      "lines_added": 604,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": ".gitignore",
+          "change_type": "added",
+          "lines_added": 33,
+          "lines_deleted": 0
+        },
+        {
+          "filename": ".mvn/wrapper/maven-wrapper.properties",
+          "change_type": "added",
+          "lines_added": 19,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "compose.yaml",
+          "change_type": "added",
+          "lines_added": 9,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "mvnw",
+          "change_type": "added",
+          "lines_added": 259,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "mvnw.cmd",
+          "change_type": "added",
+          "lines_added": 149,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "pom.xml",
+          "change_type": "added",
+          "lines_added": 108,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "src/main/java/com/csd/project/ProjectApplication.java",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "src/main/resources/application.properties",
+          "change_type": "added",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "src/test/java/com/csd/project/ProjectApplicationTests.java",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "e85153c2aa3b111b9cd3bf1389da074d14fcad5e",
+      "author": "student1",
+      "message": "Move backend to parent folder",
+      "timestamp": "2024-09-14T08:43:38Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/.gitignore",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/README.md",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/compose.yaml",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/mvnw",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/mvnw.cmd",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/pom.xml",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/main/java/com/csd/project/ProjectApplication.java",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/main/resources/application.properties",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/test/java/com/csd/project/ProjectApplicationTests.java",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/wrapper/maven-wrapper.properties",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "7f5e790607031fe658f5a85791214d3746fe9160",
+      "author": "student2",
+      "message": "init elo score ranking service",
+      "timestamp": "2024-09-14T13:31:31Z",
+      "lines_added": 3,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/README.md",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/.gitignore",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/README.md",
+          "change_type": "added",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/compose.yaml",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/mvnw",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/mvnw.cmd",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/pom.xml",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/src/main/java/com/csd/project/ProjectApplication.java",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/src/main/resources/application.properties",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/src/test/java/com/csd/project/ProjectApplicationTests.java",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/wrapper/maven-wrapper.properties",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "62f6d488bf94b9eb3625fc6d7a7bcf52ee77aac5",
+      "author": "student2",
+      "message": "update readme for elo algorithm",
+      "timestamp": "2024-09-14T13:40:44Z",
+      "lines_added": 102,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-score-service/README.md",
+          "change_type": "modified",
+          "lines_added": 102,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "0c30a64c3cd5f67e9604b4aaa744969a60041427",
+      "author": "student3",
+      "message": "Merge pull request #1 from student1/feat/elo-ranking-score-service\n\nElo ranking score service",
+      "timestamp": "2024-09-14T13:47:35Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "9fa525c5f494893c49fd766fe6ed9758f07f0d66",
+      "author": "student2",
+      "message": "refactor elo-ranking-service project",
+      "timestamp": "2024-09-14T14:18:11Z",
+      "lines_added": 159,
+      "lines_deleted": 164,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-score-service/README.md",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 105
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/compose.yaml",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "backend/elo-ranking-score-service/src/main/resources/application.properties",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/.gitignore",
+          "change_type": "renamed",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/.mvn/wrapper/maven-wrapper.properties",
+          "change_type": "renamed",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/README.md",
+          "change_type": "added",
+          "lines_added": 101,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/compose.yaml",
+          "change_type": "added",
+          "lines_added": 18,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/mvnw",
+          "change_type": "renamed",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/mvnw.cmd",
+          "change_type": "renamed",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/pom.xml",
+          "change_type": "renamed",
+          "lines_added": 30,
+          "lines_deleted": 40
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/EloRankingServiceApplication.java",
+          "change_type": "renamed",
+          "lines_added": 3,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/application.properties",
+          "change_type": "added",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/EloRankingServiceApplicationTests.java",
+          "change_type": "renamed",
+          "lines_added": 2,
+          "lines_deleted": 2
+        }
+      ]
+    },
+    {
+      "sha": "794c1cf25d69453605f5735a09af06a93664aa46",
+      "author": "student3",
+      "message": "Merge pull request #2 from student1/staging\n\nrefactor elo-ranking-service project",
+      "timestamp": "2024-09-14T14:19:01Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "80ef05670a85f64599ed549384f905119f0f68d4",
+      "author": "student2",
+      "message": "update elo ranking service readme, add scaffold for service and related models",
+      "timestamp": "2024-09-14T16:43:48Z",
+      "lines_added": 139,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "added",
+          "lines_added": 17,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentScore.java",
+          "change_type": "added",
+          "lines_added": 8,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameScore.java",
+          "change_type": "added",
+          "lines_added": 12,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "added",
+          "lines_added": 37,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerTournamentScore.java",
+          "change_type": "added",
+          "lines_added": 10,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/Rank.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/TournamentScore.java",
+          "change_type": "added",
+          "lines_added": 11,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/EloRankingRepository.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/GameScoreRepository.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankRepository.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/TournamentScoreRepository.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "added",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/GameScoreService.java",
+          "change_type": "added",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "added",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/TournamentScoreService.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/TrueSkillService.java",
+          "change_type": "added",
+          "lines_added": 5,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "87aef206b1aa321fd9ae80ca58d481f4144dc836",
+      "author": "student2",
+      "message": "add process flow for computing elo in clan war",
+      "timestamp": "2024-09-14T16:55:53Z",
+      "lines_added": 121,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/README.md",
+          "change_type": "modified",
+          "lines_added": 121,
+          "lines_deleted": 3
+        }
+      ]
+    },
+    {
+      "sha": "14f43cc0b3d519047d8ad8292ebb457ad2c824fc",
+      "author": "student2",
+      "message": "add functionalities for player game score class",
+      "timestamp": "2024-09-14T17:18:01Z",
+      "lines_added": 134,
+      "lines_deleted": 6,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 134,
+          "lines_deleted": 6
+        }
+      ]
+    },
+    {
+      "sha": "ae7770e6b137cf73fa9d7df095f4ae7161174d39",
+      "author": "student2",
+      "message": "add columns on player game score entity",
+      "timestamp": "2024-09-14T17:29:44Z",
+      "lines_added": 50,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameScore.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 34,
+          "lines_deleted": 3
+        }
+      ]
+    },
+    {
+      "sha": "203bf96127f9c968cf7bdfd2ce653d4e094ba313",
+      "author": "student2",
+      "message": "update clan game score entity",
+      "timestamp": "2024-09-14T17:43:35Z",
+      "lines_added": 33,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 25,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameScore.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "f7d596d772ca5180a57bae09afdad46194df824a",
+      "author": "student2",
+      "message": "add enum entities",
+      "timestamp": "2024-09-14T17:50:26Z",
+      "lines_added": 80,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 16,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameMode.java",
+          "change_type": "added",
+          "lines_added": 6,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerTournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 20,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/Rank.java",
+          "change_type": "modified",
+          "lines_added": 10,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/Role.java",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/TournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 15,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "1b37bb1f0a386851f95533913325bd506b6ded6a",
+      "author": "student2",
+      "message": "update getter and setter to use lombok",
+      "timestamp": "2024-09-14T18:08:18Z",
+      "lines_added": 55,
+      "lines_deleted": 135,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 21
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameScore.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 21,
+          "lines_deleted": 84
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerTournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 7,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/TournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 7,
+          "lines_deleted": 8
+        }
+      ]
+    },
+    {
+      "sha": "75867190fcae6c45ccdc0a1c7515bec5cc1c6784",
+      "author": "student2",
+      "message": "change to use no-args constructor",
+      "timestamp": "2024-09-14T18:17:36Z",
+      "lines_added": 18,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerTournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/TournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "a303feffd4964093cf5463455deba4cd19b09021",
+      "author": "student2",
+      "message": "add more entities",
+      "timestamp": "2024-09-14T19:21:35Z",
+      "lines_added": 139,
+      "lines_deleted": 6,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 9,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentEloRank.java",
+          "change_type": "added",
+          "lines_added": 26,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentScore.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/EloRank.java",
+          "change_type": "added",
+          "lines_added": 37,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerTournamentEloRank.java",
+          "change_type": "added",
+          "lines_added": 27,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/RankThreshold.java",
+          "change_type": "added",
+          "lines_added": 32,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "85cbc1210fa5dd6d2db83751b7162701171be03d",
+      "author": "student2",
+      "message": "update db schema",
+      "timestamp": "2024-09-15T05:35:34Z",
+      "lines_added": 1520,
+      "lines_deleted": 124,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/compose.yaml",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "backend/elo-ranking-service/elo_rank_service.erd",
+          "change_type": "added",
+          "lines_added": 1490,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/pom.xml",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 11
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 6
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentEloRank.java",
+          "change_type": "modified",
+          "lines_added": 12,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanTournamentScore.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 34
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/EloRank.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerTournamentScore.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 33
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/TournamentScore.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 24
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/TournamentEloRankRepository.java",
+          "change_type": "renamed",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/application.properties",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "c66400d6301cfa6084a5fd8c7d06fec0106d98ef",
+      "author": "student4",
+      "message": "set up vue repo and install necessary package",
+      "timestamp": "2024-09-15T06:18:21Z",
+      "lines_added": 2876,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "frontend/.gitignore",
+          "change_type": "added",
+          "lines_added": 30,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/.vscode/extensions.json",
+          "change_type": "added",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/README.md",
+          "change_type": "added",
+          "lines_added": 29,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/index.html",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/jsconfig.json",
+          "change_type": "added",
+          "lines_added": 8,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/package-lock.json",
+          "change_type": "added",
+          "lines_added": 2073,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/package.json",
+          "change_type": "added",
+          "lines_added": 30,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/public/favicon.ico",
+          "change_type": "added",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/App.vue",
+          "change_type": "added",
+          "lines_added": 92,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/assets/base.css",
+          "change_type": "added",
+          "lines_added": 86,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/assets/logo.svg",
+          "change_type": "added",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/assets/main.css",
+          "change_type": "added",
+          "lines_added": 35,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/HelloWorld.vue",
+          "change_type": "added",
+          "lines_added": 44,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/TheWelcome.vue",
+          "change_type": "added",
+          "lines_added": 88,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/WelcomeItem.vue",
+          "change_type": "added",
+          "lines_added": 86,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/icons/IconCommunity.vue",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/icons/IconDocumentation.vue",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/icons/IconEcosystem.vue",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/icons/IconSupport.vue",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/icons/IconTooling.vue",
+          "change_type": "added",
+          "lines_added": 19,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/main.js",
+          "change_type": "added",
+          "lines_added": 31,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/router/index.js",
+          "change_type": "added",
+          "lines_added": 51,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/stores/counter.js",
+          "change_type": "added",
+          "lines_added": 12,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/AboutView/AboutView.vue",
+          "change_type": "added",
+          "lines_added": 15,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/HomeView/HomeView.vue",
+          "change_type": "added",
+          "lines_added": 9,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/LeaderBoardView/LeaderBoardView.vue",
+          "change_type": "added",
+          "lines_added": 15,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/ProfileView/ProfileView.vue",
+          "change_type": "added",
+          "lines_added": 15,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/TournamentsView/GameBookingsView/GameBookingsView.vue",
+          "change_type": "added",
+          "lines_added": 15,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/TournamentsView/GameBookingsView/GameView/GameView.vue",
+          "change_type": "added",
+          "lines_added": 15,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/TournamentsView/TournamentsView.vue",
+          "change_type": "added",
+          "lines_added": 15,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/vite.config.js",
+          "change_type": "added",
+          "lines_added": 18,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "433cf530a4700456c48a50e5a4e68c0e9ceeb32c",
+      "author": "student4",
+      "message": "create navbar and create routers to different pages. set style in main css",
+      "timestamp": "2024-09-15T11:46:54Z",
+      "lines_added": 404,
+      "lines_deleted": 462,
+      "files_changed": [
+        {
+          "filename": "frontend/index.html",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/package-lock.json",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/package.json",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/App.vue",
+          "change_type": "modified",
+          "lines_added": 11,
+          "lines_deleted": 81
+        },
+        {
+          "filename": "frontend/src/assets/main.css",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 28
+        },
+        {
+          "filename": "frontend/src/components/CustomButton/ButtonPrimary.vue",
+          "change_type": "added",
+          "lines_added": 30,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/HelloWorld.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 44
+        },
+        {
+          "filename": "frontend/src/components/Navbar/Navbar.vue",
+          "change_type": "added",
+          "lines_added": 54,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLandingPage.vue",
+          "change_type": "added",
+          "lines_added": 34,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLinks/NavbarLinkSection.vue",
+          "change_type": "added",
+          "lines_added": 47,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLinks/NavbarlinkCard.vue",
+          "change_type": "added",
+          "lines_added": 42,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLinks/ProfileLink.vue",
+          "change_type": "added",
+          "lines_added": 37,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLogoAndHumburger/NavbarHamburger.vue",
+          "change_type": "added",
+          "lines_added": 19,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLogoAndHumburger/NavbarLogo.vue",
+          "change_type": "added",
+          "lines_added": 36,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/TheWelcome.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 88
+        },
+        {
+          "filename": "frontend/src/components/WelcomeItem.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 86
+        },
+        {
+          "filename": "frontend/src/components/icons/IconCommunity.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 7
+        },
+        {
+          "filename": "frontend/src/components/icons/IconDocumentation.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 7
+        },
+        {
+          "filename": "frontend/src/components/icons/IconEcosystem.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 7
+        },
+        {
+          "filename": "frontend/src/components/icons/IconSupport.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 7
+        },
+        {
+          "filename": "frontend/src/components/icons/IconTooling.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 19
+        },
+        {
+          "filename": "frontend/src/router/index.js",
+          "change_type": "modified",
+          "lines_added": 24,
+          "lines_deleted": 12
+        },
+        {
+          "filename": "frontend/src/views/AboutView/AboutView.vue",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 8
+        },
+        {
+          "filename": "frontend/src/views/AuthView/AuthView.vue",
+          "change_type": "added",
+          "lines_added": 10,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/BattleRoyaleView/BattleRoyaleView.vue",
+          "change_type": "added",
+          "lines_added": 9,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/BookingView/BookingView.vue",
+          "change_type": "added",
+          "lines_added": 10,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/ClanView/ClanView.vue",
+          "change_type": "added",
+          "lines_added": 10,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/ClanWarView/ClanWarView.vue",
+          "change_type": "added",
+          "lines_added": 9,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/HomeView/HomeView.vue",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 6
+        },
+        {
+          "filename": "frontend/src/views/LeaderBoardView/LeaderBoardView.vue",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 8
+        },
+        {
+          "filename": "frontend/src/views/ProfileView/ProfileView.vue",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 8
+        },
+        {
+          "filename": "frontend/src/views/TournamentsView/GameBookingsView/GameBookingsView.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 15
+        },
+        {
+          "filename": "frontend/src/views/TournamentsView/GameBookingsView/GameView/GameView.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 15
+        },
+        {
+          "filename": "frontend/src/views/TournamentsView/TournamentsView.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 15
+        }
+      ]
+    },
+    {
+      "sha": "cea1393d7a773b30f0cab2ada3b95b6bfc0e6a09",
+      "author": "student4",
+      "message": "set up cookies for authentication and authorisation",
+      "timestamp": "2024-09-15T12:09:50Z",
+      "lines_added": 48,
+      "lines_deleted": 9,
+      "files_changed": [
+        {
+          "filename": "frontend/package-lock.json",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/package.json",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/main.js",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/AuthView/AuthView.vue",
+          "change_type": "modified",
+          "lines_added": 39,
+          "lines_deleted": 9
+        }
+      ]
+    },
+    {
+      "sha": "2c42c281966fc6b42e0033cca8cda2667caab189",
+      "author": "student4",
+      "message": "bug fix on styling in app.vue",
+      "timestamp": "2024-09-15T12:28:30Z",
+      "lines_added": 5,
+      "lines_deleted": 5,
+      "files_changed": [
+        {
+          "filename": "frontend/src/App.vue",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "frontend/src/assets/main.css",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "639170e18010b4c56ab8e8122741a73f152ff292",
+      "author": "student2",
+      "message": "wip",
+      "timestamp": "2024-09-15T13:11:48Z",
+      "lines_added": 454,
+      "lines_deleted": 82,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/README.md",
+          "change_type": "modified",
+          "lines_added": 202,
+          "lines_deleted": 44
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanEloRank.java",
+          "change_type": "renamed",
+          "lines_added": 6,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/EloRank.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerEloRank.java",
+          "change_type": "renamed",
+          "lines_added": 6,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 33,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/RankThreshold.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseEloRankRepository.java",
+          "change_type": "added",
+          "lines_added": 27,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseGameScoreRepository.java",
+          "change_type": "added",
+          "lines_added": 23,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanEloRankRepository.java",
+          "change_type": "added",
+          "lines_added": 9,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanGameScoreRepository.java",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/GameScoreRepository.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerEloRankRepository.java",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerGameScoreRepository.java",
+          "change_type": "added",
+          "lines_added": 7,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankRepository.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankThresholdRepository.java",
+          "change_type": "added",
+          "lines_added": 21,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/TournamentEloRankRepository.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/TournamentScoreRepository.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 92,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/GameScoreService.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/TournamentScoreService.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/TrueSkillService.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "860809e5d6e9d289fc06f66a83d6b7b3d1cf2dc7",
+      "author": "student2",
+      "message": "battle royale elo rating computation",
+      "timestamp": "2024-09-15T15:01:44Z",
+      "lines_added": 133,
+      "lines_deleted": 46,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 28,
+          "lines_deleted": 12
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/Role.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 104,
+          "lines_deleted": 27
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/TrueSkillService.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 7
+        }
+      ]
+    },
+    {
+      "sha": "5686fbb3a48c7f6918289fe53bac62816d4f4122",
+      "author": "student2",
+      "message": "refine elo ranking algorithm",
+      "timestamp": "2024-09-15T15:52:37Z",
+      "lines_added": 63,
+      "lines_deleted": 62,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 63,
+          "lines_deleted": 62
+        }
+      ]
+    },
+    {
+      "sha": "f4dd89297f73336cc627decffe9d98a84a15372a",
+      "author": "student2",
+      "message": "update readme",
+      "timestamp": "2024-09-15T16:01:35Z",
+      "lines_added": 64,
+      "lines_deleted": 333,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/README.md",
+          "change_type": "modified",
+          "lines_added": 64,
+          "lines_deleted": 333
+        }
+      ]
+    },
+    {
+      "sha": "febe9689f7e1e684fc7392476fb78f74af187818",
+      "author": "student2",
+      "message": "refactor elo ranking service",
+      "timestamp": "2024-09-15T16:12:32Z",
+      "lines_added": 74,
+      "lines_deleted": 78,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 68,
+          "lines_deleted": 72
+        }
+      ]
+    },
+    {
+      "sha": "78f1adca7b2d89591ac9e9d8c18b13c4662283e1",
+      "author": "student2",
+      "message": "add clan elo ranking calculation",
+      "timestamp": "2024-09-16T13:20:17Z",
+      "lines_added": 90,
+      "lines_deleted": 11,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/elo_rank_service.erd",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 87,
+          "lines_deleted": 8
+        }
+      ]
+    },
+    {
+      "sha": "517a72071e74ba0a1553d531d77538a7736be05f",
+      "author": "student2",
+      "message": "add update function to elo service",
+      "timestamp": "2024-09-16T13:33:42Z",
+      "lines_added": 27,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 27,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "cfd2abc269c4ac39f2104d9ee1ece0d1bb1a51c0",
+      "author": "student5",
+      "message": "created blank userservice",
+      "timestamp": "2024-09-16T13:48:40Z",
+      "lines_added": 585,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/userservice/.gitignore",
+          "change_type": "added",
+          "lines_added": 33,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/userservice/.mvn/wrapper/maven-wrapper.properties",
+          "change_type": "added",
+          "lines_added": 19,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/userservice/mvnw",
+          "change_type": "added",
+          "lines_added": 259,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/userservice/mvnw.cmd",
+          "change_type": "added",
+          "lines_added": 149,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/userservice/pom.xml",
+          "change_type": "added",
+          "lines_added": 98,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/userservice/src/main/java/com/example/userservice/userservice/UserserviceApplication.java",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/userservice/src/main/resources/application.properties",
+          "change_type": "added",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/userservice/src/test/java/com/example/userservice/userservice/UserserviceApplicationTests.java",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "15cb17492314d20af226ce6579949c56a6bbe87d",
+      "author": "student2",
+      "message": "update",
+      "timestamp": "2024-09-16T14:06:29Z",
+      "lines_added": 30,
+      "lines_deleted": 4,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerEloRank.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 28,
+          "lines_deleted": 2
+        }
+      ]
+    },
+    {
+      "sha": "bda8d7bf4a775474c34c7bdfd48e98687a34dc8e",
+      "author": "student2",
+      "message": "organise classes",
+      "timestamp": "2024-09-17T08:42:06Z",
+      "lines_added": 56,
+      "lines_deleted": 43,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameMode.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 6
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 14,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/Rank.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 13
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/RankThreshold.java",
+          "change_type": "modified",
+          "lines_added": 13,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/Role.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 8
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankThresholdRepository.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 22,
+          "lines_deleted": 12
+        }
+      ]
+    },
+    {
+      "sha": "599137c6a0f58c8f8af682de94244040412f4611",
+      "author": "student2",
+      "message": "update elo ranking service and rank service",
+      "timestamp": "2024-09-18T03:04:52Z",
+      "lines_added": 94,
+      "lines_deleted": 62,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/RankThreshold.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 8
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 9,
+          "lines_deleted": 16
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 12
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankThresholdRepository.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 12
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 37,
+          "lines_deleted": 11
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "modified",
+          "lines_added": 36,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "aa68fc1b8c040c14b9ceb4b5b6be1ccda9ddd938",
+      "author": "student2",
+      "message": "compute clan elo ranking to include uncertainty",
+      "timestamp": "2024-09-18T03:44:26Z",
+      "lines_added": 60,
+      "lines_deleted": 56,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankThresholdRepository.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 53,
+          "lines_deleted": 54
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 2
+        }
+      ]
+    },
+    {
+      "sha": "c772cac4b7021273bef6202f47ad5a5123f0d31b",
+      "author": "student2",
+      "message": "add retrieve rank threshold by rating",
+      "timestamp": "2024-09-18T04:02:03Z",
+      "lines_added": 29,
+      "lines_deleted": 11,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankThresholdRepository.java",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 12,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "modified",
+          "lines_added": 9,
+          "lines_deleted": 3
+        }
+      ]
+    },
+    {
+      "sha": "ed6a8a00c13d1b6e6d8596f5faac9e51dc09e359",
+      "author": "student2",
+      "message": "add elo service controller, update db schema",
+      "timestamp": "2024-09-18T08:02:03Z",
+      "lines_added": 303,
+      "lines_deleted": 87,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "added",
+          "lines_added": 43,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/GameScoreController.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/RankController.java",
+          "change_type": "added",
+          "lines_added": 9,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "added",
+          "lines_added": 31,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Response.java",
+          "change_type": "added",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanEloRank.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/EloRank.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameScore.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerEloRank.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 59,
+          "lines_deleted": 53
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 90,
+          "lines_deleted": 22
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/GameScoreService.java",
+          "change_type": "modified",
+          "lines_added": 37,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "dd77465612dfac12845ea5bffc42da757d423e8c",
+      "author": "student2",
+      "message": "add endpoints for creating new elo rank",
+      "timestamp": "2024-09-18T08:32:00Z",
+      "lines_added": 50,
+      "lines_deleted": 11,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "modified",
+          "lines_added": 23,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 17,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 10,
+          "lines_deleted": 7
+        }
+      ]
+    },
+    {
+      "sha": "474b54890082903fdc7cba6d0226d2f53496d84b",
+      "author": "student2",
+      "message": "refactor elo ranking service",
+      "timestamp": "2024-09-18T08:40:56Z",
+      "lines_added": 108,
+      "lines_deleted": 284,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 108,
+          "lines_deleted": 284
+        }
+      ]
+    },
+    {
+      "sha": "f0fa44088df17d71d28ee4b2fc1e8af16bae3e63",
+      "author": "student2",
+      "message": "revert refactor",
+      "timestamp": "2024-09-18T08:44:29Z",
+      "lines_added": 284,
+      "lines_deleted": 108,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 284,
+          "lines_deleted": 108
+        }
+      ]
+    },
+    {
+      "sha": "6d0bc3d94ceb8b2c39544afd985cea5c737531cb",
+      "author": "student2",
+      "message": "add seed data loader",
+      "timestamp": "2024-09-18T08:58:37Z",
+      "lines_added": 61,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "modified",
+          "lines_added": 34,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/util/SeedDataLoader.java",
+          "change_type": "added",
+          "lines_added": 27,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "4ab17b5944cc3b8d469f524c868ee664a50bd8c3",
+      "author": "student2",
+      "message": "add basic testcases for elo ranking controller",
+      "timestamp": "2024-09-18T13:38:12Z",
+      "lines_added": 131,
+      "lines_deleted": 13,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/pom.xml",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/BaseGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/application.properties",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/EloRankingControllerUnitTests.java",
+          "change_type": "added",
+          "lines_added": 110,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/service/EloRankingServiceUnitTests.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "84e8e5cdb4420b7f8d0dbc549b67c615d6d81533",
+      "author": "student4",
+      "message": "customise bootstrap, bug fix navbar, create reusable component: card, rank progress and modal",
+      "timestamp": "2024-09-18T15:04:19Z",
+      "lines_added": 416,
+      "lines_deleted": 46,
+      "files_changed": [
+        {
+          "filename": "frontend/package-lock.json",
+          "change_type": "modified",
+          "lines_added": 192,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "frontend/package.json",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/App.vue",
+          "change_type": "modified",
+          "lines_added": 15,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "frontend/src/assets/custom.scss",
+          "change_type": "added",
+          "lines_added": 14,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Cards/BlurredBGCard.vue",
+          "change_type": "added",
+          "lines_added": 20,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/CustomButton/ButtonPrimary.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 30
+        },
+        {
+          "filename": "frontend/src/components/Navbar/Navbar.vue",
+          "change_type": "modified",
+          "lines_added": 23,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLandingPage.vue",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLinks/NavbarlinkCard.vue",
+          "change_type": "modified",
+          "lines_added": 14,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLogoAndHumburger/NavbarHamburger.vue",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/components/RankProgress/RankProgress.vue",
+          "change_type": "added",
+          "lines_added": 60,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/modal/Modal.vue",
+          "change_type": "added",
+          "lines_added": 68,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/main.js",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "4c7d2861d0d5de7a7dc46413f3bfc8d0577bae08",
+      "author": "student4",
+      "message": "bug fix on app vue. remove incorrect backgound",
+      "timestamp": "2024-09-18T15:44:42Z",
+      "lines_added": 4,
+      "lines_deleted": 10,
+      "files_changed": [
+        {
+          "filename": "frontend/src/App.vue",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "40f4a54935ae3c568fe46968765e4756e45d6825",
+      "author": "student2",
+      "message": "add battle royale result generator and fix elo ranking calculation",
+      "timestamp": "2024-09-18T16:50:39Z",
+      "lines_added": 1688,
+      "lines_deleted": 20,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/pom.xml",
+          "change_type": "modified",
+          "lines_added": 12,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 7,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameScore.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 9,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 22,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/GameScoreService.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/util/SeedDataLoader.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/application.properties",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/EloRankingControllerUnitTests.java",
+          "change_type": "modified",
+          "lines_added": 64,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/BattleRoyaleResultGenerator.java",
+          "change_type": "added",
+          "lines_added": 53,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/battle_royale_results_test.json",
+          "change_type": "added",
+          "lines_added": 1501,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/service/EloRankingServiceUnitTests.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 4
+        }
+      ]
+    },
+    {
+      "sha": "065f762b2092ec8212e2640b86e8fcf5c23e74c0",
+      "author": "student2",
+      "message": "add game score controller",
+      "timestamp": "2024-09-19T13:26:45Z",
+      "lines_added": 1135,
+      "lines_deleted": 1157,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/elo_rank_service.erd",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 71
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/GameScoreController.java",
+          "change_type": "modified",
+          "lines_added": 58,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 16
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/GameScoreService.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/battle_royale_results_test.json",
+          "change_type": "modified",
+          "lines_added": 1070,
+          "lines_deleted": 1070
+        }
+      ]
+    },
+    {
+      "sha": "3510f05f5ff62dbb2023df8e58e5b9ae3e911aed",
+      "author": "student2",
+      "message": "add endpoints for getting clan and player game scores",
+      "timestamp": "2024-09-19T13:56:15Z",
+      "lines_added": 13,
+      "lines_deleted": 2,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/GameScoreController.java",
+          "change_type": "modified",
+          "lines_added": 13,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "cf64796e5887f2a3f7128b51e8c936c0028f3724",
+      "author": "student2",
+      "message": "add controller for game scores",
+      "timestamp": "2024-09-23T13:07:30Z",
+      "lines_added": 68,
+      "lines_deleted": 20,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/GameScoreController.java",
+          "change_type": "modified",
+          "lines_added": 68,
+          "lines_deleted": 20
+        }
+      ]
+    },
+    {
+      "sha": "6f1d0345753dd9f312ee25cde55307e69b0c13ed",
+      "author": "student2",
+      "message": "add unit test for player game scores",
+      "timestamp": "2024-09-23T13:28:38Z",
+      "lines_added": 1127,
+      "lines_deleted": 1057,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/EloRankingControllerUnitTests.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/GameScoreControllerUnitTest.java",
+          "change_type": "added",
+          "lines_added": 69,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/ResultGenerator.java",
+          "change_type": "renamed",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/battle_royale_results_test.json",
+          "change_type": "modified",
+          "lines_added": 1050,
+          "lines_deleted": 1050
+        }
+      ]
+    },
+    {
+      "sha": "0b6ba0b3fcf8320e567007c050c1b9921f5833f0",
+      "author": "student2",
+      "message": "add input validation for endpoints",
+      "timestamp": "2024-09-23T13:34:37Z",
+      "lines_added": 56,
+      "lines_deleted": 22,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "modified",
+          "lines_added": 55,
+          "lines_deleted": 21
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/EloRankingControllerUnitTests.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "d24e36de63f7231b2f70de90ba688d71718cf09f",
+      "author": "student2",
+      "message": "refactor req body, wip testcases",
+      "timestamp": "2024-09-28T09:01:50Z",
+      "lines_added": 1513,
+      "lines_deleted": 1472,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "modified",
+          "lines_added": 11,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/GameScoreController.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 13
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/ClanGameScore.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/GameScore.java",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/entity/PlayerGameScore.java",
+          "change_type": "modified",
+          "lines_added": 16,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/EloRankingControllerUnitTests.java",
+          "change_type": "modified",
+          "lines_added": 58,
+          "lines_deleted": 78
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/GameScoreControllerUnitTest.java",
+          "change_type": "modified",
+          "lines_added": 98,
+          "lines_deleted": 20
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/ResultGenerator.java",
+          "change_type": "modified",
+          "lines_added": 114,
+          "lines_deleted": 29
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/battle_royale_results_test.json",
+          "change_type": "modified",
+          "lines_added": 963,
+          "lines_deleted": 1313
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/clan_war_results_test.json",
+          "change_type": "added",
+          "lines_added": 240,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "2106568c03e85023a964605f1c8cde819ce5ea84",
+      "author": "student2",
+      "message": "add setter to request body, add process clan war test",
+      "timestamp": "2024-09-28T13:48:11Z",
+      "lines_added": 171,
+      "lines_deleted": 155,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/EloRankingControllerUnitTests.java",
+          "change_type": "modified",
+          "lines_added": 24,
+          "lines_deleted": 11
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/clan_war_results_test.json",
+          "change_type": "modified",
+          "lines_added": 144,
+          "lines_deleted": 144
+        }
+      ]
+    },
+    {
+      "sha": "74d8b6245ec4be1d3feaf0d15b8ef2ecf71005e8",
+      "author": "student2",
+      "message": "update testcase",
+      "timestamp": "2024-09-28T14:37:32Z",
+      "lines_added": 911,
+      "lines_deleted": 913,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/GameScoreControllerUnitTest.java",
+          "change_type": "modified",
+          "lines_added": 39,
+          "lines_deleted": 41
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/battle_royale_results_test.json",
+          "change_type": "modified",
+          "lines_added": 724,
+          "lines_deleted": 724
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/clan_war_results_test.json",
+          "change_type": "modified",
+          "lines_added": 148,
+          "lines_deleted": 148
+        }
+      ]
+    },
+    {
+      "sha": "9ea4af4fd23963583f948e5f2a7d4fd6524de743",
+      "author": "student4",
+      "message": "CG-46 finished registration page interface,\n\nCG-46 finished registration page,\nCG-42 set up cookies to handle JWT,\nCG-43 finished login page interface,\nCG-44 set up state management for user,",
+      "timestamp": "2024-09-29T11:12:55Z",
+      "lines_added": 595,
+      "lines_deleted": 503,
+      "files_changed": [
+        {
+          "filename": "frontend/package-lock.json",
+          "change_type": "modified",
+          "lines_added": 364,
+          "lines_deleted": 445
+        },
+        {
+          "filename": "frontend/package.json",
+          "change_type": "modified",
+          "lines_added": 7,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "frontend/src/assets/custom.scss",
+          "change_type": "added",
+          "lines_added": 14,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Cards/BlurredBGCard 2.vue",
+          "change_type": "added",
+          "lines_added": 20,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/Cards/BlurredBGCard.vue",
+          "change_type": "added",
+          "lines_added": 20,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/CustomButton/ButtonPrimary.vue",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 30
+        },
+        {
+          "filename": "frontend/src/components/Navbar/Navbar.vue",
+          "change_type": "modified",
+          "lines_added": 28,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLandingPage.vue",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 6
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLinks/NavbarlinkCard.vue",
+          "change_type": "modified",
+          "lines_added": 14,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLinks/ProfileLink.vue",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLogoAndHumburger/NavbarHamburger.vue",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/components/Navbar/NavbarLogoAndHumburger/NavbarLogo.vue",
+          "change_type": "modified",
+          "lines_added": 7,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "frontend/src/main.js",
+          "change_type": "modified",
+          "lines_added": 29,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "frontend/src/stores/counter 2.js",
+          "change_type": "added",
+          "lines_added": 12,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/AuthView/AuthView.vue",
+          "change_type": "modified",
+          "lines_added": 73,
+          "lines_deleted": 4
+        }
+      ]
+    },
+    {
+      "sha": "a2ff1bf61178796f7512e8a2ad27353a2fcc3f5b",
+      "author": "student4",
+      "message": "Merge pull request #5 from student1/CG-46-registration-form-frontend\n\nCG-46 finished registration page interface,CG-42 set up cookies to handle JWT, CG-43 finished login page interface, CG-44 set up state management for user,",
+      "timestamp": "2024-09-29T11:14:33Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "49f66472f11c77bdc9a1c117f4222d3e4a80e079",
+      "author": "student2",
+      "message": "update clan war loser to minus mse, and cap mse to 0",
+      "timestamp": "2024-09-29T11:19:36Z",
+      "lines_added": 925,
+      "lines_deleted": 876,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "modified",
+          "lines_added": 33,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 13,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 20,
+          "lines_deleted": 16
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/application.properties",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/battle_royale_results_test.json",
+          "change_type": "modified",
+          "lines_added": 715,
+          "lines_deleted": 715
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/clan_war_results_test.json",
+          "change_type": "modified",
+          "lines_added": 143,
+          "lines_deleted": 143
+        }
+      ]
+    },
+    {
+      "sha": "0b422460234ff3ea120535f1bc2c1fce7c797a33",
+      "author": "student4",
+      "message": "set up home page and store for user management\n\ninclude different background at different pages",
+      "timestamp": "2024-09-29T11:25:58Z",
+      "lines_added": 183,
+      "lines_deleted": 39,
+      "files_changed": [
+        {
+          "filename": "frontend/src/App.vue",
+          "change_type": "modified",
+          "lines_added": 62,
+          "lines_deleted": 11
+        },
+        {
+          "filename": "frontend/src/router/index.js",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/stores/counter 2.js",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 12
+        },
+        {
+          "filename": "frontend/src/stores/counter.js",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 12
+        },
+        {
+          "filename": "frontend/src/stores/store.js",
+          "change_type": "added",
+          "lines_added": 62,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/HomeView/HomeView.vue",
+          "change_type": "modified",
+          "lines_added": 53,
+          "lines_deleted": 4
+        }
+      ]
+    },
+    {
+      "sha": "8e2a7d26ac931a519e20ac2d4ca8a93c923ab065",
+      "author": "student4",
+      "message": "Merge pull request #6 from student1/home-page-frontend\n\nset up homepage and store for user state management",
+      "timestamp": "2024-09-29T11:27:09Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "7e499acdb845803d055b81f55a30c7a49db52535",
+      "author": "student2",
+      "message": "create simulator controller",
+      "timestamp": "2024-10-05T08:24:18Z",
+      "lines_added": 283,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/GameScoreController.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/SimulationController.java",
+          "change_type": "added",
+          "lines_added": 99,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/dto/Request.java",
+          "change_type": "modified",
+          "lines_added": 16,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/util/GameSimulator.java",
+          "change_type": "added",
+          "lines_added": 164,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "900835cbb5caabab43e9ea7d2c8aaac466777031",
+      "author": "student4",
+      "message": "CG-52-set up booking page for availability indication",
+      "timestamp": "2024-10-06T14:38:00Z",
+      "lines_added": 953,
+      "lines_deleted": 7,
+      "files_changed": [
+        {
+          "filename": "frontend/src/components/LeaderBoardTable/LeaderBoardTable.vue",
+          "change_type": "added",
+          "lines_added": 81,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/RankProgress/RankProgress.vue",
+          "change_type": "added",
+          "lines_added": 51,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/TournamentTable/TournamentTable.vue",
+          "change_type": "added",
+          "lines_added": 91,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/modal/BookingModal.vue",
+          "change_type": "added",
+          "lines_added": 322,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/components/modal/Modal.vue",
+          "change_type": "added",
+          "lines_added": 83,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/BookingView/BookingView.vue",
+          "change_type": "modified",
+          "lines_added": 325,
+          "lines_deleted": 7
+        }
+      ]
+    },
+    {
+      "sha": "9289fe6b3c04070b2e02b76e71649d3242acfb3d",
+      "author": "student4",
+      "message": "Merge pull request #7 from student1/CG-52-booking-page\n\nCG-52-set up booking page for availability indication",
+      "timestamp": "2024-10-06T14:38:40Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "4a8b41b24dd21fb2976d456367e9cae95aa905ad",
+      "author": "student4",
+      "message": "CG-57-implement leaderboard UI",
+      "timestamp": "2024-10-06T14:49:38Z",
+      "lines_added": 97,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "frontend/src/views/LeaderBoardView/LeaderBoardView.vue",
+          "change_type": "modified",
+          "lines_added": 97,
+          "lines_deleted": 3
+        }
+      ]
+    },
+    {
+      "sha": "e2dda35969dffc9190d9d645b446e1a727bed96b",
+      "author": "student4",
+      "message": "Merge pull request #8 from student1/CG-57-leaderboard-UI\n\nCG-57-implement leaderboard UI",
+      "timestamp": "2024-10-06T14:50:13Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "bfd214d90d10b696c9f69a30d623bae2393a14a3",
+      "author": "student4",
+      "message": "CG-48 to 51 set up profile page UI\n\nCG-48 implement user and user's clan information\nCG-49 implement user and clan ranking progress\nCG-50 implement basic stats of the user\nCG-51 implement match history of the user",
+      "timestamp": "2024-10-06T14:58:27Z",
+      "lines_added": 193,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "frontend/src/utils/rankImages.js",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/views/ProfileView/ProfileView.vue",
+          "change_type": "modified",
+          "lines_added": 180,
+          "lines_deleted": 3
+        }
+      ]
+    },
+    {
+      "sha": "0cbfdaece7f497343836f7cb7d22383f9fecacd4",
+      "author": "student4",
+      "message": "Merge pull request #10 from student1/CG-48-profile-page-ui\n\nCG-48 to 51 set up profile page UI",
+      "timestamp": "2024-10-06T15:00:40Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "5adc621e14af19d502858ff429106928866ca04d",
+      "author": "student2",
+      "message": "add GET endpoints for rank threshold",
+      "timestamp": "2024-10-07T13:33:09Z",
+      "lines_added": 29,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/EloRankingController.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/controller/RankController.java",
+          "change_type": "modified",
+          "lines_added": 29,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "602afbff059b2e4f124f7ca473f073fe79d46d9e",
+      "author": "student4",
+      "message": "set up authentication and authorisation service",
+      "timestamp": "2024-10-07T16:38:36Z",
+      "lines_added": 1456,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/auth/.gitignore",
+          "change_type": "added",
+          "lines_added": 33,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/.mvn/wrapper/maven-wrapper.properties",
+          "change_type": "added",
+          "lines_added": 19,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/mvnw",
+          "change_type": "added",
+          "lines_added": 259,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/mvnw.cmd",
+          "change_type": "added",
+          "lines_added": 149,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/pom.xml",
+          "change_type": "added",
+          "lines_added": 168,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/AuthApplication.java",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/Controller/Controller.java",
+          "change_type": "added",
+          "lines_added": 68,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/config/CustomLogoutHandler.java",
+          "change_type": "added",
+          "lines_added": 41,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/config/SecurityConfig.java",
+          "change_type": "added",
+          "lines_added": 122,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/filter/JwtAuthenticationFilter.java",
+          "change_type": "added",
+          "lines_added": 71,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/model/AuthenticationResponse.java",
+          "change_type": "added",
+          "lines_added": 50,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/model/Token.java",
+          "change_type": "added",
+          "lines_added": 57,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/repository/TokenRepository.java",
+          "change_type": "added",
+          "lines_added": 19,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/service/AuthenticationService.java",
+          "change_type": "added",
+          "lines_added": 100,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/service/BadAuthenticationException.java",
+          "change_type": "added",
+          "lines_added": 10,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/service/CustomExceptionHandling.java",
+          "change_type": "added",
+          "lines_added": 28,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/service/JwtService.java",
+          "change_type": "added",
+          "lines_added": 92,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/Security/service/UserDetailsServiceImp.java",
+          "change_type": "added",
+          "lines_added": 24,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/User/User.java",
+          "change_type": "added",
+          "lines_added": 90,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/java/com/security/auth/User/UserRepository.java",
+          "change_type": "added",
+          "lines_added": 11,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/main/resources/application.properties",
+          "change_type": "added",
+          "lines_added": 19,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/auth/src/test/java/com/security/auth/AuthApplicationTests.java",
+          "change_type": "added",
+          "lines_added": 13,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "82d36a0e273795e3a5d510eab18beee0ba0ff4d5",
+      "author": "student1",
+      "message": "CG-13 Complete Tournament Player Availability API (#11)\n\n* Add PlayerAvailability service and controlelr\r\n\r\n* Add data loader and test data generator\r\n\r\n* Add unit test and integration tests for player availability\r\n\r\n* Update playerAvailability services\r\n\r\n* Add matchmaking methods to create scheduled games based on availability\r\n\r\n* Update game services\r\n\r\n* CG-27 Finish GET player availability API\r\n\r\n* CG-28 Finish PUT player availability API\r\n\r\n* CG-61 Finish Created unit test for playerAvailability\r\n\r\n* CG-13 Complete Tournament Player Availability API",
+      "timestamp": "2024-10-08T11:12:47Z",
+      "lines_added": 1656,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/controller/GameController.java",
+          "change_type": "added",
+          "lines_added": 71,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/controller/PlayerAvailabilityController.java",
+          "change_type": "added",
+          "lines_added": 42,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/dto/Request.java",
+          "change_type": "added",
+          "lines_added": 23,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/dto/Response.java",
+          "change_type": "added",
+          "lines_added": 17,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/repository/ClanAvailabilityRepository.java",
+          "change_type": "added",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/repository/GameRepository.java",
+          "change_type": "added",
+          "lines_added": 16,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/seeddata/GameTestDataGenerator.java",
+          "change_type": "added",
+          "lines_added": 75,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/seeddata/playeravailability/DataLoader.java",
+          "change_type": "added",
+          "lines_added": 55,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/seeddata/playeravailability/TestDataGenerator.java",
+          "change_type": "added",
+          "lines_added": 60,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/services/GameService.java",
+          "change_type": "added",
+          "lines_added": 58,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/services/MatchmakingService.java",
+          "change_type": "added",
+          "lines_added": 85,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/java/csd/backend/matchmaking/services/PlayerAvailabilityService.java",
+          "change_type": "added",
+          "lines_added": 36,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/main/resources/seed_data/player_availability.csv",
+          "change_type": "added",
+          "lines_added": 701,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/test/java/csd/backend/matchmaking/controller/GameControllerUnitTest.java",
+          "change_type": "added",
+          "lines_added": 127,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/test/java/csd/backend/matchmaking/controller/PlayerAvailabilityControllerUnitTest.java",
+          "change_type": "added",
+          "lines_added": 124,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/test/java/csd/backend/matchmaking/integration/PlayerAvailabilityControllerIntegrationTest.java",
+          "change_type": "added",
+          "lines_added": 116,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/matchmaking/src/test/java/csd/backend/matchmaking/service/MatchmakingServiceUnitTest.java",
+          "change_type": "added",
+          "lines_added": 46,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "caf16fc6879b851d7313da5bc918a47004056087",
+      "author": "student2",
+      "message": "mega fix, idk what tho",
+      "timestamp": "2024-10-12T07:10:04Z",
+      "lines_added": 1225,
+      "lines_deleted": 1218,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/Dockerfile",
+          "change_type": "added",
+          "lines_added": 5,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/compose.yaml",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "backend/elo-ranking-service/out/artifacts/elo_ranking_service_jar/elo-ranking-service.jar",
+          "change_type": "added",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/pom.xml",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 15
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/EloRankingServiceApplication.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/ClanGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerEloRankRepository.java",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/PlayerGameScoreRepository.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/repository/RankThresholdRepository.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/EloRankingService.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/GameScoreService.java",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/service/RankService.java",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/util/GameSimulator.java",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/java/com/example/elorankingservice/util/SeedDataLoader.java",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/META-INF/MANIFEST.MF",
+          "change_type": "added",
+          "lines_added": 3,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/application.properties",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 14
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/EloRankingControllerUnitTests.java",
+          "change_type": "modified",
+          "lines_added": 158,
+          "lines_deleted": 165
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/controller/GameScoreControllerUnitTest.java",
+          "change_type": "modified",
+          "lines_added": 143,
+          "lines_deleted": 145
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/ResultGenerator.java",
+          "change_type": "modified",
+          "lines_added": 17,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/battle_royale_results_test.json",
+          "change_type": "modified",
+          "lines_added": 717,
+          "lines_deleted": 717
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/test/java/com/example/elorankingservice/resources/clan_war_results_test.json",
+          "change_type": "modified",
+          "lines_added": 143,
+          "lines_deleted": 143
+        }
+      ]
+    },
+    {
+      "sha": "c9059027ca0bfe8e434df5410ed465bf64ad425c",
+      "author": "student2",
+      "message": "untrack out",
+      "timestamp": "2024-10-12T07:10:54Z",
+      "lines_added": 1,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/.gitignore",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/out/artifacts/elo_ranking_service_jar/elo-ranking-service.jar",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "6ab53eeb4eb3b3b0fcf0f51bbfc01682fa599d18",
+      "author": "student2",
+      "message": "untrack application properties",
+      "timestamp": "2024-10-12T07:15:07Z",
+      "lines_added": 1,
+      "lines_deleted": 12,
+      "files_changed": [
+        {
+          "filename": "backend/elo-ranking-service/.gitignore",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/elo-ranking-service/src/main/resources/application.properties",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 12
+        }
+      ]
+    },
+    {
+      "sha": "a09e115f82ebacadc4036d7d31ac2aa5c161eead",
+      "author": "student3",
+      "message": "Merge pull request #3 from student1/CG-15-elo-ranking-algorithm\n\nelo ranking algorithm",
+      "timestamp": "2024-10-12T07:16:37Z",
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "files_changed": []
+    },
+    {
+      "sha": "d1bcc1cbd3d415e5731c7beac6ae8f7619afe635",
+      "author": "student1",
+      "message": "hotfix/matchmaking add missing files",
+      "timestamp": "2024-10-12T07:24:00Z",
+      "lines_added": 1587,
+      "lines_deleted": 709,
+      "files_changed": [
+        {
+          "filename": "backend/docker-compose.yml",
+          "change_type": "added",
+          "lines_added": 12,
+          "lines_deleted": 0
+        }
+      ]
+    }
+  ]
+}

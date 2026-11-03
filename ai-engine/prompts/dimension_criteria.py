@@ -9,6 +9,8 @@ versioned as a single unit instead of being buried next to unrelated model code.
 
 from schemas.rubrics_dimension_score import DimensionName
 
+SPRINT_FEEDBACK_PROMPT_NAME = "Generate_Sprint_Feedback"  # Name of the prompt used to generate general sprint feedback. This prompt is registered in MLflow prompt registry.
+
 requirements = '''
     Evaluate the team's performance against the Requirements dimension using the provided Jira/project data. This is a single, team-level judgement — do not score individual members.
 

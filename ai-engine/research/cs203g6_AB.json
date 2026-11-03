@@ -1,0 +1,1038 @@
+{
+  "team_id": "cs203g6",
+  "sprint_id": "2024-11-13_to_2024-11-24",
+  "commits": [
+    {
+      "sha": "58a74cc87ad9af474462e828fafc497b0909e157",
+      "author": "Student1",
+      "message": "Added dockerfile",
+      "timestamp": "2024-11-14T21:12:08+08:00",
+      "lines_added": 112,
+      "lines_deleted": 87,
+      "files_changed": [
+        {
+          "filename": "backend/dockerfile",
+          "change_type": "added",
+          "lines_added": 15,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/pom.xml",
+          "change_type": "modified",
+          "lines_added": 84,
+          "lines_deleted": 72
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/MatchServiceTest.java",
+          "change_type": "modified",
+          "lines_added": 13,
+          "lines_deleted": 15
+        }
+      ]
+    },
+    {
+      "sha": "f982abdd8cf3e0c8556341c675aee9e91fc76d3d",
+      "author": "Student1",
+      "message": "Changed API_KEY",
+      "timestamp": "2024-11-15T16:39:37+08:00",
+      "lines_added": 38,
+      "lines_deleted": 8,
+      "files_changed": [
+        {
+          "filename": "backend/data/users.mv.db",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/dockerfile",
+          "change_type": "added",
+          "lines_added": 29,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/api/adminsAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/bracketAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/loginAPI.js",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "frontend/src/api/player_tournamentAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/playersAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/tournamentApi.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/services/authService.js",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "7482949e3e7b5af21dfa2bfbb5770a0deb5932e9",
+      "author": "Student1",
+      "message": "refactor",
+      "timestamp": "2024-11-15T16:54:08+08:00",
+      "lines_added": 1,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/config/WebConfig.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "7373c90c578ff7614f8c0a3ecac58a4ccba1cd4b",
+      "author": "Student2",
+      "message": "Refactored draw algo code in tournament service impl",
+      "timestamp": "2024-11-15T18:31:12+08:00",
+      "lines_added": 105,
+      "lines_deleted": 7,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/tournament/TournamentServiceImpl.java",
+          "change_type": "modified",
+          "lines_added": 105,
+          "lines_deleted": 7
+        }
+      ]
+    },
+    {
+      "sha": "073e7c3b32e048f5435a311ac23ecefe69348e39",
+      "author": "Student3",
+      "message": "Fixing deployment 1",
+      "timestamp": "2024-11-19T14:07:45+08:00",
+      "lines_added": 8,
+      "lines_deleted": 11,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/config/WebConfig.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/login/loginController.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "frontend/src/api/adminsAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "caa6b7384b3e20a650fca2d398c693f96dd29b15",
+      "author": "Student3",
+      "message": "deployment",
+      "timestamp": "2024-11-19T14:19:19+08:00",
+      "lines_added": 1,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/config/WebConfig.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "741a5fd45122dc75422eb5d71b631296ae39524f",
+      "author": "Student3",
+      "message": "deployment 2",
+      "timestamp": "2024-11-19T14:24:08+08:00",
+      "lines_added": 0,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/config/WebConfig.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "55900130f180e470aa9fb1be1a27f9315a973464",
+      "author": "Student3",
+      "message": "update deploy.yml",
+      "timestamp": "2024-11-19T14:42:33+08:00",
+      "lines_added": 43,
+      "lines_deleted": 43,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 43,
+          "lines_deleted": 43
+        }
+      ]
+    },
+    {
+      "sha": "26334fdbf26a1d5e01802d4b1a091e89ca8831d5",
+      "author": "Student3",
+      "message": "update deploy.yml 2",
+      "timestamp": "2024-11-19T14:48:15+08:00",
+      "lines_added": 9,
+      "lines_deleted": 10,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 9,
+          "lines_deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "3c3fb798811acfc9d58ddab7e45c46e98a44422d",
+      "author": "Student2",
+      "message": "Refactored code",
+      "timestamp": "2024-11-19T14:52:27+08:00",
+      "lines_added": 0,
+      "lines_deleted": 74,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/player/Player.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/tournament/TournamentServiceImpl.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 67
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/user/UserController.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 4
+        }
+      ]
+    },
+    {
+      "sha": "be6c73ef6decb3dd91598314e068ff96ab9f83b5",
+      "author": "Student3",
+      "message": "update deploy 3",
+      "timestamp": "2024-11-19T14:54:35+08:00",
+      "lines_added": 11,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 11,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "3056479e93828170579a15ca9ada142c349294d5",
+      "author": "Student3",
+      "message": "Merge branch 'main' of https://github.com/msmichaels05/cs203g6",
+      "timestamp": "2024-11-19T14:54:44+08:00",
+      "lines_added": 0,
+      "lines_deleted": 74,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/player/Player.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/tournament/TournamentServiceImpl.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 67
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/user/UserController.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 4
+        }
+      ]
+    },
+    {
+      "sha": "eb19a17b87c809ef32a2821ff65ecbc129979e4e",
+      "author": "Student3",
+      "message": "update deploy 4",
+      "timestamp": "2024-11-19T14:56:31+08:00",
+      "lines_added": 1,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "a58952b42ff0249eedbc837a1612722d4a5a228d",
+      "author": "Student3",
+      "message": "update deploy 5",
+      "timestamp": "2024-11-19T15:01:29+08:00",
+      "lines_added": 12,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 12,
+          "lines_deleted": 3
+        }
+      ]
+    },
+    {
+      "sha": "a9c857cbeb7d1ebb2a513edf8f96ffbd961f6a21",
+      "author": "Student3",
+      "message": "deploy 6",
+      "timestamp": "2024-11-19T15:05:59+08:00",
+      "lines_added": 3,
+      "lines_deleted": 12,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 12
+        }
+      ]
+    },
+    {
+      "sha": "4def0186e835f3ec5926ad230577d4f15ef94d64",
+      "author": "Student3",
+      "message": "update 7",
+      "timestamp": "2024-11-19T15:41:20+08:00",
+      "lines_added": 33,
+      "lines_deleted": 2,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "ecs-task-def.json",
+          "change_type": "added",
+          "lines_added": 31,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "86ce982c3aa3a0651c04c180c14c6b99450e4b4f",
+      "author": "Student3",
+      "message": "update deploy 8",
+      "timestamp": "2024-11-19T15:44:15+08:00",
+      "lines_added": 2,
+      "lines_deleted": 3,
+      "files_changed": [
+        {
+          "filename": "ecs-task-def.json",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 3
+        }
+      ]
+    },
+    {
+      "sha": "743becafc46b113671b937ad9dabc0bd7a6d4f53",
+      "author": "Student3",
+      "message": "deploy 9",
+      "timestamp": "2024-11-19T15:52:20+08:00",
+      "lines_added": 3,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "d824813900fad917116f75c850a7657e6f4fcbd3",
+      "author": "Student3",
+      "message": "deploy 10",
+      "timestamp": "2024-11-19T15:55:03+08:00",
+      "lines_added": 26,
+      "lines_deleted": 27,
+      "files_changed": [
+        {
+          "filename": "ecs-task-def.json",
+          "change_type": "modified",
+          "lines_added": 26,
+          "lines_deleted": 27
+        }
+      ]
+    },
+    {
+      "sha": "df7101244e88bb28e426885323e392799106ca1e",
+      "author": "Student3",
+      "message": "deploy 11",
+      "timestamp": "2024-11-19T15:59:59+08:00",
+      "lines_added": 2,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "f7053a0966d995e061d856b9d6aa7667f5f0e98f",
+      "author": "Student3",
+      "message": "djsjds",
+      "timestamp": "2024-11-19T16:07:00+08:00",
+      "lines_added": 1,
+      "lines_deleted": 0,
+      "files_changed": [
+        {
+          "filename": "frontend/src/api/loginAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "f6b44e0079a506443680e9416b83045983f7a2e4",
+      "author": "Student3",
+      "message": "deploy 14",
+      "timestamp": "2024-11-19T16:16:54+08:00",
+      "lines_added": 2,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "frontend/src/api/loginAPI.js",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "871e2cc233244ea94b3715658b0478bf627efcf5",
+      "author": "Student3",
+      "message": "deploy 15",
+      "timestamp": "2024-11-19T16:32:43+08:00",
+      "lines_added": 6,
+      "lines_deleted": 6,
+      "files_changed": [
+        {
+          "filename": "frontend/src/api/adminsAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/bracketAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/loginAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/player_tournamentAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/playersAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/tournamentApi.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "d2f13210ac2456ac89ae20d4af40f77692dd227b",
+      "author": "Student3",
+      "message": "deploy 18",
+      "timestamp": "2024-11-19T16:48:57+08:00",
+      "lines_added": 6,
+      "lines_deleted": 6,
+      "files_changed": [
+        {
+          "filename": "frontend/src/api/adminsAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/bracketAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/loginAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/player_tournamentAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/playersAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/tournamentApi.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "fdaf06ca29df70e4c759375e326e92c0f9a4b6bc",
+      "author": "Student3",
+      "message": "deploy 19",
+      "timestamp": "2024-11-19T17:04:32+08:00",
+      "lines_added": 1,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/security/SecurityConfig.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "1fa521707d37e0774df170c4b7d4d2c9af1aecdd",
+      "author": "Student2",
+      "message": "Added explanations for draw algo and refactored code",
+      "timestamp": "2024-11-19T17:08:36+08:00",
+      "lines_added": 6,
+      "lines_deleted": 1184,
+      "files_changed": [
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/Highlight.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 51
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightController.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 70 
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightNotFoundException.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 17
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightRepository.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 15
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightService.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 11
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightServiceImpl.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 57
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/tournament/TournamentServiceImpl.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/AdminIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 143
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/HighlightServiceTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 101
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/MatchServiceTest.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 31
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/PlayerIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 147
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/TournamentIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 149
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/TournamentServiceTest.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 199
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/UserIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 191
+        }
+      ]
+    },
+    {
+      "sha": "1fa222c78ec034634f2b2144f1fa3c540299d9fc",
+      "author": "Student1",
+      "message": "tete",
+      "timestamp": "2024-11-19T17:35:06+08:00",
+      "lines_added": 1,
+      "lines_deleted": 1,
+      "files_changed": [
+        {
+          "filename": "backend/data/users.mv.db",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/config/WebConfig.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "b970c955d2b56be8ed72b977a5bd34695d65f643",
+      "author": "Student1",
+      "message": "Merge branch 'main' of https://github.com/msmichaels05/cs203g6",
+      "timestamp": "2024-11-19T17:35:20+08:00",
+      "lines_added": 214,
+      "lines_deleted": 1325,
+      "files_changed": [
+        {
+          "filename": ".github/workflows/deploy.yml",
+          "change_type": "modified",
+          "lines_added": 58,
+          "lines_deleted": 43
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/config/WebConfig.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/Highlight.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 51
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightController.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 70
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightNotFoundException.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 17
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightRepository.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 15
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightService.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 11
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/highlight/HighlightServiceImpl.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 57
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/login/loginController.java",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 9
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/player/Player.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 3
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/security/SecurityConfig.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/tournament/TournamentServiceImpl.java",
+          "change_type": "modified",
+          "lines_added": 110,
+          "lines_deleted": 75
+        },
+        {
+          "filename": "backend/src/main/java/com/amateuraces/user/UserController.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/AdminIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 143
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/HighlightServiceTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 101
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/MatchServiceTest.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 31
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/PlayerIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 147
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/TournamentIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 149
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/TournamentServiceTest.java",
+          "change_type": "modified",
+          "lines_added": 0,
+          "lines_deleted": 199
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/UserIntegrationTest.java",
+          "change_type": "deleted",
+          "lines_added": 0,
+          "lines_deleted": 191
+        },
+        {
+          "filename": "ecs-task-def.json",
+          "change_type": "added",
+          "lines_added": 29,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/api/adminsAPI.js",
+          "change_type": "modified",
+          "lines_added": 2,
+          "lines_deleted": 2
+        },
+        {
+          "filename": "frontend/src/api/bracketAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/loginAPI.js",
+          "change_type": "modified",
+          "lines_added": 3,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/player_tournamentAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/playersAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/tournamentApi.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "dabe40df151737b92d0ef905636cb0bfed1e4945",
+      "author": "Student1",
+      "message": "refactor",
+      "timestamp": "2024-11-21T17:13:40+08:00",
+      "lines_added": 1037,
+      "lines_deleted": 17,
+      "files_changed": [
+        {
+          "filename": "backend/docker-compose.yaml",
+          "change_type": "added",
+          "lines_added": 24,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/pom.xml",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/main/resources/application.properties",
+          "change_type": "modified",
+          "lines_added": 23,
+          "lines_deleted": 11
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/AdminIntegrationTest.java",
+          "change_type": "added",
+          "lines_added": 147,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/PlayerIntegrationTest.java",
+          "change_type": "added",
+          "lines_added": 147,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/SpringBootIntegrationTest.java",
+          "change_type": "added",
+          "lines_added": 396,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/TournamentIntegrationTest.java",
+          "change_type": "added",
+          "lines_added": 149,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/UserIntegrationTest.java",
+          "change_type": "added",
+          "lines_added": 144,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "frontend/src/api/adminsAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/bracketAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/loginAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/player_tournamentAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/playersAPI.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        },
+        {
+          "filename": "frontend/src/api/tournamentApi.js",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "accdb1920434a326e8d3cef6ae0bb739af33918e",
+      "author": "Student1",
+      "message": "consolidated files",
+      "timestamp": "2024-11-21T18:33:29+08:00",
+      "lines_added": 478,
+      "lines_deleted": 980,
+      "files_changed": [
+        {
+          "filename": "backend/src/test/java/com/amateuraces/AdminIntegrationTest.java",
+          "change_type": "modified",
+          "lines_added": 93,
+          "lines_deleted": 145
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/MatchServiceTest.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/PlayerIntegrationTest.java",
+          "change_type": "modified",
+          "lines_added": 65,
+          "lines_deleted": 147
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/SpringBootIntegrationTest.java",
+          "change_type": "modified",
+          "lines_added": 97,
+          "lines_deleted": 396
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/TournamentIntegrationTest.java",
+          "change_type": "modified",
+          "lines_added": 135,
+          "lines_deleted": 148
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/TournamentServiceTest.java",
+          "change_type": "modified",
+          "lines_added": 1,
+          "lines_deleted": 0
+        },
+        {
+          "filename": "backend/src/test/java/com/amateuraces/UserIntegrationTest.java",
+          "change_type": "modified",
+          "lines_added": 86,
+          "lines_deleted": 144
+        }
+      ]
+    },
+    {
+      "sha": "9fe6420993403357b5f0aca62600ca3171dc4710",
+      "author": "Student1",
+      "message": ".",
+      "timestamp": "2024-11-24T17:17:09+08:00",
+      "lines_added": 23,
+      "lines_deleted": 16,
+      "files_changed": [
+        {
+          "filename": "backend/docker-compose.yaml",
+          "change_type": "modified",
+          "lines_added": 4,
+          "lines_deleted": 4
+        },
+        {
+          "filename": "backend/dockerfile",
+          "change_type": "modified",
+          "lines_added": 8,
+          "lines_deleted": 6
+        },
+        {
+          "filename": "backend/pom.xml",
+          "change_type": "modified",
+          "lines_added": 6,
+          "lines_deleted": 5
+        },
+        {
+          "filename": "backend/src/main/resources/application.properties",
+          "change_type": "modified",
+          "lines_added": 5,
+          "lines_deleted": 1
+        }
+      ]
+    }
+  ],
+  "jira_tickets": [],
+  "peer_evaluations": []
+}

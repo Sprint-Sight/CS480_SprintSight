@@ -6,6 +6,7 @@ class ModelName(str, Enum):
     SPRINTSIGHT_QWEN = "sprintsight-qwen"
     SPRINTSIGHT_MISTRAL = "sprintsight-mistral"
     SPRINTSIGHT_GEMMA = "sprintsight-gemma"
+    SPRINTSIGHT_JUDGE_PHI = "sprintsight-judge-phi"
     # --- Round-2 benchmark models (added alongside the originals for the
     # model-comparison study: larger / specialized, all within 24 GB VRAM). ---
     SPRINTSIGHT_LLAMA31 = "sprintsight-llama31"          # llama3.1:8b — speed/VRAM floor
@@ -27,6 +28,7 @@ MODEL_NUM_CTX: dict[str, int] = {
     ModelName.SPRINTSIGHT_QWEN.value: 40960,     # models/Modelfile.qwen (qwen3:8b maximum)
     ModelName.SPRINTSIGHT_MISTRAL.value: 32768,  # models/Modelfile.mistral (mistral:7b maximum)
     ModelName.SPRINTSIGHT_GEMMA.value: 49152,    # models/Modelfile.gemma
+    ModelName.SPRINTSIGHT_JUDGE_PHI.value: 49152, # models/Modelfile.phi
     # Round-2 benchmark models. Real per-dimension grading prompts were measured
     # at up to ~11.5k tokens (after commit sampling), so 16384 is non-truncating
     # for the current sprints. The 32B models cap at 16384 (vs 49152) because at

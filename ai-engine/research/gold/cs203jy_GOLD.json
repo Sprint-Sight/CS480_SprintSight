@@ -1,0 +1,105 @@
+{
+  "sprint_id": "sprint-1",
+  "team_id": "fa7d4476-78fd-4013-8d66-1e290a65fe1c",
+  "prompt_version": "v1.0",
+  "overall_score": 6.5,
+  "rubric_scores": {
+    "code_quality": {
+      "dimension": "code_quality", "score": 7, "evaluation_failed": false,
+      "justification": "223 commits (+74,670/-20,771) from ~8 contributors build six backend services plus a Vue frontend, via a PR-per-ticket workflow with many descriptive messages (e.g. 'add rbac on gateway'). Held back by a tail of vague messages ('mega fix, idk what tho', 'Minor Update') and one 24,607-line pixel-2d scaffold commit that inflates raw volume.",
+      "evidence_citations": [
+        {"identifier": "91532d8659e49451a55feec226a9b4c72c8c0ccd", "reason": "'add rbac on gateway' is a focused, descriptive 99-line commit adding role-based access control."},
+        {"identifier": "caf16fc6879b851d7313da5bc918a47004056087", "reason": "'mega fix, idk what tho' is a 1,225-line commit with an uninformative message."},
+        {"identifier": "4736023accfa8983b1beac1daa35a7a8189df527", "reason": "'init pixel-2d app + README' adds 24,607 lines in one commit, mostly scaffold and assets."}
+      ],
+      "strengths": ["PR-per-ticket branching (PRs #5, #7, #8, #10 on CG-46/CG-52/CG-57/CG-48) with ticket keys in commit messages", "Clear service decomposition: elo-ranking, gateway, auth, user, matchmaking, tournament", "Most core contributors' messages state what changed"],
+      "areas_for_improvement": ["22 of student2's 95 commit messages are two words or fewer", "Uninformative messages such as 'mega fix, idk what tho', 'Minor Update', 'Updated following stuff'", "Revert/re-merge churn on tournamentservicev2 (PRs #22, #24, #25) and very large single-drop commits"]
+    },
+    "testing": {
+      "dimension": "testing", "score": 7, "evaluation_failed": false,
+      "justification": "About 3,900 lines of Java unit and integration tests across 20+ test classes cover elo-ranking, matchmaking, player/clan availability, tournament service and Feign clients, with explicit test commits. Gaps: no dedicated testing Jira ticket, auth/user/gateway have only default *ApplicationTests stubs, no frontend or pixel-2d tests, and no coverage figure.",
+      "evidence_citations": [
+        {"identifier": "4ab17b5944cc3b8d469f524c868ee664a50bd8c3", "reason": "'add basic testcases for elo ranking controller' is an explicit test commit by student2 (+131)."},
+        {"identifier": "MatchmakingControllerIntegrationTest.java", "reason": "Integration test (178 lines in 37f65c3) shows testing beyond unit level for matchmaking."},
+        {"identifier": "6f1d0345753dd9f312ee25cde55307e69b0c13ed", "reason": "'add unit test for player game scores' adds 1,127 lines including test fixtures."}
+      ],
+      "strengths": ["Unit and integration tests for elo-ranking, matchmaking, availability and tournament services", "Inter-service Feign client tests (EloRankingFeignClientTest, MatchMakingFeignClientTest)", "Test work spread across several members (student2, student1, Ng Jun Hao)"],
+      "areas_for_improvement": ["No dedicated testing Jira ticket in the bundle", "Auth, user and gateway modules have only boilerplate application-context tests", "No frontend or pixel-2d tests; no coverage metric supplied"]
+    },
+    "documentation": {
+      "dimension": "documentation", "score": 8, "evaluation_failed": false,
+      "justification": "Explicit documentation work: an elo-algorithm README (+102 lines, later expanded), pixel-2d README and sources.md, .env.sample/README updates, and SwaggerConfig added to several services for API docs. Supplied documentation_quality is 82/100 and the Jira summaries are clear. No architecture diagram or top-level setup guide is visible in the commits.",
+      "evidence_citations": [
+        {"identifier": "62f6d488bf94b9eb3625fc6d7a7bcf52ee77aac5", "reason": "'update readme for elo algorithm' adds a 102-line README explaining the elo ranking algorithm."},
+        {"identifier": "documentation_quality: 82.0", "reason": "Supplied artifact metric supports a strong but not exemplary documentation rating."},
+        {"identifier": "SwaggerConfig.java", "reason": "Added by student2, Junhao186, Ng Jun Hao and Leman-24-horas, giving several services API documentation."}
+      ],
+      "strengths": ["README documents the elo algorithm and its process flow", "Swagger/OpenAPI config across multiple services", "Env sample and README updated alongside dockerisation"],
+      "areas_for_improvement": ["No architecture or service-interaction diagram in the commits", "student4's only README commit adds just 29 lines", "Only 3 Jira tickets, so ticket-level documentation cannot be judged"]
+    },
+    "requirements": {
+      "dimension": "requirements", "score": 7, "evaluation_failed": false,
+      "justification": "All 3 Jira tickets in the bundle are Done (3/3) but total only 5 story points (2 unestimated). Commits cite 18 other CG- keys that do not appear in the CS203-xx Jira feed, so completion cannot be verified from tickets. Commits do show delivered auth, elo ranking, matchmaking, tournament and frontend features, and demo_completeness is 78.",
+      "evidence_citations": [
+        {"identifier": "CS203-10", "reason": "'Database Schema Design & Implementation' is Done and the only estimated ticket (5 points)."},
+        {"identifier": "9ea4af4fd23963583f948e5f2a7d4fd6524de743", "reason": "'CG-46 finished registration page interface' shows ticket-keyed frontend delivery (+595)."},
+        {"identifier": "demo_completeness: 78.0", "reason": "Supplied artifact metric indicates a largely but not fully complete demo."}
+      ],
+      "strengths": ["3 of 3 tracked tickets Done (100%)", "Commits and PR branch names carry ticket keys (CG-46, CG-52, CG-57, CG-48)", "Features delivered across the stack: auth, elo, matchmaking, tournaments, frontend integration"],
+      "areas_for_improvement": ["Only 5 story points estimated across 3 tickets", "Jira keys (CS203-) do not match the CG- keys in commits, so commit-ticket linkage cannot be verified", "Jira assignees (RYAN HO WEN XI, Bernardinus Matteo Woenardi) map to no git author"]
+    },
+    "collaboration": {
+      "dimension": "collaboration", "score": 6, "evaluation_failed": false,
+      "justification": "No peer evaluations were supplied, so peer ratings cannot be assessed. Workload is uneven but not freeriding at the core: student2 (95 commits) and student1 carry the backend, student4/wangkaijie (62 commits) the frontend, and 31 PR merges (#1-#50) show a real review/merge flow. Three handles (student5, Leman-24-horas, student3) have one or zero authored code commits.",
+      "evidence_citations": [
+        {"identifier": "peer_evaluations: []", "reason": "Empty list means the rubric's peer-rating criterion cannot be applied, so the score is conservative."},
+        {"identifier": "commit_frequency: 223.0", "reason": "223 commits team-wide, of which student2 authored 95 (43%), showing concentrated load."},
+        {"identifier": "0c30a64c3cd5f67e9604b4aaa744969a60041427", "reason": "'Merge pull request #1' by student3 is one of 31 PR merges showing a PR-based review flow."}
+      ],
+      "strengths": ["31 PR merges (#1-#50) with branch-per-ticket naming", "Backend and frontend split cleanly between contributors", "Cross-member integration PRs (e.g. #30-#50 from Junhao186's fork)"],
+      "areas_for_improvement": ["No peer evaluation data supplied", "Load concentrated in student2, student1 and student4", "student5 and Leman-24-horas each made a single commit; student3 has merge commits only"]
+    },
+    "cicd": {
+      "dimension": "cicd", "score": 4, "evaluation_failed": false,
+      "justification": "No pipeline configuration (.github/workflows, bitbucket-pipelines, etc.) appears in any of the 223 commits, and nothing shows automated test runs or deployments. What exists is containerisation: Dockerfiles, docker-compose.yml/.cloud.yml and application-docker configs (PR #16 'Feat/dockerize backend services'), maintained through Oct-Nov. That is build/run automation, not CI/CD.",
+      "evidence_citations": [
+        {"identifier": "7fe42fe2045f8d40685cfd7fc7dd0647ad4fccaa", "reason": "'Feat/dockerize backend services (#16)' adds Dockerfile, docker-compose.yml and .env.sample (+556)."},
+        {"identifier": "d292533b9885ecdfe250309e114ab5715c0fe950", "reason": "'Fix all docker build' shows the team responding to container build failures."},
+        {"identifier": "docker-compose.cloud.yml", "reason": "Added in the matchmaking PR #26 commit; hints at cloud deployment prep but no pipeline automates it."}
+      ],
+      "strengths": ["All backend services dockerised with compose orchestration", "Environment config externalised (.env.sample, application-docker.*)", "Docker build breakages fixed promptly (d292533)"],
+      "areas_for_improvement": ["No CI pipeline config in any commit", "No evidence of automated checks on PRs", "No deployment pipeline despite docker-compose.cloud.yml"]
+    }
+  },
+  "member_contributions": [
+    {"student_id": "student2", "contribution_score": 9,
+     "primary_contributions": ["Built the elo-ranking service and its README (+14,428 lines)", "Gateway with RBAC and dockerisation of gateway/auth", "Unit tests for elo-ranking controller and game scores"],
+     "evidence": ["95 commits, +17,639/-10,055", "4ab17b5944cc3b8d469f524c868ee664a50bd8c3 add basic testcases for elo ranking controller", "91532d8659e49451a55feec226a9b4c72c8c0ccd add rbac on gateway"]},
+    {"student_id": "student1", "contribution_score": 8,
+     "primary_contributions": ["Repo scaffold and matchmaking service (~11k lines)", "Dockerised backend services (PR #16)", "Tournament player-availability API (CG-13) with unit/integration tests", "pixel-2d app scaffold"],
+     "evidence": ["36 commits, +37,999 (24,607 from the pixel-2d scaffold)", "7fe42fe2045f8d40685cfd7fc7dd0647ad4fccaa Feat/dockerize backend services (#16)", "1,620 lines of test code"]},
+    {"student_id": "student4", "contribution_score": 8,
+     "primary_contributions": ["Vue frontend: navbar/routing, registration, home, booking, leaderboard, profile, clan war pages", "Auth backend (~1,456 lines) and gateway CORS", "Frontend-backend integration PRs (CG59)"],
+     "evidence": ["62 commits across handles student4 (25) and wangkaijie (37), +11,784 lines", "9ea4af4fd23963583f948e5f2a7d4fd6524de743 CG-46 finished registration page interface", "Merged ~19 PRs, many CG59 integration PRs"]},
+    {"student_id": "Ng Jun Hao", "contribution_score": 6,
+     "primary_contributions": ["Tournament service with Feign clients and data loader", "Tests: TournamentServiceTest, MatchMakingFeignClientTest, EloRankingFeignClientTest"],
+     "evidence": ["15 commits across handles Ng Jun Hao (10) and Junhao186 (5), +4,289 lines (inflated by revert churn)", "Several vague messages ('Minor Update', 'Updated following stuff')"]},
+    {"student_id": "hibbychu", "contribution_score": 5,
+     "primary_contributions": ["Frontend Clan page, AboutView and carousel updates"],
+     "evidence": ["8 commits, +1,212 lines, frontend only", "Messages like 'new changes ready to merge' are low-information"]},
+    {"student_id": "Leman-24-horas", "contribution_score": 3,
+     "primary_contributions": ["User service drop (single commit)"],
+     "evidence": ["1 commit 'user service (#4)', +1,162 lines"]},
+    {"student_id": "student5", "contribution_score": 2,
+     "primary_contributions": ["Created a blank user-service scaffold"],
+     "evidence": ["1 commit 'created blank userservice', +585 lines, no follow-up"]},
+    {"student_id": "student3", "contribution_score": 2,
+     "primary_contributions": ["Merged PRs #1, #2, #3, #19, #21 (merge commits only)"],
+     "evidence": ["5 commits, all merges, 0 lines added/deleted"]}
+  ],
+  "executive_summary": "Between 2024-08-30 and 2024-11-20 the team (223 commits, +74,670/-20,771) built a tournament platform of elo-ranking, gateway (RBAC), auth, user, matchmaking and tournament services plus a Vue frontend, using a PR-per-ticket workflow, solid unit/integration tests, good documentation and containerisation. Weaknesses: no CI/CD pipeline, patchy commit messages, workload concentrated in three contributors, and thin Jira/peer data (3 tickets, no peer evaluations).",
+  "strengths": ["Broad, working multi-service delivery with PR-per-ticket traceability", "Substantial Java unit and integration test suite", "Explicit documentation (elo README, Swagger) and full dockerisation"],
+  "weaknesses": ["No CI/CD pipeline or automated checks", "Vague commit messages and revert churn in places", "Uneven workload; three handles with one or zero code commits", "Jira and peer-evaluation data incomplete"],
+  "key_recommendations": ["Add a GitHub Actions (or equivalent) pipeline that builds, runs tests and builds Docker images on every PR.", "Write real tests for auth, user and gateway and add a frontend test suite plus a coverage report.", "Adopt a commit-message convention (ticket key + what changed) and stop one-line messages like 'mega fix'.", "Keep Jira as the single source of truth: estimate every ticket and use one project key that matches commit references.", "Rebalance work so the user/auth/frontend-lite contributors own tickets, and run peer evaluations each sprint."],
+  "failed_dimensions": []
+}
