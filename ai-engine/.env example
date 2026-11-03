@@ -43,6 +43,9 @@ LLM_DIMENSION_CONCURRENCY=1
 # honour). Stops runaway answers: uncapped, a looping model only stopped at the
 # 20-minute client timeout. Normal answers are 250-4,100 tokens.
 LLM_MAX_OUTPUT_TOKENS=8192
+# A capped answer is incomplete, and instructor fails the dimension instead of
+# re-asking, so it is re-asked this many times with a "be concise" note.
+LLM_LENGTH_REASKS=1
 # CPU threads and context size are NOT set here: Ollama's /v1 endpoint ignores
 # per-request options. The GPU job bakes num_thread into each model (see
 # hpc/ollama-entrypoint.sh); num_ctx comes from the Modelfiles.

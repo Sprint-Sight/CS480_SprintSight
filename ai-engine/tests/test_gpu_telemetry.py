@@ -5,6 +5,8 @@ import logging
 from types import SimpleNamespace
 
 import httpx
+import pytest
+from instructor.core import IncompleteOutputException
 
 from schemas.modelname import ModelName
 from services import audit_logger, evaluator, llm_client
@@ -94,6 +96,50 @@ def test_answered_request_writes_no_unanswered_marker(tmp_path, monkeypatch):
     [marker] = [json.loads(line) for line in path.read_text().splitlines()]
     assert marker["http_status"] == 200
     assert marker["finish_reason"] == "length"   # stopped by LLM_MAX_OUTPUT_TOKENS
+
+
+class _FakeCompletions:
+    """chat.completions stand-in: raises IncompleteOutputException for the
+    first `capped` calls, then answers; records every prompt it was sent."""
+
+    def __init__(self, capped: int):
+        self.capped = capped
+        self.prompts: list[str] = []
+
+    async def create(self, messages, **kwargs):
+        self.prompts.append(messages[-1]["content"])
+        if len(self.prompts) <= self.capped:
+            raise IncompleteOutputException(last_completion=None)
+        return {"answer": len(self.prompts), "max_tokens": kwargs["max_tokens"]}
+
+
+def _fake_client(capped: int) -> SimpleNamespace:
+    return SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions(capped)))
+
+
+def test_normal_answer_is_sent_once_and_unchanged():
+    client = _fake_client(capped=0)
+    result = asyncio.run(llm_client._create_with_length_reask(client, "grade this", max_tokens=8192))
+    assert result == {"answer": 1, "max_tokens": 8192}
+    assert client.chat.completions.prompts == ["grade this"]
+
+
+def test_capped_answer_is_re_asked_with_a_concise_note(monkeypatch):
+    monkeypatch.setattr(llm_client, "_LENGTH_REASKS", 1)
+    client = _fake_client(capped=1)
+    result = asyncio.run(llm_client._create_with_length_reask(client, "grade this", max_tokens=8192))
+    assert result["answer"] == 2
+    first, second = client.chat.completions.prompts
+    assert first == "grade this"
+    assert second == "grade this" + llm_client._LENGTH_REASK_NOTE
+
+
+def test_capped_every_time_still_fails_the_dimension(monkeypatch):
+    monkeypatch.setattr(llm_client, "_LENGTH_REASKS", 1)
+    client = _fake_client(capped=5)
+    with pytest.raises(IncompleteOutputException):
+        asyncio.run(llm_client._create_with_length_reask(client, "grade this", max_tokens=8192))
+    assert len(client.chat.completions.prompts) == 2
 
 
 def test_prompt_truncation_is_detected_two_ways():

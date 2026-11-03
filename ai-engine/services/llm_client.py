@@ -16,6 +16,7 @@ import httpx
 import instructor
 import mlflow
 from dotenv import load_dotenv
+from instructor.core import IncompleteOutputException
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
@@ -163,9 +164,19 @@ _OUTPUT_RESERVE_TOKENS = int(os.getenv("LLM_OUTPUT_RESERVE_TOKENS", "2048"))
 # (which Ollama's /v1 endpoint does honour, unlike `options`). Normal answers
 # are 250-4,100 tokens. Uncapped, a model that starts looping only stops at the
 # client timeout (OLLAMA_TIMEOUT_SECONDS, 20 min) with the GPU at full power
-# the whole time, as llama3.1 and mistral did. A capped answer is incomplete
-# JSON, so instructor re-asks.
+# the whole time, as llama3.1 and mistral did.
 _MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "8192"))
+# instructor does not re-ask a capped (incomplete) answer: it raises
+# IncompleteOutputException and the dimension fails. So a capped answer is
+# re-asked here, up to this many times, with a note asking for a concise
+# answer. Resending the identical prompt at temperature 0 would most likely
+# loop the same way; the note changes the prompt.
+_LENGTH_REASKS = int(os.getenv("LLM_LENGTH_REASKS", "1"))
+_LENGTH_REASK_NOTE = (
+    "\n\nIMPORTANT: your previous answer to this request was cut off at the length "
+    "limit because it kept repeating itself. Reply with ONE complete JSON object "
+    "only, keep every text field short, and do not repeat any item."
+)
 # Safety margin when a model's real context is converted into the evidence
 # packer's estimated token units (see _prompt_context).
 _TOKENIZER_MARGIN = 0.95
@@ -663,7 +674,7 @@ async def _capture_response(response: httpx.Response) -> None:
             if marker["finish_reason"] == "length":
                 log.warning(
                     ">>> Dimension '%s': answer hit LLM_MAX_OUTPUT_TOKENS=%d (likely runaway "
-                    "generation); it is incomplete and will be re-asked.",
+                    "generation); the answer is incomplete.",
                     context.get("dimension"), _MAX_OUTPUT_TOKENS,
                 )
 
@@ -802,6 +813,28 @@ def create_llm_client(provider="ollama"):
     )
     return client
 
+async def _create_with_length_reask(client: Any, prompt: str, **kwargs: Any) -> Any:
+    """client.chat.completions.create for a single user prompt, re-asking with
+    _LENGTH_REASK_NOTE when the answer hits _MAX_OUTPUT_TOKENS (see there).
+    Answers that finish normally are never affected."""
+    content = prompt
+    for attempt in range(_LENGTH_REASKS + 1):
+        try:
+            return await client.chat.completions.create(
+                messages=[{"role": "user", "content": content}], **kwargs,
+            )
+        except IncompleteOutputException:
+            if attempt == _LENGTH_REASKS:
+                raise
+            log.warning(
+                ">>> Dimension '%s': re-asking for a concise answer after hitting the length cap "
+                "(%d of %d).",
+                (_audit_context.get() or {}).get("dimension"), attempt + 1, _LENGTH_REASKS,
+            )
+            content = prompt + _LENGTH_REASK_NOTE
+    raise AssertionError("unreachable")
+
+
 # # Each child span of the parent span (Evaluate_Complete_Sprint)
 # @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
 # async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
@@ -867,10 +900,10 @@ async def evaluate_dimension(
     )
     try:
         # The transport hooks capture the exact request and raw Ollama response.
-        model_output = await client.chat.completions.create(
+        model_output = await _create_with_length_reask(
+            client, prompt,
             model=model_name,
             response_model=ModelOutput,
-            messages=[{"role": "user", "content": prompt}],
             temperature=LLM_TEMPERATURE,
             max_retries=3,
             max_tokens=_MAX_OUTPUT_TOKENS,
@@ -970,10 +1003,10 @@ async def generate_sprint_feedback(
             ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
             "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
         )
-        return await client.chat.completions.create(
+        return await _create_with_length_reask(
+            client, prompt,
             model=model_name,
             response_model=SprintFeedback,
-            messages=[{"role": "user", "content": prompt}],
             temperature=LLM_TEMPERATURE,
             max_retries=3,
             max_tokens=_MAX_OUTPUT_TOKENS,
