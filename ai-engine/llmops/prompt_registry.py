@@ -32,22 +32,24 @@ def get_sprint_feedback_prompt_template():
     )
 
 def register_sprint_feedback_prompt(sprint_feedback_prompt_name, client: MlflowClient):
-    version = _is_prompt_registered(sprint_feedback_prompt_name, get_sprint_feedback_prompt_template(), client)
-    if version is not None:
-        log.info(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
-        print(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
-        return
-    log.info(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
-    print(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
-    return register_prompt(
-        sprint_feedback_prompt_name,
-        get_sprint_feedback_prompt_template(),
-        tags={'author': 'SprintSight'},
-        commit_message='Prompt for sprint-leve feedback generation',
-    )
+    existing = _is_prompt_registered(sprint_feedback_prompt_name, get_sprint_feedback_prompt_template(), client)
+    if existing is not None:
+        version = _is_prompt_registered(sprint_feedback_prompt_name, get_sprint_feedback_prompt_template(), client)
+        if version is not None:
+            log.info(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
+            print(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
+            return
+        log.info(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
+        print(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
+        return register_prompt(
+            sprint_feedback_prompt_name,
+            get_sprint_feedback_prompt_template(),
+            tags={'author': 'SprintSight'},
+            commit_message='Prompt for sprint-leve feedback generation',
+        )
     
 # Evaluator calls this method, converting the dictionary prompt name -> prompt template to list prompts_list
-def register_all_dimension_prompts(prompts_list: list, client: MlflowClient, experiment_exist: bool) -> dict:
+def register_all_dimension_prompts(prompts_list: list, client: MlflowClient) -> dict:
     prompt_versions_registered = {} # Store prompt versions for each of the dimension prompts registered in this run
     for dimension_prompt in prompts_list:
         _register_dimension_prompt( # Prompt name for each dimension will always be the same no matter what
@@ -56,13 +58,10 @@ def register_all_dimension_prompts(prompts_list: list, client: MlflowClient, exp
             tags={"dimension": dimension_prompt[0]},
             prompt_versions_registered=prompt_versions_registered, 
             client=client,
-            experiment_exist=experiment_exist
         )
     return prompt_versions_registered
 
-def _register_dimension_prompt(name: str, template: str, tags: dict, prompt_versions_registered: dict, client: MlflowClient, experiment_exist: bool):
-    if not experiment_exist:
-        _register_prompt(name, template, tags, prompt_versions_registered)
+def _register_dimension_prompt(name: str, template: str, tags: dict, prompt_versions_registered: dict, client: MlflowClient):
     existing = _is_prompt_registered(name, template, client)
     if existing is not None: # Check if current dimension prompt is already registered
         log.info(f"Prompt {name} is already registered in MLflow prompt registry.\n")
@@ -72,6 +71,8 @@ def _register_dimension_prompt(name: str, template: str, tags: dict, prompt_vers
     _register_prompt(name, template, tags, prompt_versions_registered)
 
 def _is_prompt_registered(dimension_prompt_name, dimension_prompt_template, client: MlflowClient):
+    if client.get_prompt(dimension_prompt_name) is None: # never registered; search_prompt_versions raises for an unknown name
+        return None
     versions = client.search_prompt_versions(dimension_prompt_name) # Get all prompt version given dimension prompt name
     for version in versions:
         prompt_version = client.get_prompt_version(dimension_prompt_name, version.version)
