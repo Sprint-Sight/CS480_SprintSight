@@ -6,13 +6,16 @@ Gets back SprintAssessment object from evaluator, which FastAPI serializes to JS
 
 from __future__ import annotations
 
-import logging, os, mlflow
+import logging
+import os
 from datetime import datetime
 from typing import Annotated, Any
 
+import mlflow
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from judges.promote import judge_and_promote_trace
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
@@ -21,8 +24,6 @@ from schemas.peer_evaluation import PeerEvaluation
 from schemas.repo_snapshot import RepoSnapshot
 from schemas.sprint_assessment import SprintAssessment
 from services.evaluator import evaluate_sprint
-
-from judges.promote import judge_and_promote_trace
 
 log = logging.getLogger("sprintsight.router.assessment")
 
