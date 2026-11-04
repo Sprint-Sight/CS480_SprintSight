@@ -55,16 +55,20 @@ settings = get_settings()
 configure_logging()
 
 
-def _bootstrap_user(repository: PostgresUserRepository, email: str, password: str, name: str, role: Role) -> None:
+def _bootstrap_user(
+    repository: PostgresUserRepository, email: str, password: str, name: str, role: Role
+) -> None:
     if email and password and not repository.get_by_email(email):
-        repository.create_user(UserRecord(
-            id=str(uuid4()),
-            email=email,
-            full_name=name,
-            role=role,
-            hashed_password=hash_password(password),
-            student_number=1 if role == Role.STUDENT else None,
-        ))
+        repository.create_user(
+            UserRecord(
+                id=str(uuid4()),
+                email=email,
+                full_name=name,
+                role=role,
+                hashed_password=hash_password(password),
+                student_number=1 if role == Role.STUDENT else None,
+            )
+        )
 
 
 # ------------------------------------------------------------------
@@ -103,8 +107,12 @@ async def lifespan(app: FastAPI):
     app.state.action_audit_repository = PostgresActionAuditRepository(pool)
     app.state.audit_retention_config_repository = PostgresAuditRetentionConfigRepository(pool)
     app.state.rubric_weights_repository = PostgresRubricWeightsRepository(pool)
-    app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(pool)
-    app.state.instructor_jira_credentials_repository = PostgresInstructorJiraCredentialsRepository(pool)
+    app.state.instructor_model_selection_repository = PostgresInstructorModelSelectionRepository(
+        pool
+    )
+    app.state.instructor_jira_credentials_repository = PostgresInstructorJiraCredentialsRepository(
+        pool
+    )
     app.state.export_log_repository = InMemoryExportLogRepository()
     app.state.peer_evaluation_repository = PostgresPeerEvaluationRepository(pool)
     app.state.email_outbox_repository = PostgresEmailOutboxRepository(pool)
@@ -120,9 +128,27 @@ async def lifespan(app: FastAPI):
     app.state.email_dispatcher.start()
 
     user_repository = app.state.user_repository
-    _bootstrap_user(user_repository, settings.bootstrap_admin_email, settings.bootstrap_admin_password, settings.bootstrap_admin_name, Role.ADMIN)
-    _bootstrap_user(user_repository, settings.bootstrap_instructor_email, settings.bootstrap_instructor_password, settings.bootstrap_instructor_name, Role.INSTRUCTOR)
-    _bootstrap_user(user_repository, settings.bootstrap_student_email, settings.bootstrap_student_password, settings.bootstrap_student_name, Role.STUDENT)
+    _bootstrap_user(
+        user_repository,
+        settings.bootstrap_admin_email,
+        settings.bootstrap_admin_password,
+        settings.bootstrap_admin_name,
+        Role.ADMIN,
+    )
+    _bootstrap_user(
+        user_repository,
+        settings.bootstrap_instructor_email,
+        settings.bootstrap_instructor_password,
+        settings.bootstrap_instructor_name,
+        Role.INSTRUCTOR,
+    )
+    _bootstrap_user(
+        user_repository,
+        settings.bootstrap_student_email,
+        settings.bootstrap_student_password,
+        settings.bootstrap_student_name,
+        Role.STUDENT,
+    )
 
     # Create MinIO buckets if they don't exist yet
     storage.init_buckets()
@@ -173,7 +199,9 @@ def custom_openapi() -> dict:
         "format": "binary",
     }
     import_operation = schema["paths"]["/api/v1/courses/{course_id}/students/import"]["post"]
-    import_request_schema = import_operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    import_request_schema = import_operation["requestBody"]["content"]["multipart/form-data"][
+        "schema"
+    ]
     import_component = schema["components"]["schemas"][import_request_schema["$ref"].split("/")[-1]]
     import_component["properties"]["file"] = {
         "type": "string",

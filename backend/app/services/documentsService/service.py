@@ -16,7 +16,9 @@ log = logging.getLogger(__name__)
 
 
 class DocumentStorage(Protocol):
-    def upload(self, bucket: str, key: str, data: bytes, mime_type: str = "application/octet-stream") -> str: ...
+    def upload(
+        self, bucket: str, key: str, data: bytes, mime_type: str = "application/octet-stream"
+    ) -> str: ...
 
     def download(self, bucket: str, key: str) -> bytes: ...
 
@@ -52,11 +54,19 @@ def upload_documents(
     try:
         for filename, content_type, content in files:
             if not content or len(content) > settings.document_max_file_size:
-                raise DocumentValidationError("Each document must be non-empty and within the file size limit.")
+                raise DocumentValidationError(
+                    "Each document must be non-empty and within the file size limit."
+                )
             extension = PurePath(filename).suffix.lower()
             document_type = SUPPORTED_DOCUMENT_TYPES.get(extension)
-            if not document_type or content_type != document_type[0] or not content.startswith(document_type[1]):
-                raise DocumentValidationError("Only valid PDF, DOCX, and PPTX documents are accepted.")
+            if (
+                not document_type
+                or content_type != document_type[0]
+                or not content.startswith(document_type[1])
+            ):
+                raise DocumentValidationError(
+                    "Only valid PDF, DOCX, and PPTX documents are accepted."
+                )
             document_id = str(uuid4())
             safe_filename = PurePath(filename).name or f"{document_id}{extension}"
             storage_key = f"projects/{project_id}/documents/{document_id}/{safe_filename}"
@@ -146,7 +156,7 @@ def _extract_pdf_text(content: bytes) -> str:
     pyproject.toml for production deployments.
     """
     try:
-        import pdfplumber  # noqa: PLC0415 - lazy import, see docstring above
+        import pdfplumber  # noqa: PLC0415 - lazy import, see docstring above  # type: ignore
     except ImportError:
         log.warning(
             "pdfplumber is not installed; cannot extract text from uploaded PDF. "
@@ -206,7 +216,8 @@ def collect_project_context_documents(
     records = repository.list_documents(project_id)
     log.info(
         "Collecting project-context documents for project %s: %d record(s) in repository.",
-        project_id, len(records),
+        project_id,
+        len(records),
     )
     for record in records:
         try:
@@ -214,7 +225,10 @@ def collect_project_context_documents(
         except Exception as exc:
             log.warning(
                 "Skipping project-context document %s/%s (filename=%s, download failed): %s",
-                project_id, record.id, record.filename, exc,
+                project_id,
+                record.id,
+                record.filename,
+                exc,
             )
             continue
         text = extract_document_text(record, content)
@@ -224,14 +238,18 @@ def collect_project_context_documents(
             log.info(
                 "Skipping project-context document %s (mime=%s, bytes=%d): no text extracted. "
                 "PDFs and unsupported types are intentionally excluded here.",
-                record.filename, record.mime_type, len(content),
+                record.filename,
+                record.mime_type,
+                len(content),
             )
             continue
         if len(text) > _MAX_CONTEXT_CHARS_PER_DOCUMENT:
             text = text[:_MAX_CONTEXT_CHARS_PER_DOCUMENT] + "\n...[truncated for context window]"
         log.info(
             "Including project-context document %s (mime=%s, extracted %d chars).",
-            record.filename, record.mime_type, len(text),
+            record.filename,
+            record.mime_type,
+            len(text),
         )
         documents.append(
             {
@@ -243,6 +261,8 @@ def collect_project_context_documents(
         )
     log.info(
         "Project %s: %d of %d document(s) carried into AI context.",
-        project_id, len(documents), len(records),
+        project_id,
+        len(documents),
+        len(records),
     )
     return documents

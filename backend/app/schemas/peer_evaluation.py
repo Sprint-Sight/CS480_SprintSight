@@ -19,9 +19,7 @@ class PeerEvaluationCreate(BaseModel):
 class PeerEvaluationUpdate(BaseModel):
     """Request to update an existing peer evaluation (score and/or remarks)."""
 
-    score: int | None = Field(
-        default=None, ge=1, le=5, description="Rating from 1 to 5."
-    )
+    score: int | None = Field(default=None, ge=1, le=5, description="Rating from 1 to 5.")
     remarks: str | None = Field(
         default=None, max_length=1000, description="Optional remarks about the member."
     )
@@ -109,7 +107,7 @@ class PeerEvaluationReceivedItem(PeerEvaluationInstructorView):
 
     is_score_outlier: bool = Field(
         ...,
-        description="True when this score is at least one standard deviation from the member's mean received score.",
+        description="True when this score is at least one standard deviation from the member's mean received score.",  # noqa: E501
     )
     score_z_score: float | None = Field(
         default=None,
@@ -135,7 +133,7 @@ class MemberPeerEvaluationDetail(BaseModel):
     evaluation_count: int
     is_total_outlier: bool = Field(
         ...,
-        description="True when this member's total is at least one standard deviation from the course mean of received totals.",
+        description="True when this member's total is at least one standard deviation from the course mean of received totals.",  # noqa: E501
     )
     total_z_score: float | None
     outlier_direction: str | None = Field(
@@ -144,7 +142,7 @@ class MemberPeerEvaluationDetail(BaseModel):
     )
     course_average_total: float | None = Field(
         default=None,
-        description="Mean total received score among enrolled students who have at least one evaluation.",
+        description="Mean total received score among enrolled students who have at least one evaluation.",  # noqa: E501
     )
     course_total_score_std_dev: float | None
     enrolled_student_count: int

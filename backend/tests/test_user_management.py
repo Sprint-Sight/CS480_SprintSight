@@ -19,7 +19,12 @@ def test_admin_can_create_user_and_user_must_change_temporary_password() -> None
     admin = login("admin@sprintsight.edu", "password123")
     response = client.post(
         "/api/v1/users",
-        json={"email": "new@sprintsight.edu", "full_name": "New User", "role": "student", "password": "temporary123"},
+        json={
+            "email": "new@sprintsight.edu",
+            "full_name": "New User",
+            "role": "student",
+            "password": "temporary123",
+        },
         headers=auth_header(admin["access_token"]),
     )
     assert response.status_code == 201
@@ -38,7 +43,10 @@ def test_admin_can_create_user_and_user_must_change_temporary_password() -> None
     )
     assert change_response.status_code == 200
     assert change_response.json()["must_change_password"] is False
-    assert client.get("/api/v1/auth/me", headers=auth_header(new_user["access_token"])).status_code == 401
+    assert (
+        client.get("/api/v1/auth/me", headers=auth_header(new_user["access_token"])).status_code
+        == 401
+    )
     assert login("new@sprintsight.edu", "permanent123")["must_change_password"] is False
 
 
@@ -93,10 +101,13 @@ def test_student_created_without_a_password_cannot_log_in_without_the_email() ->
     assert "password" not in response.json()
 
     # A random placeholder was generated, so no guessed password gets in.
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"email": "nolink@sprintsight.edu", "password": "temporary123"},
-    ).status_code == 401
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": "nolink@sprintsight.edu", "password": "temporary123"},
+        ).status_code
+        == 401
+    )
 
 
 def test_non_admin_cannot_manage_users() -> None:
@@ -109,7 +120,12 @@ def test_admin_can_update_reset_and_deactivate_user() -> None:
     admin = login("admin@sprintsight.edu", "password123")
     created = client.post(
         "/api/v1/users",
-        json={"email": "managed@sprintsight.edu", "full_name": "Managed User", "role": "student", "password": "temporary123"},
+        json={
+            "email": "managed@sprintsight.edu",
+            "full_name": "Managed User",
+            "role": "student",
+            "password": "temporary123",
+        },
         headers=auth_header(admin["access_token"]),
     ).json()
     user_id = created["id"]
@@ -136,4 +152,10 @@ def test_admin_can_update_reset_and_deactivate_user() -> None:
         headers=auth_header(admin["access_token"]),
     )
     assert deactivate.status_code == 200
-    assert client.post("/api/v1/auth/login", json={"email": "managed@sprintsight.edu", "password": "resetpass123"}).status_code == 401
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": "managed@sprintsight.edu", "password": "resetpass123"},
+        ).status_code
+        == 401
+    )

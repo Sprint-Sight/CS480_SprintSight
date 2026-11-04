@@ -29,8 +29,10 @@ def _ticket_timestamp(
     completion_date_field: str | None,
 ) -> datetime | None:
     raw = (
-        fields.get(completion_date_field) if completion_date_field else None
-    ) or fields.get("resolutiondate") or fields.get("resolutionDate")
+        (fields.get(completion_date_field) if completion_date_field else None)
+        or fields.get("resolutiondate")
+        or fields.get("resolutionDate")
+    )
     if not raw:
         return None
     try:
@@ -146,9 +148,7 @@ def _issue_changelog(issue: dict[str, Any]) -> list[JiraIssueChange]:
                 field_id=str(item["fieldId"]) if item.get("fieldId") is not None else None,
                 from_value=str(item["from"]) if item.get("from") is not None else None,
                 to_value=str(item["to"]) if item.get("to") is not None else None,
-                from_string=str(item["fromString"])
-                if item.get("fromString") is not None
-                else None,
+                from_string=str(item["fromString"]) if item.get("fromString") is not None else None,
                 to_string=str(item["toString"]) if item.get("toString") is not None else None,
             )
             for item in raw_items
@@ -260,9 +260,7 @@ def _resolve_student_id(
     if assignee_email:
         normalized_email = assignee_email.strip().lower()
         email_candidates = [
-            sid
-            for sid in ids_by_email.get(normalized_email, [])
-            if sid in project_member_ids
+            sid for sid in ids_by_email.get(normalized_email, []) if sid in project_member_ids
         ]
         if len(email_candidates) == 1:
             matched_by_email = email_candidates[0]
@@ -273,9 +271,7 @@ def _resolve_student_id(
     if assignee_name:
         normalized_name = assignee_name.strip().lower()
         name_candidates = [
-            sid
-            for sid in ids_by_name.get(normalized_name, [])
-            if sid in project_member_ids
+            sid for sid in ids_by_name.get(normalized_name, []) if sid in project_member_ids
         ]
         if len(name_candidates) == 1:
             matched_by_name = name_candidates[0]

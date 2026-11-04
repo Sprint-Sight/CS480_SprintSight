@@ -74,7 +74,13 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA480", "name": "Jira Test", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA480",
+            "name": "Jira Test",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project_response = client.post(
@@ -141,7 +147,10 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
             return original_post(self, url, **kwargs)
         assert captured_client["auth"] == ("jira.owner@university.edu", "project-jira-token")
         assert captured_client["base_url"] == "https://team.atlassian.net"
-        assert kwargs["json"]["jql"] == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        assert (
+            kwargs["json"]["jql"]
+            == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        )
         assert kwargs["json"]["fields"] == ["*all"]
         return httpx.Response(200, content=raw_bytes, request=httpx.Request("POST", url))
 
@@ -162,7 +171,9 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     document = json.loads(uploaded["data"])
     assert document["issues"][0]["key"] == "JIRA-1"
     assert document["changelog_captured"] is True
-    assert document["issues"][0]["changelog"]["histories"][0]["items"][0]["toString"] == "In Progress"
+    assert (
+        document["issues"][0]["changelog"]["histories"][0]["items"][0]["toString"] == "In Progress"
+    )
     assert uploaded["mime_type"] == "application/json"
     assert uploaded["key"].startswith(f"raw/jira/{course['id']}/{project['id']}/sprint-1/")
 
@@ -171,7 +182,13 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA481", "name": "Jira Stored Key", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA481",
+            "name": "Jira Stored Key",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project = client.post(
@@ -192,7 +209,10 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
     def fake_post(self, url, **kwargs):
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
-        assert kwargs["json"]["jql"] == 'project = "STORED" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        assert (
+            kwargs["json"]["jql"]
+            == 'project = "STORED" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        )
         return httpx.Response(
             200,
             content=b'{"issues":[],"total":0}',
@@ -214,7 +234,13 @@ def test_jira_raw_sync_filters_by_requested_sprint(monkeypatch) -> None:
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA482", "name": "Jira Sprint Filter", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA482",
+            "name": "Jira Sprint Filter",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project = client.post(
@@ -235,7 +261,10 @@ def test_jira_raw_sync_filters_by_requested_sprint(monkeypatch) -> None:
     def fake_post(self, url, **kwargs):
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
-        assert kwargs["json"]["jql"] == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        assert (
+            kwargs["json"]["jql"]
+            == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        )
         return httpx.Response(
             200,
             content=b'{"issues":[],"total":0}',
@@ -257,7 +286,13 @@ def test_jira_raw_sync_requires_project_credentials() -> None:
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA482", "name": "Jira Missing Creds", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA482",
+            "name": "Jira Missing Creds",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project = client.post(
@@ -301,7 +336,13 @@ def test_reprocess_all_jira_runs_happy_path(monkeypatch) -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO1", "name": "Reprocess Test", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO1",
+            "name": "Reprocess Test",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=headers,
     ).json()
 
@@ -378,7 +419,13 @@ def test_reprocess_all_jira_runs_empty(monkeypatch) -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO2", "name": "Empty Project", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO2",
+            "name": "Empty Project",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
 
@@ -409,7 +456,13 @@ def test_reprocess_all_jira_runs_failed_run(monkeypatch) -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO3", "name": "Bad Data Project", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO3",
+            "name": "Bad Data Project",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
 
@@ -497,7 +550,13 @@ def test_reprocess_all_jira_runs_403_non_faculty() -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO4", "name": "Auth Project", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO4",
+            "name": "Auth Project",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=headers,
     ).json()
 

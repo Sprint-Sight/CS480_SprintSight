@@ -368,8 +368,7 @@ def test_bulk_import_sends_setup_emails_by_default(stub_notification_service) ->
     ).json()
 
     csv_body = (
-        "student_name,student_id,student_email\n"
-        "Loud Student,480998,loud.student@sprintsight.edu\n"
+        "student_name,student_id,student_email\nLoud Student,480998,loud.student@sprintsight.edu\n"
     )
     response = client.post(
         f"/api/v1/courses/{course['id']}/students/import",

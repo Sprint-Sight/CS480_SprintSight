@@ -62,6 +62,7 @@ def _get_service(
 # Instructor: configure evaluation window
 # ------------------------------------------------------------------
 
+
 @router.post(
     "/courses/{course_id}/config",
     response_model=PeerEvaluationConfigResponse,
@@ -160,6 +161,7 @@ def get_peer_evaluation_config(
 # Student: submit evaluation
 # ------------------------------------------------------------------
 
+
 @router.post(
     "/evaluations",
     response_model=PeerEvaluationResponse,
@@ -200,6 +202,7 @@ def submit_peer_evaluation(
 # Student: update own evaluation (PATCH)
 # ------------------------------------------------------------------
 
+
 @router.patch(
     "/evaluations/{evaluation_id}",
     response_model=PeerEvaluationResponse,
@@ -238,6 +241,7 @@ def update_peer_evaluation(
 # Student / Instructor: delete evaluation
 # ------------------------------------------------------------------
 
+
 @router.delete(
     "/evaluations/{evaluation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -268,6 +272,7 @@ def delete_peer_evaluation(
 # ------------------------------------------------------------------
 # Student: view own evaluations
 # ------------------------------------------------------------------
+
 
 @router.get(
     "/evaluations/mine",
@@ -305,6 +310,7 @@ def list_my_peer_evaluations(
 # ------------------------------------------------------------------
 # Student: check if evaluation is open
 # ------------------------------------------------------------------
+
 
 @router.get(
     "/courses/{course_id}/status",
@@ -345,6 +351,7 @@ def get_peer_evaluation_status(
 # Instructor: view all evaluations for a project
 # ------------------------------------------------------------------
 
+
 @router.get(
     "/projects/{project_id}/evaluations",
     response_model=PeerEvaluationSummary,
@@ -371,6 +378,7 @@ def get_project_peer_evaluations(
 # ------------------------------------------------------------------
 # Instructor: view evaluations received by one group member
 # ------------------------------------------------------------------
+
 
 @router.get(
     "/projects/{project_id}/members/{member_id}/evaluations",
@@ -399,6 +407,7 @@ def get_member_peer_evaluations(
 # ------------------------------------------------------------------
 # Instructor: view all evaluations for a course
 # ------------------------------------------------------------------
+
 
 @router.get(
     "/courses/{course_id}/evaluations",

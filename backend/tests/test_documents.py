@@ -39,7 +39,11 @@ def setup_project(repository, member_ids: list[str] | None = None) -> None:
 def test_upload_list_and_download_multiple_pdfs(override_user_repository, monkeypatch) -> None:
     setup_project(override_user_repository, ["u-student-1"])
     objects: dict[str, bytes] = {}
-    monkeypatch.setattr(storage, "upload", lambda bucket, key, data, mime_type: objects.setdefault(key, data) and key)
+    monkeypatch.setattr(
+        storage,
+        "upload",
+        lambda bucket, key, data, mime_type: objects.setdefault(key, data) and key,
+    )
     monkeypatch.setattr(storage, "download", lambda bucket, key: objects[key])
     monkeypatch.setattr(storage, "delete", lambda bucket, key: objects.pop(key, None))
     headers = {"Authorization": f"Bearer {token('student@sprintsight.edu')}"}
@@ -48,14 +52,18 @@ def test_upload_list_and_download_multiple_pdfs(override_user_repository, monkey
         ("files", ("final.pdf", b"%PDF-1.7 final", "application/pdf")),
     ]
 
-    upload = client.post("/api/v1/projects/project-documents/documents", files=files, headers=headers)
+    upload = client.post(
+        "/api/v1/projects/project-documents/documents", files=files, headers=headers
+    )
     assert upload.status_code == 201
     records = upload.json()["documents"]
     assert len(records) == 2
     assert {record["filename"] for record in records} == {"proposal.pdf", "final.pdf"}
     assert len({record["id"] for record in records}) == 2
     assert all(record["project_id"] == "project-documents" for record in records)
-    instructor_notifications = app.dependency_overrides[get_notification_repository]().list_notifications("u-faculty-1")
+    instructor_notifications = app.dependency_overrides[
+        get_notification_repository
+    ]().list_notifications("u-faculty-1")
     assert len(instructor_notifications) == 1
     assert instructor_notifications[0].event_type == "document_uploaded"
     assert "Student User uploaded 2 document(s)" in instructor_notifications[0].message
@@ -126,7 +134,9 @@ def test_pdf_docx_and_pptx_are_accepted(override_user_repository, monkeypatch) -
         ),
     ]
 
-    response = client.post("/api/v1/projects/project-documents/documents", files=files, headers=headers)
+    response = client.post(
+        "/api/v1/projects/project-documents/documents", files=files, headers=headers
+    )
 
     assert response.status_code == 201
     assert {document["mime_type"] for document in response.json()["documents"]} == {
@@ -134,7 +144,9 @@ def test_pdf_docx_and_pptx_are_accepted(override_user_repository, monkeypatch) -
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }
-    assert set(uploaded_types.values()) == set(document["mime_type"] for document in response.json()["documents"])
+    assert set(uploaded_types.values()) == set(
+        document["mime_type"] for document in response.json()["documents"]
+    )
 
 
 def test_unsupported_document_type_is_rejected(override_user_repository, monkeypatch) -> None:
@@ -151,7 +163,9 @@ def test_unsupported_document_type_is_rejected(override_user_repository, monkeyp
 def test_authorized_user_can_delete_document(override_user_repository, monkeypatch) -> None:
     setup_project(override_user_repository, ["u-student-1"])
     objects: dict[str, bytes] = {}
-    monkeypatch.setattr(storage, "upload", lambda bucket, key, data, mime_type: objects.setdefault(key, data) or key)
+    monkeypatch.setattr(
+        storage, "upload", lambda bucket, key, data, mime_type: objects.setdefault(key, data) or key
+    )
     monkeypatch.setattr(storage, "delete", lambda bucket, key: objects.pop(key, None))
     headers = {"Authorization": f"Bearer {token('student@sprintsight.edu')}"}
 
@@ -173,7 +187,9 @@ def test_authorized_user_can_delete_document(override_user_repository, monkeypat
     assert objects == {}
 
 
-def test_document_delete_requires_access_and_existing_document(override_user_repository, monkeypatch) -> None:
+def test_document_delete_requires_access_and_existing_document(
+    override_user_repository, monkeypatch
+) -> None:
     setup_project(override_user_repository, ["u-student-1"])
     monkeypatch.setattr(storage, "upload", lambda bucket, key, data, mime_type: key)
     headers = {"Authorization": f"Bearer {token('student@sprintsight.edu')}"}

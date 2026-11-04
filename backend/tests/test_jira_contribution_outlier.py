@@ -4,6 +4,7 @@ Tests for the Jira contribution outlier endpoints:
     GET /api/v1/jira/contribution-outliers/courses/{course_id}
     GET /api/v1/jira/contribution-outliers/courses/{course_id}/students/{student_id}
 """
+
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -51,9 +52,7 @@ def _setup_course_with_project():
     Returns: (project_repo, course, user_repo, student_a, student_b)
     """
     project_repo = InMemoryProjectRepository()
-    course = project_repo.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1"
-    )
+    course = project_repo.create_course("CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1")
 
     student_a = UserRecord(
         id="u-student-a",
@@ -445,9 +444,7 @@ def _add_third_student(project_repo, user_repo, course):
         student_number=103,
     )
     user_repo.create_user(student_c)
-    project_repo.set_members(
-        "proj-jira-1", ["u-student-a", "u-student-b", student_c.id]
-    )
+    project_repo.set_members("proj-jira-1", ["u-student-a", "u-student-b", student_c.id])
     project_repo.enroll_student(course.id, student_c.id)
     return student_c
 

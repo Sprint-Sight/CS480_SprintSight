@@ -26,8 +26,13 @@ def _authorized_project(project_id: str, current_user: UserRecord, projects: Pro
     project = projects.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    if current_user.role != Role.INSTRUCTOR or not projects.is_instructor_assigned(project.course_id, current_user.id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+    if current_user.role != Role.INSTRUCTOR or not projects.is_instructor_assigned(
+        project.course_id, current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructor is not assigned to this course.",
+        )
     return project
 
 
@@ -41,7 +46,10 @@ def post_manual_text(
 ) -> dict[str, str]:
     project = _authorized_project(payload.project_id, current_user, projects)
     if project.course_id != payload.course_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to the specified course.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project does not belong to the specified course.",
+        )
     upsert_manual_text(repository, payload, updated_by=current_user.id)
     append_action_audit(
         action_audits,
@@ -50,7 +58,11 @@ def post_manual_text(
         action="update_manual_sprint_text",
         target_type="sprint_expectations",
         target_id=f"{payload.project_id}:{payload.sprint_id}",
-        details={"course_id": payload.course_id, "project_id": payload.project_id, "sprint_id": payload.sprint_id},
+        details={
+            "course_id": payload.course_id,
+            "project_id": payload.project_id,
+            "sprint_id": payload.sprint_id,
+        },
     )
     return {"status": "saved"}
 
@@ -66,5 +78,8 @@ def read_manual_text(
 ) -> dict[str, str | None]:
     project = _authorized_project(project_id, current_user, projects)
     if project.course_id != course_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to the specified course.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project does not belong to the specified course.",
+        )
     return {"expectations_text": get_manual_text(repository, course_id, project_id, sprint_id)}

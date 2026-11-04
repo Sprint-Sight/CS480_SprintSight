@@ -5,7 +5,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydriller import Repository
+from pydriller import Repository  # type: ignore[import-untyped]
 
 from app.repositories.in_memory import metrics_repo
 from app.repositories.interfaces import (
@@ -14,7 +14,7 @@ from app.repositories.interfaces import (
     ProjectRepository,
     UserRepository,
 )
-from app.schemas.assessment import CommitInfo, FileDiff, IngestionRequest
+from app.schemas.assessment import AssessRequest, CommitInfo, FileDiff, IngestionRequest
 from app.schemas.auth import Role
 
 # Diff caps keep one huge commit (e.g. an initial scaffold) from bloating the
@@ -30,15 +30,42 @@ SNAPSHOT_MAX_TOTAL_BYTES = int(os.getenv("REPO_SNAPSHOT_MAX_TOTAL_BYTES", "40000
 
 # Kept in step with ai-engine/services/llm_client.py's noise lists.
 _NOISE_PATH_SEGMENTS = (
-    "node_modules/", "vendor/", "venv/", ".venv/", "env/", "dist/", "build/",
-    "out/", "__pycache__/", ".next/", ".nuxt/", "target/", "bower_components/",
-    ".gradle/", ".m2/", "pods/", "deriveddata/", ".terraform/", ".angular/",
-    ".cache/", ".idea/", ".vscode/", "coverage/",
+    "node_modules/",
+    "vendor/",
+    "venv/",
+    ".venv/",
+    "env/",
+    "dist/",
+    "build/",
+    "out/",
+    "__pycache__/",
+    ".next/",
+    ".nuxt/",
+    "target/",
+    "bower_components/",
+    ".gradle/",
+    ".m2/",
+    "pods/",
+    "deriveddata/",
+    ".terraform/",
+    ".angular/",
+    ".cache/",
+    ".idea/",
+    ".vscode/",
+    "coverage/",
 )
 _LOCKFILE_NAMES = {
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
-    "pipfile.lock", "cargo.lock", "go.sum", "composer.lock",
-    "gemfile.lock", "shrinkwrap.yaml", "bun.lockb",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "pipfile.lock",
+    "cargo.lock",
+    "go.sum",
+    "composer.lock",
+    "gemfile.lock",
+    "shrinkwrap.yaml",
+    "bun.lockb",
 }
 _GENERATED_SUFFIXES = (".min.js", ".min.css", ".map", ".chunk.js", ".bundle.js")
 
@@ -47,7 +74,14 @@ def extract_local_commits(repository_path: Path) -> list[CommitInfo]:
     with tempfile.TemporaryDirectory(prefix="sprintsight-git-") as temporary_dir:
         writable_repository = Path(temporary_dir) / repository_path.name
         subprocess.run(
-            ["git", "clone", "--no-local", "--quiet", str(repository_path), str(writable_repository)],
+            [
+                "git",
+                "clone",
+                "--no-local",
+                "--quiet",
+                str(repository_path),
+                str(writable_repository),
+            ],
             check=True,
             capture_output=True,
             text=True,
@@ -75,7 +109,9 @@ def _cap_text(text: str, max_chars: int) -> tuple[str, bool]:
 
 
 def _file_diff_text(
-    path: str, diff: str | None, remaining_commit_chars: int,
+    path: str,
+    diff: str | None,
+    remaining_commit_chars: int,
 ) -> tuple[str | None, bool]:
     """Returns (diff text or None, whether real diff text was cut or dropped)."""
     if not diff or _is_noise_path(path):
@@ -95,24 +131,28 @@ def _extract_commits_from_repository(repository_path: Path) -> list[CommitInfo]:
             filename = (mod.new_path or mod.old_path or "").replace("\\", "/")
             diff, diff_truncated = _file_diff_text(filename, mod.diff, remaining_commit_chars)
             remaining_commit_chars -= len(diff or "")
-            files_changed.append(FileDiff(
-                filename=filename,
-                change_type=_change_type(mod.change_type.name),
-                lines_added=max(mod.added_lines or 0, 0),
-                lines_deleted=max(mod.deleted_lines or 0, 0),
-                diff=diff,
-                diff_truncated=diff_truncated,
-            ))
-        commits.append(CommitInfo(
-            sha=commit.hash,
-            author=commit.author.name or commit.author.email,
-            author_email=_normalize_email(commit.author.email),
-            message=commit.msg,
-            timestamp=_as_utc(commit.author_date),
-            lines_added=sum(file.lines_added for file in files_changed),
-            lines_deleted=sum(file.lines_deleted for file in files_changed),
-            files_changed=files_changed,
-        ))
+            files_changed.append(
+                FileDiff(
+                    filename=filename,
+                    change_type=_change_type(mod.change_type.name),  # type: ignore[arg-type]
+                    lines_added=max(mod.added_lines or 0, 0),
+                    lines_deleted=max(mod.deleted_lines or 0, 0),
+                    diff=diff,
+                    diff_truncated=diff_truncated,
+                )
+            )
+        commits.append(
+            CommitInfo(
+                sha=commit.hash,
+                author=commit.author.name or commit.author.email,
+                author_email=_normalize_email(commit.author.email),
+                message=commit.msg,
+                timestamp=_as_utc(commit.author_date),
+                lines_added=sum(file.lines_added for file in files_changed),
+                lines_deleted=sum(file.lines_deleted for file in files_changed),
+                files_changed=files_changed,
+            )
+        )
     return commits
 
 
@@ -159,7 +199,7 @@ def resolve_local_repository_path(local_repo_path: str | None) -> Path | None:
 
 
 def ingest_github_metrics(
-    payload: IngestionRequest,
+    payload: IngestionRequest | AssessRequest,
     repository_path: Path | None = None,
     metrics_repository: MetricsRepository | None = None,
     projects: ProjectRepository | None = None,
@@ -242,12 +282,14 @@ def collect_repository_snapshot(repository_path: Path, revision: str = "HEAD") -
                 total += len(data)
             else:
                 truncated = True
-        files.append({
-            "path": path,
-            "size_bytes": size,
-            "line_count": _line_count(content) if content is not None else None,
-            "content": content,
-        })
+        files.append(
+            {
+                "path": path,
+                "size_bytes": size,
+                "line_count": _line_count(content) if content is not None else None,
+                "content": content,
+            }
+        )
     return {
         "head_sha": head_sha,
         "files": files,
@@ -290,7 +332,7 @@ def _read_blobs(repository_path: Path, object_ids: list[str]) -> dict[str, bytes
         if len(header) != 3:
             continue  # "<oid> missing"
         size = int(header[2])
-        blobs[header[0].decode()] = output[position:position + size]
+        blobs[header[0].decode()] = output[position : position + size]
         position += size + 1
     return blobs
 
@@ -315,7 +357,15 @@ def resolve_commit(repository_path: Path, revision: str = "HEAD") -> str:
     if not _REVISION_PATTERN.match(revision):
         raise ArtifactNotFoundError(f"'{revision}' is not a commit SHA.")
     result = subprocess.run(
-        ["git", "-C", str(repository_path), "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}"],
+        [
+            "git",
+            "-C",
+            str(repository_path),
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            f"{revision}^{{commit}}",
+        ],
         capture_output=True,
         text=True,
     )
@@ -331,7 +381,9 @@ def normalize_repository_file_path(path: str) -> str:
     return normalized
 
 
-def read_file_at_revision(repository_path: Path, path: str, revision: str = "HEAD") -> tuple[str, str, bytes]:
+def read_file_at_revision(
+    repository_path: Path, path: str, revision: str = "HEAD"
+) -> tuple[str, str, bytes]:
     """Returns (commit SHA, normalized path, file bytes) for `path` at `revision`."""
     commit_sha = resolve_commit(repository_path, revision)
     normalized = normalize_repository_file_path(path)
@@ -356,21 +408,44 @@ def repository_remote_url(repository_path: Path, remote: str = "origin") -> str 
 
 def list_tracked_paths(repository_path: Path, revision: str = "HEAD") -> set[str]:
     commit_sha = resolve_commit(repository_path, revision)
-    listing = _git_output(repository_path, "-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "--full-tree", commit_sha)
+    listing = _git_output(
+        repository_path,
+        "-c",
+        "core.quotePath=false",
+        "ls-tree",
+        "-r",
+        "--name-only",
+        "--full-tree",
+        commit_sha,
+    )
     return {line for line in listing.splitlines() if line}
 
 
-def read_commit(repository_path: Path, revision: str, max_chars_per_file: int, max_chars_per_commit: int) -> dict:
+def read_commit(
+    repository_path: Path, revision: str, max_chars_per_file: int, max_chars_per_commit: int
+) -> dict:
     """Metadata and per-file diffs for one commit. Merge commits are diffed
     against their first parent, matching what the branch actually gained."""
     commit_sha = resolve_commit(repository_path, revision)
     meta = _git_output(
-        repository_path, "show", "-s", "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%B", commit_sha,
+        repository_path,
+        "show",
+        "-s",
+        "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%B",
+        commit_sha,
     )
     sha, parents, author, author_email, authored_at, message = meta.split("\0", 5)
     patch = _git_output(
-        repository_path, "-c", "core.quotePath=false", "show", "--format=", "--patch", "--no-color",
-        "-M", "--diff-merges=first-parent", commit_sha,
+        repository_path,
+        "-c",
+        "core.quotePath=false",
+        "show",
+        "--format=",
+        "--patch",
+        "--no-color",
+        "-M",
+        "--diff-merges=first-parent",
+        commit_sha,
     )
     files = []
     remaining_commit_chars = max_chars_per_commit
@@ -381,7 +456,9 @@ def read_commit(repository_path: Path, revision: str, max_chars_per_file: int, m
             if remaining_commit_chars <= 0:
                 diff, diff_truncated = None, True
             else:
-                diff, diff_truncated = _cap_text(diff, min(max_chars_per_file, remaining_commit_chars))
+                diff, diff_truncated = _cap_text(
+                    diff, min(max_chars_per_file, remaining_commit_chars)
+                )
                 remaining_commit_chars -= len(diff)
         else:
             diff = None
@@ -429,13 +506,15 @@ def _parse_patch(patch: str) -> list[dict]:
         # the "a/<path> b/<path>" header.
         filename = new_path or old_path or lines[0].rsplit(" b/", 1)[-1]
         hunks = lines[hunk_start:]
-        files.append({
-            "filename": filename,
-            "change_type": change_type,
-            "lines_added": sum(1 for line in hunks if line.startswith("+")),
-            "lines_deleted": sum(1 for line in hunks if line.startswith("-")),
-            "diff": "\n".join(hunks) + "\n" if hunks else None,
-        })
+        files.append(
+            {
+                "filename": filename,
+                "change_type": change_type,
+                "lines_added": sum(1 for line in hunks if line.startswith("+")),
+                "lines_deleted": sum(1 for line in hunks if line.startswith("-")),
+                "diff": "\n".join(hunks) + "\n" if hunks else None,
+            }
+        )
     return files
 
 

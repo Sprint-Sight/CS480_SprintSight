@@ -29,10 +29,16 @@ def envelope(issues: list[dict]) -> dict:
 def _member_map(student_id: str, email: str, name: str) -> _MemberLookupMaps:
     """Build the lookup maps for a single project member."""
     return {
-        "users_by_id": {student_id: UserRecord(
-            id=student_id, email=email, full_name=name, role=Role.STUDENT,
-            hashed_password="x", is_active=True
-        )},
+        "users_by_id": {
+            student_id: UserRecord(
+                id=student_id,
+                email=email,
+                full_name=name,
+                role=Role.STUDENT,
+                hashed_password="x",
+                is_active=True,
+            )
+        },
         "ids_by_email": {email.strip().lower(): [student_id]},
         "ids_by_name": {name.strip().lower(): [student_id]},
         "project_member_ids": {student_id},
@@ -41,20 +47,22 @@ def _member_map(student_id: str, email: str, name: str) -> _MemberLookupMaps:
 
 def test_normalizes_screenshot_ticket_fields_and_sorts_tickets() -> None:
     result = normalize_jira_envelope(
-        envelope([
-            {
-                "key": "DS3-2",
-                "expand": "irrelevant transport data",
-                "fields": {
-                    "summary": "  Build   report  ",
-                    "assignee": {"displayName": "Student One"},
-                    "status": {"name": "In Progress"},
-                    "issuetype": {"name": "Story"},
-                    "customfield_10016": 5,
+        envelope(
+            [
+                {
+                    "key": "DS3-2",
+                    "expand": "irrelevant transport data",
+                    "fields": {
+                        "summary": "  Build   report  ",
+                        "assignee": {"displayName": "Student One"},
+                        "status": {"name": "In Progress"},
+                        "issuetype": {"name": "Story"},
+                        "customfield_10016": 5,
+                    },
                 },
-            },
-            {"key": "DS3-1", "fields": {"summary": "Backlog"}},
-        ]),
+                {"key": "DS3-1", "fields": {"summary": "Backlog"}},
+            ]
+        ),
         story_points_field="customfield_10016",
     )
 
@@ -110,9 +118,7 @@ def test_timestamp_uses_resolution_date_not_last_update_for_open_issues() -> Non
 
     tickets = {ticket.ticket_id: ticket for ticket in result.tickets}
     assert tickets["DS3-OPEN"].timestamp is None
-    assert tickets["DS3-DONE"].timestamp == datetime.fromisoformat(
-        "2026-11-02T12:00:00+00:00"
-    )
+    assert tickets["DS3-DONE"].timestamp == datetime.fromisoformat("2026-11-02T12:00:00+00:00")
 
 
 def test_normalizes_sprint_dates_and_changelog_history() -> None:
@@ -209,19 +215,21 @@ def test_unique_email_match_resolves_student() -> None:
     """A unique email match resolves to the student ID."""
     maps = _member_map("u-student-a", "student.a@sprintsight.edu", "Student A")
     result = normalize_jira_envelope(
-        envelope([
-            {
-                "key": "PROJ-1",
-                "fields": {
-                    "assignee": {
-                        "id": "jira-acct-999",
-                        "displayName": "Student A",
-                        "emailAddress": "student.a@sprintsight.edu",
+        envelope(
+            [
+                {
+                    "key": "PROJ-1",
+                    "fields": {
+                        "assignee": {
+                            "id": "jira-acct-999",
+                            "displayName": "Student A",
+                            "emailAddress": "student.a@sprintsight.edu",
+                        },
+                        "summary": "Implement login",
                     },
-                    "summary": "Implement login",
                 },
-            },
-        ]),
+            ]
+        ),
         story_points_field=None,
         **maps,
     )
@@ -232,18 +240,20 @@ def test_unique_name_match_resolves_student() -> None:
     """A unique display-name match resolves to the student ID."""
     maps = _member_map("u-student-a", "student.a@sprintsight.edu", "Student A")
     result = normalize_jira_envelope(
-        envelope([
-            {
-                "key": "PROJ-1",
-                "fields": {
-                    "assignee": {
-                        "id": "jira-acct-999",
-                        "displayName": "Student A",
+        envelope(
+            [
+                {
+                    "key": "PROJ-1",
+                    "fields": {
+                        "assignee": {
+                            "id": "jira-acct-999",
+                            "displayName": "Student A",
+                        },
+                        "summary": "Implement login",
                     },
-                    "summary": "Implement login",
                 },
-            },
-        ]),
+            ]
+        ),
         story_points_field=None,
         **maps,
     )
@@ -255,24 +265,30 @@ def test_duplicate_email_returns_null() -> None:
     maps = _member_map("u-student-a", "shared@sprintsight.edu", "Student A")
     maps["ids_by_email"]["shared@sprintsight.edu"].append("u-student-b")
     maps["users_by_id"]["u-student-b"] = UserRecord(
-        id="u-student-b", email="shared@sprintsight.edu", full_name="Student B",
-        role=Role.STUDENT, hashed_password="x", is_active=True
+        id="u-student-b",
+        email="shared@sprintsight.edu",
+        full_name="Student B",
+        role=Role.STUDENT,
+        hashed_password="x",
+        is_active=True,
     )
     maps["project_member_ids"].add("u-student-b")
     result = normalize_jira_envelope(
-        envelope([
-            {
-                "key": "PROJ-1",
-                "fields": {
-                    "assignee": {
-                        "id": "jira-acct-999",
-                        "displayName": "Student A",
-                        "emailAddress": "shared@sprintsight.edu",
+        envelope(
+            [
+                {
+                    "key": "PROJ-1",
+                    "fields": {
+                        "assignee": {
+                            "id": "jira-acct-999",
+                            "displayName": "Student A",
+                            "emailAddress": "shared@sprintsight.edu",
+                        },
+                        "summary": "Implement login",
                     },
-                    "summary": "Implement login",
                 },
-            },
-        ]),
+            ]
+        ),
         story_points_field=None,
         **maps,
     )
@@ -284,23 +300,29 @@ def test_duplicate_name_returns_null() -> None:
     maps = _member_map("u-student-a", "a@sprintsight.edu", "John Smith")
     maps["ids_by_name"]["john smith"].append("u-student-b")
     maps["users_by_id"]["u-student-b"] = UserRecord(
-        id="u-student-b", email="b@sprintsight.edu", full_name="John Smith",
-        role=Role.STUDENT, hashed_password="x", is_active=True
+        id="u-student-b",
+        email="b@sprintsight.edu",
+        full_name="John Smith",
+        role=Role.STUDENT,
+        hashed_password="x",
+        is_active=True,
     )
     maps["project_member_ids"].add("u-student-b")
     result = normalize_jira_envelope(
-        envelope([
-            {
-                "key": "PROJ-1",
-                "fields": {
-                    "assignee": {
-                        "id": "jira-acct-999",
-                        "displayName": "John Smith",
+        envelope(
+            [
+                {
+                    "key": "PROJ-1",
+                    "fields": {
+                        "assignee": {
+                            "id": "jira-acct-999",
+                            "displayName": "John Smith",
+                        },
+                        "summary": "Implement login",
                     },
-                    "summary": "Implement login",
                 },
-            },
-        ]),
+            ]
+        ),
         story_points_field=None,
         **maps,
     )
@@ -319,19 +341,21 @@ def test_conflicting_email_and_name_returns_null() -> None:
         "project_member_ids": {"u-student-a", "u-student-b"},
     }
     result = normalize_jira_envelope(
-        envelope([
-            {
-                "key": "PROJ-1",
-                "fields": {
-                    "assignee": {
-                        "id": "jira-acct-999",
-                        "displayName": "Student B",
-                        "emailAddress": "a@sprintsight.edu",
+        envelope(
+            [
+                {
+                    "key": "PROJ-1",
+                    "fields": {
+                        "assignee": {
+                            "id": "jira-acct-999",
+                            "displayName": "Student B",
+                            "emailAddress": "a@sprintsight.edu",
+                        },
+                        "summary": "Implement login",
                     },
-                    "summary": "Implement login",
                 },
-            },
-        ]),
+            ]
+        ),
         story_points_field=None,
         **maps,
     )
@@ -342,19 +366,21 @@ def test_jira_account_id_ignored() -> None:
     """Jira account ID that matches a student ID string is NOT used."""
     maps = _member_map("u-student-a", "a@sprintsight.edu", "Student A")
     result = normalize_jira_envelope(
-        envelope([
-            {
-                "key": "PROJ-1",
-                "fields": {
-                    "assignee": {
-                        "id": "u-student-a",
-                        "displayName": "Someone Else",
-                        "emailAddress": "someone.else@sprintsight.edu",
+        envelope(
+            [
+                {
+                    "key": "PROJ-1",
+                    "fields": {
+                        "assignee": {
+                            "id": "u-student-a",
+                            "displayName": "Someone Else",
+                            "emailAddress": "someone.else@sprintsight.edu",
+                        },
+                        "summary": "Implement login",
                     },
-                    "summary": "Implement login",
                 },
-            },
-        ]),
+            ]
+        ),
         story_points_field=None,
         **maps,
     )

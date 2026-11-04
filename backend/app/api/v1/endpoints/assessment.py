@@ -35,6 +35,7 @@ from app.repositories.interfaces import (
     MetricsRepository,
     ProjectRepository,
     RubricWeightsRepository,
+    UserRecord,
     UserRepository,
 )
 from app.schemas.artifacts import ReportEvidenceLinksResponse
@@ -66,46 +67,70 @@ router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
-def _authorize_report_access(current_user: object, course_id: str, project_id: str, projects: ProjectRepository) -> None:
+def _authorize_report_access(
+    current_user: object, course_id: str, project_id: str, projects: ProjectRepository
+) -> None:
     if current_user.role != Role.STUDENT:
         return
     project = projects.get_project(project_id)
-    if not project or project.course_id != course_id or current_user.id not in projects.list_member_ids(project_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view assessment reports for your project.")
+    if (
+        not project
+        or project.course_id != course_id
+        or current_user.id not in projects.list_member_ids(project_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view assessment reports for your project.",
+        )
 
 
 @router.post("/assess", status_code=status.HTTP_202_ACCEPTED)
 def assess_sprint(
     payload: AssessRequest,
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
     manual_text_repository: Annotated[ManualTextRepository, Depends(get_manual_text_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
-    jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
-    rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
+    jira_ingestion_repository: Annotated[
+        JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)
+    ],
+    rubric_weights_repository: Annotated[
+        RubricWeightsRepository, Depends(get_rubric_weights_repository)
+    ],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     document_repository: Annotated[DocumentRepository, Depends(get_document_repository)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
-    selection_repository: Annotated[InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)],
+    selection_repository: Annotated[
+        InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)
+    ],
 ) -> dict:
     project = projects.get_project(payload.project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if project.course_id != payload.course_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course."
+        )
     if not project.local_repo_path:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project has no local repository configured.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project has no local repository configured.",
+        )
 
     # Resolve the model before the job is created/persisted so the stored job
     # and the saved report reflect what actually runs. Order: explicit request
     # > the instructor's saved selection > global default. Never empty, so a
     # missing selection can never fail the assessment.
-    payload.model_name = get_effective_model_name(payload.model_name, faculty_user.id, selection_repository)
+    payload.model_name = get_effective_model_name(
+        payload.model_name, faculty_user.id, selection_repository
+    )
 
     job = job_repo.create_job(payload)
-    job_repo.append_event(job.job_id, "started", {"status": "started", "message": "Assessment has started."})
+    job_repo.append_event(
+        job.job_id, "started", {"status": "started", "message": "Assessment has started."}
+    )
 
     # Start the long-polling worker in a background thread so the endpoint
     # returns immediately with the 202 job contract instead of blocking.
@@ -131,7 +156,11 @@ def assess_sprint(
         action="request_assessment",
         target_type="assessment_job",
         target_id=job.job_id,
-        details={"course_id": payload.course_id, "project_id": payload.project_id, "sprint_id": payload.sprint_id},
+        details={
+            "course_id": payload.course_id,
+            "project_id": payload.project_id,
+            "sprint_id": payload.sprint_id,
+        },
     )
 
     return {
@@ -144,12 +173,14 @@ def assess_sprint(
 @router.get("/jobs/{job_id}/events")
 def assessment_job_events(
     job_id: str,
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
 ):
     _ = faculty_user
     job = job_repo.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment job not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Assessment job not found."
+        )
 
     def event_stream():
         seen = 0
@@ -173,7 +204,7 @@ def list_reports(
     course_id: str,
     project_id: str,
     sprint_id: str,
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
 ):
     _ = faculty_user
@@ -185,7 +216,7 @@ def get_latest(
     course_id: str,
     project_id: str,
     sprint_id: str,
-    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
 ):
@@ -196,29 +227,40 @@ def get_latest(
 @router.get("/reports/{report_id}/evidence", response_model=ReportEvidenceLinksResponse)
 def get_report_evidence_links(
     report_id: str,
-    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
-    jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    jira_ingestion_repository: Annotated[
+        JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)
+    ],
 ) -> ReportEvidenceLinksResponse:
     """Every rubric citation in the report, each with an in-app viewer path
     and (when one can be worked out) a GitHub/GitLab/Bitbucket/Jira URL.
     Computed on read rather than stored, so a later repository URL or Jira
     domain change applies."""
     if assessment_repository is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Assessment repository unavailable.",
+        )
     report = assessment_repository.get_report(report_id)
     if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found."
+        )
     _authorize_report_access(current_user, report.course_id, report.project_id, projects)
-    return build_report_evidence_links(report, projects.get_project(report.project_id), jira_ingestion_repository)
+    return build_report_evidence_links(
+        report, projects.get_project(report.project_id), jira_ingestion_repository
+    )
 
 
 @router.get("/rubric-weights", response_model=RubricWeightsResponse)
 def get_rubric_weights(
     course_id: str,
-    faculty_user: Annotated[object, Depends(require_faculty)],
-    rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
+    rubric_weights_repository: Annotated[
+        RubricWeightsRepository, Depends(get_rubric_weights_repository)
+    ],
 ) -> RubricWeightsResponse:
     _ = faculty_user
     record = rubric_weights_repository.get_weights(course_id)
@@ -241,11 +283,15 @@ def get_rubric_weights(
 def put_rubric_weights(
     course_id: str,
     payload: RubricWeightsPayload,
-    faculty_user: Annotated[object, Depends(require_faculty)],
-    rubric_weights_repository: Annotated[RubricWeightsRepository, Depends(get_rubric_weights_repository)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
+    rubric_weights_repository: Annotated[
+        RubricWeightsRepository, Depends(get_rubric_weights_repository)
+    ],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> RubricWeightsResponse:
-    record = set_rubric_weights(course_id, payload.weights, faculty_user.id, rubric_weights_repository)
+    record = set_rubric_weights(
+        course_id, payload.weights, faculty_user.id, rubric_weights_repository
+    )
     append_action_audit(
         action_audits,
         actor_id=faculty_user.id,
@@ -268,7 +314,7 @@ def put_rubric_weights(
 def patch_assessment_report(
     report_id: str,
     payload: ManualAssessmentPatch,
-    instructor_user: Annotated[object, Depends(require_instructor)],
+    instructor_user: Annotated[UserRecord, Depends(require_instructor)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -276,7 +322,10 @@ def patch_assessment_report(
     notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ) -> AssessmentReport:
     if assessment_repository is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Assessment repository unavailable.",
+        )
     report = update_manual_assessment(
         report_id,
         payload,
@@ -306,14 +355,17 @@ def patch_assessment_report(
 @router.post("/override")
 def override_score(
     payload: OverrideRequest,
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     audit_repository: Annotated[AuditRepository, Depends(get_audit_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
 ):
     if assessment_repository is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Assessment repository unavailable.",
+        )
     override_record = override_student_score(
         payload,
         instructor_id=faculty_user.id,

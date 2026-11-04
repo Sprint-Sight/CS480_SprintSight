@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from app.repositories.interfaces import JiraIngestionRunRecord
-from app.schemas.assessment import JiraCleanedSnapshot, JiraIssueChange
+from app.schemas.assessment import JiraCleanedSnapshot, JiraIssueChange, JiraIssueChangeItem
 from app.schemas.jira_burndown import JiraBurndownPoint, JiraBurndownResponse
 
 _DONE_STATUSES = {"closed", "complete", "completed", "done", "resolved"}
@@ -51,9 +51,8 @@ def _change_kind(
     if field_id == "status" or normalized_field == "status":
         return "status"
     if (
-        (snapshot.story_points_field and field_id == snapshot.story_points_field)
-        or normalized_field in {"story points", "story point"}
-    ):
+        snapshot.story_points_field and field_id == snapshot.story_points_field
+    ) or normalized_field in {"story points", "story point"}:
         return "points"
     if field_id == snapshot.sprint_field or normalized_field == "sprint":
         return "sprint"
@@ -123,24 +122,28 @@ def _ticket_events(
             )
             if items:
                 events.append(change.model_copy(update={"items": items}))
-    has_matching_completion = any(
-        change.created.date() == resolved_at.date()
-        and _change_kind(item.field_id, item.field, snapshot) == "status"
-        and _is_done(item.to_string or item.to_value)
-        for change in events
-        for item in change.items
-    ) if resolved_at else False
+    has_matching_completion = (
+        any(
+            change.created.date() == resolved_at.date()
+            and _change_kind(item.field_id, item.field, snapshot) == "status"
+            and _is_done(item.to_string or item.to_value)
+            for change in events
+            for item in change.items
+        )
+        if resolved_at
+        else False
+    )
     if resolved_at and _is_done(status) and not has_matching_completion:
         events.append(
             JiraIssueChange(
                 created=resolved_at,
                 items=[
-                    {
-                        "field": "status",
-                        "field_id": "status",
-                        "from_string": "In Progress",
-                        "to_string": status,
-                    }
+                    JiraIssueChangeItem(
+                        field="status",
+                        field_id="status",
+                        from_string="In Progress",
+                        to_string=status,
+                    )
                 ],
             )
         )

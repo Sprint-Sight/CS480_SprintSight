@@ -166,6 +166,7 @@ class AssessmentJobEvent(BaseModel):
 class EvidenceDetail(BaseModel):
     """Structured form of one AI evidence citation, resolved and verified by
     the AI engine against the evidence the model was actually shown."""
+
     identifier: str
     reason: str = ""
     kind: Literal["file_lines", "diff_lines", "file", "commit", "ticket", "other"] = "other"
@@ -243,6 +244,7 @@ class ManualAssessmentPatch(BaseModel):
 
 class RubricWeightsPayload(BaseModel):
     """Body for setting a course's custom rubric dimension weights."""
+
     weights: dict[str, float]
 
 

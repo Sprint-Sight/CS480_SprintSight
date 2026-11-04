@@ -94,16 +94,10 @@ def _is_transient_error(exc: Exception) -> bool:
 def build_message(settings: Settings, recipient: str, subject: str, body: str) -> EmailMessage:
     message = EmailMessage()
     message["Subject"] = subject
-    message["From"] = (
-        f"{settings.email_from_name} <{settings.email_from_address}>"
-    )
+    message["From"] = f"{settings.email_from_name} <{settings.email_from_address}>"
     message["To"] = recipient
     message.set_content(body)
-    links = [
-        line
-        for line in body.splitlines()
-        if line.startswith(("http://", "https://"))
-    ]
+    links = [line for line in body.splitlines() if line.startswith(("http://", "https://"))]
     html_body = escape(body).replace("\n", "<br>\n")
     for link in links:
         safe_link = escape(link, quote=True)
@@ -174,8 +168,7 @@ class SMTPNotificationService:
     def send_email(self, recipient: str, subject: str, body: str) -> None:
         if not self.is_configured:
             raise NotificationConfigurationError(
-                "Email delivery is not configured. "
-                "Set EMAIL_SMTP_* and EMAIL_FROM_ADDRESS."
+                "Email delivery is not configured. Set EMAIL_SMTP_* and EMAIL_FROM_ADDRESS."
             )
 
         if self.circuit_open:

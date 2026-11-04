@@ -8,6 +8,7 @@ Every citation gets up to two links:
   repository URL is the project's saved one, else the local clone's origin
   remote; Jira links need the project's Jira domain.
 """
+
 import logging
 import re
 import subprocess
@@ -95,6 +96,7 @@ class ArtifactLinkContext:
 
 # ── External URLs ─────────────────────────────────────────────────────────
 
+
 def repository_web_url(repo_url: str | None) -> tuple[str | None, RepositorySource | None]:
     if not repo_url:
         return None, None
@@ -128,7 +130,9 @@ def remote_web_url(remote: str | None) -> str | None:
 
 
 def jira_base_url(project: ProjectRecord) -> str | None:
-    domain = normalize_jira_domain(project.jira_domain) or normalize_jira_domain(get_settings().jira_domain)
+    domain = normalize_jira_domain(project.jira_domain) or normalize_jira_domain(
+        get_settings().jira_domain
+    )
     return f"https://{domain}" if domain else None
 
 
@@ -148,7 +152,9 @@ def file_url(context: ArtifactLinkContext, target: EvidenceTarget) -> str | None
     file_page = _REPOSITORY_PAGES[context.repository_source][0]
     url = f"{context.repository_url}/{file_page}/{ref}/{path}"
     if target.line_start:
-        url += _line_fragment(context.repository_source, target.line_start, target.line_end or target.line_start)
+        url += _line_fragment(
+            context.repository_source, target.line_start, target.line_end or target.line_start
+        )
     return url
 
 
@@ -166,6 +172,7 @@ def ticket_url(context: ArtifactLinkContext, ticket_id: str) -> str | None:
 
 
 # ── In-app viewer paths (relative to the API prefix) ──────────────────────
+
 
 def file_viewer_path(project_id: str, target: EvidenceTarget) -> str:
     query = {"path": target.file_path}
@@ -186,6 +193,7 @@ def ticket_viewer_path(project_id: str, ticket_id: str) -> str:
 
 
 # ── Citation → target ─────────────────────────────────────────────────────
+
 
 def _match_known_path(candidate: str, known_paths: set[str]) -> str | None:
     candidate = candidate.strip().strip("`'\"").removeprefix("./").removeprefix("/")
@@ -209,14 +217,20 @@ def _is_project_ticket(ticket_id: str, context: ArtifactLinkContext) -> bool:
     return bool(context.jira_project_key) and ticket_id.startswith(f"{context.jira_project_key}-")
 
 
-def parse_citation_identifier(identifier: str, context: ArtifactLinkContext) -> EvidenceTarget | None:
+def parse_citation_identifier(
+    identifier: str, context: ArtifactLinkContext
+) -> EvidenceTarget | None:
     """Best-effort target for a citation with no structured fields (reports
     generated before evidence_details existed, or instructor-typed ones)."""
     for match in _LINE_ANCHOR.finditer(identifier):
         raw_path = match.group("path")
         if "/" not in raw_path and "." not in raw_path:
             continue
-        path = _match_known_path(raw_path, context.known_paths) if context.known_paths is not None else raw_path
+        path = (
+            _match_known_path(raw_path, context.known_paths)
+            if context.known_paths is not None
+            else raw_path
+        )
         if not path:
             continue
         start = int(match.group("start"))
@@ -236,7 +250,9 @@ def parse_citation_identifier(identifier: str, context: ArtifactLinkContext) -> 
             return EvidenceTarget(type="commit", commit_sha=token.lower())
     if context.known_paths:
         for token in sorted(_PATH_TOKEN.findall(identifier), key=len, reverse=True):
-            if ("/" in token or "." in token) and (path := _match_known_path(token, context.known_paths)):
+            if ("/" in token or "." in token) and (
+                path := _match_known_path(token, context.known_paths)
+            ):
                 return EvidenceTarget(type="file", file_path=path)
     return None
 
@@ -254,19 +270,29 @@ def evidence_target(detail: EvidenceDetail, context: ArtifactLinkContext) -> Evi
         return EvidenceTarget(type="commit", commit_sha=detail.commit_sha)
     if detail.kind == "ticket":
         ticket_ids = _TICKET.findall(detail.identifier)
-        return EvidenceTarget(type="ticket", ticket_id=ticket_ids[0] if ticket_ids else detail.identifier)
+        return EvidenceTarget(
+            type="ticket", ticket_id=ticket_ids[0] if ticket_ids else detail.identifier
+        )
     return parse_citation_identifier(detail.identifier, context)
 
 
-def build_evidence_link(citation: str, detail: EvidenceDetail, context: ArtifactLinkContext) -> EvidenceLink:
+def build_evidence_link(
+    citation: str, detail: EvidenceDetail, context: ArtifactLinkContext
+) -> EvidenceLink:
     target = evidence_target(detail, context)
     viewer_path = external_url = external_source = None
     if target and target.type == "file":
-        viewer_path = file_viewer_path(context.project_id, target) if context.has_local_repository else None
+        viewer_path = (
+            file_viewer_path(context.project_id, target) if context.has_local_repository else None
+        )
         external_url = file_url(context, target)
         external_source = context.repository_source if external_url else None
     elif target and target.type == "commit" and target.commit_sha:
-        viewer_path = commit_viewer_path(context.project_id, target.commit_sha) if context.has_local_repository else None
+        viewer_path = (
+            commit_viewer_path(context.project_id, target.commit_sha)
+            if context.has_local_repository
+            else None
+        )
         external_url = commit_url(context, target.commit_sha)
         external_source = context.repository_source if external_url else None
     elif target and target.type == "ticket" and target.ticket_id:
@@ -286,7 +312,9 @@ def build_evidence_link(citation: str, detail: EvidenceDetail, context: Artifact
     )
 
 
-def _citation_details(citations: list[str], details: list[EvidenceDetail]) -> list[tuple[str, EvidenceDetail]]:
+def _citation_details(
+    citations: list[str], details: list[EvidenceDetail]
+) -> list[tuple[str, EvidenceDetail]]:
     """Pair each display string with its structured detail. Matched by
     identifier rather than position, because an instructor edit can add or
     remove citation strings without touching evidence_details."""
@@ -300,12 +328,15 @@ def _citation_details(citations: list[str], details: list[EvidenceDetail]) -> li
     for citation in citations:
         identifier, _, reason = citation.partition(_CITATION_SEPARATOR)
         identifier = identifier.strip()
-        detail = by_identifier.get(identifier) or EvidenceDetail(identifier=identifier, reason=reason.strip())
+        detail = by_identifier.get(identifier) or EvidenceDetail(
+            identifier=identifier, reason=reason.strip()
+        )
         pairs.append((citation, detail))
     return pairs
 
 
 # ── Context and report-level entry point ──────────────────────────────────
+
 
 def project_repository_path(project: ProjectRecord) -> Path | None:
     try:
@@ -314,7 +345,9 @@ def project_repository_path(project: ProjectRecord) -> Path | None:
         return None
 
 
-def processed_jira_runs(project_id: str, jira_runs: JiraIngestionRunRepository) -> list[JiraIngestionRunRecord]:
+def processed_jira_runs(
+    project_id: str, jira_runs: JiraIngestionRunRepository
+) -> list[JiraIngestionRunRecord]:
     """Runs with a cleaned snapshot, newest first."""
     runs = [run for run in jira_runs.list_project_runs(project_id) if run.cleaned_snapshot]
     return sorted(runs, key=lambda run: run.captured_at, reverse=True)
@@ -356,7 +389,10 @@ def _tracked_paths(project: ProjectRecord, repository_path: Path) -> set[str] | 
     try:
         return list_tracked_paths(repository_path)
     except (ArtifactNotFoundError, subprocess.CalledProcessError):
-        logger.warning("Could not list files for project %s; plain-text file citations stay unlinked.", project.id)
+        logger.warning(
+            "Could not list files for project %s; plain-text file citations stay unlinked.",
+            project.id,
+        )
         return None
 
 
@@ -376,7 +412,9 @@ def build_report_evidence_links(
     dimensions = {
         dimension: [
             build_evidence_link(citation, detail, context)
-            for citation, detail in _citation_details(score.evidence_citations, score.evidence_details)
+            for citation, detail in _citation_details(
+                score.evidence_citations, score.evidence_details
+            )
         ]
         for dimension, score in report.rubric_scores.items()
     }
@@ -390,6 +428,7 @@ def build_report_evidence_links(
 
 
 # ── Viewer payloads ───────────────────────────────────────────────────────
+
 
 def read_file_view(
     project: ProjectRecord,
@@ -419,7 +458,11 @@ def read_file_view(
         truncated = True
 
     target = EvidenceTarget(
-        type="file", file_path=file_path, line_start=highlight_start, line_end=highlight_end, commit_sha=commit_sha,
+        type="file",
+        file_path=file_path,
+        line_start=highlight_start,
+        line_end=highlight_end,
+        commit_sha=commit_sha,
     )
     external_url = file_url(context, target)
     return ArtifactFileView(
@@ -427,7 +470,9 @@ def read_file_view(
         file_path=file_path,
         commit_sha=commit_sha,
         total_lines=total,
-        lines=[ArtifactFileLine(number=n, text=all_lines[n - 1]) for n in range(first, last + 1)] if total else [],
+        lines=[ArtifactFileLine(number=n, text=all_lines[n - 1]) for n in range(first, last + 1)]
+        if total
+        else [],
         first_line=first,
         last_line=last,
         highlight_start=highlight_start,
@@ -439,22 +484,32 @@ def read_file_view(
     )
 
 
-def read_commit_view(project: ProjectRecord, repository_path: Path, commit_sha: str) -> ArtifactCommitView:
+def read_commit_view(
+    project: ProjectRecord, repository_path: Path, commit_sha: str
+) -> ArtifactCommitView:
     commit = read_commit(
-        repository_path, commit_sha, VIEWER_MAX_DIFF_CHARS_PER_FILE, VIEWER_MAX_DIFF_CHARS_PER_COMMIT,
+        repository_path,
+        commit_sha,
+        VIEWER_MAX_DIFF_CHARS_PER_FILE,
+        VIEWER_MAX_DIFF_CHARS_PER_COMMIT,
     )
     context = build_link_context(project, repository_path=repository_path)
     external_url = commit_url(context, commit["commit_sha"])
     return ArtifactCommitView(
         project_id=project.id,
-        **{**commit, "files_changed": [ArtifactCommitFile(**file) for file in commit["files_changed"]]},
+        **{
+            **commit,
+            "files_changed": [ArtifactCommitFile(**file) for file in commit["files_changed"]],
+        },
         external_url=external_url,
         external_source=context.repository_source if external_url else None,
     )
 
 
 def read_ticket_view(
-    project: ProjectRecord, ticket_id: str, jira_runs: JiraIngestionRunRepository,
+    project: ProjectRecord,
+    ticket_id: str,
+    jira_runs: JiraIngestionRunRepository,
 ) -> ArtifactTicketView:
     """The ticket as captured by the most recent Jira sync that contains it."""
     for run in processed_jira_runs(project.id, jira_runs):
@@ -469,4 +524,6 @@ def read_ticket_view(
                     external_url=external_url,
                     external_source="jira" if external_url else None,
                 )
-    raise ArtifactNotFoundError(f"Jira ticket {ticket_id} was not found in any synced snapshot for this project.")
+    raise ArtifactNotFoundError(
+        f"Jira ticket {ticket_id} was not found in any synced snapshot for this project."
+    )

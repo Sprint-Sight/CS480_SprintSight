@@ -88,7 +88,9 @@ class InMemoryUserRepository(UserRepository):
         return None
 
     def get_by_student_number(self, student_number: int) -> UserRecord | None:
-        return next((user for user in self._users.values() if user.student_number == student_number), None)
+        return next(
+            (user for user in self._users.values() if user.student_number == student_number), None
+        )
 
     def set_student_number(self, user_id: str, student_number: int) -> UserRecord | None:
         user = self.get_by_id(user_id)
@@ -120,7 +122,9 @@ class InMemoryUserRepository(UserRepository):
         self._users[user.email.lower()] = user
         return user
 
-    def update_user(self, user_id: str, email: str, full_name: str, role: Role, is_active: bool) -> UserRecord | None:
+    def update_user(
+        self, user_id: str, email: str, full_name: str, role: Role, is_active: bool
+    ) -> UserRecord | None:
         user = self.get_by_id(user_id)
         if not user:
             return None
@@ -137,7 +141,9 @@ class InMemoryUserRepository(UserRepository):
         self._users[user.email] = user
         return user
 
-    def update_password(self, user_id: str, hashed_password: str, must_change_password: bool) -> UserRecord | None:
+    def update_password(
+        self, user_id: str, hashed_password: str, must_change_password: bool
+    ) -> UserRecord | None:
         user = self.get_by_id(user_id)
         if not user:
             return None
@@ -155,8 +161,12 @@ class InMemoryProjectRepository(ProjectRepository):
         self._enrollments: set[tuple[str, str]] = set()
         self._members: dict[str, list[str]] = {}
 
-    def create_course(self, code: str, name: str, section: str, year: int, term: str, created_by: str) -> CourseRecord:
-        course = CourseRecord(str(uuid4()), code.upper(), name, section, year, term, created_by, now_utc())
+    def create_course(
+        self, code: str, name: str, section: str, year: int, term: str, created_by: str
+    ) -> CourseRecord:
+        course = CourseRecord(
+            str(uuid4()), code.upper(), name, section, year, term, created_by, now_utc()
+        )
         self._courses[course.id] = course
         self._instructors.add((course.id, created_by))
         return course
@@ -169,7 +179,7 @@ class InMemoryProjectRepository(ProjectRepository):
 
     def assign_instructor(self, course_id: str, user_id: str) -> None:
         self._instructors.add((course_id, user_id))
-        
+
     def unassign_instructor(self, course_id: str, user_id: str) -> None:
         self._instructors.discard((course_id, user_id))
 
@@ -180,9 +190,12 @@ class InMemoryProjectRepository(ProjectRepository):
         if (course_id, user_id) in self._enrollments:
             return False
         course = self.get_course(course_id)
-        if course and any(self.get_course(existing_course_id).code.strip().lower() == course.code.strip().lower()
-                          for existing_course_id, existing_user_id in self._enrollments
-                          if existing_user_id == user_id and self.get_course(existing_course_id)):
+        if course and any(
+            (existing_course := self.get_course(existing_course_id)) is not None
+            and existing_course.code.strip().lower() == course.code.strip().lower()
+            for existing_course_id, existing_user_id in self._enrollments
+            if existing_user_id == user_id
+        ):
             return False
         self._enrollments.add((course_id, user_id))
         return True
@@ -205,13 +218,25 @@ class InMemoryProjectRepository(ProjectRepository):
                 self._members[project_id] = [mid for mid in member_ids if mid != user_id]
 
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
-        return [user_id for enrolled_course_id, user_id in self._enrollments if enrolled_course_id == course_id]
+        return [
+            user_id
+            for enrolled_course_id, user_id in self._enrollments
+            if enrolled_course_id == course_id
+        ]
 
-    def update_course(self, course_id: str, code: str, name: str, section: str, year: int, term: str) -> CourseRecord | None:
+    def update_course(
+        self, course_id: str, code: str, name: str, section: str, year: int, term: str
+    ) -> CourseRecord | None:
         course = self._courses.get(course_id)
         if not course:
             return None
-        course.code, course.name, course.section, course.year, course.term = code.upper(), name, section, year, term
+        course.code, course.name, course.section, course.year, course.term = (
+            code.upper(),
+            name,
+            section,
+            year,
+            term,
+        )
         return course
 
     def delete_course(self, course_id: str) -> CourseRecord | None:
@@ -269,6 +294,7 @@ class InMemoryProjectRepository(ProjectRepository):
     def list_member_ids(self, project_id: str) -> list[str]:
         return self._members.get(project_id, [])
 
+
 class InMemoryManualTextRepository(ManualTextRepository):
     def __init__(self) -> None:
         self._store: dict[tuple[str, str, str], str] = {}
@@ -289,7 +315,9 @@ class InMemoryRubricWeightsRepository(RubricWeightsRepository):
     def get_weights(self, course_id: str) -> RubricWeightsRecord | None:
         return self._weights.get(course_id)
 
-    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord:
+    def set_weights(
+        self, course_id: str, weights: dict[str, float], updated_by: str
+    ) -> RubricWeightsRecord:
         record = RubricWeightsRecord(
             course_id=course_id,
             weights=dict(weights),
@@ -359,7 +387,11 @@ class InMemoryDocumentRepository(DocumentRepository):
 
     def list_documents(self, project_id: str) -> list[DocumentRecord]:
         return sorted(
-            (document for document in self._documents.values() if document.project_id == project_id),
+            (
+                document
+                for document in self._documents.values()
+                if document.project_id == project_id
+            ),
             key=lambda document: (document.created_at, document.id),
         )
 
@@ -439,9 +471,7 @@ class InMemoryEmailOutboxRepository(EmailOutboxRepository):
             record.sent_at = sent_at
             record.last_error = None
 
-    def mark_email_failed(
-        self, email_id: str, error: str, retry_after: datetime | None
-    ) -> None:
+    def mark_email_failed(self, email_id: str, error: str, retry_after: datetime | None) -> None:
         record = self._emails.get(email_id)
         if record:
             record.status = "pending" if retry_after else "failed"
@@ -450,9 +480,7 @@ class InMemoryEmailOutboxRepository(EmailOutboxRepository):
 
     def count_emails_sent_since(self, since: datetime) -> int:
         return sum(
-            record.status == "sent"
-            and record.sent_at is not None
-            and record.sent_at >= since
+            record.status == "sent" and record.sent_at is not None and record.sent_at >= since
             for record in self._emails.values()
         )
 
@@ -484,7 +512,9 @@ class InMemoryAssessmentRepository(AssessmentRepository):
     def get_report(self, report_id: str) -> AssessmentReport | None:
         return self._reports.get(report_id)
 
-    def update_manual_assessment(self, report_id: str, patch: dict[str, object]) -> AssessmentReport | None:
+    def update_manual_assessment(
+        self, report_id: str, patch: dict[str, object]
+    ) -> AssessmentReport | None:
         report = self._reports.get(report_id)
         if not report:
             return None
@@ -494,7 +524,9 @@ class InMemoryAssessmentRepository(AssessmentRepository):
         self._reports[report_id] = updated
         return updated
 
-    def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]:
+    def list_reports(
+        self, course_id: str, project_id: str, sprint_id: str
+    ) -> list[AssessmentReport]:
         matching = [
             report
             for report in self._reports.values()
@@ -512,7 +544,9 @@ class InMemoryAssessmentRepository(AssessmentRepository):
         ]
         return sorted(matching, key=lambda report: report.generated_at, reverse=True)
 
-    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+    def get_latest_report(
+        self, course_id: str, project_id: str, sprint_id: str
+    ) -> AssessmentReport | None:
         matching = self.list_reports(course_id, project_id, sprint_id)
         if not matching:
             return None
@@ -543,7 +577,11 @@ class InMemoryAssessmentJobRepository:
             updated_at=now,
         )
         self._jobs[job_id] = record
-        self._events[job_id] = [AssessmentJobEvent(event="started", data={"status": "started", "message": "Assessment has started."})]
+        self._events[job_id] = [
+            AssessmentJobEvent(
+                event="started", data={"status": "started", "message": "Assessment has started."}
+            )
+        ]
         return record
 
     def get_job(self, job_id: str) -> AssessmentJobRecord | None:
@@ -636,7 +674,9 @@ class InMemoryActionAuditRepository:
     def delete_action_audits(self, audit_ids: list[str]) -> int:
         ids = set(audit_ids)
         original_count = len(self._audit_actions)
-        self._audit_actions = [record for record in self._audit_actions if record.audit_id not in ids]
+        self._audit_actions = [
+            record for record in self._audit_actions if record.audit_id not in ids
+        ]
         return original_count - len(self._audit_actions)
 
 
@@ -683,7 +723,9 @@ class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
         self._runs[run.id] = run
         return run
 
-    def get_run(self, project_id: str, sprint_id: str, run_id: str) -> JiraIngestionRunRecord | None:
+    def get_run(
+        self, project_id: str, sprint_id: str, run_id: str
+    ) -> JiraIngestionRunRecord | None:
         run = self._runs.get(run_id)
         if not run or run.project_id != project_id or run.sprint_id != sprint_id:
             return None
@@ -698,7 +740,11 @@ class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
 
     def list_runs(self, project_id: str, sprint_id: str) -> list[JiraIngestionRunRecord]:
         return sorted(
-            (run for run in self._runs.values() if run.project_id == project_id and run.sprint_id == sprint_id),
+            (
+                run
+                for run in self._runs.values()
+                if run.project_id == project_id and run.sprint_id == sprint_id
+            ),
             key=lambda run: (run.captured_at, run.id),
             reverse=True,
         )
@@ -779,7 +825,7 @@ class InMemoryMetricsRepository(MetricsRepository):
         if not metrics:
             return None, 0
         ordered_commits = sorted(metrics.commits, key=lambda commit: (commit.timestamp, commit.sha))
-        page = ordered_commits[offset:offset + limit]
+        page = ordered_commits[offset : offset + limit]
         return IngestionMetricBundle(
             course_id=metrics.course_id,
             project_id=metrics.project_id,
@@ -814,42 +860,27 @@ class InMemoryPeerEvaluationRepository(PeerEvaluationRepository):
         matching = [
             e
             for e in self._evaluations.values()
-            if e.rater_id == rater_id
-            and (project_id is None or e.project_id == project_id)
+            if e.rater_id == rater_id and (project_id is None or e.project_id == project_id)
         ]
         return sorted(matching, key=lambda e: e.created_at, reverse=True)
 
-    def list_evaluations_by_project(
-        self, project_id: str
-    ) -> list[PeerEvaluationRecord]:
-        matching = [
-            e for e in self._evaluations.values() if e.project_id == project_id
-        ]
+    def list_evaluations_by_project(self, project_id: str) -> list[PeerEvaluationRecord]:
+        matching = [e for e in self._evaluations.values() if e.project_id == project_id]
         return sorted(matching, key=lambda e: e.created_at, reverse=True)
 
-    def list_evaluations_by_course(
-        self, course_id: str
-    ) -> list[PeerEvaluationRecord]:
-        matching = [
-            e for e in self._evaluations.values() if e.course_id == course_id
-        ]
+    def list_evaluations_by_course(self, course_id: str) -> list[PeerEvaluationRecord]:
+        matching = [e for e in self._evaluations.values() if e.course_id == course_id]
         return sorted(matching, key=lambda e: e.created_at, reverse=True)
 
     def get_evaluation_by_rater_and_rated(
         self, rater_id: str, rated_id: str, project_id: str
     ) -> PeerEvaluationRecord | None:
         for e in self._evaluations.values():
-            if (
-                e.rater_id == rater_id
-                and e.rated_id == rated_id
-                and e.project_id == project_id
-            ):
+            if e.rater_id == rater_id and e.rated_id == rated_id and e.project_id == project_id:
                 return e
         return None
 
-    def save_config(
-        self, config: PeerEvaluationConfigRecord
-    ) -> PeerEvaluationConfigRecord:
+    def save_config(self, config: PeerEvaluationConfigRecord) -> PeerEvaluationConfigRecord:
         self._configs[config.course_id] = config
         return config
 
@@ -875,6 +906,8 @@ audit_repo = InMemoryAuditRepository()
 audit_action_repo = InMemoryActionAuditRepository()
 metrics_repo = InMemoryMetricsRepository()
 projects_repo = InMemoryProjectRepository()
+
+
 class InMemoryExportLogRepository(ExportLogRepository):
     def __init__(self) -> None:
         self._logs: dict[str, ExportLogRecord] = {}
@@ -890,11 +923,7 @@ class InMemoryExportLogRepository(ExportLogRepository):
         return None
 
     def list_logs(self, user_id: str, limit: int = 50) -> list[ExportLogRecord]:
-        matching = [
-            record
-            for record in self._logs.values()
-            if record.user_id == user_id
-        ]
+        matching = [record for record in self._logs.values() if record.user_id == user_id]
         return sorted(matching, key=lambda record: record.created_at, reverse=True)[:limit]
 
     def count_exports_since(self, user_id: str, since: datetime) -> int:

@@ -68,6 +68,7 @@ def _require_course_instructor(
 # GET /export/preview
 # ------------------------------------------------------------------
 
+
 @router.get("/preview", response_model=ExportPreviewResponse)
 def export_preview(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
@@ -115,6 +116,7 @@ def export_preview(
 # ------------------------------------------------------------------
 # POST /export/pdf
 # ------------------------------------------------------------------
+
 
 @router.post("/pdf", response_model=ExportResponse)
 def export_pdf(
@@ -167,6 +169,7 @@ def export_pdf(
 # POST /export/csv
 # ------------------------------------------------------------------
 
+
 @router.post("/csv", response_model=ExportResponse)
 def export_csv(
     request: ExportRequest,
@@ -218,6 +221,7 @@ def export_csv(
 # GET /export/download/{token}
 # ------------------------------------------------------------------
 
+
 @router.get("/download/{download_token}")
 def export_download(
     download_token: str,
@@ -258,9 +262,7 @@ def export_download(
         )
 
     file_bytes, expires_at, fmt = entry
-    media_type = (
-        "application/pdf" if fmt == ExportFormat.PDF else "text/csv"
-    )
+    media_type = "application/pdf" if fmt == ExportFormat.PDF else "text/csv"
     filename = f"sprintsight_report_{log.course_id}_{log.project_id}_{log.sprint_id}.{fmt.value}"
 
     return StreamingResponse(
