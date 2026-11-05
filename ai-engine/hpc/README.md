@@ -370,7 +370,7 @@ path as the API, without the frontend or backend. They replace the old
 
 | Script | Teams | Gold |
 |---|---|---|
-| `research.run_fixture_trial` | 5 synthetic teams: `Team_Alpha`, `Team_Delta`, `Team_Epsilon`, `Team_Theta`, `Team_Gamma` (sprint `2026-08-10_to_2026-08-21`, 7-8 commits each) | `research/gold/{alpha,delta,epsilon,theta,gemma}_GOLD.json` (expected overall 8.67 / 6.17 / 6.67 / 3.33 / 2.00) |
+| `research.run_fixture_trial` | 5 synthetic teams: `Team_Alpha`, `Team_Delta`, `Team_Epsilon`, `Team_Theta`, `Team_Gamma` (sprint `2026-08-10_to_2026-08-21`, 7-8 commits each) | `research/gold/{alpha,delta,epsilon,theta,gamma}_GOLD.json` (expected overall 8.67 / 6.17 / 6.67 / 3.33 / 2.00) |
 | `research.run_cs203_trial` | 2 real bundles: `cs203g6` (31 commits, expected overall 4.0) and `cs203jy` (id `fa7d4476-…`, 6.5) | `research/cs203_groundtruth.py`, `research/gold/cs203jy_GOLD.json` |
 
 ### Prerequisites
