@@ -10,7 +10,7 @@ from schemas.rubrics_dimension_score import (
     ModelOutput,
     RubricDimensionScore,
 )
-from schemas.rubrics_score import RubricsScore
+from schemas.rubrics_score import DIMENSIONS, RubricsScore
 from schemas.sprint_assessment import SprintAssessment
 from services.grounding import find_ungrounded_citations
 
@@ -27,8 +27,11 @@ def read_candidate(trace: Trace, bundle: ArtifactBundle | None = None) -> tuple[
     spans = trace.data.spans
     root = next(s for s in spans if s.parent_id is None)
 
+    # Evaluator now stores rubric scores directly on the root span, 
+    # so we can read them directly instead of reconstructing from the dimension spans.
     if isinstance(root.outputs, dict) and "rubric_scores" in root.outputs:
-        return SprintAssessment.model_validate(root.outputs).rubric_scores, 0
+        rubric = SprintAssessment.model_validate(root.outputs).rubric_scores
+        return rubric, sum(getattr(rubric, d).citations_dropped for d in DIMENSIONS if getattr(rubric, d, None))
 
     by_id = {s.span_id: s for s in spans}
     final: dict[str, ModelOutput] = {}

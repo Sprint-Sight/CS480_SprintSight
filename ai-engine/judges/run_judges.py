@@ -5,7 +5,8 @@ import mlflow
 import pandas as pd
 from dotenv import load_dotenv
 from mlflow import MlflowClient
-from mlflow.entities import Trace
+from mlflow.entities import AssessmentSourceType, Trace
+from mlflow.genai.scorers import scorer
 from mlflow.exceptions import RestException
 from mlflow.genai.scorers import scorer
 
@@ -27,15 +28,21 @@ MAE_COL = "grade_mae_scored_only/value"
 HALLUCINATION_COL = "citation_hallucination_rate/value"
 CITATION_COUNT_COL = "citation_count/value"
 GROUNDED_COL = "citation_grounded_rate/value"
+CRITICAL_COL = "citations_dropped_by_code/value" # was citation_critical_fabrication_count
+PEDAGOGY_HARSH_COL = "pedagogy_harsh/value"
+JUSTIFICATION_COL = "justification_hard_contradictions/value" # inert until judges/narrative_judge.py exists: an absent column reads as None
+NARRATIVE_COL = "narrative_contradiction_count/value"
+PEDAGOGY_COL = "pedagogy_score/value"
+MIN_PEDAGOGY_SCORE = 0.6
 
 MAX_PENALISED_MAE = 3
 MAX_HALLUCINATION = 0.1
 MIN_CITATIONS = 10
 MIN_GROUNDED_RATE = 0.5
 
-KEEP_ASSESSMENTS = {'gold', 'citation_grounding'} # not produced by the judge
+KEEP_ASSESSMENTS = {'gold'} # not produced by the judge
 
-ALL_GOLD = {**CS203_GOLD, **FIXTURES_GOLD} # All available golds, keyed by team_id
+ALL_GOLD = {**CS203_GOLD, **{g.team_id.lower(): g for g in FIXTURES_GOLD.values()}} # All available golds, keyed by team_id
 
 def _log(msg):
     print(msg, flush=True)
@@ -118,6 +125,15 @@ def _flag_for_review(result_df: pd.DataFrame, with_judge: bool):
                 reasons.append(f"citation_count={count} < {MIN_CITATIONS}")
             if grounded is not None and grounded < MIN_GROUNDED_RATE:
                 reasons.append(f"grounded_rate={grounded} < {MIN_GROUNDED_RATE}")
+            if (dropped := val(CRITICAL_COL)):
+                reasons.append(f"{int(dropped)} fabricated citation(s) removed by code")
+            for col, label in ((JUSTIFICATION_COL, "justification_hard_contradictions"), (NARRATIVE_COL, "narrative_contradictions"),
+                               (PEDAGOGY_HARSH_COL, "harsh_tone")):
+                if val(col):
+                    reasons.append(f"{label}={int(val(col))}")
+            ped = val(PEDAGOGY_COL)
+            if ped is not None and ped < MIN_PEDAGOGY_SCORE:
+                reasons.append(f"pedagogy_score={ped} < {MIN_PEDAGOGY_SCORE}")
 
         if reasons:
             add_to_review_queue(f"review_queue_{trace_id}", [trace_id])
@@ -143,7 +159,7 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
         label = f"  [{i}/{len(traces)}] {trace_id} ({team})"
 
         for assessment in trace.info.assessments: # clear a previous judge run so results don't pile up
-            if assessment.name not in KEEP_ASSESSMENTS:
+            if assessment.name not in KEEP_ASSESSMENTS and assessment.source.source_type != AssessmentSourceType.HUMAN: # instructor labels survive a re-judge
                 mlflow.delete_assessment(trace_id=trace_id, assessment_id=assessment.assessment_id)
                 _log(f"{label}: existing assessment '{assessment.name}' deleted")
 
@@ -194,18 +210,20 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
     _log(f"[4/4] Done in {time.perf_counter() - start:.0f}s. Metrics: {[r.metrics for r in results]}")
     return results
 
-if __name__ == "__main__":
-    trace_ids = [ # CS203 research 12/10/26
-        #"tr-6ecacfe8b7be2855f93d91f02fd4bfb9", # Gemma JY
-        "tr-10525918449401e0b9c0c7f043efed4f", # Gemma G6
-        "tr-2e7b0a535108049742555b098d902588", # Qwen JY
-        #"tr-7fea697f539e3d43e6f4f6b734f7377d", # Qwen G6
-    ]
-    trace_ids = [ # CS203 research 12/10/26
-        "tr-a81b348e7deb980a215d8040d2179f59", # Gemma JY
-        #"tr-2bc45c19f5b1b546fc8e2ca487dfea8a", # Gemma G6
-        "tr-a9d0be7395c559d5297c40363a201dae", # Qwen JY
-        "tr-af621323798aa24eb3f2fb61ffc0bbd2", # Qwen G6
-    ]
-    #run_judge_evaluation("CS203 research 13/10/26", model="sprintsight-judge-phi", trace_ids=trace_ids, with_judge=True)
-    run_judge_evaluation("CS203 research 14/10/26", model="sprintsight-judge-phi", team_id='cs203g6', with_judge=True)
+### Uncomment if you want to run judge only for specific traces you want to test
+# if __name__ == "__main__":
+    ### CHANGE ME: change trace_ids with traces you want to test
+#     trace_ids = [ # CS203 research 12/10/26
+#         #"tr-6ecacfe8b7be2855f93d91f02fd4bfb9", # Gemma JY
+#         "tr-10525918449401e0b9c0c7f043efed4f", # Gemma G6
+#         "tr-2e7b0a535108049742555b098d902588", # Qwen JY
+#         #"tr-7fea697f539e3d43e6f4f6b734f7377d", # Qwen G6
+#     ]
+#     trace_ids = [ # CS203 research 12/10/26
+#         "tr-a81b348e7deb980a215d8040d2179f59", # Gemma JY
+#         #"tr-2bc45c19f5b1b546fc8e2ca487dfea8a", # Gemma G6
+#         "tr-a9d0be7395c559d5297c40363a201dae", # Qwen JY
+#         "tr-af621323798aa24eb3f2fb61ffc0bbd2", # Qwen G6
+#     ]
+#     #run_judge_evaluation("CS203 research 13/10/26", model="sprintsight-judge-phi", trace_ids=trace_ids, with_judge=True)
+#     run_judge_evaluation("CS203 research 14/10/26", model="sprintsight-judge-phi", team_id='cs203g6', with_judge=True)
