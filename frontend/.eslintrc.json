@@ -1,3 +1,15 @@
 {
-  "extends": "next/core-web-vitals"
+  "extends": ["next/core-web-vitals", "plugin:jsx-a11y/recommended"],
+  "rules": {
+    // `role` is also a prop on our own components (e.g. <AuditLogPage role="admin">);
+    // only validate ARIA roles on real DOM elements.
+    "jsx-a11y/aria-role": ["error", { "ignoreNonDOM": true }],
+
+    // Existing violations are reported as warnings so CI stays green until they are
+    // fixed in a dedicated change; promote these back to "error" afterwards.
+    "jsx-a11y/label-has-associated-control": "warn",
+    "jsx-a11y/no-autofocus": "warn",
+    "jsx-a11y/no-noninteractive-element-interactions": "warn",
+    "jsx-a11y/no-static-element-interactions": "warn"
+  }
 }

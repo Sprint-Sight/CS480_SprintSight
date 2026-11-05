@@ -11,7 +11,7 @@ export type UserProfile = {
   id: string;
   email: string;
   full_name: string;
-  role: "admin" | "team_lead" | "member";
+  role: "admin" | "instructor" | "student";
 };
 
 /**

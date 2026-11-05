@@ -85,8 +85,33 @@ export function readIngestionState(): IngestionState {
 export function writeIngestionState(patch: Partial<IngestionState>) {
   if (typeof window === "undefined") return;
   const next = { ...readIngestionState(), ...patch };
-  localStorage.setItem(INGESTION_STORAGE_KEY, JSON.stringify(next));
+  try {
+    localStorage.setItem(INGESTION_STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    // Quota exceeded or storage blocked (e.g. private mode): keep the app usable.
+    console.warn("Could not persist ingestion state:", error);
+    return;
+  }
   window.dispatchEvent(new CustomEvent("sprintsight-ingestion-updated"));
+}
+
+/**
+ * Stores runs fetched from the backend in one write. Unlike saveGitMetrics /
+ * saveJiraSnapshot it never changes the user's selected project, course or sprint,
+ * so it is safe to call from background loads.
+ */
+export function mergeIngestionRuns(gitRuns: PersistedGitMetrics[], jiraSnapshots: PersistedJiraSnapshot[]) {
+  if (gitRuns.length === 0 && jiraSnapshots.length === 0) return;
+  const state = readIngestionState();
+  const gitBySprint = { ...state.gitBySprint };
+  const jiraBySprint = { ...state.jiraBySprint };
+  gitRuns.forEach((run) => {
+    gitBySprint[`${run.project_id}:${run.sprint_id}`] = run;
+  });
+  jiraSnapshots.forEach((snapshot) => {
+    jiraBySprint[`${snapshot.project_id}:${snapshot.sprint_id}`] = snapshot;
+  });
+  writeIngestionState({ gitBySprint, jiraBySprint });
 }
 
 export function saveGitMetrics(metrics: PersistedGitMetrics) {

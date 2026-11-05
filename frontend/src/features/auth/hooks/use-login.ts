@@ -7,6 +7,7 @@ import {
   fetchUserProfile,
   changePasswordOnFirstLogin,
 } from "@/features/auth/login-api";
+import { writeStoredSession } from "@/features/auth/session";
 
 export function useLogin() {
   const router = useRouter();
@@ -40,9 +41,7 @@ export function useLogin() {
       const user = await fetchUserProfile(loginResponse.access_token);
 
       // Store user details in session storage
-      sessionStorage.setItem("sprintsight-auth-role", user.role);
-      sessionStorage.setItem("sprintsight-auth-email", user.email);
-      sessionStorage.setItem("sprintsight-auth-name", user.full_name);
+      writeStoredSession(user);
 
       // Redirect based on user role
       if (user.role === "admin") {
@@ -100,9 +99,7 @@ export function useLogin() {
       // Fetch user profile to get role and redirect
       const user = await fetchUserProfile(loginResponse.access_token);
 
-      sessionStorage.setItem("sprintsight-auth-role", user.role);
-      sessionStorage.setItem("sprintsight-auth-email", user.email);
-      sessionStorage.setItem("sprintsight-auth-name", user.full_name);
+      writeStoredSession(user);
 
       // Redirect based on role
       if (user.role === "admin") {

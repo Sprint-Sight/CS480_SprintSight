@@ -26,6 +26,7 @@ import {
 
 import { apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
 import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
+import { clearStoredSession, restoreSession } from "@/features/auth/session";
 import { useNotifications } from "@/hooks/use-notifications";
 import { NotificationsDropdown } from "@/components/ui/notifications-modal";
 
@@ -146,27 +147,34 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   }, [isAuthorized, role, isRestrictedForStudent, router]);
 
   useEffect(() => {
-    const savedRole = sessionStorage.getItem("sprintsight-auth-role");
-    const email = sessionStorage.getItem("sprintsight-auth-email");
-    const name = sessionStorage.getItem("sprintsight-auth-name");
+    let isCurrent = true;
 
-    if (!savedRole || !email) {
-      router.replace("/login");
-      return;
-    }
+    // Rebuilds role/email/name from the stored token when this tab has no session yet
+    // (new tab, browser restart), instead of bouncing a signed-in user to /login.
+    void restoreSession().then((session) => {
+      if (!isCurrent) return;
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
 
-    // Redirect admin users out of student/instructor sidebar routes
-    if (savedRole === "admin") {
-      router.replace("/admin");
-      return;
-    }
+      // Redirect admin users out of student/instructor sidebar routes
+      if (session.role === "admin") {
+        router.replace("/admin");
+        return;
+      }
 
-    setRole(savedRole as "student" | "instructor");
-    setUserEmail(email);
-    if (name) {
-      setUserName(name);
-    }
-    setIsAuthorized(true);
+      setRole(session.role);
+      setUserEmail(session.email);
+      if (session.fullName) {
+        setUserName(session.fullName);
+      }
+      setIsAuthorized(true);
+    });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [router]);
 
   // Fetch Scope options dynamically from DB for instructors
@@ -278,11 +286,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
 
   const handleLogout = () => {
-    sessionStorage.removeItem("sprintsight-auth-role");
-    sessionStorage.removeItem("sprintsight-auth-email");
-    sessionStorage.removeItem("sprintsight-auth-name");
-    localStorage.removeItem("sprintsight-access-token");
-    sessionStorage.removeItem("sprintsight-access-token");
+    clearStoredSession();
     setIsProfileMenuOpen(false);
     router.replace("/login");
   };
