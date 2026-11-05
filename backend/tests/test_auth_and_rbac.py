@@ -1,11 +1,11 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
+from app.dependencies.auth import get_assessment_repository
 from app.main import app
 from app.repositories.in_memory import assessment_repo
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
-from datetime import datetime, timezone
-from app.dependencies.auth import get_assessment_repository
-
 
 client = TestClient(app)
 
@@ -130,7 +130,7 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
         course_id=course_id,
         project_id=project_id,
         sprint_id="sprint-1",
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         rubric_weights={"delivery": 0.35, "collaboration": 0.30, "quality": 0.20, "documentation": 0.15},
         team_score=TeamScore(score=85.0, rationale="Good sprint delivery."),
         individual_scores=[StudentScore(student_id=student_id, score=85.0, rationale="Strong contribution.")],

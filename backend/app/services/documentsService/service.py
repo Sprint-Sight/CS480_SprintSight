@@ -3,7 +3,7 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import PurePath
 from typing import Protocol
@@ -72,7 +72,7 @@ def upload_documents(
                 storage_bucket=settings.minio_bucket_documents,
                 storage_key=storage_key,
                 uploaded_by=uploader_id,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             created.append(repository.create_document(record))
     except Exception:

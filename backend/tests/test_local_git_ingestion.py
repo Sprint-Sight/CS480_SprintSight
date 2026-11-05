@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
-from pathlib import Path
 import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
 
 from app.repositories.interfaces import UserRecord
 from app.schemas.assessment import CommitInfo
@@ -84,7 +84,7 @@ def test_extract_local_commits_includes_file_evidence(tmp_path: Path) -> None:
 
 
 def test_link_commit_authors_only_to_active_project_students() -> None:
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
     commits = [
         CommitInfo(sha="student", author="Student One", author_email=" Student@Example.com ", message="", timestamp=timestamp),
         CommitInfo(sha="instructor", author="Instructor", author_email="instructor@example.com", message="", timestamp=timestamp),

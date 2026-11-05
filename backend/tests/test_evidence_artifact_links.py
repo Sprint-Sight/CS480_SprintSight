@@ -1,5 +1,5 @@
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -81,7 +81,7 @@ def project(override_user_repository, student_repo) -> ProjectRecord:
         github_repo_url="https://github.com/org/team-repo",
         local_repo_path="team-repo",
         created_by="u-faculty-1",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         jira_domain="team.atlassian.net",
         jira_project_key="ENG",
     )
@@ -92,7 +92,7 @@ def project(override_user_repository, student_repo) -> ProjectRecord:
 @pytest.fixture
 def jira_runs():
     repository = InMemoryJiraIngestionRunRepository()
-    captured = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    captured = datetime(2026, 10, 1, tzinfo=UTC)
     repository.create_run(JiraIngestionRunRecord(
         id="run-1", course_id="cs480", project_id="proj-links", sprint_id="sp1",
         jira_project_key="ENG", jql="project = ENG", raw_bucket="b", raw_object_key="k",
@@ -116,7 +116,7 @@ def save_report(rubric_scores: dict[str, RubricDimensionScoreDetail], project_id
         course_id="cs480",
         project_id=project_id,
         sprint_id="sp1",
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         rubric_weights={},
         team_score=TeamScore(score=80, rationale="ok"),
         individual_scores=[],
@@ -355,7 +355,7 @@ def test_clone_remote_is_used_when_project_has_no_saved_url(override_user_reposi
     override_user_repository.create_project(ProjectRecord(
         id="proj-remote", project_name="Remote", team_name="Remote", description=None,
         course_id="cs480", course_code="CS480", github_repo_url=None, local_repo_path="team-repo",
-        created_by="u-faculty-1", created_at=datetime.now(timezone.utc),
+        created_by="u-faculty-1", created_at=datetime.now(UTC),
     ), [])
     head = student_repo["head_sha"]
 
@@ -369,7 +369,7 @@ def test_students_outside_the_project_are_refused(override_user_repository, stud
     override_user_repository.create_project(ProjectRecord(
         id="proj-other", project_name="Other", team_name="Other", description=None,
         course_id="cs480", course_code="CS480", github_repo_url=None, local_repo_path="team-repo",
-        created_by="u-faculty-1", created_at=datetime.now(timezone.utc),
+        created_by="u-faculty-1", created_at=datetime.now(UTC),
     ), [])
     report_id = save_report({}, project_id="proj-other")
     headers = login("student@sprintsight.edu")

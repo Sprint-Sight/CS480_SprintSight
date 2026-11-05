@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-# LLM can see if commit touched readme file or test_auth without having to rely soley on the git commit message.
+# LLM can see if commit touched readme file or test_auth without having to rely solely on the git commit message.
 class FileDiff(BaseModel):
     filename: str = Field(description="Path of the changed file")
     change_type: Literal["added", "modified", "deleted", "renamed"] = "modified"

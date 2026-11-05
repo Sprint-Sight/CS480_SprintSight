@@ -1,4 +1,4 @@
-services: # Seperate containers to run
+services: # Separate containers to run
     ollama: # Ollama LLM server
       image: ollama/ollama
       ports:

@@ -1,6 +1,5 @@
-from typing import Annotated
-
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.errors import UniqueViolation
@@ -38,8 +37,6 @@ from app.services.authService.service import (
 )
 from app.services.notificationService.service import (
     EmailTransport,
-    NotificationConfigurationError,
-    NotificationDeliveryError,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])

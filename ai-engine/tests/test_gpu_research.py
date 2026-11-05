@@ -208,3 +208,28 @@ def test_load_prompts_maps_max_tokens_to_num_predict(tmp_path, monkeypatch):
     audit_logger.write_audit_record({"request_id": "r", "dimension": "testing", "model": "m", "request": request})
     [prompt] = gpu_bench.load_prompts(tmp_path, "m", None)
     assert prompt["options"] == {"num_predict": 8192}
+
+
+def _memory_samples(levels: list[int]) -> pd.DataFrame:
+    times = pd.date_range("2026-11-03T06:00:00Z", periods=len(levels), freq="1s")
+    return pd.DataFrame({"time": times, "memory.used": levels})
+
+
+def _run(start: int, first_end: int, end: int) -> pd.DataFrame:
+    base = pd.Timestamp("2026-11-03T06:00:00Z")
+    return pd.DataFrame({
+        "started_at": [base + pd.Timedelta(seconds=start), base + pd.Timedelta(seconds=first_end)],
+        "finished_at": [base + pd.Timedelta(seconds=first_end), base + pd.Timedelta(seconds=end)],
+    })
+
+
+def test_model_vram_ignores_models_left_loaded_from_earlier_runs():
+    # 7,164 MiB of an earlier model stays resident; this model adds 6,805.
+    samples = _memory_samples([7164] * 12 + [13969] * 20)
+    assert gpu_report.model_vram_mib(samples, _run(10, 20, 30)) == 6805
+    # The earlier model is unloaded first, then this one loads: still its own size.
+    samples = _memory_samples([20198] * 11 + [1] * 3 + [7162] * 18)
+    assert gpu_report.model_vram_mib(samples, _run(10, 20, 30)) == 7161
+    # Already loaded (no rise): the run's median.
+    samples = _memory_samples([7164] * 32)
+    assert gpu_report.model_vram_mib(samples, _run(10, 20, 30)) == 7164

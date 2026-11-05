@@ -1,11 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.credential_crypto import normalize_jira_domain
 from app.schemas.auth import Role, UserResponse
-
 
 # ---------------------------------------------------------------------------
 # Shared field-level helpers (reused by both Create and Update)

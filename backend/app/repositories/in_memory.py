@@ -207,10 +207,6 @@ class InMemoryProjectRepository(ProjectRepository):
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
         return [user_id for enrolled_course_id, user_id in self._enrollments if enrolled_course_id == course_id]
 
-    def list_student_course_codes(self, user_id: str) -> list[str]:
-        return [self._courses[course_id].code for course_id, enrolled_user_id in self._enrollments
-                if enrolled_user_id == user_id]
-
     def update_course(self, course_id: str, code: str, name: str, section: str, year: int, term: str) -> CourseRecord | None:
         course = self._courses.get(course_id)
         if not course:
@@ -594,9 +590,6 @@ class InMemoryOverrideRepository(OverrideRepository):
 
     def save_override(self, record: OverrideResponse) -> None:
         self._overrides.append(record)
-
-    def list_overrides(self) -> list[OverrideResponse]:
-        return list(self._overrides)
 
 
 class InMemoryAuditRepository(AuditRepository):
