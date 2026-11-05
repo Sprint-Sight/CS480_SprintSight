@@ -936,6 +936,8 @@ async def evaluate_dimension(
                     citation for citation in (result.evidence_citations or []) if citation not in ungrounded
                 ]
 
+            result.citations_dropped = len(ungrounded) # read back by judges/trace_adapters.read_candidate
+
             if ungrounded or downgraded:
                 log.warning(
                     "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the "
