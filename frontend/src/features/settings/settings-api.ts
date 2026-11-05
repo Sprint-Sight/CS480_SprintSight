@@ -19,6 +19,39 @@ export type InstructorJiraCredentialsResponse = {
   is_saved: boolean;
 };
 
+export type RubricWeightsResponse = {
+  course_id: string;
+  /** Dimension key -> fraction of the total score (sums to 1.0). */
+  weights: Record<string, number>;
+  is_custom: boolean;
+  updated_by?: string | null;
+  updated_at?: string | null;
+};
+
+export type CourseOption = {
+  id: string;
+  code: string;
+  name: string;
+  section: string;
+  term: string;
+  year: number;
+};
+
+export function getCourses() {
+  return apiRequest<CourseOption[]>("/courses");
+}
+
+export function getRubricWeights(courseId: string) {
+  return apiRequest<RubricWeightsResponse>(`/assessments/rubric-weights?course_id=${encodeURIComponent(courseId)}`);
+}
+
+export function saveRubricWeights(courseId: string, weights: Record<string, number>) {
+  return apiRequest<RubricWeightsResponse>(`/assessments/rubric-weights?course_id=${encodeURIComponent(courseId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ weights }),
+  });
+}
+
 export function getModelCatalog() {
   return apiRequest<ModelCatalogResponse>("/models");
 }

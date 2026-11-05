@@ -1,7 +1,7 @@
 "use client";
 
 import { BookOpen, Plus, Search, SlidersHorizontal, Users, Upload } from "lucide-react";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
 import { ProjectCard } from "@/features/projects/components/project-card";
@@ -50,6 +50,8 @@ export default function ProjectsPageContent() {
 
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const isSavingProjectRef = useRef(false);
 
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
@@ -284,6 +286,10 @@ export default function ProjectsPageContent() {
   }
 
   async function handleSaveProject() {
+    // A ref (not state) so two clicks in the same tick cannot both start a save.
+    if (isSavingProjectRef.current) return;
+    isSavingProjectRef.current = true;
+    setIsSavingProject(true);
     try {
       const projectName = projectForm.project_name.trim();
       const teamName = projectForm.team_name.trim();
@@ -354,6 +360,9 @@ export default function ProjectsPageContent() {
       setIsProjectModalOpen(false);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to save project.");
+    } finally {
+      isSavingProjectRef.current = false;
+      setIsSavingProject(false);
     }
   }
 
@@ -703,7 +712,10 @@ export default function ProjectsPageContent() {
         jiraEmail={jiraCredentials.jiraEmail}
         jiraApiToken={jiraCredentials.jiraApiToken}
         hasSavedJiraToken={jiraCredentials.hasSavedToken}
-        onClose={() => setIsProjectModalOpen(false)}
+        isSaving={isSavingProject}
+        onClose={() => {
+          if (!isSavingProject) setIsProjectModalOpen(false);
+        }}
         onSave={handleSaveProject}
         onJiraEmailChange={jiraCredentials.setJiraEmail}
         onJiraApiTokenChange={jiraCredentials.setJiraApiToken}

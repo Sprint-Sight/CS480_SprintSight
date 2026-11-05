@@ -1,0 +1,9 @@
+node_modules
+.next
+out
+coverage
+public
+package-lock.json
+tsconfig.tsbuildinfo
+next-env.d.ts
+ci-check-results.txt

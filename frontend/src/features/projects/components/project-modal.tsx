@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 import type { Project } from "@/features/projects/types";
 import type { ProjectFormValues } from "@/features/projects/components/projects-api";
@@ -10,6 +10,7 @@ type ProjectModalProps = {
   jiraEmail: string;
   jiraApiToken: string;
   hasSavedJiraToken: boolean;
+  isSaving: boolean;
   onClose: () => void;
   onSave: () => void;
   onJiraEmailChange: (email: string) => void;
@@ -24,6 +25,7 @@ export function ProjectModal({
   jiraEmail,
   jiraApiToken,
   hasSavedJiraToken,
+  isSaving,
   onClose,
   onSave,
   onJiraEmailChange,
@@ -34,7 +36,14 @@ export function ProjectModal({
 
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/40 p-4 sm:p-6">
-      <div className="mx-auto my-4 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl sm:my-8">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!isSaving) onSave();
+        }}
+        aria-busy={isSaving}
+        className="mx-auto my-4 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl sm:my-8"
+      >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
@@ -163,19 +172,23 @@ export function ProjectModal({
           <button
             type="button"
             onClick={onClose}
-            className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            disabled={isSaving}
+            className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
           </button>
           <button
-            type="button"
-            onClick={onSave}
-            className="h-10 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800"
+            type="submit"
+            disabled={isSaving}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {editingProject ? "Update Project" : "Create Project"}
+            {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isSaving
+              ? editingProject ? "Updating..." : "Creating..."
+              : editingProject ? "Update Project" : "Create Project"}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
