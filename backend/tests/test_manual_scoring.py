@@ -210,3 +210,40 @@ def test_missing_assessment_report_returns_not_found(override_user_repository) -
     )
 
     assert response.status_code == 404
+
+
+def test_patch_keeps_ai_evidence_details_the_editor_does_not_send(override_user_repository) -> None:
+    from app.schemas.assessment import EvidenceDetail, RubricDimensionScoreDetail
+
+    setup_project(override_user_repository)
+    assessment_repository = InMemoryAssessmentRepository()
+    original = report()
+    original.rubric_scores = {
+        "code_quality": RubricDimensionScoreDetail(
+            score=7,
+            justification="AI justification",
+            evidence_citations=["src/app.py:L3-L5 — Small focused class."],
+            evidence_details=[EvidenceDetail(
+                identifier="src/app.py:L3-L5", reason="Small focused class.", kind="file_lines",
+                file_path="src/app.py", line_start=3, line_end=5,
+            )],
+        ),
+    }
+    assessment_repository.save_report(original)
+    app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
+
+    response = client.patch(
+        "/api/v1/assessments/reports/rpt-manual-1",
+        json=payload(rubric_scores={"code_quality": {
+            "score": 9,
+            "justification": "Instructor raised the score.",
+            "evidence_citations": ["src/app.py:L3-L5 — Small focused class."],
+        }}),
+        headers=headers("faculty@sprintsight.edu"),
+    )
+
+    assert response.status_code == 200, response.text
+    detail = response.json()["rubric_scores"]["code_quality"]
+    assert detail["score"] == 9
+    assert detail["justification"] == "Instructor raised the score."
+    assert detail["evidence_details"][0]["line_start"] == 3

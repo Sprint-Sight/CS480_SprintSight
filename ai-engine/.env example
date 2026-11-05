@@ -20,3 +20,34 @@ LOG_BUNDLE_DISPLAY=false
 # LLM config
 LLM_COMMIT_BUDGET=30
 LLM_MAX_FILES_PER_COMMIT=20
+
+# Evidence packing (services/evidence_packer.py). "packed" fits every commit,
+# line-numbered files at HEAD, and diff excerpts into the token budget;
+# "legacy" restores the old 30-commit JSON sample (LLM_COMMIT_BUDGET).
+LLM_EVIDENCE_MODE=packed
+# Prompt + answer tokens per dimension call, even if num_ctx allows more.
+LLM_EVIDENCE_CONTEXT_CAP=32000
+LLM_OUTPUT_RESERVE_TOKENS=2048
+# Token estimate ratio; lower it if audit logs show prompts near num_ctx.
+LLM_CHARS_PER_TOKEN=3.0
+# Optional: one line cap for every file category (default 120 source,
+# 150 tests, 250 docs, 200 CI/CD).
+# LLM_EVIDENCE_MAX_FILE_LINES=150
+LLM_EVIDENCE_MAX_DIFF_LINES=60
+
+# GPU throughput (see "Measuring GPU utilisation" in hpc/README.md).
+# Rubric dimensions sent to Ollama at once; keep equal to the GPU job's
+# OLLAMA_NUM_PARALLEL. 1 = one after another (the default).
+LLM_DIMENSION_CONCURRENCY=1
+# Most tokens a model may generate per call (sent as max_tokens, which /v1 does
+# honour). Stops runaway answers: uncapped, a looping model only stopped at the
+# 20-minute client timeout. Normal answers are 250-4,100 tokens.
+LLM_MAX_OUTPUT_TOKENS=8192
+# A capped answer is incomplete, and instructor fails the dimension instead of
+# re-asking, so it is re-asked this many times with a "be concise" note.
+LLM_LENGTH_REASKS=1
+# CPU threads and context size are NOT set here: Ollama's /v1 endpoint ignores
+# per-request options. The GPU job bakes num_thread into each model (see
+# hpc/ollama-entrypoint.sh); num_ctx comes from the Modelfiles.
+# Where per-request timing markers go (default <LLM_AUDIT_LOG_DIR>/request_markers.jsonl).
+# LLM_REQUEST_MARKERS_PATH=

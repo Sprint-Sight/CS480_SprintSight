@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -16,6 +16,12 @@ class FileDiff(BaseModel):
     change_type: Literal["added", "modified", "deleted", "renamed"] = "modified"
     lines_added: int = Field(default=0, ge=0)
     lines_deleted: int = Field(default=0, ge=0)
+    # Unified diff text for this file, capped at ingestion (see
+    # GIT_DIFF_MAX_CHARS_PER_FILE). None for noise/binary files or rows
+    # ingested before diffs were captured. Lets the AI engine read the
+    # actual code change and cite exact line numbers, not just +/- counts.
+    diff: str | None = None
+    diff_truncated: bool = False
 
 
 class CommitInfo(BaseModel):
@@ -64,6 +70,20 @@ class JiraRawSyncRequest(BaseModel):
     jql: str | None = None
 
 
+class JiraIssueChangeItem(BaseModel):
+    field: str | None = None
+    field_id: str | None = None
+    from_value: str | None = None
+    to_value: str | None = None
+    from_string: str | None = None
+    to_string: str | None = None
+
+
+class JiraIssueChange(BaseModel):
+    created: datetime
+    items: list[JiraIssueChangeItem] = Field(default_factory=list)
+
+
 class JiraTicket(BaseModel):
     ticket_id: str
     summary: str
@@ -77,6 +97,7 @@ class JiraTicket(BaseModel):
     story_points: float | None = Field(default=None, ge=0)
     sprint_id: str | None = None
     timestamp: datetime | None = None
+    changelog: list[JiraIssueChange] = Field(default_factory=list)
 
 
 class JiraCleanedSnapshot(BaseModel):
@@ -87,6 +108,14 @@ class JiraCleanedSnapshot(BaseModel):
     project_id: str
     sprint_id: str
     captured_at: datetime
+    sprint_start_date: date | None = None
+    sprint_end_date: date | None = None
+    sprint_field: str = "customfield_10020"
+    story_points_field: str | None = None
+    completion_date_field: str | None = None
+    sprint_start_date_field: str | None = None
+    sprint_end_date_field: str | None = None
+    changelog_captured: bool = False
     tickets: list[JiraTicket]
 
 
@@ -134,10 +163,25 @@ class AssessmentJobEvent(BaseModel):
     data: dict
 
 
+class EvidenceDetail(BaseModel):
+    """Structured form of one AI evidence citation, resolved and verified by
+    the AI engine against the evidence the model was actually shown."""
+    identifier: str
+    reason: str = ""
+    kind: Literal["file_lines", "diff_lines", "file", "commit", "ticket", "other"] = "other"
+    file_path: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
+    commit_sha: str | None = None
+
+
 class RubricDimensionScoreDetail(BaseModel):
     score: float | int
     justification: str | None = None
     evidence_citations: list[str] = Field(default_factory=list)
+    # Same citations as evidence_citations, in structured form so a client can
+    # link straight to a file/line. Default [] keeps older rows valid.
+    evidence_details: list[EvidenceDetail] = Field(default_factory=list)
 
 
 class StudentScore(BaseModel):

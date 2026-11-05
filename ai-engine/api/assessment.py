@@ -11,14 +11,17 @@ import os
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+import mlflow
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from judges.promote import judge_and_promote_trace
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
 from schemas.modelname import ModelName
 from schemas.peer_evaluation import PeerEvaluation
+from schemas.repo_snapshot import RepoSnapshot
 from schemas.sprint_assessment import SprintAssessment
 from services.evaluator import evaluate_sprint
 
@@ -32,13 +35,11 @@ router = APIRouter( # Create router (defines path group)
     tags=["Sprint Assessment"]
 )
 
-
 class BackendSprintContext(BaseModel):
     course_id: str
     project_id: str
     sprint_id: str
     captured_at: datetime | str
-
 
 class BackendCollaborationMetrics(BaseModel):
     commit_frequency: float | None = None
@@ -46,7 +47,6 @@ class BackendCollaborationMetrics(BaseModel):
     pr_turnaround_hours: float | None = None
     assigned_story_points: int | None = None
     completion_percent: float | None = None
-
 
 class BackendAssessmentPayload(BaseModel):
     sprint_context: BackendSprintContext
@@ -56,8 +56,8 @@ class BackendAssessmentPayload(BaseModel):
     peer_evaluations: list[PeerEvaluation] = Field(default_factory=list)
     artifact_metrics: dict[str, Any] = Field(default_factory=dict)
     project_context_documents: list[dict[str, Any]] = Field(default_factory=list)
+    repo_snapshot: RepoSnapshot | None = None
     instructor_expectations: str = "No instructor guidance provided."
-
 
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
@@ -66,6 +66,7 @@ async def assess_backend_data_endpoint(
         ModelName,
         Query(description="Select the model to use for assessment"),
     ],
+    background_tasks: BackgroundTasks,
     experiment_name: str = "SprintSight Evaluations",
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
@@ -79,13 +80,30 @@ async def assess_backend_data_endpoint(
             collaboration_metrics=payload.collaboration_metrics.model_dump(),
             artifact_metrics=payload.artifact_metrics,
             project_context_documents=payload.project_context_documents,
+            repo_snapshot=payload.repo_snapshot,
             instructor_expectations=payload.instructor_expectations,
         )
+
         if LOG_BUNDLE_DISPLAY:
             print("\nBundle display: ", bundle)
             print()
-        assessment = await evaluate_sprint(bundle, modelname, experiment_name)
+
+        mlflow_client = mlflow.MlflowClient()
+
+        trace_ids: list[str] = []
+        assessment, prompt_versions_registered = await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
+        if not trace_ids:
+            raise RuntimeError("Sprint evaluation completed without recording an MLflow trace.")
+        trace_id = trace_ids[-1]
+
+        # Add a background task to promote the trace to production after evaluation, or handle it in the evaluator itself.
+        background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_id, bundle.team_id, prompt_versions_registered, mlflow_client, bundle.sprint_id)
+
+        if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
+            mlflow.end_run()
+            print("Closed active MLflow run.")
         return assessment
+    
     except Exception as exc:
         log.exception("AI-engine backend assessment failed.")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

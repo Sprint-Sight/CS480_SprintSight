@@ -3,24 +3,33 @@ import os
 import time
 from typing import Literal
 
-from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, Trace
+import mlflow
+from mlflow.entities import (
+    AssessmentSource,
+    AssessmentSourceType,
+    Feedback,
+    SpanType,
+    Trace,
+)
 from mlflow.genai.scorers import scorer
 from pydantic import BaseModel, Field, model_validator
-from schemas.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 
 from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
+from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 from schemas.artifact_bundle import ArtifactBundle
+from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
 from services.llm_client import (
     LLM_TEMPERATURE,
+    _request_extra_body,
     audit_scope,
     create_llm_client,
-    request_extra_body,
 )
 
-GROUNDING_PROMPT_VERSION = "grounding-v1"
+# V2 adds severity labels to partially_grounded and hallucinated, and clarifies that the judge should not grade the student, only check facts.
+GROUNDING_PROMPT_VERSION = "grounding-v2"
 
 GROUNDING_SYSTEM_PROMPT = """You are a strict fact-checker. You do NOT grade the students.
 You check whether each CLAIM is supported by RAW_BUNDLE (real commits, Jira tickets, peer reviews).
@@ -34,15 +43,43 @@ Labels:
 - partially_grounded: the identifier exists but at least one verifiable fact about it is wrong or not found.
 - hallucinated: the identifier does not exist in RAW_BUNDLE, or the claim contradicts it.
 
+Severity (required; it must fit the label):
+- none: only for grounded claims.
+- minor_detail: the identifier is real and the error is small (wrong line count, off-by-one line range, reworded message).
+- major_misattribution: the identifier is real but the claim uses it wrongly (wrong author, wrong ticket status, wrong file,
+  a feature the commit does not contain), or the claim contradicts the record.
+partially_grounded takes minor_detail or major_misattribution; hallucinated always takes major_misattribution.
+Citations to things that do not exist were already removed by code; you will not see them.
+
 Return exactly one verdict for EVERY claim id given. Never skip or repeat one."""
+
+BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
+JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
+
+FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
+                  "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
+CODE_SOURCE = AssessmentSource(source_type=AssessmentSourceType.CODE, source_id="find_ungrounded_citations")
+
+Severity = Literal["none", "minor_detail", "major_misattribution"]
+SEVERITY_WEIGHT = {"none": 0.0, "minor_detail": 0.25, "major_misattribution": 0.6}
+CODE_DROP_WEIGHT = 1.0           # a citation code had to remove is a fabrication
+_ALLOWED_SEVERITY = {"grounded": {"none"}, "partially_grounded": {"minor_detail", "major_misattribution"},
+                     "hallucinated": {"major_misattribution"}}
 
 class JudgeContextTooSmall(RuntimeError):
     """Prompt would not fit in the judge's context window; the row must be treated as invalid."""
 
 class CitationVerdict(BaseModel):
     citation_id: str                       # "C3", the label WE gave it
+    reasoning: str = Field(min_length=10)  # before the label on purpose: the model explains first, then decides
     label: Literal["grounded", "partially_grounded", "hallucinated"]
-    reasoning: str = Field(min_length=10)
+    severity: Severity
+
+    @model_validator(mode="after")
+    def _severity_fits_label(self):
+        if self.severity not in _ALLOWED_SEVERITY[self.label]:
+            raise ValueError(f"{self.citation_id}: label '{self.label}' needs severity in {sorted(_ALLOWED_SEVERITY[self.label])}, got '{self.severity}'")
+        return self
 
 class GroundingVerdict(BaseModel):
     citation_verdicts: list[CitationVerdict]
@@ -78,7 +115,7 @@ def collect_citations(rubric_scores: RubricsScore) -> dict[str, dict]:
 
 def summarize_verdict(citations: dict, verdict: GroundingVerdict) -> dict:
     if not citations:
-        return {"coverage": None, "hallucination_rate": None, "grounded_rate": None}
+        return {"coverage": None, "hallucination_rate": None, "grounded_rate": None, 'severity_weighted_rate': None}
     judged = {v.citation_id: v for v in verdict.citation_verdicts if v.citation_id in citations}
     n = len(judged)
     count = lambda label: sum(v.label == label for v in judged.values())
@@ -86,6 +123,7 @@ def summarize_verdict(citations: dict, verdict: GroundingVerdict) -> dict:
         "coverage": round(n / len(citations), 4),
         "hallucination_rate": round(count("hallucinated") / n, 4) if n else None,
         "grounded_rate": round(count("grounded") / n, 4) if n else None,
+        "severity_weighted_rate": round(sum(SEVERITY_WEIGHT[v.severity] for v in judged.values()) / n, 4) if n else None,
     }
 
 async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str) -> GroundingVerdict:
@@ -107,43 +145,109 @@ async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_mod
             response_model=make_grounding_verdict_model(set(citations)),
             temperature=LLM_TEMPERATURE,
             max_retries=3,
-            extra_body=request_extra_body(ctx),
+            extra_body=_request_extra_body(ctx),
             messages=[
                 {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
         )
+ 
+# async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str) -> dict:
+#     """Harness entry point. Raises if the judge can't give a complete verdict, so no rate is ever
+#     computed over a subset. Zero citations returns citation_count=0 with all rates None."""
+#     citations = collect_citations(rubric_scores) # Changed from Candidate SprintAssessment
+#     if not citations:
+#         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None, "citation_count": 0}
+#     verdict = await run_grounding_judge(bundle, citations, judge_model)
+#     by_dim: dict[str, list[str]] = {}
+#     for v in verdict.citation_verdicts: # Judge emit a rate per dimension
+#         by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v.label)
+#     per_dim = {f"hallucination_rate_{d}": round(l.count("hallucinated") / len(l), 4) for d, l in by_dim.items()}
+#     return {**summarize_verdict(citations, verdict), **per_dim, "citation_count": len(citations)}
 
 async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str) -> dict:
+    return (await judge_assessment_detailed(bundle, rubric_scores, judge_model))[0]
+
+# Detailed assessment adds per-dimension hallucination rates and a row per judged citation, 
+async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str) -> tuple[dict, list[dict]]:
     """Harness entry point. Raises if the judge can't give a complete verdict, so no rate is ever
-    computed over a subset. Zero citations returns citation_count=0 with all rates None."""
+    computed over a subset. Returns (metrics, rows): one row per judged citation, for rationales and later logging.
+    Zero citations returns citation_count=0 with all rates None and no rows."""
     citations = collect_citations(rubric_scores) # Changed from Candidate SprintAssessment
     if not citations:
-        return {"coverage": None, "hallucination_rate": None, "grounded_rate": None, "citation_count": 0}
+        return {"coverage": None, "hallucination_rate": None, "grounded_rate": None,
+                "severity_weighted_rate": None, "citation_count": 0}, []
     verdict = await run_grounding_judge(bundle, citations, judge_model)
-    return {**summarize_verdict(citations, verdict), "citation_count": len(citations)}
+    by_dim: dict[str, list[str]] = {}
+    for v in verdict.citation_verdicts: # Judge emit a rate per dimension
+        by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v.label)
+    per_dim = {f"hallucination_rate_{d}": round(l.count("hallucinated") / len(l), 4) for d, l in by_dim.items()}
+    rows = [{"citation_id": v.citation_id, "dimension": citations[v.citation_id]["dimension"],
+             "claim": citations[v.citation_id]["text"], "label": v.label, "severity": v.severity,
+             "reasoning": v.reasoning} for v in verdict.citation_verdicts]
+    return {**summarize_verdict(citations, verdict), **per_dim, "citation_count": len(citations)}, rows
 
-BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
-JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
-
-FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
-                  "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
-CODE_SOURCE = AssessmentSource(source_type=AssessmentSourceType.CODE, source_id="find_ungrounded_citations")
-
+# Treat judge's verdict as set of metrics, 
+# so the caller can log them as Feedback objects with the judge's source. 
+# Each row is a judged citation, for later logging.
 @scorer(name="llm_judge_citation_grounding")
 def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
+    '''
+    1. Collect all citations from the candidate's rubric scores.
+    2. Ask the judge to label each citation as grounded, partially grounded, or halluc
+    3. Summarize the verdict into coverage, hallucination_rate, grounded_rate, and citation_count.
+    4. Return Feedback objects for each of these metrics, with the judge's source.
+    '''
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"ollama:/{JUDGE_MODEL}")
     team, model = trace.info.tags.get("team_id"), trace.info.tags.get("model")
-    print(f"  [judge] {JUDGE_MODEL} checking {model} / {team}...", flush=True)
+    print(f"\n[judge] {JUDGE_MODEL} checking {model} / {team}...", flush=True)
     start = time.perf_counter()
-    try:
-        bundle = BUNDLE_BY_TEAM[team]
-        rubric, dropped = read_candidate(trace, bundle)
-        result = asyncio.run(judge_assessment(bundle, rubric, JUDGE_MODEL))
-    except Exception as e:  # noqa: BLE001 - one bad judge call must not kill the eval run
-        print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
-        return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
-    print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
-    return [Feedback(name=FEEDBACK_NAMES[k], value=v, source=source) for k, v in result.items()] + [
-        Feedback(name="citations_dropped_by_code", value=dropped, source=CODE_SOURCE)]
+    with mlflow.start_span(name=f"llm_judge_citation_grounding on {model} / {team}", span_type=SpanType.LLM):
+        mlflow.update_current_trace(
+            request_preview=f"llm_judge_citation_grounding on {model} / {team}",
+            tags={"team_id": team, "model": model, "judge_model": JUDGE_MODEL, "dimension": "judge_grounding"},
+        )
+        try:
+            bundle = _bundle_of(trace, team)
+            rubric, dropped = read_candidate(trace, bundle) # Get the candidate's rubric scores and any citations dropped by code
+            result, rows = asyncio.run(judge_assessment_detailed(bundle, rubric, JUDGE_MODEL)) # Run the judge on the candidate's rubric scores
+        except Exception as e: # Judge call can fail in many ways; must not crash the eval run
+            print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
+            mlflow.update_current_trace(response_preview=f"Error: {e}")
+            return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
+        mlflow.update_current_trace(response_preview=f"Result: {result}")
+        print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
+        n, wsum = result["citation_count"], sum(SEVERITY_WEIGHT[r["severity"]] for r in rows)
+        headline = round((wsum + CODE_DROP_WEIGHT * dropped) / (n + dropped), 4) if n + dropped else None
+        why = "\n".join(f'{r["citation_id"]} [{r["dimension"]}] {r["label"]}/{r["severity"]}: {r["reasoning"]}'
+                        for r in rows if r["label"] != "grounded")[:2000] or "every judged citation was grounded"
+        return [Feedback(name=_feedback_name(k), value=v, source=source,
+                         rationale=why if k in ("hallucination_rate", "severity_weighted_rate") else None)
+                for k, v in result.items()] + [
+            Feedback(name="citations_dropped_by_code", value=dropped, source=CODE_SOURCE,
+                     rationale="citations removed by code before the judge ran; each is a fabrication"),
+            Feedback(name="citation_prefilter_drop_rate", value=round(dropped / (dropped + n), 4) if dropped + n else None, source=CODE_SOURCE),
+            Feedback(name="citation_severity_weighted_rate_incl_dropped", value=headline, source=source,
+                     rationale=f"{n} judged citations (weight sum {wsum}) plus {dropped} code-removed fabrications at weight {CODE_DROP_WEIGHT}")]
 
+_BUNDLES: dict[tuple, ArtifactBundle] = {}
+def remember_bundle(bundle: ArtifactBundle):
+    _BUNDLES[(bundle.team_id, bundle.sprint_id)] = bundle     # call in api/assessment.py and run_ab_trial.py before evaluating
+
+def _fixture_bundle(team: str | None):
+    from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
+    from research.fixtures import FIXTURES_TEAMS
+    return {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE, *FIXTURES_TEAMS)}.get(team)
+
+def _bundle_of(trace: Trace, team: str | None) -> ArtifactBundle:
+    root = next((s for s in trace.data.spans if s.parent_id is None), None)
+    inputs = (root.inputs or {}) if root is not None and isinstance(root.inputs, dict) else {}
+    if inputs.get("bundle"):
+        return ArtifactBundle.model_validate(inputs["bundle"])
+    bundle = get_bundle(team, inputs.get("sprint_id")) or _fixture_bundle(team)
+    if bundle is None:
+        raise KeyError(f"no bundle for team={team!r} sprint={inputs.get('sprint_id')!r}")
+    return bundle
+
+def _feedback_name(key: str) -> str: # known keys keep their names
+    return FEEDBACK_NAMES.get(key, f'citation_{key}')

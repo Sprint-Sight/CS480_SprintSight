@@ -1,4 +1,5 @@
 import json
+from dataclasses import fields
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated
 from uuid import uuid4
@@ -37,6 +38,7 @@ from app.schemas.assessment import (
     PaginationMetadata,
 )
 from app.schemas.auth import Role
+from app.schemas.jira_burndown import JiraBurndownResponse
 from app.services.auditLogService.service import append_action_audit
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
@@ -193,7 +195,31 @@ def process_jira_run(
                     ids_by_name.setdefault(user.full_name.strip().lower(), []).append(member_id)
         snapshot = normalize_jira_envelope(
             envelope,
-            story_points_field=get_settings().jira_story_points_field or None,
+            story_points_field=(
+                envelope.get("story_points_field")
+                or get_settings().jira_story_points_field
+                or None
+            ),
+            sprint_field=(
+                envelope.get("sprint_field")
+                or get_settings().jira_sprint_field
+                or "customfield_10020"
+            ),
+            completion_date_field=(
+                envelope.get("completion_date_field")
+                or get_settings().jira_completed_date_field
+                or None
+            ),
+            sprint_start_date_field=(
+                envelope.get("sprint_start_date_field")
+                or get_settings().jira_sprint_start_date_field
+                or None
+            ),
+            sprint_end_date_field=(
+                envelope.get("sprint_end_date_field")
+                or get_settings().jira_sprint_end_date_field
+                or None
+            ),
             users_by_id=users_by_id,
             ids_by_email=ids_by_email,
             ids_by_name=ids_by_name,
@@ -262,7 +288,31 @@ def reprocess_all_jira_runs(
 
             snapshot = normalize_jira_envelope(
                 envelope,
-                story_points_field=get_settings().jira_story_points_field or None,
+                story_points_field=(
+                    envelope.get("story_points_field")
+                    or get_settings().jira_story_points_field
+                    or None
+                ),
+                sprint_field=(
+                    envelope.get("sprint_field")
+                    or get_settings().jira_sprint_field
+                    or "customfield_10020"
+                ),
+                completion_date_field=(
+                    envelope.get("completion_date_field")
+                    or get_settings().jira_completed_date_field
+                    or None
+                ),
+                sprint_start_date_field=(
+                    envelope.get("sprint_start_date_field")
+                    or get_settings().jira_sprint_start_date_field
+                    or None
+                ),
+                sprint_end_date_field=(
+                    envelope.get("sprint_end_date_field")
+                    or get_settings().jira_sprint_end_date_field
+                    or None
+                ),
                 users_by_id=users_by_id,
                 ids_by_email=ids_by_email,
                 ids_by_name=ids_by_name,
@@ -313,7 +363,11 @@ def reprocess_all_jira_runs(
     return results
 
 
-@jira_ingestion_router.get("/runs/{project_id}/{sprint_id}/{run_id}/cleaned", response_model=JiraCleanedSnapshot)
+@jira_ingestion_router.get(
+    "/runs/{project_id}/{sprint_id}/{run_id}/cleaned",
+    response_model=JiraCleanedSnapshot,
+    response_model_exclude={"tickets": {"__all__": {"changelog"}}},
+)
 def get_cleaned_jira_run(
     project_id: str,
     sprint_id: str,
@@ -331,7 +385,64 @@ def get_cleaned_jira_run(
     return run.cleaned_snapshot
 
 
-@router.get("/runs/{project_id}/{sprint_id}", response_model=IngestionDataResponse)
+# Diffs are captured for the AI engine only. Leaving them out of API
+# responses keeps the ingestion contract unchanged and stops every listing
+# the frontend fetches from carrying megabytes of diff text.
+_COMMIT_DIFF_FIELDS = {"files_changed": {"__all__": {"diff", "diff_truncated"}}}
+
+
+@jira_ingestion_router.get(
+    "/runs/{project_id}/{sprint_id}/{run_id}/burndown",
+    response_model=JiraBurndownResponse,
+)
+def get_burndown(
+    project_id: str,
+    sprint_id: str,
+    run_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> JiraBurndownResponse:
+    """Return burndown chart data for a completed Jira ingestion run.
+
+    Returns daily remaining story points and an ideal linear decline line
+    for charting burndown over the sprint.
+    """
+    _authorized_project(project_id, current_user, projects)
+    run = runs.get_run(project_id, sprint_id, run_id)
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found.")
+    if not run.cleaned_snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Jira ingestion run has not been processed.",
+        )
+
+    from app.services.burndownService.service import (
+        BurndownDataUnavailableError,
+        get_burndown_data,
+    )
+
+    try:
+        result = get_burndown_data(run=run)
+    except BurndownDataUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No tickets found in this run to build a burndown chart.",
+        )
+    return result
+
+
+@router.get(
+    "/runs/{project_id}/{sprint_id}",
+    response_model=IngestionDataResponse,
+    response_model_exclude={"commits": {"__all__": _COMMIT_DIFF_FIELDS}},
+)
 def get_repo_ingestion_data(
     project_id: str,
     sprint_id: str,
@@ -445,6 +556,12 @@ def sync_repository_ingestion(
         details={"course_id": payload.course_id, "sprint_id": payload.sprint_id},
     )
     return {
-        "github_metrics": github_metrics,
+        "github_metrics": {
+            **{field.name: getattr(github_metrics, field.name) for field in fields(github_metrics)},
+            "commits": [
+                commit.model_dump(mode="json", exclude=_COMMIT_DIFF_FIELDS)
+                for commit in github_metrics.commits
+            ],
+        },
         "jira_metrics": jira_metrics,
     }

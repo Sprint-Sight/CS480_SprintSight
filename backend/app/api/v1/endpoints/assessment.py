@@ -37,6 +37,7 @@ from app.repositories.interfaces import (
     RubricWeightsRepository,
     UserRepository,
 )
+from app.schemas.artifacts import ReportEvidenceLinksResponse
 from app.schemas.assessment import (
     AssessmentReport,
     AssessRequest,
@@ -46,6 +47,7 @@ from app.schemas.assessment import (
     RubricWeightsResponse,
 )
 from app.schemas.auth import Role
+from app.services.artifactViewerService.service import build_report_evidence_links
 from app.services.assessmentService.service import (
     get_effective_model_name,
     get_effective_rubric_weights,
@@ -189,6 +191,27 @@ def get_latest(
 ):
     _authorize_report_access(current_user, course_id, project_id, projects)
     return get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
+
+
+@router.get("/reports/{report_id}/evidence", response_model=ReportEvidenceLinksResponse)
+def get_report_evidence_links(
+    report_id: str,
+    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> ReportEvidenceLinksResponse:
+    """Every rubric citation in the report, each with an in-app viewer path
+    and (when one can be worked out) a GitHub/GitLab/Bitbucket/Jira URL.
+    Computed on read rather than stored, so a later repository URL or Jira
+    domain change applies."""
+    if assessment_repository is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Assessment repository unavailable.")
+    report = assessment_repository.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment report not found.")
+    _authorize_report_access(current_user, report.course_id, report.project_id, projects)
+    return build_report_evidence_links(report, projects.get_project(report.project_id), jira_ingestion_repository)
 
 
 @router.get("/rubric-weights", response_model=RubricWeightsResponse)

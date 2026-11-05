@@ -248,3 +248,57 @@ Deactivating a student removes them from every course and project group, but
 no notification is created for it: the account is disabled at that point, so
 the student cannot sign in to read their feed.
 
+## Jira burndown and historical CSV imports
+
+The Jira tab in Artifact Viewer shows the burndown for the selected ingestion
+run. A live Jira sprint uses its native sprint dates and issue changelog. A CSV
+import does not recreate that changelog, even when the imported issues have
+`Done` as their current status. For a historical CSV demo, configure custom Jira
+date fields for the imported dates in `backend/.env`:
+
+| Environment variable | Jira field to configure |
+| --- | --- |
+| `JIRA_COMPLETED_DATE_FIELD` | Custom Date Picker field mapped from `Completed Date` |
+| `JIRA_SPRINT_START_DATE_FIELD` | Custom Date Picker field mapped from `Sprint Start Date` |
+| `JIRA_SPRINT_END_DATE_FIELD` | Custom Date Picker field mapped from `Sprint End Date` |
+
+Set each value to its Jira field ID, such as `customfield_12345`, not its
+display name. Restart the backend, sync the Jira sprint again, and process that
+new run. These configured dates take precedence over Jira's import-time
+resolution timestamp and sprint metadata. They let SprintSight reconstruct a
+historical chart; they do not create actual Jira status history.
+
+For the supplied CSV, map the columns as follows:
+
+| CSV column | Jira field / import guidance |
+| --- | --- |
+| `Work Type` | Issue Type; ensure each value is a valid issue type in the Jira project |
+| `Summary` | Summary |
+| `Description` | Description |
+| `Parent` | Parent relationship; the CSV values are numeric source IDs, not generated Jira issue keys. Use the importer's Issue ID/Parent ID linking if available; otherwise import parent rows first and connect children using their newly generated Jira keys |
+| `Priority` | Priority; values must match priorities configured in the project |
+| `Story Point Estimate` | The numeric story-points field used by the board. Set `JIRA_STORY_POINTS_FIELD` to that field's ID if it is not the default `customfield_10016` |
+| `Assignee` | Assignee; values must resolve to Jira users who can be assigned issues |
+| `Reporter` | Reporter; values must resolve to Jira users |
+| `Sprint` | Assign each issue to a real sprint on the project's Scrum board. A text value alone does not create the sprint or its dates |
+| `Status` | Current Jira status only. All sprint-assigned rows in this CSV are `Done`; this does not restore when they were completed |
+| `Labels` | Labels |
+| `Sprint Start Date` / `Sprint End Date` | Custom Jira Date Picker fields configured above; these are not native sprint dates |
+| `Completed Date` | Custom Jira Date Picker field configured above; this is not a Jira status transition |
+| `Issue Key` | Values such as `11` are source IDs, not Jira issue keys. Do not map them to Jira's Issue Key. Keep them in a dedicated source-ID field if needed |
+
+Create the board sprints with the intended names and dates, then confirm the
+issues are assigned to those sprints and have story points before syncing.
+Keep the source IDs stable if using them to rebuild parent relationships.
+Assignee and Reporter values must match Jira accounts; correct unmatched users
+before relying on the resulting team-level data. Use the date format
+`YYYY-MM-DD` for date columns.
+
+The attached CSV has 63 sprint-assigned rows and 9 rows without a Sprint. Its
+Sprint 3 group contains 9 issues and 26 points, matching the response shown in
+the earlier chart output. However, that response's `2026-11-02` to
+`2026-11-16` dates do not match the CSV's Sprint 3 dates (`2024-10-15` to
+`2024-10-28`). Configure the date fields and resync/reprocess to use the CSV
+dates. For a realistic live-sprint demo, import the issues as unfinished, then
+start the Jira sprint and move issues to Done as work is completed; only Jira's
+actual transitions produce native changelog history.

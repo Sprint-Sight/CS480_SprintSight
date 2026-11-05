@@ -1,0 +1,90 @@
+{
+  "sprint_id": "2026-08-10_to_2026-08-21",
+  "team_id": "Team_Theta",
+  "prompt_version": "v1.0",
+  "overall_score": 3.33,
+  "rubric_scores": {
+    "code_quality": {
+      "dimension": "code_quality", "score": 5, "evaluation_failed": false,
+      "justification": "All 7 commits (+314/-7) are by Uma. The report generator core (+113) and query helpers (+58) are real work, but export is committed as 'WIP export' and 'WIP, ran out of time' and ends in a 'Partial fix', and 6 of 7 commits land after 22:00. Moderate volume with vague messages puts this at the top of band 3-5.",
+      "evidence_citations": [
+        {"identifier": "44cd06405c35b1dfcf5df9b643f04887cc74c7e1", "reason": "'REP-1: Add report generator core (CSV rows from orders table)' (+113) is the sprint's one substantive, well-described commit."},
+        {"identifier": "75fe04c62e32e64c74545ba80b9a8de59d8f9916", "reason": "'WIP, ran out of time' (+18/-4) is an unhelpful message for unfinished export code."},
+        {"identifier": "b7159087ab2b533d5f5b60363b912f8ffd10d8b9", "reason": "'Partial fix for report export bug + readme' mixes an incomplete fix with unrelated docs in one commit."}
+      ],
+      "strengths": ["Working report generator core", "Early commits are clearly described"],
+      "areas_for_improvement": ["Replace 'WIP' messages with descriptive ones", "Keep unrelated changes in separate commits", "Other members committed nothing"]
+    },
+    "testing": {
+      "dimension": "testing", "score": 3, "evaluation_failed": false,
+      "justification": "One test commit, 'add basic test', adds a 16-line tests/test_generator.py. Nothing tests export (the buggy module) or the query helpers, and no Jira ticket covers testing. Minimal testing evidence.",
+      "evidence_citations": [
+        {"identifier": "c29fa23184d82b5f3af5f4d385d0ee6bc619e9c4", "reason": "'add basic test' adds only tests/test_generator.py (+16), the sprint's single test file."},
+        {"identifier": "b7159087ab2b533d5f5b60363b912f8ffd10d8b9", "reason": "'Partial fix for report export bug' changes export.py with no regression test."},
+        {"identifier": "REP-2", "reason": "'Add report export (PDF/CSV)' is In Progress and has no testing evidence."}
+      ],
+      "strengths": ["A first test exists for the generator"],
+      "areas_for_improvement": ["Test export before fixing its bug", "Plan testing as a ticket"]
+    },
+    "documentation": {
+      "dimension": "documentation", "score": 3, "evaluation_failed": false,
+      "justification": "The only documentation is a 5-line README.md bundled into 'Partial fix for report export bug + readme'. There are no docs/ files, no documentation ticket, and Jira summaries name deliverables but carry no detail. Documentation exists only as a stub.",
+      "evidence_citations": [
+        {"identifier": "b7159087ab2b533d5f5b60363b912f8ffd10d8b9", "reason": "README.md is added with only 5 lines, inside an unrelated bug-fix commit."},
+        {"identifier": "REP-1", "reason": "'Build report generation core' names the deliverable but does not document how reports are generated."},
+        {"identifier": "REP-3", "reason": "'Add report scheduling' has no description of the intended behaviour."}
+      ],
+      "strengths": ["A README was started"],
+      "areas_for_improvement": ["Document report formats and how to run the generator", "Add descriptions to Jira tickets"]
+    },
+    "requirements": {
+      "dimension": "requirements", "score": 4, "evaluation_failed": false,
+      "justification": "1 of 4 tickets is Done (REP-1, 5 of 15 points). REP-2 export (5 points) is In Progress, and REP-3 scheduling (Victor) and REP-4 access permissions (Wei) were never started. Fewer than half Done with low velocity puts this in band 3-5; kept above 3 because the core report feature was delivered.",
+      "evidence_citations": [
+        {"identifier": "REP-1", "reason": "'Build report generation core' (5 points) is the only Done ticket."},
+        {"identifier": "REP-3", "reason": "'Add report scheduling' (3 points, Victor) never left To Do."},
+        {"identifier": "REP-4", "reason": "'Add report access permissions' (2 points, Wei) never left To Do."}
+      ],
+      "strengths": ["Core report generation delivered"],
+      "areas_for_improvement": ["Re-plan REP-3 and REP-4 with owners who will start them", "Finish REP-2 before taking new work"]
+    },
+    "collaboration": {
+      "dimension": "collaboration", "score": 1, "evaluation_failed": false,
+      "justification": "Peer ratings average 1.83 (11/30). Victor and Wei receive only 1s and 2s, and neither started their assigned tickets (REP-3 and REP-4 are still To Do), while Uma holds 10 of 15 points. Even Uma's 3/5 ratings note she worked alone ('never split the export work'). Strong evidence of freeriding.",
+      "evidence_citations": [
+        {"identifier": "Uma -> Victor (1/5)", "reason": "'Never started REP-3 and stopped replying' documents a disengaged member."},
+        {"identifier": "REP-4", "reason": "Wei's only ticket is still To Do, matching 'wrote no code' in Uma's evaluation."},
+        {"identifier": "Wei -> Uma (3/5)", "reason": "'Carried the whole feature alone' confirms the work was not shared."}
+      ],
+      "strengths": [],
+      "areas_for_improvement": ["Hold regular stand-ups and escalate non-participation early", "Split large tickets so work can be shared"]
+    },
+    "cicd": {
+      "dimension": "cicd", "score": 4, "evaluation_failed": false,
+      "justification": "'Add Dockerfile' adds a Dockerfile and .dockerignore (+15), so the app can be containerised, but no workflow, pipeline or deploy configuration exists in any of the 7 commits and the Dockerfile is never revisited. Containerisation only, so CI/CD is partial.",
+      "evidence_citations": [
+        {"identifier": "86fa046410b46373f151f5811fbef8dcdad3154d", "reason": "'Add Dockerfile' adds Dockerfile and .dockerignore (+15), the only build-automation work."},
+        {"identifier": "c29fa23184d82b5f3af5f4d385d0ee6bc619e9c4", "reason": "'add basic test' adds a test, but nothing in the bundle runs it automatically."},
+        {"identifier": "b7159087ab2b533d5f5b60363b912f8ffd10d8b9", "reason": "The last commit changes export.py with no pipeline to check the fix."}
+      ],
+      "strengths": ["App containerised"],
+      "areas_for_improvement": ["Add a CI workflow that runs the tests", "Build the Docker image in CI"]
+    }
+  },
+  "member_contributions": [
+    {"student_id": "Uma", "contribution_score": 6,
+     "primary_contributions": ["Report generator core and query helpers (REP-1)", "Partial export (REP-2)", "Dockerfile, one test and a README stub"],
+     "evidence": ["7 of 7 commits, +314/-7", "44cd06405c35b1dfcf5df9b643f04887cc74c7e1 REP-1: Add report generator core (CSV rows from orders table)", "Peer ratings 3 and 3"]},
+    {"student_id": "Victor", "contribution_score": 1,
+     "primary_contributions": ["No recorded contribution"],
+     "evidence": ["0 commits", "REP-3 still To Do", "Peer ratings 1 and 2"]},
+    {"student_id": "Wei", "contribution_score": 1,
+     "primary_contributions": ["Attended sprint planning only"],
+     "evidence": ["0 commits", "REP-4 still To Do", "Peer ratings 1 and 1"]}
+  ],
+  "executive_summary": "In the 2026-08-10 to 2026-08-21 sprint only Uma contributed to Team_Theta: all 7 commits (+314/-7), delivering the report generator core but leaving export partial (WIP commits, a partial bug fix). 1 of 4 tickets (5/15 points) is Done, Victor and Wei never started their tickets, testing and documentation are minimal, and CI/CD is limited to a Dockerfile. Peers rate each other 1.83/5 on average.",
+  "strengths": ["Report generator core delivered", "Uma's sustained effort"],
+  "weaknesses": ["Two members contributed nothing", "Export unfinished and buggy", "Minimal tests and documentation; no pipeline"],
+  "key_recommendations": ["Escalate Victor's and Wei's non-participation to the instructor early in the next sprint.", "Re-plan REP-3 and REP-4 and pair each with Uma for handover.", "Add tests for export before fixing its bug.", "Add a CI workflow that runs the tests and builds the Dockerfile."],
+  "failed_dimensions": []
+}
