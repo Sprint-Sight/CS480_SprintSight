@@ -1,17 +1,26 @@
+import os
+import time
+
+import mlflow
 import pandas as pd
-import mlflow, os, time
+from dotenv import load_dotenv
 from mlflow import MlflowClient
 from mlflow.entities import AssessmentSourceType, Trace
 from mlflow.genai.scorers import scorer
 from mlflow.exceptions import RestException
+from mlflow.genai.scorers import scorer
+
+from judges.citation_ground_custom_judge import (
+    JUDGE_MODEL,
+    llm_judge_citation_grounding,
+)
 from judges.code_based_scorer import numeric_grade_accuracy
-from judges.citation_ground_custom_judge import llm_judge_citation_grounding, JUDGE_MODEL
 from judges.trace_adapters import read_candidate
+from llmops.review_queue import add_to_review_queue
+from prompts.dimension_criteria import DIMENSIONS
 from research.cs203_groundtruth import CS203_GOLD
 from research.fixtures import FIXTURES_GOLD
-from prompts.dimension_criteria import DIMENSIONS
-from llmops.review_queue import add_to_review_queue
-from dotenv import load_dotenv
+
 load_dotenv()  # Load environment variables from .env file
 
 GRADE_COL = "grade_penalised_mae/value"
@@ -95,7 +104,7 @@ def _flag_for_review(result_df: pd.DataFrame, with_judge: bool):
     has_gold = GRADE_COL in result_df.columns # absent when the group had no gold (code-based scorer not run)
 
     for _, row in result_df.iterrows():
-        def val(col):
+        def val(col, row=row):
             v = row.get(col)
             return None if v is None or pd.isna(v) else v
 

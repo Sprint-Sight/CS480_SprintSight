@@ -8,6 +8,7 @@ import httpx
 import pytest
 from instructor.core import IncompleteOutputException
 
+from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import ModelName
 from services import audit_logger, evaluator, llm_client
 
@@ -185,9 +186,11 @@ def test_bounded_evaluate_caps_concurrent_llm_calls(monkeypatch):
 
     async def run(limit: int) -> list:
         semaphore = asyncio.Semaphore(limit)
+        bundle = ArtifactBundle(team_id="team", sprint_id="sprint")
         return await asyncio.gather(*(
-            # The fake ignores the bundle, so no real ArtifactBundle is needed.
-            evaluator._bounded_evaluate(dim, None, "m", None, semaphore)  # type: ignore[arg-type]
+            evaluator._bounded_evaluate(
+                dim, bundle, "m", None, semaphore, {dim: ""}
+            )
             for dim in evaluator.DIMENSIONS
         ))
 

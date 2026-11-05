@@ -1,6 +1,13 @@
-import mlflow, logging
+import logging
+
 from mlflow.exceptions import MlflowException
-from mlflow.genai.review_queues import ReviewQueue, create_review_queue, add_items_to_review_queue, get_review_queue, list_review_queue_items
+from mlflow.genai.review_queues import (
+    ReviewQueue,
+    add_items_to_review_queue,
+    create_review_queue,
+    get_review_queue,
+    list_review_queue_items,
+)
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +38,7 @@ def add_to_review_queue(queue_name: str, traces_id: list[str]) -> None: # List o
         add_items_to_review_queue(queue_id=queue_id, item_ids=traces_id)
         log.info("Added traces %s to review queue '%s' (ID: %s)", traces_id, queue_name, queue_id)
         print(f"\nAdded traces {traces_id} to review queue '{queue_name}' (ID: {queue_id})\n")
-    except Exception as e:
+    except Exception:
         log.exception("Could not flag trace %s for review", traces_id)
 
 # def flag_for_review(trace_id: str, reason: str, queue_name: str):
