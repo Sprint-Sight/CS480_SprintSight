@@ -126,50 +126,44 @@ def summarize_verdict(citations: dict, verdict: GroundingVerdict) -> dict:
         "severity_weighted_rate": round(sum(SEVERITY_WEIGHT[v.severity] for v in judged.values()) / n, 4) if n else None,
     }
 
-async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str) -> GroundingVerdict:
-    ctx = MODEL_NUM_CTX.get(judge_model)
-    if ctx is None:
-        raise ValueError(f"Add '{judge_model}' to MODEL_NUM_CTX so the judge never runs on Ollama's small default context.")
+# Main entry point for the grounding judge, get the judge's verdict and the per-citation rows for logging.
+async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str, judge_provider: str = 'ollama') -> GroundingVerdict:
+    if judge_provider == 'ollama':
+        ctx = MODEL_NUM_CTX.get(judge_model)
+        if ctx is None:
+            raise ValueError(f"Add '{judge_model}' to MODEL_NUM_CTX so the judge never runs on Ollama's small default context.")
+        extra_body = _request_extra_body(ctx)
+        ctx_for_estimate = ctx
+    else:
+        extra_body = {}
+        ctx_for_estimate = 128_000 # gpt-4o-mini's context window
 
     claims_text = "\n".join(f'{cid} [{c["dimension"]}]: {c["text"]}' for cid, c in citations.items())
     user_prompt = f"RAW_BUNDLE:\n{bundle.model_dump_json()}\n\nCLAIMS TO CHECK:\n{claims_text}"   # compact JSON
 
     est_tokens = (len(GROUNDING_SYSTEM_PROMPT) + len(user_prompt)) // 4
-    if est_tokens > ctx * 0.85:
-        raise JudgeContextTooSmall(f"~{est_tokens} tokens vs num_ctx {ctx} for {judge_model}")
+    if est_tokens > ctx_for_estimate * 0.85:
+        raise JudgeContextTooSmall(f"~{est_tokens} tokens vs num_ctx {ctx_for_estimate} for {judge_model}")
 
     with audit_scope(team_id=bundle.team_id, sprint_id=bundle.sprint_id, dimension="judge_grounding",
                      model=judge_model, prompt_version=GROUNDING_PROMPT_VERSION):
-        return await create_llm_client().chat.completions.create(
+        return await create_llm_client(provider=judge_provider).chat.completions.create(
             model=judge_model,
             response_model=make_grounding_verdict_model(set(citations)),
             temperature=LLM_TEMPERATURE,
             max_retries=3,
-            extra_body=_request_extra_body(ctx),
+            extra_body=extra_body,
             messages=[
                 {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
         )
- 
-# async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str) -> dict:
-#     """Harness entry point. Raises if the judge can't give a complete verdict, so no rate is ever
-#     computed over a subset. Zero citations returns citation_count=0 with all rates None."""
-#     citations = collect_citations(rubric_scores) # Changed from Candidate SprintAssessment
-#     if not citations:
-#         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None, "citation_count": 0}
-#     verdict = await run_grounding_judge(bundle, citations, judge_model)
-#     by_dim: dict[str, list[str]] = {}
-#     for v in verdict.citation_verdicts: # Judge emit a rate per dimension
-#         by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v.label)
-#     per_dim = {f"hallucination_rate_{d}": round(l.count("hallucinated") / len(l), 4) for d, l in by_dim.items()}
-#     return {**summarize_verdict(citations, verdict), **per_dim, "citation_count": len(citations)}
 
-async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str) -> dict:
-    return (await judge_assessment_detailed(bundle, rubric_scores, judge_model))[0]
+async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str, judge_provider: str = 'ollama') -> dict:
+    return (await judge_assessment_detailed(bundle, rubric_scores, judge_model, judge_provider))[0]
 
 # Detailed assessment adds per-dimension hallucination rates and a row per judged citation, 
-async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str) -> tuple[dict, list[dict]]:
+async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str, judge_provider: str = 'ollama') -> tuple[dict, list[dict]]:
     """Harness entry point. Raises if the judge can't give a complete verdict, so no rate is ever
     computed over a subset. Returns (metrics, rows): one row per judged citation, for rationales and later logging.
     Zero citations returns citation_count=0 with all rates None and no rows."""
@@ -177,7 +171,7 @@ async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: Rubri
     if not citations:
         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None,
                 "severity_weighted_rate": None, "citation_count": 0}, []
-    verdict = await run_grounding_judge(bundle, citations, judge_model)
+    verdict = await run_grounding_judge(bundle, citations, judge_model, judge_provider)
     by_dim: dict[str, list[str]] = {}
     for v in verdict.citation_verdicts: # Judge emit a rate per dimension
         by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v.label)
@@ -193,34 +187,47 @@ async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: Rubri
 @scorer(name="llm_judge_citation_grounding")
 def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
     '''
-    1. Collect all citations from the candidate's rubric scores.
-    2. Ask the judge to label each citation as grounded, partially grounded, or halluc
-    3. Summarize the verdict into coverage, hallucination_rate, grounded_rate, and citation_count.
-    4. Return Feedback objects for each of these metrics, with the judge's source.
+    1. Determine if the trace is a fixture (uses OpenAI judge) or not (uses Ollama judge).
+    2. Get the team_id and sprint_id from the trace tags.
+    3. Get the corresponding ArtifactBundle for the team_id and sprint_id.
+    4. Read the candidate's rubric scores and any citations dropped by code.
+    5. Run the judge on the candidate's rubric scores.
+    6. If the judge fails, log the error and return a Feedback object with the error.
+    7. If the judge succeeds, compute the number of judged citations and the weighted sum of their severities.
+    8. Return a list of Feedback objects with the judge's verdict and any citations dropped by code.
     '''
-    source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"ollama:/{JUDGE_MODEL}")
+    is_fixture = trace.info.tags.get("fixture") == "true"
+    judge_model = "gpt-4o-mini" if is_fixture else JUDGE_MODEL
+    judge_provider = "openai" if is_fixture else "ollama"
+
+    source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
     team, model = trace.info.tags.get("team_id"), trace.info.tags.get("model")
-    print(f"\n[judge] {JUDGE_MODEL} checking {model} / {team}...", flush=True)
+    print(f"\n[judge] {judge_model} (using {judge_provider}) checking {model} / {team}...", flush=True)
+
     start = time.perf_counter()
     with mlflow.start_span(name=f"llm_judge_citation_grounding on {model} / {team}", span_type=SpanType.LLM):
         mlflow.update_current_trace(
             request_preview=f"llm_judge_citation_grounding on {model} / {team}",
-            tags={"team_id": team, "model": model, "judge_model": JUDGE_MODEL, "dimension": "judge_grounding"},
+            tags={"team_id": team, "model": model, "judge_model": judge_model, "judge_provider": judge_provider, "dimension": "judge_grounding"},
         )
+
         try:
             bundle = _bundle_of(trace, team)
             rubric, dropped = read_candidate(trace, bundle) # Get the candidate's rubric scores and any citations dropped by code
-            result, rows = asyncio.run(judge_assessment_detailed(bundle, rubric, JUDGE_MODEL)) # Run the judge on the candidate's rubric scores
+            result, rows = asyncio.run(judge_assessment_detailed(bundle, rubric, judge_model, judge_provider)) # Run the judge on the candidate's rubric scores
+        
         except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
             print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
             mlflow.update_current_trace(response_preview=f"Error: {e}")
             return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
+        
         mlflow.update_current_trace(response_preview=f"Result: {result}")
         print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
         n, wsum = result["citation_count"], sum(SEVERITY_WEIGHT[r["severity"]] for r in rows)
         headline = round((wsum + CODE_DROP_WEIGHT * dropped) / (n + dropped), 4) if n + dropped else None
         why = "\n".join(f'{r["citation_id"]} [{r["dimension"]}] {r["label"]}/{r["severity"]}: {r["reasoning"]}'
                         for r in rows if r["label"] != "grounded")[:2000] or "every judged citation was grounded"
+        
         return [Feedback(name=_feedback_name(k), value=v, source=source,
                          rationale=why if k in ("hallucination_rate", "severity_weighted_rate") else None)
                 for k, v in result.items()] + [

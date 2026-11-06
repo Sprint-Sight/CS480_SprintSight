@@ -97,23 +97,23 @@ def save_judge_results(*, experiment_name: str, judge_model: str, group_name: st
             # every "<scorer>/value" column, e.g. citation_hallucination_rate, grade_penalised_mae
             "scores": {c[: -len("/value")]: _plain(df_row[c]) for c in result_df.columns if c.endswith("/value")},
         })
-    try:
+    try: # concurrent writes to the same file
         with _LOCK:
             RESULTS_DIRECTORY.mkdir(parents=True, exist_ok=True)
             with raw_path.open("a", encoding="utf-8") as f:
-                for r in new_rows:
+                for r in new_rows: # write 1 row per judged trace
                     f.write(json.dumps(r, default=str) + "\n")
-            rows = [json.loads(l) for l in raw_path.read_text(encoding="utf-8").splitlines() if l.strip()]
-            summary = _summarize_judge(rows, {"experiment": experiment_name, "judge_model": judge_model, "session": _SESSION_TS})
-            tmp = summary_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-            tmp.replace(summary_path)
+            # rows = [json.loads(l) for l in raw_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+            # summary = _summarize_judge(rows, {"experiment": experiment_name, "judge_model": judge_model, "session": _SESSION_TS})
+            # tmp = summary_path.with_suffix(".json.tmp")
+            # tmp.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+            # tmp.replace(summary_path)
         # Log artifact attaches to active judge run
         mlflow.log_artifact(str(raw_path), artifact_path="judge_results")
-        mlflow.log_artifact(str(summary_path), artifact_path="judge_results")
-        print(f"Judge raw results: {raw_path}\nJudge summary:     {summary_path}")
+        #mlflow.log_artifact(str(summary_path), artifact_path="judge_results")
+        print(f"Judge raw results: {raw_path}") # \nJudge summary:     {summary_path}")
 
     except Exception:
         log.warning("Could not save/log judge results for run %s", run_id, exc_info=True)
 
-    return raw_path, summary_path
+    return raw_path #, summary_path

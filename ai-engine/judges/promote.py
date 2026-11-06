@@ -1,18 +1,9 @@
-import json
-import logging
-import threading
+import json, logging, threading, mlflow
 from statistics import mean
-
-import mlflow
 from mlflow import MlflowClient, MlflowException
-
-from judges.run_judges import run_judge_evaluation
-from llmops.prompt_registry import (
-    PRODUCTION_ALIAS,
-    assign_prompt_alias,
-    get_production_prompt,
-)
 from prompts.dimension_criteria import DIMENSIONS
+from judges.run_judges import run_judge_evaluation
+from llmops.prompt_registry import PRODUCTION_ALIAS, get_production_prompt, assign_prompt_alias
 
 JUDGE_RESULTS_TAG = "judge_results"       # JSON on each prompt version: {"team|sprint|model": {"abs_error": x, "hallucination": y}}
 PROMOTION_MAE_THRESHOLD = 2.0             # absolute gate: never promote a prompt whose per-dimension error is above this
@@ -26,7 +17,7 @@ HALLUCINATION_KEY = "citation_hallucination_rate/mean"
 log = logging.getLogger("sprintsight.judges.promote")
 _JUDGE_LOCK = threading.Lock()  # one judge + promotion at a time: one shared Ollama, and alias flips must not race
 
-_input_key = lambda team_id, sprint_id, model: f"{team_id}|{sprint_id}|{model}"
+_input_key = lambda team_id, sprint_id, model, judge_model: f"{team_id}|{sprint_id}|{model}|{judge_model}"
 
 def judge_and_promote_trace(experiment_name: str, trace_id: str, team_id: str, prompt_versions_registered: dict, client: MlflowClient, sprint_id: str | None = None):
     if not trace_id:
@@ -50,7 +41,7 @@ def judge_and_promote_trace(experiment_name: str, trace_id: str, team_id: str, p
 
 def _determine_promotion(judge_result, trace_id, team_id, sprint_id, prompt_versions_registered: dict, client: MlflowClient, failed=frozenset()):
     trace = client.get_trace(trace_id)
-    key = _input_key(team_id, sprint_id, trace.info.tags.get("model", "unknown_model"))
+    key = _input_key(team_id, sprint_id, trace.info.tags.get("model", "unknown_model"), trace.info.tags.get("judge_model", "unknown_judge_model"))
     for dimension in DIMENSIONS:
         if dimension in failed:
             continue  # this dimension failed in the trace; judge did not run on it
@@ -85,7 +76,7 @@ def _determine_promotion(judge_result, trace_id, team_id, sprint_id, prompt_vers
 def _dimension_scores(metrics: dict, dimension: str) -> dict:
     found = {"abs_error": metrics.get(f"grade_abs_error_{dimension}/mean"), # absent when the trace had no gold
              "hallucination": metrics.get(f"citation_hallucination_rate_{dimension}/mean", metrics.get(HALLUCINATION_KEY)),
-             "citation_count": metrics.get("citation_count/mean")}
+             "citation_count": metrics.get(f"citation_count/mean")}
     return {n: float(v) for n, v in found.items() if v is not None}
 
 def _passes_criteria(scores: dict) -> bool:
