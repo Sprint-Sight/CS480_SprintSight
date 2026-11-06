@@ -40,10 +40,10 @@ export type ProjectSprint = {
   id: string;
   name: string;
   status: SprintStatus;
-  score: number;
-  completion: number;
-  startDate: string;
-  endDate: string;
+  /** Null when the ingestion run does not report completion. */
+  completion: number | null;
+  /** ISO timestamp of when the sprint's Git/Jira data was captured. */
+  capturedAt: string;
 };
 
 export type StudentProject = {

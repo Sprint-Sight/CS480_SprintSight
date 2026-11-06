@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   BarChart3,
@@ -24,10 +25,13 @@ import {
   X,
 } from "lucide-react";
 
-import { apiRequest } from "@/lib/api/client";
 import { signOut, useSession } from "@/lib/auth/session";
 import { restoreSession } from "@/features/auth/login-api";
-import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
+import { scopeProjectsQueryOptions } from "@/features/projects/course-projects-api";
+import { SEMESTER_STORAGE_KEY, readScope, writeScope } from "@/features/ingestion/scope-store";
+import { buildSprintOptions, semesterLabel } from "@/features/ingestion/scope-options";
+import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
+import { isString, readPersistentState, usePersistentState } from "@/lib/storage/persistent-state";
 import { useNotifications } from "@/hooks/use-notifications";
 import { NotificationsDropdown } from "@/components/ui/notifications-modal";
 
@@ -45,6 +49,7 @@ type ScopeSection = {
   id: string;
   name: string;
   code: string;
+  semester: string;
 };
 
 type ScopeTeam = {
@@ -120,6 +125,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const session = useSession();
+  const queryClient = useQueryClient();
   const sessionUser = session?.user ?? null;
   const [isRestored, setIsRestored] = useState(false);
   const isAuthorized = isRestored && Boolean(sessionUser) && sessionUser?.role !== "admin";
@@ -138,7 +144,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [sections, setSections] = useState<ScopeSection[]>([]);
   const [teams, setTeams] = useState<ScopeTeam[]>([]);
   
-  const [selectedSemester, setSelectedSemester] = useState<string>("");
+  const [selectedSemester, setSelectedSemester] = usePersistentState(SEMESTER_STORAGE_KEY, "", isString);
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [selectedSprintId, setSelectedSprintId] = useState<string>("sprint-1");
@@ -188,16 +194,14 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     async function fetchScopeData() {
       setIsLoadingScope(true);
       try {
-        const courses = await apiRequest<Array<{ id: string; code: string; name: string; section: string; term: string; year: number }>>("/courses");
+        const projectGroups = await queryClient.fetchQuery(scopeProjectsQueryOptions(queryClient));
+        const courses = projectGroups.map(({ course }) => course);
         const courseSections = courses.map((course) => ({
           id: course.id,
           code: course.code,
           name: `${course.name} - ${course.section}`,
+          semester: semesterLabel(course),
         }));
-        const projectGroups = await Promise.all(courses.map(async (course) => ({
-          course,
-          projects: await apiRequest<Array<{ id: string; team_name: string; members: unknown[] }>>(`/courses/${course.id}/projects`),
-        })));
         const scopeTeams = projectGroups.flatMap(({ course, projects }) => projects.map((project) => ({
           id: project.id,
           name: project.team_name,
@@ -206,18 +210,23 @@ export default function DashboardShell({ children }: DashboardShellProps) {
           averageScore: 0,
           courseId: course.id,
         })));
-        const persisted = readIngestionState();
-        const selectedTeam = scopeTeams.find((team) => team.id === persisted.selectedProjectId) || scopeTeams[0];
+        const semesters = [...new Set(courses.map(semesterLabel))];
+        const storedSemester = readPersistentState(SEMESTER_STORAGE_KEY, "", isString);
+        const semester = semesters.includes(storedSemester) ? storedSemester : semesters[0] || "";
+        const semesterSections = courseSections.filter((section) => section.semester === semester);
+        const semesterTeams = scopeTeams.filter((team) => semesterSections.some((section) => section.id === team.courseId));
+        const persisted = readScope();
+        const selectedTeam = semesterTeams.find((team) => team.id === persisted.selectedProjectId) || semesterTeams[0];
 
-        setSemesterOptions([...new Set(courses.map((course) => `${course.term} ${course.year}`))]);
+        setSemesterOptions(semesters);
         setSections(courseSections);
         setTeams(scopeTeams);
-        setSelectedSemester(`${courses[0]?.term || ""} ${courses[0]?.year || ""}`.trim());
-        setSelectedSectionId(selectedTeam?.courseId || courseSections[0]?.id || "");
+        setSelectedSemester(semester);
+        setSelectedSectionId(selectedTeam?.courseId || semesterSections[0]?.id || "");
         setSelectedTeamId(selectedTeam?.id || "");
         setSelectedSprintId(persisted.selectedSprintId || "sprint-1");
         if (selectedTeam) {
-          writeIngestionState({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
+          writeScope({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
         }
       } catch (error) {
         console.error("Failed to load dashboard scope data:", error);
@@ -227,7 +236,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     }
 
     fetchScopeData();
-  }, [isAuthorized, role]);
+  }, [isAuthorized, role, queryClient, setSelectedSemester]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -264,10 +273,42 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     [selectedSectionId, teams],
   );
 
+  const sectionsInSemester = useMemo(
+    () => sections.filter((section) => section.semester === selectedSemester),
+    [sections, selectedSemester],
+  );
+
+  const { gitRuns, jiraSnapshots } = useIngestionSync({
+    projectId: selectedTeamId,
+    courseId: selectedSectionId,
+    enabled: role === "instructor" && showsSprintScope,
+  });
+
+  const sprintOptions = useMemo(
+    () => buildSprintOptions([
+      ...gitRuns.map((run) => run.sprint_id),
+      ...jiraSnapshots.map((snapshot) => snapshot.sprint_id),
+    ]),
+    [gitRuns, jiraSnapshots],
+  );
+
+  // Runs are still loading while the list is empty, so only correct the stored sprint once real options exist.
+  useEffect(() => {
+    if (sprintOptions.length === 0) return;
+    if (!sprintOptions.some((option) => option.value === selectedSprintId)) {
+      setSelectedSprintId(sprintOptions[0].value);
+    }
+  }, [sprintOptions, selectedSprintId]);
+
+  const handleSemesterChange = (semester: string) => {
+    setSelectedSemester(semester);
+    setSelectedSectionId(sections.find((section) => section.semester === semester)?.id || "");
+  };
+
   useEffect(() => {
     const selectedTeam = teams.find((team) => team.id === selectedTeamId);
     if (selectedTeam) {
-      writeIngestionState({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
+      writeScope({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
     }
   }, [selectedTeamId, teams]);
 
@@ -277,14 +318,14 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
     const firstTeamInSection = teams.find((team) => team.courseId === selectedSectionId);
     setSelectedTeamId(firstTeamInSection?.id || "");
-    writeIngestionState({
+    writeScope({
       selectedProjectId: firstTeamInSection?.id || "",
       selectedCourseId: selectedSectionId,
     });
   }, [selectedSectionId, selectedTeamId, teams]);
 
   useEffect(() => {
-    if (isAuthorized && role === "instructor") writeIngestionState({ selectedSprintId });
+    if (isAuthorized && role === "instructor") writeScope({ selectedSprintId });
   }, [isAuthorized, role, selectedSprintId]);
 
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
@@ -508,7 +549,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                         <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
                           <select
                             value={selectedSemester}
-                            onChange={(e) => setSelectedSemester(e.target.value)}
+                            onChange={(e) => handleSemesterChange(e.target.value)}
                             className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                           >
                             {semesterOptions.map((semester) => (
@@ -522,14 +563,14 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                       )}
 
                       {/* Section Select */}
-                      {sections.length > 0 && (
+                      {sectionsInSemester.length > 0 && (
                         <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
                           <select
                             value={selectedSectionId}
                             onChange={(e) => setSelectedSectionId(e.target.value)}
                             className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
                           >
-                            {sections.map((section) => (
+                            {sectionsInSemester.map((section) => (
                               <option key={section.id} value={section.id}>
                                 {section.code} — {section.name}
                               </option>
@@ -556,10 +597,10 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         </div>
                       )}
-                      {showsSprintScope && (
+                      {showsSprintScope && sprintOptions.length > 0 && (
                         <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
                           <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
-                            {Array.from({ length: 10 }, (_, index) => `sprint-${index + 1}`).map((sprintId) => <option key={sprintId} value={sprintId}>{sprintId}</option>)}
+                            {sprintOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                           </select>
                           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         </div>

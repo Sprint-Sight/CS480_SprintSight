@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { IngestionState } from "@/features/ingestion/state";
+import type { IngestionRunIndex } from "@/features/ingestion/types";
 import { aggregateProjectSprints } from "@/features/collaboration/aggregate-project-sprints";
 
-const state: IngestionState = {
-  selectedProjectId: "project-1",
+const state: IngestionRunIndex = {
   gitBySprint: {
     "project-1:sprint-1": {
       course_id: "course-1",
@@ -130,7 +129,6 @@ const state: IngestionState = {
       ],
     },
   },
-  documentCounts: { "project-1": 4 },
 };
 
 describe("aggregateProjectSprints", () => {
@@ -153,14 +151,12 @@ describe("aggregateProjectSprints", () => {
     ]);
     expect(result.jira?.tickets[0].summary).toBe("Latest summary");
     expect(result.jira?.tickets[0].student_id).toBe("student-one");
-    expect(result.documents).toBe(4);
   });
 
   it("returns empty data when the project has no captured sprint data", () => {
     expect(aggregateProjectSprints(state, "other-project")).toEqual({
       git: undefined,
       jira: undefined,
-      documents: 0,
     });
   });
 });

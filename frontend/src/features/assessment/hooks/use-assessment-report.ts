@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   clearActiveAssessmentJob,
@@ -13,7 +14,8 @@ import {
   getSupportedDimension,
   type BackendAssessmentReport,
 } from "@/features/assessment/assessment-api";
-import { readIngestionState } from "@/features/ingestion/state";
+import { readScope, subscribeScope } from "@/features/ingestion/scope-store";
+import { scopeProjectsQueryOptions } from "@/features/projects/course-projects-api";
 import { isUuid } from "@/features/projects/components/projects-api";
 import { API_BASE_URL, apiRequest, buildAuthHeaders, getErrorMessage } from "@/lib/api/client";
 import type { SprintAssessmentReport } from "@/features/assessment/types";
@@ -112,6 +114,7 @@ export function useAssessmentReport() {
   const [assessmentMessage, setAssessmentMessage] = useState("");
   const [assessmentError, setAssessmentError] = useState("");
   const session = useSession();
+  const queryClient = useQueryClient();
   const role: "student" | "instructor" | "admin" | null = session ? (session.user?.role ?? "student") : null;
 
   const clearLiveReport = (projectId: string, sprint: string) => {
@@ -277,31 +280,19 @@ export function useAssessmentReport() {
   useEffect(() => {
     if (role === "student") return;
     const refreshScope = () => {
-      const state = readIngestionState();
-      setSelectedCourseId(state.selectedCourseId || "");
-      setSelectedProjectId(state.selectedProjectId || "");
-      setSprintId(state.selectedSprintId || "sprint-1");
+      const scope = readScope();
+      setSelectedCourseId(scope.selectedCourseId);
+      setSelectedProjectId(scope.selectedProjectId);
+      setSprintId(scope.selectedSprintId);
     };
     refreshScope();
-    window.addEventListener("sprintsight-ingestion-updated", refreshScope);
-    return () => window.removeEventListener("sprintsight-ingestion-updated", refreshScope);
+    return subscribeScope(refreshScope);
   }, [role]);
   useEffect(() => {
     if (!role || role === "student") return;
     async function loadProjects() {
       try {
-        const courses =
-          await apiRequest<Array<{ id: string; code: string; name: string; section: string }>>(
-            "/courses",
-          );
-        const groups = await Promise.all(
-          courses.map(async (course) => ({
-            course,
-            projects: await apiRequest<
-              Array<{ id: string; team_name: string; project_name: string }>
-            >(`/courses/${course.id}/projects`),
-          })),
-        );
+        const groups = await queryClient.fetchQuery(scopeProjectsQueryOptions(queryClient));
         const options = groups.flatMap(({ course, projects }) =>
           projects.map((project) => ({
             id: project.id,
@@ -319,7 +310,7 @@ export function useAssessmentReport() {
       }
     }
     void loadProjects();
-  }, [role]);
+  }, [role, queryClient]);
   useEffect(() => {
     if (role !== "student" && selectedProjectId) void loadLatestReport();
   }, [role, selectedProjectId, sprintId, projectOptions, loadLatestReport]);

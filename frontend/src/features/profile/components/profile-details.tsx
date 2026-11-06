@@ -40,7 +40,7 @@ export function ProfileDetails({ profile }: { profile: UserProfile }) {
             </div>
             <div>
               <span className="font-medium text-slate-500">Department</span>
-              <p className="mt-1 text-slate-900">{profile.department || "N/A"}</p>
+              <p className="mt-1 text-slate-900">{profile.department ?? "—"}</p>
             </div>
           </div>
         </section>
@@ -69,7 +69,7 @@ export function ProfileDetails({ profile }: { profile: UserProfile }) {
                 <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3">
                   <span className="text-slate-600">Reviews pending</span>
                   <span className="font-semibold text-slate-900">
-                    {profile.pendingReviewsCount}
+                    {profile.pendingReviewsCount ?? "—"}
                   </span>
                 </div>
               </>
@@ -78,13 +78,13 @@ export function ProfileDetails({ profile }: { profile: UserProfile }) {
                 <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3">
                   <span className="text-slate-600">Enrolled courses</span>
                   <span className="font-semibold text-slate-900">
-                    {profile.enrolledCoursesCount ?? 1}
+                    {profile.enrolledCoursesCount ?? "—"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3">
                   <span className="text-slate-600">Assigned Team</span>
                   <span className="font-semibold text-slate-900">
-                    {profile.teamName || "Unassigned"}
+                    {profile.teamName ?? "—"}
                   </span>
                 </div>
               </>

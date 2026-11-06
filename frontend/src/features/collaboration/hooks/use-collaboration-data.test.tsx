@@ -3,40 +3,40 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useCollaborationData } from "@/features/collaboration/hooks/use-collaboration-data";
 import { fetchCollaborationProjectData } from "@/features/collaboration/collaboration-api";
-import { readIngestionState } from "@/features/ingestion/state";
+import { readScope, subscribeScope } from "@/features/ingestion/scope-store";
+import { createTestWrapper } from "@/test-utils";
 
 vi.mock("@/features/collaboration/collaboration-api", () => ({
   fetchCollaborationProjectData: vi.fn(),
 }));
-vi.mock("@/features/ingestion/state", () => ({
-  readIngestionState: vi.fn(),
+vi.mock("@/features/ingestion/scope-store", () => ({
+  readScope: vi.fn(),
+  subscribeScope: vi.fn(() => () => undefined),
 }));
 
 const emptyData = {
   projectLabel: "Team - Project",
   memberNames: new Map<string, string>(),
-  ingestion: { git: undefined, jira: undefined, documents: 0 },
+  ingestion: { git: undefined, jira: undefined },
 };
 
 describe("useCollaborationData", () => {
   beforeEach(() => {
-    vi.mocked(readIngestionState).mockReturnValue({
+    vi.mocked(readScope).mockReturnValue({
       selectedProjectId: "project-1",
       selectedCourseId: "course-1",
-      gitBySprint: {},
-      jiraBySprint: {},
-      documentCounts: {},
+      selectedSprintId: "sprint-1",
     });
     vi.mocked(fetchCollaborationProjectData).mockReset();
   });
 
   it("loads fresh data for the currently scoped project and handles an empty result", async () => {
     vi.mocked(fetchCollaborationProjectData).mockResolvedValue(emptyData);
-    const { result } = renderHook(() => useCollaborationData());
+    const { result } = renderHook(() => useCollaborationData(), { wrapper: createTestWrapper() });
 
     await waitFor(() => expect(fetchCollaborationProjectData).toHaveBeenCalledWith(
       "project-1",
-      expect.objectContaining({ selectedProjectId: "project-1" }),
+      expect.anything(),
     ));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -52,7 +52,7 @@ describe("useCollaborationData", () => {
         rejectRequest = reject;
       }),
     );
-    const { result } = renderHook(() => useCollaborationData());
+    const { result } = renderHook(() => useCollaborationData(), { wrapper: createTestWrapper() });
 
     await waitFor(() => expect(result.current.isLoading).toBe(true));
     act(() => rejectRequest(new Error("Unable to load project data.")));

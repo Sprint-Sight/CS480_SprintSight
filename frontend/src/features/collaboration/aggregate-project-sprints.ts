@@ -1,17 +1,16 @@
 import type {
-  IngestionState,
+  IngestionRunIndex,
   PersistedGitMetrics,
   PersistedJiraSnapshot,
-} from "@/features/ingestion/state";
+} from "@/features/ingestion/types";
 
 type ProjectIngestionAggregate = {
   git: PersistedGitMetrics | undefined;
   jira: PersistedJiraSnapshot | undefined;
-  documents: number;
 };
 
 export function aggregateProjectSprints(
-  state: IngestionState,
+  state: IngestionRunIndex,
   projectId: string,
 ): ProjectIngestionAggregate {
   const gitRuns = Object.values(state.gitBySprint)
@@ -64,6 +63,5 @@ export function aggregateProjectSprints(
   return {
     git,
     jira,
-    documents: state.documentCounts[projectId] || 0,
   };
 }

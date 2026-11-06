@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { INITIAL_SETTINGS } from "@/features/settings/data";
-import { readIngestionState } from "@/features/ingestion/state";
+import { readScope } from "@/features/ingestion/scope-store";
+import { coursesQueryOptions, type Course } from "@/features/projects/course-projects-api";
 import {
-  getCourses,
   getRubricWeights,
   saveRubricWeights,
-  type CourseOption,
 } from "@/features/settings/settings-api";
 import type { RubricDimensionId, RubricWeight } from "@/features/settings/types";
 import { getErrorMessage } from "@/lib/api/client";
@@ -36,7 +36,8 @@ function sameWeights(left: RubricWeight[], right: RubricWeight[]) {
 }
 
 export function useRubricWeights(enabled: boolean) {
-  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const queryClient = useQueryClient();
+  const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [rubric, setRubric] = useState<RubricWeight[]>(INITIAL_SETTINGS.rubric);
   const [savedRubric, setSavedRubric] = useState<RubricWeight[]>(INITIAL_SETTINGS.rubric);
@@ -44,16 +45,17 @@ export function useRubricWeights(enabled: boolean) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Load the instructor's courses and default to the course chosen in the scope bar.
+  // Load the instructor's courses from the shared cache and default to the course chosen in the scope bar.
   useEffect(() => {
     if (!enabled) return;
     let isCurrent = true;
     setIsLoading(true);
-    getCourses()
+    queryClient
+      .fetchQuery(coursesQueryOptions())
       .then((courseList) => {
         if (!isCurrent) return;
         setCourses(courseList);
-        const scopedCourseId = readIngestionState().selectedCourseId;
+        const scopedCourseId = readScope().selectedCourseId;
         const initialCourse = courseList.find((course) => course.id === scopedCourseId) ?? courseList[0];
         setSelectedCourseId(initialCourse?.id ?? "");
         if (!initialCourse) setIsLoading(false);
@@ -66,7 +68,7 @@ export function useRubricWeights(enabled: boolean) {
     return () => {
       isCurrent = false;
     };
-  }, [enabled]);
+  }, [enabled, queryClient]);
 
   // Load the selected course's saved weights.
   useEffect(() => {

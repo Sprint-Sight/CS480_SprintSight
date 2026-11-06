@@ -28,19 +28,6 @@ export type RubricWeightsResponse = {
   updated_at?: string | null;
 };
 
-export type CourseOption = {
-  id: string;
-  code: string;
-  name: string;
-  section: string;
-  term: string;
-  year: number;
-};
-
-export function getCourses() {
-  return apiRequest<CourseOption[]>("/courses");
-}
-
 export function getRubricWeights(courseId: string) {
   return apiRequest<RubricWeightsResponse>(`/assessments/rubric-weights?course_id=${encodeURIComponent(courseId)}`);
 }

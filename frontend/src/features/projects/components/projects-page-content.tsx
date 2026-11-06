@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { BookOpen, Plus, Search, SlidersHorizontal, Users, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 
@@ -12,7 +13,7 @@ import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { getSessionToken } from "@/lib/auth/session";
-import { notifyProjectsUpdated } from "@/features/projects/projects-events";
+import { invalidateProjectCaches } from "@/features/projects/course-projects-api";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
@@ -76,6 +77,7 @@ export default function ProjectsPageContent() {
   const [studentDirectoryError, setStudentDirectoryError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const session = useSession();
+  const queryClient = useQueryClient();
   const canUseInstructorCredentials = Boolean(session?.user) && session?.user?.role !== "student";
   const jiraCredentials = useInstructorJiraCredentials(canUseInstructorCredentials);
   const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
@@ -279,6 +281,7 @@ export default function ProjectsPageContent() {
       }
       await apiRequest(`/projects/${projectId}`, { method: "DELETE" });
       await loadProjects();
+      invalidateProjectCaches(queryClient);
       window.alert("Project deleted.");
     } catch (error) {
       window.alert(getErrorMessage(error, "Failed to delete project."));
@@ -346,7 +349,7 @@ export default function ProjectsPageContent() {
           body: JSON.stringify(updatePayload),
         });
         await loadProjects();
-        notifyProjectsUpdated();
+        invalidateProjectCaches(queryClient);
         window.alert("Project updated.");
       } else {
         await apiRequest(`/courses/${selectedCourseId}/projects`, {
@@ -354,7 +357,7 @@ export default function ProjectsPageContent() {
           body: JSON.stringify(projectPayload),
         });
         await loadProjects();
-        notifyProjectsUpdated();
+        invalidateProjectCaches(queryClient);
         window.alert("Project created.");
       }
       setIsProjectModalOpen(false);
@@ -410,6 +413,7 @@ export default function ProjectsPageContent() {
 
     try {
       await apiRequest(`/courses/${courseId}`, { method: "DELETE" });
+      invalidateProjectCaches(queryClient);
       window.alert("Course deleted.");
       if (selectedCourseId === courseId) {
         setSelectedCourseId("");
@@ -542,6 +546,7 @@ export default function ProjectsPageContent() {
     try {
       await apiRequest(`/projects/${memberToRemove.projectId}/members/${memberToRemove.userId}`, { method: "DELETE" });
       await loadProjects();
+      invalidateProjectCaches(queryClient);
       window.alert("Project member removed.");
     } catch (error) {
       window.alert(getErrorMessage(error, "Failed to remove project member."));
@@ -578,7 +583,7 @@ export default function ProjectsPageContent() {
 
       if (addedStudentIds.length > 0) {
         await loadProjects();
-        notifyProjectsUpdated();
+        invalidateProjectCaches(queryClient);
       }
 
       if (failedStudents.length > 0) {
@@ -774,7 +779,7 @@ export default function ProjectsPageContent() {
           const result = await submitImport(selectedCourseId);
           await loadProjects();
           await loadCourseStudents();
-          notifyProjectsUpdated();
+          invalidateProjectCaches(queryClient);
           return result;
         }}
         isLoading={isImporting}

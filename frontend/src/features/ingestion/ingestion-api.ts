@@ -1,19 +1,15 @@
+import type { QueryClient } from "@tanstack/react-query";
+
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
 import type { JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
-import type { PersistedGitMetrics, PersistedJiraSnapshot } from "@/features/ingestion/state";
+import { scopeProjectsQueryOptions } from "@/features/projects/course-projects-api";
+import type { PersistedGitMetrics, PersistedJiraSnapshot } from "@/features/ingestion/types";
 
-type CourseSummary = { id: string };
-type CourseProjectSummary = { id: string };
-
-/** ProjectResponse has no course_id, so find the course that owns the project. */
-export async function resolveProjectCourseId(projectId: string): Promise<string | null> {
-  const courses = await apiRequest<CourseSummary[]>("/courses");
-  for (const course of courses) {
-    const projects = await apiRequest<CourseProjectSummary[]>(`/courses/${encodeURIComponent(course.id)}/projects`);
-    if (projects.some((project) => project.id === projectId)) return course.id;
-  }
-  return null;
+/** ProjectResponse has no course_id, so find the course that owns the project in the shared cache. */
+export async function resolveProjectCourseId(projectId: string, queryClient: QueryClient): Promise<string | null> {
+  const groups = await queryClient.fetchQuery(scopeProjectsQueryOptions(queryClient));
+  return groups.find(({ projects }) => projects.some((project) => project.id === projectId))?.course.id ?? null;
 }
 
 /** Latest completed, cleaned Jira snapshot for every sprint of the project. */

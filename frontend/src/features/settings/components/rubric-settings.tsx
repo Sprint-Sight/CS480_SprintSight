@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 
-import type { CourseOption } from "@/features/settings/settings-api";
+import type { Course } from "@/features/projects/course-projects-api";
 import type { RubricDimensionId, RubricWeight } from "@/features/settings/types";
 
 type RubricSettingsProps = {
@@ -10,7 +10,7 @@ type RubricSettingsProps = {
   totalWeight: number;
   isValidTotal: boolean;
   hasUnsavedChanges: boolean;
-  courses: CourseOption[];
+  courses: Course[];
   selectedCourseId: string;
   isDisabled: boolean;
   isLoading: boolean;
@@ -88,17 +88,30 @@ export function RubricSettings({
                 </label>
                 <span className="font-semibold text-blue-900">{formatPercent(item.value)}</span>
               </div>
-              <input
-                id={sliderId}
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={item.value}
-                disabled={isDisabled}
-                onChange={(event) => onChange(item.id, Number(event.target.value))}
-                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-200 accent-[#2F5B85] disabled:cursor-not-allowed disabled:opacity-60"
-              />
+              <div className="flex items-center gap-3">
+                <input
+                  id={sliderId}
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={item.value}
+                  disabled={isDisabled}
+                  onChange={(event) => onChange(item.id, Number(event.target.value))}
+                  className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-[#2F5B85] disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  aria-label={`${item.label} weight (percent)`}
+                  value={item.value}
+                  disabled={isDisabled}
+                  onChange={(event) => onChange(item.id, Number(event.target.value))}
+                  className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-right text-sm text-slate-700 disabled:opacity-60"
+                />
+              </div>
             </div>
           );
         })}
@@ -109,8 +122,12 @@ export function RubricSettings({
         className={`mt-4 text-sm font-semibold ${isValidTotal ? "text-emerald-600" : "text-amber-600"}`}
       >
         Total Weight: {formatPercent(totalWeight)}
-        {!isValidTotal && " — must add up to 100% before saving"}
       </p>
+      {!isValidTotal && (
+        <p role="alert" className="mt-1 text-sm font-medium text-rose-600">
+          Rubric weights must add up to 100% before you can save. Adjust the weights to fix the total.
+        </p>
+      )}
       {hasUnsavedChanges && isValidTotal && (
         <p className="mt-1 text-xs text-slate-500">
           Unsaved rubric changes. Click Save Settings to apply them.

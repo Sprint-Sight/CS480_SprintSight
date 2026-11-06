@@ -1,23 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { aggregateCollaborationMetrics } from "@/features/collaboration/aggregate-collaboration-metrics";
 import type { aggregateProjectSprints } from "@/features/collaboration/aggregate-project-sprints";
 import { fetchCollaborationProjectData } from "@/features/collaboration/collaboration-api";
 import type { CollaborationDataset } from "@/features/collaboration/types";
-import { readIngestionState } from "@/features/ingestion/state";
+import { readScope, subscribeScope } from "@/features/ingestion/scope-store";
 import { getErrorMessage } from "@/lib/api/client";
 
 const emptyIngestion: ReturnType<typeof aggregateProjectSprints> = {
   git: undefined,
   jira: undefined,
-  documents: 0,
 };
 
 export function useCollaborationData() {
+  const queryClient = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState(
-    () => readIngestionState().selectedProjectId || "",
+    () => readScope().selectedProjectId,
   );
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [projectLabel, setProjectLabel] = useState("No project selected");
@@ -27,13 +28,10 @@ export function useCollaborationData() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const refresh = () => {
-      const state = readIngestionState();
-      setSelectedProjectId(state.selectedProjectId || "");
+    return subscribeScope(() => {
+      setSelectedProjectId(readScope().selectedProjectId);
       setRefreshVersion((version) => version + 1);
-    };
-    window.addEventListener("sprintsight-ingestion-updated", refresh);
-    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
+    });
   }, []);
 
   useEffect(() => {
@@ -52,7 +50,7 @@ export function useCollaborationData() {
     setProjectLabel("Loading project...");
     setMemberNames(new Map());
     setLiveIngestion(emptyIngestion);
-    void fetchCollaborationProjectData(selectedProjectId, readIngestionState())
+    void fetchCollaborationProjectData(selectedProjectId, queryClient)
       .then(({ projectLabel: label, memberNames: names, ingestion }) => {
         if (cancelled) return;
         setProjectLabel(label);
@@ -71,11 +69,11 @@ export function useCollaborationData() {
     return () => {
       cancelled = true;
     };
-  }, [selectedProjectId, refreshVersion]);
+  }, [selectedProjectId, refreshVersion, queryClient]);
 
   const metrics = useMemo(
-    () => aggregateCollaborationMetrics(liveIngestion, memberNames),
-    [liveIngestion, memberNames],
+    () => aggregateCollaborationMetrics(liveIngestion, memberNames, projectLabel),
+    [liveIngestion, memberNames, projectLabel],
   );
   const collaborationData = useMemo<CollaborationDataset>(() => ({
     projectId: selectedProjectId,

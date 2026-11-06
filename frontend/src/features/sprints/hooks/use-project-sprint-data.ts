@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { getProjectGitMetrics, readIngestionState } from "@/features/ingestion/state";
+import { useIngestionScope } from "@/features/ingestion/hooks/use-ingestion-scope";
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
 
@@ -12,17 +12,20 @@ export type ProjectSprintRun = { id: string; name: string; commits: number; capt
 export function useProjectSprintData(projectId: string) {
   const [project, setProject] = useState<BackendProject | null>(null);
   const [error, setError] = useState("");
-  const [ingestionVersion, setIngestionVersion] = useState(0);
+  const { scope } = useIngestionScope();
   // Reuse the scope's course when it owns this project; otherwise the hook resolves it.
-  const [scopeCourseId] = useState(() => {
-    const state = readIngestionState();
-    return state.selectedProjectId === projectId ? state.selectedCourseId || "" : "";
-  });
-  const { isSyncing, syncError } = useIngestionSync({ projectId, courseId: scopeCourseId });
-  const sprints = useMemo<ProjectSprintRun[]>(() => {
-    void ingestionVersion;
-    return getProjectGitMetrics(projectId).map((run) => ({ id: run.sprint_id, name: run.sprint_id, commits: run.pagination?.total ?? run.commits.length, capturedAt: run.captured_at }));
-  }, [projectId, ingestionVersion]);
+  const scopeCourseId = scope.selectedProjectId === projectId ? scope.selectedCourseId || undefined : undefined;
+  const { gitRuns, isSyncing, syncError } = useIngestionSync({ projectId, courseId: scopeCourseId });
+  const sprints = useMemo<ProjectSprintRun[]>(
+    () =>
+      gitRuns.map((run) => ({
+        id: run.sprint_id,
+        name: run.sprint_id,
+        commits: run.pagination?.total ?? run.commits.length,
+        capturedAt: run.captured_at,
+      })),
+    [gitRuns],
+  );
 
   useEffect(() => {
     async function loadProject() {
@@ -32,12 +35,6 @@ export function useProjectSprintData(projectId: string) {
     }
     void loadProject();
   }, [projectId]);
-
-  useEffect(() => {
-    const refresh = () => setIngestionVersion((version) => version + 1);
-    window.addEventListener("sprintsight-ingestion-updated", refresh);
-    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
-  }, []);
 
   return { project, sprints, error, isSyncing, syncError };
 }
