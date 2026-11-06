@@ -15,11 +15,11 @@ from judges.citation_ground_custom_judge import (
 )
 from judges.code_based_scorer import numeric_grade_accuracy
 from judges.trace_adapters import read_candidate
-from llmops.review_queue import add_to_review_queue
-from prompts.dimension_criteria import DIMENSIONS
 from research.cs203_groundtruth import CS203_GOLD
 from research.fixtures import FIXTURES_GOLD
-
+from prompts.dimension_criteria import DIMENSIONS
+from llmops.review_queue import add_to_review_queue
+from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
 
 GRADE_COL = "grade_penalised_mae/value"
@@ -64,15 +64,14 @@ def _team_of(trace: Trace) -> str | None: # trace tag first, then the root span'
     team = trace.info.tags.get("team_id") or _root_outputs(trace).get("team_id")
     return team.strip().lower() if isinstance(team, str) else None
 
+# Gold for this trace's team AND sprint, or None -> only the LLM judge applies
 def find_gold(trace: Trace):
-    """Gold for this trace's team AND sprint, or None -> only the LLM judge applies."""
     gold = ALL_GOLD.get(_team_of(trace))
     if gold is None:
         return None
     sprint = _sprint_of(trace)
-    if sprint is not None and sprint != gold.sprint_id: # a gold grades one sprint; another sprint's MAE would be meaningless
+    if sprint is not None and sprint != gold.sprint_id: # store gold for team/sprint only if the trace's sprint matches the gold's sprint; otherwise, skip the gold and let the LLM judge handle it
         _log(f"  {trace.info.trace_id}: sprint '{sprint}' != gold sprint '{gold.sprint_id}' -> gold skipped")
-        return None
     return gold
 
 # Either trace_ids is provided (explicitly select traces) or model/team_id is provided (filter by tags). If both are provided, trace_ids takes precedence.
@@ -195,17 +194,35 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
     os.environ.setdefault("MLFLOW_GENAI_EVAL_MAX_WORKERS", "1")   # default 10 parallel scorers would swamp one Ollama server
     base_name = run_name or f"judge_{JUDGE_MODEL}_{time.strftime('%Y%m%d-%H%M')}"
     start, results = time.perf_counter(), []
+
     for group_name, group, scorers in groups:
+
         if not group or not scorers:
             continue
+
         _log(f"[3/4] Evaluating {len(group)} {group_name} trace(s) with {[getattr(s, 'name', s) for s in scorers]} "
              "(the LLM judge takes minutes per trace)...")
-        with mlflow.start_run(run_name=f"{base_name}_{group_name}"): # evaluate() reuses the active run
+        
+        with mlflow.start_run(run_name=f"{base_name}_{group_name}") as run: # evaluate() reuses the active run
             result = mlflow.genai.evaluate(data=group, scorers=scorers)
+            if result.result_df is not None:
+                save_judge_results(
+                    experiment_name=experiment_name,
+                    judge_model=JUDGE_MODEL,
+                    group_name=group_name,
+                    run_id=run.info.run_id,
+                    result_df=result.result_df,
+                    trace_meta={t.info.trace_id: {"team_id": _team_of(t), 
+                                                  "sprint_id": _sprint_of(t), 
+                                                  "model": t.info.tags.get("model")} for t in group}
+                )
+
         if result.result_df is None:
             raise RuntimeError("evaluate() returned no result; df; cannot flag traces for review.")
-        _flag_for_review(result.result_df, with_judge)
+        
+        _flag_for_review(result.result_df, with_judge) # Flag traces for review if they fail any of the checks (MAE, hallucination, grounded rate, etc.)
         results.append(result)
+
     _log(f"[4/4] Done in {time.perf_counter() - start:.0f}s. Metrics: {[r.metrics for r in results]}")
     return results
 

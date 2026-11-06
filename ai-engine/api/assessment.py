@@ -96,8 +96,8 @@ async def assess_backend_data_endpoint(
             raise RuntimeError("Sprint evaluation completed without recording an MLflow trace.")
         trace_id = trace_ids[-1]
 
-        # Add a background task to promote the trace to production after evaluation, or handle it in the evaluator itself.
-        background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_id, bundle.team_id, prompt_versions_registered, mlflow_client, bundle.sprint_id)
+        if trace_ids: # Add a background task to promote the trace to production after evaluation, or handle it in the evaluator itself.
+            background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_ids[0], bundle.team_id, prompt_versions_registered, mlflow_client, bundle.sprint_id)
 
         if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
             mlflow.end_run()

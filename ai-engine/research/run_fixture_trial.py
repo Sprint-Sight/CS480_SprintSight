@@ -23,7 +23,7 @@ from research.fixtures import FIXTURES_TEAMS
 from schemas.artifact_bundle import ArtifactBundle
 from services.evaluator import evaluate_sprint
 
-DEFAULT_EXPERIMENT_NAME = "Fixture test 3/11/26"
+DEFAULT_EXPERIMENT_NAME = "Fixture test 5/11/26"
 
 def load_ab_bundle(ab_bundle_path: Path) -> ArtifactBundle:
     with ab_bundle_path.open() as f:

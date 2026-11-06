@@ -93,7 +93,7 @@ def _passes_criteria(scores: dict) -> bool:
         return False
     halluc = scores.get("hallucination") # must exist: no judge result -> no promotion
     return halluc is not None and halluc <= PROMOTION_HALLUCINATION_THRESHOLD \
-           and scores.get("citations", 0) >= MIN_CITATIONS_FOR_PROMOTION
+           and scores.get("citation_count", 0) >= MIN_CITATIONS_FOR_PROMOTION
 
 def _load_results(prompt_version) -> dict:
     try:

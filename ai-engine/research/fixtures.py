@@ -497,8 +497,8 @@ ALPHA_GOLD = SprintAssessment.model_validate_json(
     (Path(__file__).resolve().parent.parent / "research" / "gold" / "alpha_GOLD.json").read_text()
 )
 
-GEMMA_GOLD = SprintAssessment.model_validate_json(
-    (Path(__file__).resolve().parent.parent / "research" / "gold" / "gemma_GOLD.json").read_text()
+GAMMA_GOLD = SprintAssessment.model_validate_json(
+    (Path(__file__).resolve().parent.parent / "research" / "gold" / "gamma_GOLD.json").read_text()
 )
 
 DELTA_GOLD = SprintAssessment.model_validate_json(
@@ -523,7 +523,7 @@ FIXTURES_TEAMS = (
 
 FIXTURES_GOLD = {
     "team_alpha": ALPHA_GOLD,
-    "team_gemma": GEMMA_GOLD,
+    "team_gamma": GAMMA_GOLD,
     "team_delta": DELTA_GOLD,
     "team_epsilon": EPSILON_GOLD,
     "team_theta": THETA_GOLD,
