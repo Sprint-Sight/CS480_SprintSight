@@ -211,7 +211,7 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
             bundle = _bundle_of(trace, team)
             rubric, dropped = read_candidate(trace, bundle) # Get the candidate's rubric scores and any citations dropped by code
             result, rows = asyncio.run(judge_assessment_detailed(bundle, rubric, JUDGE_MODEL)) # Run the judge on the candidate's rubric scores
-        except Exception as e: # Judge call can fail in many ways; must not crash the eval run
+        except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
             print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
             mlflow.update_current_trace(response_preview=f"Error: {e}")
             return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
