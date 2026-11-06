@@ -336,7 +336,10 @@ def run_assessment_job(
             processed_runs = [run for run in jira_runs if run.cleaned_snapshot]
             if processed_runs:
                 latest_run = max(processed_runs, key=lambda run: run.captured_at)
-                jira_tickets = [ticket.model_dump(mode="json") for ticket in latest_run.cleaned_snapshot.tickets]
+                jira_tickets = [
+                    ticket.model_dump(mode="json", exclude={"changelog"})
+                    for ticket in latest_run.cleaned_snapshot.tickets
+                ]
 
         # Collect any faculty/student-uploaded context documents (project
         # briefs, requirements, design notes) so the LLM gets them as

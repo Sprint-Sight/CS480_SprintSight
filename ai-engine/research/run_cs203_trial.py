@@ -8,8 +8,12 @@ triggered here genuinely exercises the same path the live endpoint uses.
 Usage:
     docker compose exec sprintsight_ai python -m research.run_ab_trial --model sprintsight-qwen
 """
-import argparse, asyncio, json, mlflow
+import argparse
+import asyncio
+import json
 from pathlib import Path
+
+import mlflow
 from fastapi import BackgroundTasks
 
 from judges.promote import judge_and_promote_trace
@@ -30,7 +34,7 @@ def _bundles(dataset: str) -> list[ArtifactBundle]:
     return [load_ab_bundle(p) for p in (CS203g6_BUNDLE_PATH, CS203jy_BUNDLE_PATH)]
 
 def _production_prompts() -> dict[str, str]:
-    prompts = {}
+    prompts: dict[str, str] = {}
     for dim in DIMENSIONS:
         production = get_production_prompt(f"Evaluate_{dim}")
         if production is None:

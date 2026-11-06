@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.core.storage import storage
 from app.main import app
+from app.services.jiraService.service import _fetch_jira_changelogs
 
 client = TestClient(app)
 
@@ -13,6 +14,60 @@ def login(email: str) -> str:
     response = client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
     assert response.status_code == 200
     return response.json()["access_token"]
+
+
+def test_bulk_changelog_fetch_follows_page_tokens() -> None:
+    request_bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        request_bodies.append(body)
+        if body.get("nextPageToken") == "page-2":
+            return httpx.Response(
+                200,
+                json={
+                    "issueChangeLogs": [
+                        {
+                            "issueId": "10001",
+                            "changeHistories": [{"id": "second"}],
+                        }
+                    ]
+                },
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "issueChangeLogs": [
+                    {
+                        "issueId": "10001",
+                        "changeHistories": [{"id": "first"}],
+                    }
+                ],
+                "nextPageToken": "page-2",
+            },
+            request=request,
+        )
+
+    with httpx.Client(
+        base_url="https://team.atlassian.net",
+        transport=httpx.MockTransport(handler),
+    ) as jira_client:
+        changelogs = _fetch_jira_changelogs(
+            jira_client,
+            [{"id": "10001", "key": "JIRA-1"}],
+            sprint_field="customfield_10020",
+            story_points_field="customfield_10016",
+        )
+
+    assert len(request_bodies) == 2
+    assert request_bodies[0]["issueIdsOrKeys"] == ["10001"]
+    assert request_bodies[0]["fieldIds"] == [
+        "status",
+        "customfield_10020",
+        "customfield_10016",
+    ]
+    assert [history["id"] for history in changelogs["10001"]] == ["first", "second"]
 
 
 def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
@@ -36,7 +91,12 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     )
     assert project_response.status_code == 201, project_response.text
     project = project_response.json()
-    raw_bytes = b'{"issues":[{"key":"JIRA-1","fields":{"summary":"Raw issue"}}],"total":1}'
+    raw_bytes = (
+        b'{"issues":[{"id":"10001","key":"JIRA-1","fields":{"summary":"Raw issue",'
+        b'"customfield_10020":[{"id":1,"name":"Sprint 1",'
+        b'"startDate":"2026-11-02T00:00:00.000Z","endDate":"2026-11-16T00:00:00.000Z"}]}}],'
+        b'"total":1}'
+    )
     uploaded = {}
 
     captured_client = {}
@@ -51,6 +111,32 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     original_post = httpx.Client.post
 
     def fake_post(self, url, **kwargs):
+        if url == "/rest/api/3/changelog/bulkfetch":
+            assert kwargs["json"]["issueIdsOrKeys"] == ["10001"]
+            return httpx.Response(
+                200,
+                json={
+                    "issueChangeLogs": [
+                        {
+                            "issueId": "10001",
+                            "changeHistories": [
+                                {
+                                    "created": "2026-11-03T11:00:00.000+0000",
+                                    "items": [
+                                        {
+                                            "field": "status",
+                                            "fieldId": "status",
+                                            "fromString": "To Do",
+                                            "toString": "In Progress",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+                request=httpx.Request("POST", url),
+            )
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
         assert captured_client["auth"] == ("jira.owner@university.edu", "project-jira-token")
@@ -75,6 +161,8 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     assert response.json()["issue_count"] == 1
     document = json.loads(uploaded["data"])
     assert document["issues"][0]["key"] == "JIRA-1"
+    assert document["changelog_captured"] is True
+    assert document["issues"][0]["changelog"]["histories"][0]["items"][0]["toString"] == "In Progress"
     assert uploaded["mime_type"] == "application/json"
     assert uploaded["key"].startswith(f"raw/jira/{course['id']}/{project['id']}/sprint-1/")
 
@@ -245,11 +333,17 @@ def test_reprocess_all_jira_runs_happy_path(monkeypatch) -> None:
     original_post = httpx.Client.post
 
     def fake_post(self, url, **kwargs):
+        if url == "/rest/api/3/changelog/bulkfetch":
+            return httpx.Response(
+                200,
+                json={"issueChangeLogs": [], "nextPageToken": None},
+                request=httpx.Request("POST", url),
+            )
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
         return httpx.Response(
             200,
-            content=b'{"issues":[{"key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
+            content=b'{"issues":[{"id":"10001","key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
             request=httpx.Request("POST", url),
         )
 
@@ -347,11 +441,17 @@ def test_reprocess_all_jira_runs_failed_run(monkeypatch) -> None:
     original_post = httpx.Client.post
 
     def fake_post(self, url, **kwargs):
+        if url == "/rest/api/3/changelog/bulkfetch":
+            return httpx.Response(
+                200,
+                json={"issueChangeLogs": [], "nextPageToken": None},
+                request=httpx.Request("POST", url),
+            )
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
         return httpx.Response(
             200,
-            content=b'{"issues":[{"key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
+            content=b'{"issues":[{"id":"10001","key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
             request=httpx.Request("POST", url),
         )
 

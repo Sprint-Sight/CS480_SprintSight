@@ -8,16 +8,20 @@ triggered here genuinely exercises the same path the live endpoint uses.
 Usage:
     docker compose exec sprintsight_ai python -m research.run_ab_trial --model sprintsight-qwen
 """
-import argparse, asyncio, json, mlflow
+import argparse
+import asyncio
+import json
 from pathlib import Path
+
+import mlflow
 from fastapi import BackgroundTasks
 
-from schemas.artifact_bundle import ArtifactBundle
-from prompts.dimension_criteria import DIMENSIONS
-from services.evaluator import evaluate_sprint
 from judges.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
+from prompts.dimension_criteria import DIMENSIONS
 from research.fixtures import FIXTURES_TEAMS
+from schemas.artifact_bundle import ArtifactBundle
+from services.evaluator import evaluate_sprint
 
 DEFAULT_EXPERIMENT_NAME = "Fixture test 5/11/26"
 
@@ -31,7 +35,7 @@ async def run_fixture_trial(model_name: str, experiment_name: str = "Fixture tes
     for bundle in FIXTURES_TEAMS:
         for i in range(repeats):
             print(f"[{i + 1}/{repeats}] Evaluating '{model_name}' against {bundle.team_id}...")
-            trace_ids = []  # fresh per run so a judge task only sees its own traces
+            trace_ids: list[str] = []
             assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
             print(f"  trace_ids={trace_ids}  overall_score={assessment.overall_score}")
             trace_id = trace_ids[0]
@@ -49,7 +53,7 @@ def _bundles(dataset: str) -> list[ArtifactBundle]:
     return list(FIXTURES_TEAMS)
 
 def _production_prompts() -> dict[str, str]:
-    prompts = {}
+    prompts: dict[str, str] = {}
     for dim in DIMENSIONS:
         production = get_production_prompt(f"Evaluate_{dim}")
         if production is None:

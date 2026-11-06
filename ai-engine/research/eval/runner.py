@@ -141,7 +141,13 @@ async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) 
     error: str | None = None
     assessment = None
     try:
-        assessment = await evaluate_sprint(item.bundle, model, experiment_name)
+        assessment, _ = await evaluate_sprint(
+            item.bundle,
+            model,
+            experiment_name,
+            mlflow.MlflowClient(),
+            [],
+        )
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         log.exception("evaluate_sprint failed for example=%s model=%s", item.id, model)
