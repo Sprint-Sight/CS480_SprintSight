@@ -32,22 +32,21 @@ def get_sprint_feedback_prompt_template():
     )
 
 def register_sprint_feedback_prompt(sprint_feedback_prompt_name, client: MlflowClient):
-    existing = _is_prompt_registered(sprint_feedback_prompt_name, get_sprint_feedback_prompt_template(), client)
-    if existing is not None:
-        version = _is_prompt_registered(sprint_feedback_prompt_name, get_sprint_feedback_prompt_template(), client)
-        if version is not None:
-            log.info(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
-            print(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
-            return
-        log.info(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
-        print(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
-        return register_prompt(
-            sprint_feedback_prompt_name,
-            get_sprint_feedback_prompt_template(),
-            tags={'author': 'SprintSight'},
-            commit_message='Prompt for sprint-leve feedback generation',
-        )
-    
+    template = get_sprint_feedback_prompt_template()
+    existing = _is_prompt_registered(sprint_feedback_prompt_name, template, client)
+    if existing is not None: # evaluator.py reads .version from the return value for SprintAssessment.prompt_version
+        log.info(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
+        print(f"Sprint feedback prompt '{sprint_feedback_prompt_name}' is already registered.")
+        return existing
+    log.info(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
+    print(f"Registering sprint feedback prompt '{sprint_feedback_prompt_name}'.")
+    return register_prompt(
+        sprint_feedback_prompt_name,
+        template,
+        tags={'author': 'SprintSight'},
+        commit_message='Prompt for sprint-level feedback generation',
+    )
+
 # Evaluator calls this method, converting the dictionary prompt name -> prompt template to list prompts_list
 def register_all_dimension_prompts(prompts_list: list, client: MlflowClient) -> dict:
     prompt_versions_registered = {} # Store prompt versions for each of the dimension prompts registered in this run
