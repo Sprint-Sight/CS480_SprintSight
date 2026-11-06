@@ -93,8 +93,8 @@ async def assess_backend_data_endpoint(
         assessment, prompt_versions_registered = await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
         trace_id = mlflow.get_last_active_trace_id() # trace evaluate_sprint just created
 
-        # Add a background task to promote the trace to production after evaluation, or handle it in the evaluator itself.
-        background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_id, bundle.team_id, prompt_versions_registered, mlflow_client, bundle.sprint_id)
+        if trace_ids: # Add a background task to promote the trace to production after evaluation, or handle it in the evaluator itself.
+            background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_ids[0], bundle.team_id, prompt_versions_registered, mlflow_client, bundle.sprint_id)
 
         if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
             mlflow.end_run()
