@@ -93,9 +93,11 @@ class JiraTicket(BaseModel):
         description="Resolved SprintSight student ID, if matched to an enrolled student.",
     )
     status: str | None = None
+    status_category: str | None = None
     issue_type: str | None = None
     story_points: float | None = Field(default=None, ge=0)
     sprint_id: str | None = None
+    created_at: datetime | None = None
     timestamp: datetime | None = None
     changelog: list[JiraIssueChange] = Field(default_factory=list)
 

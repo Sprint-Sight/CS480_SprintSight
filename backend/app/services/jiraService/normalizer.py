@@ -24,6 +24,17 @@ def _nested_name(value: Any) -> str | None:
     return str(name).strip() if name else None
 
 
+def _status_category(fields: dict[str, Any]) -> str | None:
+    status = fields.get("status")
+    if not isinstance(status, dict):
+        return None
+    category = status.get("statusCategory")
+    if not isinstance(category, dict):
+        return None
+    key = category.get("key")
+    return str(key).strip().casefold() if key else None
+
+
 def _ticket_timestamp(
     fields: dict[str, Any],
     completion_date_field: str | None,
@@ -35,11 +46,40 @@ def _ticket_timestamp(
     )
     if not raw:
         return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        try:
+            timestamp = float(raw)
+            if abs(timestamp) >= 100_000_000_000:
+                timestamp /= 1000
+            parsed = datetime.fromtimestamp(timestamp, tz=UTC)
+            return parsed
+        except (OverflowError, OSError, ValueError):
+            return None
     try:
         parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
         return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
     except ValueError:
         return None
+
+
+def _ticket_created_at(fields: dict[str, Any]) -> datetime | None:
+    raw = fields.get("created")
+    if not raw:
+        return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        try:
+            timestamp = float(raw)
+            if abs(timestamp) >= 100_000_000_000:
+                timestamp /= 1000
+            parsed = datetime.fromtimestamp(timestamp, tz=UTC)
+            return parsed
+        except (OverflowError, OSError, ValueError):
+            return None
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
 def _parse_date(value: Any) -> date | None:
@@ -132,7 +172,15 @@ def _issue_changelog(issue: dict[str, Any]) -> list[JiraIssueChange]:
         if not isinstance(history, dict) or not history.get("created"):
             continue
         created = history["created"]
-        if isinstance(created, str):
+        if isinstance(created, (int, float)) and not isinstance(created, bool):
+            try:
+                timestamp = float(created)
+                if abs(timestamp) >= 100_000_000_000:
+                    timestamp /= 1000
+                created = datetime.fromtimestamp(timestamp, tz=UTC)
+            except (OverflowError, OSError, ValueError):
+                continue
+        elif isinstance(created, str):
             try:
                 created = datetime.fromisoformat(created.replace("Z", "+00:00"))
             except ValueError:
@@ -174,14 +222,22 @@ def _story_points(fields: dict[str, Any], story_points_field: str | None) -> flo
 def _matches_requested_sprint(value: Any, sprint_id: str | None) -> bool:
     if not sprint_id:
         return True
-    target = str(sprint_id).strip().lower()
+    target = _sprint_identity(sprint_id)
     if not target:
         return True
 
     if isinstance(value, str):
-        normalized = value.strip().lower()
-        return normalized == target or normalized.replace(" ", "") == target.replace(" ", "")
+        if _sprint_identity(value) == target:
+            return True
+        pairs = re.findall(r"(?:id|name)=([^,\]]+)", value)
+        return any(_sprint_identity(candidate) == target for candidate in pairs)
     if isinstance(value, dict):
+        if any(
+            _sprint_identity(value.get(key)) == target
+            for key in ("id", "name")
+            if value.get(key) is not None
+        ):
+            return True
         for nested in value.values():
             if _matches_requested_sprint(nested, sprint_id):
                 return True
@@ -205,16 +261,26 @@ def _normalize_email(email: str | None) -> str | None:
     return email.strip().casefold() or None
 
 
-def _issue_matches_requested_sprint(issue: dict[str, Any], sprint_id: str | None) -> bool:
+def _issue_matches_requested_sprint(
+    issue: dict[str, Any],
+    sprint_id: str | None,
+    sprint_field: str,
+) -> bool:
     if not sprint_id:
         return True
     fields = issue.get("fields")
     if not isinstance(fields, dict):
         return True
-    for field_name in ("sprint", "sprints", "customfield_10020", "customfield_10018"):
-        if field_name in fields and _matches_requested_sprint(fields[field_name], sprint_id):
-            return True
-    return True
+    sprint_field_names = tuple(
+        dict.fromkeys((sprint_field, "sprint", "sprints", "customfield_10020", "customfield_10018"))
+    )
+    available_fields = [field_name for field_name in sprint_field_names if field_name in fields]
+    if not available_fields:
+        return True
+    return any(
+        _matches_requested_sprint(fields[field_name], sprint_id)
+        for field_name in available_fields
+    )
 
 
 def _assignee_from_fields(fields: dict) -> tuple[str | None, str | None, str | None]:
@@ -326,7 +392,7 @@ def normalize_jira_envelope(
     for issue in issues:
         if not isinstance(issue, dict) or not issue.get("key"):
             raise JiraNormalizationError("Every Jira issue must contain a key.")
-        if not _issue_matches_requested_sprint(issue, requested_sprint):
+        if not _issue_matches_requested_sprint(issue, requested_sprint, sprint_field):
             continue
         fields = issue.get("fields")
         if not isinstance(fields, dict):
@@ -351,9 +417,11 @@ def normalize_jira_envelope(
                 assignee=assignee_name,
                 student_id=student_id,
                 status=_nested_name(fields.get("status")),
+                status_category=_status_category(fields),
                 issue_type=_nested_name(fields.get("issuetype")),
                 story_points=_story_points(fields, story_points_field),
                 sprint_id=envelope["sprint_id"],
+                created_at=_ticket_created_at(fields),
                 timestamp=_ticket_timestamp(fields, completion_date_field),
                 changelog=_issue_changelog(issue),
             )
