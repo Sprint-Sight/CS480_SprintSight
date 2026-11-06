@@ -20,6 +20,7 @@ from research.fixtures import FIXTURES_GOLD
 from prompts.dimension_criteria import DIMENSIONS
 from llmops.review_queue import add_to_review_queue
 from dotenv import load_dotenv
+from services.save_results import save_judge_results
 load_dotenv()  # Load environment variables from .env file
 
 GRADE_COL = "grade_penalised_mae/value"

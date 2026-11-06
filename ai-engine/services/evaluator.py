@@ -23,6 +23,7 @@ from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
 from schemas.bundle_registry import remember_bundle
+from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from services.save_results import save_run_results
 from services.llm_client import (
     evaluate_dimension,
@@ -216,44 +217,44 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
 
         await _log_gpu_offload(model_name)
 
-            queue_name = f"review_queue_{bundle.team_id}_{bundle.sprint_id}" # Standby review queue for each team's sprint being evaluated in case trace needs to be flagged for review
+        queue_name = f"review_queue_{bundle.team_id}_{bundle.sprint_id}" # Standby review queue for each team's sprint being evaluated in case trace needs to be flagged for review
 
         rubric_scores = RubricsScore(**scores_by_dim)
         scored = [s for s in rubric_scores.scored() if not s.evaluation_failed]
         average_score = sum(s.score for s in scored) / len(scored) if scored else 0
 
-            summary_parts = []
-            if failed_dimensions:
-                failure_details = "; ".join(
-                    f"{dimension}: {error}" for dimension, error in failed_dimensions.items()
-                )
-                summary_parts.append(
-                    f"The assessment is incomplete. Failed dimensions: {failure_details}"
-                )
-                mlflow.update_current_trace(tags={"Flagged for review": failure_details})
-            else:
-                summary_parts.append("All rubric dimensions were evaluated successfully.")
-        
-            feedback = None
-            try:
-                feedback = await generate_sprint_feedback(
-                    bundle,
-                    {dimension: score.model_dump(exclude={"prompt_version"}) for dimension, score in scores_by_dim.items()},
-                    model_name,
-                    num_ctx=run_num_ctx,
-                    sprint_feedback_prompt_name=SPRINT_FEEDBACK_PROMPT_NAME,
-                )
-                sprint_feedback_prompt = register_sprint_feedback_prompt(SPRINT_FEEDBACK_PROMPT_NAME, mlflow_client) # Ensure the sprint feedback prompt is registered in MLflow prompt registry
-                
-            except Exception:
-                sprint_feedback_prompt = None
-                log.exception("General sprint feedback generation failed.")
-        
-            strengths = feedback.strengths if feedback else []
-            weaknesses = feedback.weaknesses if feedback else []
-            recommendations = feedback.recommendations if feedback else []
-            if failed_dimensions:
-                recommendations.append("Re-run the failed rubric dimensions before relying on this report.")
+        summary_parts = []
+        if failed_dimensions:
+            failure_details = "; ".join(
+                f"{dimension}: {error}" for dimension, error in failed_dimensions.items()
+            )
+            summary_parts.append(
+                f"The assessment is incomplete. Failed dimensions: {failure_details}"
+            )
+            mlflow.update_current_trace(tags={"Flagged for review": failure_details})
+        else:
+            summary_parts.append("All rubric dimensions were evaluated successfully.")
+    
+        feedback = None
+        try:
+            feedback = await generate_sprint_feedback(
+                bundle,
+                {dimension: score.model_dump(exclude={"prompt_version"}) for dimension, score in scores_by_dim.items()},
+                model_name,
+                num_ctx=run_num_ctx,
+                sprint_feedback_prompt_name=SPRINT_FEEDBACK_PROMPT_NAME,
+            )
+            sprint_feedback_prompt = register_sprint_feedback_prompt(SPRINT_FEEDBACK_PROMPT_NAME, mlflow_client) # Ensure the sprint feedback prompt is registered in MLflow prompt registry
+            
+        except Exception:
+            sprint_feedback_prompt = None
+            log.exception("General sprint feedback generation failed.")
+    
+        strengths = feedback.strengths if feedback else []
+        weaknesses = feedback.weaknesses if feedback else []
+        recommendations = feedback.recommendations if feedback else []
+        if failed_dimensions:
+            recommendations.append("Re-run the failed rubric dimensions before relying on this report.")
 
         final_assessment = SprintAssessment(
             team_id=bundle.team_id,
@@ -268,26 +269,26 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             # failed_dimensions=failed_dimensions,
         )
 
-            mlflow.log_metric("overall_score", average_score)
-            for dim, score in scores_by_dim.items():
-                if not score.evaluation_failed:
-                    mlflow.log_metric(f"{dim}_score", score.score)
-            mlflow.log_metric("failed_dimensions_count", len(failed_dimensions))
-            mlflow.log_metric("evaluation_duration_seconds", time.time() - start_time)
+        mlflow.log_metric("overall_score", average_score)
+        for dim, score in scores_by_dim.items():
+            if not score.evaluation_failed:
+                mlflow.log_metric(f"{dim}_score", score.score)
+        mlflow.log_metric("failed_dimensions_count", len(failed_dimensions))
+        mlflow.log_metric("evaluation_duration_seconds", time.time() - start_time)
 
-            save_run_results(
-                experiment_name=experiment_name,
-                model_name=model_name,
-                team_id=bundle.team_id,
-                sprint_id=bundle.sprint_id,
-                trace_id=root.trace_id,
-                run_id=run.info.run_id,
-                overall_score=average_score,
-                scores_by_dim=scores_by_dim,
-                failed_dimensions=failed_dimensions,
-                prompt_versions=prompt_versions_registered,
-                duration_seconds=time.time() - start_time,
-            )
+        save_run_results(
+            experiment_name=experiment_name,
+            model_name=model_name,
+            team_id=bundle.team_id,
+            sprint_id=bundle.sprint_id,
+            trace_id=root.trace_id,
+            run_id=run.info.run_id,
+            overall_score=average_score,
+            scores_by_dim=scores_by_dim,
+            failed_dimensions=failed_dimensions,
+            prompt_versions=prompt_versions_registered,
+            duration_seconds=time.time() - start_time,
+        )
 
         root.set_outputs(final_assessment.model_dump(mode="json"))  # Store the final assessment in the root span outputs for traceability
         # Store the prompt versions used for each dimension & the sprint feedback prompt in the root span attributes for traceability
@@ -296,7 +297,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             "sprint_feedback_prompt": final_assessment.prompt_version,
         }})
 
-            mlflow.update_current_trace(response_preview=f"Average score: {average_score}, failed dimensions: {list(failed_dimensions.keys())}")
+        mlflow.update_current_trace(response_preview=f"Average score: {average_score}, failed dimensions: {list(failed_dimensions.keys())}")
 
     if failed_dimensions:
         # Create and add trace to review queue for manual review if all dimensions failed

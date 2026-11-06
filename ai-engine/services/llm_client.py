@@ -808,9 +808,8 @@ def create_llm_client(provider="ollama"):
         )
     if provider == "openai":
         raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
-            base_url=OLLAMA_BASE_URL,
-            api_key=OLLAMA_API_KEY,
-            timeout=OLLAMA_TIMEOUT,
+            api_key=os.getenv('OPENAI_API_KEY'),
+            timeout=float(os.getenv('OPENAI_TIMEOUT_SECONDS', '128')),
             http_client=transport, # Use the custom transport to capture requests and responses
         )
 

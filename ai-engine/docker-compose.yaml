@@ -93,6 +93,9 @@ services: # Separate containers to run
 
         # debug print of the full ingested bundle on /assess/sprint/data
         - LOG_BUNDLE_DISPLAY=${LOG_BUNDLE_DISPLAY:-false}
+
+        # Prevent Python from writing .pyc files to disk (not needed in Docker)
+        - PYTHONDONTWRITEBYTECODE=1
       volumes:
         - ./:/app
         - ./audit_logs:/app/audit_logs
