@@ -9,6 +9,7 @@ import {
   type ExportPreviewData,
   type ExportFormat,
 } from "@/features/assessment/assessment-export-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 export type ExportState = "idle" | "loading-preview" | "preview-ready" | "exporting" | "success" | "error";
 
@@ -33,7 +34,7 @@ export function useAssessmentExport() {
       setPreviewData(data);
       setState("preview-ready");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load preview";
+      const message = getErrorMessage(err, "Failed to load preview");
       setError(message);
       setState("error");
     }
@@ -57,7 +58,7 @@ export function useAssessmentExport() {
         setSelectedFormat(null);
       }, 2000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to export PDF";
+      const message = getErrorMessage(err, "Failed to export PDF");
       setError(message);
       setState("error");
     }
@@ -81,7 +82,7 @@ export function useAssessmentExport() {
         setSelectedFormat(null);
       }, 2000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to export CSV";
+      const message = getErrorMessage(err, "Failed to export CSV");
       setError(message);
       setState("error");
     }

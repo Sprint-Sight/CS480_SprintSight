@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
 
 export function useDocumentDeletion(onDeleted: (projectId: string, documentId: string) => void) {
   const [deletingDocumentIds, setDeletingDocumentIds] = useState<Set<string>>(() => new Set());
@@ -25,7 +25,7 @@ export function useDocumentDeletion(onDeleted: (projectId: string, documentId: s
     } catch (error) {
       setDeleteErrors((current) => ({
         ...current,
-        [documentId]: error instanceof Error ? error.message : "Failed to delete document.",
+        [documentId]: getErrorMessage(error, "Failed to delete document."),
       }));
     } finally {
       setDeletingDocumentIds((current) => {

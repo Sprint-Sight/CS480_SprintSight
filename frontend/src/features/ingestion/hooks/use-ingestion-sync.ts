@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { isUuid } from "@/features/projects/components/projects-api";
 import { getProjectGitMetrics, mergeIngestionRuns } from "@/features/ingestion/state";
 import { fetchProjectIngestion, resolveProjectCourseId } from "@/features/ingestion/ingestion-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 type UseIngestionSyncOptions = {
   projectId: string;
@@ -49,7 +50,7 @@ export function useIngestionSync({ projectId, courseId, enabled = true }: UseIng
         mergeIngestionRuns(result.gitRuns, result.jiraSnapshots);
         setSyncError(result.errors.join(" "));
       } catch (error) {
-        if (isCurrent) setSyncError(error instanceof Error ? error.message : "Could not load ingestion data.");
+        if (isCurrent) setSyncError(getErrorMessage(error, "Could not load ingestion data."));
       } finally {
         if (isCurrent) setIsSyncing(false);
       }

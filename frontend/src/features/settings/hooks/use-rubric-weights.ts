@@ -11,6 +11,7 @@ import {
   type CourseOption,
 } from "@/features/settings/settings-api";
 import type { RubricDimensionId, RubricWeight } from "@/features/settings/types";
+import { getErrorMessage } from "@/lib/api/client";
 
 /** The backend accepts totals within 0.99-1.01; stay inside that on the client. */
 const TOTAL_TOLERANCE = 0.5;
@@ -59,7 +60,7 @@ export function useRubricWeights(enabled: boolean) {
       })
       .catch((loadError: unknown) => {
         if (!isCurrent) return;
-        setError(loadError instanceof Error ? loadError.message : "Unable to load courses.");
+        setError(getErrorMessage(loadError, "Unable to load courses."));
         setIsLoading(false);
       });
     return () => {
@@ -82,7 +83,7 @@ export function useRubricWeights(enabled: boolean) {
       })
       .catch((loadError: unknown) => {
         if (!isCurrent) return;
-        setError(loadError instanceof Error ? loadError.message : "Unable to load rubric weights.");
+        setError(getErrorMessage(loadError, "Unable to load rubric weights."));
       })
       .finally(() => {
         if (isCurrent) setIsLoading(false);
@@ -126,7 +127,7 @@ export function useRubricWeights(enabled: boolean) {
       setSavedRubric(saved);
       return true;
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save rubric weights.");
+      setError(getErrorMessage(saveError, "Unable to save rubric weights."));
       return false;
     } finally {
       setIsSaving(false);

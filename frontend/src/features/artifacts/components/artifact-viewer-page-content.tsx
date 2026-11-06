@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { API_BASE_URL, apiRequest, getAuthToken, isUuid } from "@/features/projects/components/projects-api";
+import { isUuid } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { getProjectGitMetrics, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
@@ -24,6 +25,7 @@ import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifa
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
+import { useSession } from "@/lib/auth/session";
 
 const tabs: Array<{ id: ArtifactTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "github", label: "GitHub", icon: FolderGit2 },
@@ -168,8 +170,13 @@ export default function ArtifactViewerPageContent() {
   const { activeTab, setActiveTab } = useArtifactTab();
   
   // Track user role and full name for anonymity, tab access, and upload attribution
-  const [role, setRole] = useState<"student" | "instructor" | null>(null);
-  const [fullName, setFullName] = useState<string>("");
+  // Any non-instructor session is treated as a student to enforce privacy.
+  const session = useSession();
+  const role: "student" | "instructor" | null = session
+    ? session.user?.role === "instructor"
+      ? "instructor"
+      : "student"
+    : null;
   const { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
 
   
@@ -206,17 +213,6 @@ export default function ArtifactViewerPageContent() {
     if (isUuid(selectedProjectId) && localDocuments.length > 0) sources.push({ source: "Documents", records: localDocuments.length, lastSyncedAt: "Available", parserStatus: "Healthy", evaluationUsage: "Evidence quality, documentation completeness" });
     return sources;
   }, [gitMetrics, jiraSnapshot, localDocuments.length, selectedProjectId]);
-
-  // Initialize role, name, and local documents on mount/dataset change
-  useEffect(() => {
-    const savedRole = sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null;
-    const savedName = sessionStorage.getItem("sprintsight-auth-name");
-
-    setRole(savedRole ?? "student"); // Default to student if not found to enforce privacy
-    if (savedName) {
-      setFullName(savedName);
-    }
-  }, []);
 
   const selectedBackendProject = projectOptions.find(
     (project) => project.id === selectedProjectId && isUuid(project.id) && Boolean(project.courseId),
@@ -259,7 +255,7 @@ export default function ArtifactViewerPageContent() {
         applyRuns(runs);
       })
       .catch((error) => {
-        if (!cancelled) setGitError(error instanceof Error ? error.message : "Failed to load Git ingestion runs.");
+        if (!cancelled) setGitError(getErrorMessage(error, "Failed to load Git ingestion runs."));
       })
       .finally(() => {
         if (!cancelled) setIsLoadingGit(false);
@@ -299,7 +295,7 @@ export default function ArtifactViewerPageContent() {
         setLocalDocuments(documents.map(toDocumentArtifact));
         saveDocumentCount(selectedProjectId, documents.length);
       } catch (error) {
-        setDocumentError(error instanceof Error ? error.message : "Failed to load documents.");
+        setDocumentError(getErrorMessage(error, "Failed to load documents."));
         setLocalDocuments([]);
       } finally {
         setIsLoadingDocuments(false);
@@ -337,7 +333,7 @@ export default function ArtifactViewerPageContent() {
         }
         setSprintId(buildNextSprintId(runs.map((run) => run.sprint_id)));
       } catch (error) {
-        setJiraError(error instanceof Error ? error.message : "Failed to load Jira ingestion runs.");
+        setJiraError(getErrorMessage(error, "Failed to load Jira ingestion runs."));
       } finally {
         setIsLoadingJira(false);
       }
@@ -367,7 +363,7 @@ export default function ArtifactViewerPageContent() {
       setGitMetrics(metrics);
       saveGitMetrics(metrics);
     } catch (error) {
-      setGitError(error instanceof Error ? error.message : "Failed to load Git ingestion data.");
+      setGitError(getErrorMessage(error, "Failed to load Git ingestion data."));
     } finally {
       setIsLoadingGit(false);
     }
@@ -423,7 +419,7 @@ export default function ArtifactViewerPageContent() {
       await loadSprintRuns(sprint);
       setSprintId(buildNextSprintId([...jiraRuns.map((run) => run.sprint_id), sprint]));
     } catch (error) {
-      setJiraError(error instanceof Error ? error.message : "Jira ingestion failed.");
+      setJiraError(getErrorMessage(error, "Jira ingestion failed."));
     } finally {
       setIsSyncingJira(false);
     }
@@ -464,7 +460,7 @@ export default function ArtifactViewerPageContent() {
       setGitRuns(updatedRuns);
       setGitSprintId(sprint);
     } catch (error) {
-      setGitError(error instanceof Error ? error.message : "Git ingestion failed.");
+      setGitError(getErrorMessage(error, "Git ingestion failed."));
     } finally {
       setIsSyncingGit(false);
     }
@@ -500,7 +496,7 @@ export default function ArtifactViewerPageContent() {
         return updated;
       });
     } catch (error) {
-      setDocumentError(error instanceof Error ? error.message : "Failed to upload documents.");
+      setDocumentError(getErrorMessage(error, "Failed to upload documents."));
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -508,22 +504,19 @@ export default function ArtifactViewerPageContent() {
   };
 
   const handleDownloadDocument = async (documentId: string, fileName: string) => {
-    const token = getAuthToken();
-    if (!token) return;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/projects/${selectedProjectId}/documents/${documentId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error("Failed to download document.");
-      const objectUrl = URL.createObjectURL(await response.blob());
+      const blob = await apiRequest<Blob>(
+        `/projects/${selectedProjectId}/documents/${documentId}`,
+        { responseType: "blob" },
+      );
+      const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
       anchor.download = fileName;
       anchor.click();
       URL.revokeObjectURL(objectUrl);
     } catch (error) {
-      setDocumentError(error instanceof Error ? error.message : "Failed to download document.");
+      setDocumentError(getErrorMessage(error, "Failed to download document."));
     }
   };
 

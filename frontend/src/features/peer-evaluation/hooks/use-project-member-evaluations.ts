@@ -5,6 +5,7 @@ import {
   getMemberEvaluations,
   type MemberPeerEvaluationDetail,
 } from "@/features/peer-evaluation/peer-evaluation-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 export function useProjectMemberEvaluations(projectId: string, memberIds: string[]) {
   const memberIdsKey = memberIds.join(",");
@@ -34,9 +35,7 @@ export function useProjectMemberEvaluations(projectId: string, memberIds: string
         if (cancelled) return;
         setMembers([]);
         setError(
-          cause instanceof Error
-            ? cause.message
-            : "Failed to load project member evaluations.",
+          getErrorMessage(cause, "Failed to load project member evaluations."),
         );
       })
       .finally(() => {

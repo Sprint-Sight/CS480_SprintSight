@@ -1,4 +1,4 @@
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest } from "@/lib/api/client";
 
 type GitRunLike = {
   sprint_id: string;
@@ -8,7 +8,10 @@ type GitRunLike = {
 
 const MAX_PROBED_SPRINTS = 30;
 
+// Checked structurally (ApiError.status) so tests can mock the client module freely.
 function isNotFound(error: unknown) {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === "number") return status === 404;
   return error instanceof Error && /not found/i.test(error.message);
 }
 

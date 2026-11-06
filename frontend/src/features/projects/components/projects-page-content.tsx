@@ -9,13 +9,16 @@ import { ProjectMembersModal } from "@/features/projects/components/project-memb
 import { ProjectModal } from "@/features/projects/components/project-modal";
 import { RosterModal } from "@/features/projects/components/roster-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
-import { apiRequest, getAuthToken, getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
+import { getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
+import { getSessionToken } from "@/lib/auth/session";
 import { notifyProjectsUpdated } from "@/features/projects/projects-events";
 import type { Course, Project, ProjectStatus } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
+import { useSession } from "@/lib/auth/session";
 
 const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
 const sortOptions = [
@@ -72,7 +75,8 @@ export default function ProjectsPageContent() {
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [studentDirectoryError, setStudentDirectoryError] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
-  const [canUseInstructorCredentials, setCanUseInstructorCredentials] = useState(false);
+  const session = useSession();
+  const canUseInstructorCredentials = Boolean(session?.user) && session?.user?.role !== "student";
   const jiraCredentials = useInstructorJiraCredentials(canUseInstructorCredentials);
   const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
   const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
@@ -97,12 +101,8 @@ export default function ProjectsPageContent() {
 
   const [studentForm, setStudentForm] = useState({ email: "", full_name: "", password: "" });
 
-  useEffect(() => {
-    setCanUseInstructorCredentials(sessionStorage.getItem("sprintsight-auth-role") !== "student");
-  }, []);
-
   async function reloadCourses() {
-    const token = getAuthToken();
+    const token = getSessionToken();
     if (!token) {
       if (typeof window !== "undefined") {
         window.location.href = "/login";
@@ -164,7 +164,7 @@ export default function ProjectsPageContent() {
       >("/users");
       setAllStudents(students.filter((student) => student.role === "student"));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load student accounts.";
+      const message = getErrorMessage(error, "Failed to load student accounts.");
       setStudentDirectoryError(message);
       console.error("Failed to load student directory:", error);
     } finally {
@@ -281,7 +281,7 @@ export default function ProjectsPageContent() {
       await loadProjects();
       window.alert("Project deleted.");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to delete project.");
+      window.alert(getErrorMessage(error, "Failed to delete project."));
     }
   }
 
@@ -359,7 +359,7 @@ export default function ProjectsPageContent() {
       }
       setIsProjectModalOpen(false);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to save project.");
+      window.alert(getErrorMessage(error, "Failed to save project."));
     } finally {
       isSavingProjectRef.current = false;
       setIsSavingProject(false);
@@ -396,7 +396,7 @@ export default function ProjectsPageContent() {
       setIsCourseModalOpen(false);
       setEditingCourse(null);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to save course.");
+      window.alert(getErrorMessage(error, "Failed to save course."));
     }
   }
 
@@ -417,7 +417,7 @@ export default function ProjectsPageContent() {
       await reloadCourses();
       setIsCourseModalOpen(false);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to delete course.");
+      window.alert(getErrorMessage(error, "Failed to delete course."));
     }
   }
 
@@ -471,7 +471,7 @@ export default function ProjectsPageContent() {
       setStudentForm({ email: "", full_name: "", password: "" });
       await loadAllStudents();
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to create student.");
+      window.alert(getErrorMessage(error, "Failed to create student."));
     }
   }
 
@@ -488,7 +488,7 @@ export default function ProjectsPageContent() {
       await loadCourseStudents();
       window.alert(`${student.full_name} was enrolled in this course.`);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to enroll student.");
+      window.alert(getErrorMessage(error, "Failed to enroll student."));
     }
   }
 
@@ -503,7 +503,7 @@ export default function ProjectsPageContent() {
       setCourseStudents((previous) => previous.filter((student) => student.id !== userId));
       window.alert("Student unenrolled.");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to unenroll student.");
+      window.alert(getErrorMessage(error, "Failed to unenroll student."));
     }
   }
 
@@ -544,7 +544,7 @@ export default function ProjectsPageContent() {
       await loadProjects();
       window.alert("Project member removed.");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to remove project member.");
+      window.alert(getErrorMessage(error, "Failed to remove project member."));
     } finally {
       setMemberToRemove(null);
     }
@@ -571,7 +571,7 @@ export default function ProjectsPageContent() {
         } catch (error) {
           failedStudents.push({
             id: studentId,
-            message: error instanceof Error ? error.message : "Request failed",
+            message: getErrorMessage(error, "Request failed"),
           });
         }
       }
@@ -727,7 +727,7 @@ export default function ProjectsPageContent() {
         courses={courses}
         editingCourse={editingCourse}
         courseForm={courseForm}
-        userName={sessionStorage.getItem("sprintsight-auth-name") || "Instructor"}
+        userName={session?.user?.fullName || "Instructor"}
         onClose={() => setIsCourseModalOpen(false)}
         onSave={handleCreateOrUpdateCourse}
         onDelete={handleDeleteCourse}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { readIngestionState } from "@/features/ingestion/state";
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { PROJECTS_UPDATED_EVENT } from "@/features/projects/projects-events";
 import { getStudentProjects } from "@/features/student/student-project-api";
 
@@ -89,7 +89,7 @@ export function useArtifactProjectScope(role: "student" | "instructor" | null) {
         if (cancelled) return;
         setProjectOptions([]);
         if (role === "student") setSelectedProjectId("");
-        setProjectLoadError(error instanceof Error ? error.message : "Could not load backend projects.");
+        setProjectLoadError(getErrorMessage(error, "Could not load backend projects."));
       } finally {
         if (!cancelled) setIsLoadingProjects(false);
       }

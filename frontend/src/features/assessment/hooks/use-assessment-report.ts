@@ -14,13 +14,10 @@ import {
   type BackendAssessmentReport,
 } from "@/features/assessment/assessment-api";
 import { readIngestionState } from "@/features/ingestion/state";
-import {
-  API_BASE_URL,
-  apiRequest,
-  getAuthToken,
-  isUuid,
-} from "@/features/projects/components/projects-api";
+import { isUuid } from "@/features/projects/components/projects-api";
+import { API_BASE_URL, apiRequest, buildAuthHeaders, getErrorMessage } from "@/lib/api/client";
 import type { SprintAssessmentReport } from "@/features/assessment/types";
+import { useSession } from "@/lib/auth/session";
 
 type AssessmentProjectOption = {
   id: string;
@@ -114,7 +111,8 @@ export function useAssessmentReport() {
   const [assessmentProgress, setAssessmentProgress] = useState(0);
   const [assessmentMessage, setAssessmentMessage] = useState("");
   const [assessmentError, setAssessmentError] = useState("");
-  const [role, setRole] = useState<"student" | "instructor" | "admin" | null>(null);
+  const session = useSession();
+  const role: "student" | "instructor" | "admin" | null = session ? (session.user?.role ?? "student") : null;
 
   const clearLiveReport = (projectId: string, sprint: string) => {
     setBackendReport(null);
@@ -161,7 +159,7 @@ export function useAssessmentReport() {
     } catch (error) {
       clearLiveReport(scope.projectId, scope.sprintId);
       setAssessmentError(
-        error instanceof Error ? error.message : "Failed to load the latest assessment.",
+        getErrorMessage(error, "Failed to load the latest assessment."),
       );
     } finally {
       setIsLoadingReport(false);
@@ -202,7 +200,7 @@ export function useAssessmentReport() {
       });
       await monitorJob(job);
     } catch (error) {
-      setAssessmentError(error instanceof Error ? error.message : "Assessment generation failed.");
+      setAssessmentError(getErrorMessage(error, "Assessment generation failed."));
     } finally {
       clearActiveAssessmentJob();
       setIsGenerating(false);
@@ -210,10 +208,9 @@ export function useAssessmentReport() {
   }
 
   async function monitorJob(job: { job_id: string }) {
-    const token = getAuthToken();
-    if (!token) throw new Error("Your session has expired. Please log in again.");
+    // Streamed (SSE) response, so it is read directly instead of through apiRequest.
     const response = await fetch(`${API_BASE_URL}/assessments/jobs/${job.job_id}/events`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: buildAuthHeaders(),
     });
     if (!response.ok || !response.body) throw new Error("Could not monitor assessment progress.");
     const reader = response.body.getReader();
@@ -246,7 +243,7 @@ export function useAssessmentReport() {
     try {
       await monitorJob({ job_id: stored.jobId });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Assessment generation failed.";
+      const message = getErrorMessage(error, "Assessment generation failed.");
       if (!/Could not monitor/.test(message)) setAssessmentError(message);
     } finally {
       clearActiveAssessmentJob();
@@ -277,17 +274,6 @@ export function useAssessmentReport() {
     void resumeActiveJob(stored);
   }, [role, selectedProjectId, sprintId, projectOptions]);
 
-  useEffect(
-    () =>
-      setRole(
-        (sessionStorage.getItem("sprintsight-auth-role") as
-          | "student"
-          | "instructor"
-          | "admin"
-          | null) || "student",
-      ),
-    [],
-  );
   useEffect(() => {
     if (role === "student") return;
     const refreshScope = () => {
@@ -328,7 +314,7 @@ export function useAssessmentReport() {
       } catch (error) {
         setProjectOptions([]);
         setAssessmentError(
-          error instanceof Error ? error.message : "Could not load assessment projects.",
+          getErrorMessage(error, "Could not load assessment projects."),
         );
       }
     }

@@ -1,4 +1,4 @@
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest } from "@/lib/api/client";
 
 export type StudentCourse = {
   id: string;

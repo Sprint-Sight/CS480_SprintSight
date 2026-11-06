@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { SprintSummaryCards } from "@/features/sprints/components/sprint-summary-cards";
 import { SprintTimeline } from "@/features/sprints/components/sprint-timeline";
 import { useSprintOverviewData } from "@/features/sprints/hooks/use-sprint-overview-data";
 import { useStudentProjectContext } from "@/features/student/hooks/use-student-project-context";
+import { useSession } from "@/lib/auth/session";
 
 export default function SprintOverviewPageContent() {
-  const [role, setRole] = useState<string | null>(null);
-  useEffect(() => setRole(sessionStorage.getItem("sprintsight-auth-role")), []);
+  const role = useSession()?.user?.role ?? null;
   if (role === "student") return <StudentSprintOverview />;
   if (!role) return null;
   return <InstructorSprintOverview />;

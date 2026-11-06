@@ -9,7 +9,10 @@ const { getStudentProjects, apiRequest, readIngestionState } = vi.hoisted(() => 
 }));
 
 vi.mock("@/features/student/student-project-api", () => ({ getStudentProjects }));
-vi.mock("@/features/projects/components/projects-api", () => ({ apiRequest }));
+vi.mock("@/lib/api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/client")>()),
+  apiRequest,
+}));
 vi.mock("@/features/ingestion/state", () => ({ readIngestionState }));
 
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";

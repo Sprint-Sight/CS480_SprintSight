@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CollaborationCharts } from "@/features/collaboration/components/collaboration-charts";
 import { CollaborationHeader } from "@/features/collaboration/components/collaboration-header";
 import { CollaborationHeatmap } from "@/features/collaboration/components/collaboration-heatmap";
 import { UnmatchedCommitsPanel } from "@/features/collaboration/components/unmatched-commits-panel";
 import { useCollaborationData } from "@/features/collaboration/hooks/use-collaboration-data";
 import type { CollaborationMetric } from "@/features/collaboration/types";
+import { useSession } from "@/lib/auth/session";
 
 export default function CollaborationPageContent() {
-  const [role, setRole] = useState<string | null>(null);
-  useEffect(() => setRole(sessionStorage.getItem("sprintsight-auth-role")), []);
+  const role = useSession()?.user?.role ?? null;
   if (role === "student") return <StudentCollaborationUnavailable />;
   if (!role) return null;
   return <InstructorCollaborationPage />;

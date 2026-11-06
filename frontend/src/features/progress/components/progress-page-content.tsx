@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { ProgressLiveSignals } from "@/features/progress/components/progress-live-signals";
 import { useProgressData } from "@/features/progress/hooks/use-progress-data";
+import { useSession } from "@/lib/auth/session";
 
 export default function ProgressPageContent() {
-  const [role, setRole] = useState<string | null>(null);
-  useEffect(() => setRole(sessionStorage.getItem("sprintsight-auth-role")), []);
+  const role = useSession()?.user?.role ?? null;
   if (role === "student") return <StudentProgressUnavailable />;
   if (!role) return null;
   return <InstructorProgressPage />;

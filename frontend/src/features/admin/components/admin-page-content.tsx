@@ -29,16 +29,27 @@ import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { useAdminDirectory } from "@/features/admin/hooks/use-admin-directory";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
-import { getApiErrorMessage, getAuthToken } from "@/features/projects/components/projects-api";
-import { clearStoredSession, restoreSession } from "@/features/auth/session";
+import { getErrorMessage } from "@/lib/api/client";
+import { signOut, useSession } from "@/lib/auth/session";
+import { restoreSession } from "@/features/auth/login-api";
+import {
+  activateUser,
+  createUser,
+  deactivateUser,
+  getUser,
+  listCourses,
+  listUsers,
+  resetUserPassword,
+  updateUser,
+  type AdminCourseOption,
+} from "@/features/admin/admin-api";
 import { MIN_PASSWORD_LENGTH, ResetPasswordModal } from "@/features/admin/components/reset-password-modal";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
 export function AdminPageContent() {
   const router = useRouter();
-  const [adminName, setAdminName] = useState("");
-  const [currentEmail, setCurrentEmail] = useState("");
+  const session = useSession();
+  const adminName = session?.user?.fullName ?? "";
+  const currentEmail = session?.user?.email ?? "";
   const [mounted, setMounted] = useState(false);
 
   // Identity & State
@@ -47,7 +58,7 @@ export function AdminPageContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState("all");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("Active");
-  const [courses, setCourses] = useState<{ id: string; code: string; title: string }[]>([]);
+  const [courses, setCourses] = useState<AdminCourseOption[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
 
   // Modals state
@@ -75,56 +86,21 @@ export function AdminPageContent() {
   };
 
   const handleEditUser = async (user: UserAccount) => {
-    const token = getAuthToken();
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${user.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const error = await res.json().catch(() => null);
-        throw new Error(getApiErrorMessage(error, "Failed to fetch user details."));
-      }
-
-      const freshUser = await res.json();
-      setEditingUser({
-        ...user,
-        id: freshUser.id,
-        fullName: freshUser.full_name,
-        email: freshUser.email,
-        role: freshUser.role,
-        status: freshUser.is_active ? "Active" : "Inactive",
-      });
+      const freshUser = await getUser(user.id);
+      setEditingUser({ ...user, ...freshUser, createdAt: user.createdAt });
     } catch (error) {
-      showNotification("error", error instanceof Error ? error.message : "Failed to fetch user details.");
+      showNotification("error", getErrorMessage(error, "Failed to fetch user details."));
     }
   };
 
   // 1. GET /users - Fetch User Directory
   const fetchUsers = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) return;
-
     setLoadingUsers(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/users`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch user directory");
-
-      const data = await res.json();
-      const mappedUsers: UserAccount[] = data.map((u: any) => {
-        return {
-          id: u.id,
-          fullName: u.full_name,
-          email: u.email,
-          role: u.role,
-          status: u.is_active ? "Active" : "Inactive",
-          createdAt: u.created_at ? u.created_at.split("T")[0] : "N/A",
-        };
-      });
-      setUsers(mappedUsers);
-    } catch (err: any) {
-      showNotification("error", err.message || "Failed to load directory.");
+      setUsers(await listUsers());
+    } catch (error) {
+      showNotification("error", getErrorMessage(error, "Failed to load directory."));
     } finally {
       setLoadingUsers(false);
     }
@@ -132,25 +108,10 @@ export function AdminPageContent() {
 
   // Fetch courses for bulk import dropdown
   const fetchCourses = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) return;
-
     setLoadingCourses(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/courses`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch courses");
-
-      const data = await res.json();
-      setCourses(
-        data.map((c: any) => ({
-          id: c.id,
-          code: c.code,
-          title: c.title,
-        }))
-      );
-    } catch (err: any) {
+      setCourses(await listCourses());
+    } catch {
       // Silently fail for courses - not critical for admin page
     } finally {
       setLoadingCourses(false);
@@ -160,15 +121,12 @@ export function AdminPageContent() {
   useEffect(() => {
     let isCurrent = true;
 
-    void restoreSession().then((session) => {
+    void restoreSession().then((restored) => {
       if (!isCurrent) return;
-      if (session?.role !== "admin") {
+      if (restored?.user?.role !== "admin") {
         router.replace("/login");
         return;
       }
-
-      if (session.fullName) setAdminName(session.fullName);
-      setCurrentEmail(session.email);
 
       fetchUsers();
       fetchCourses();
@@ -180,127 +138,64 @@ export function AdminPageContent() {
     };
   }, [router, fetchUsers, fetchCourses]);
 
+  // Signing out in another tab clears the shared session; follow it here.
+  useEffect(() => {
+    if (mounted && !session) router.replace("/login");
+  }, [mounted, session, router]);
+
   // 2. POST /users - Create Managed User
   const handleCreateUser = async (data: CreateUserData): Promise<boolean> => {
-    const token = getAuthToken();
     try {
-      const res = await fetch(`${API_BASE_URL}/users`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          email: data.email,
-          full_name: data.fullName,
-          role: data.role,
-          ...(data.password ? { password: data.password } : {}),
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        showNotification("error", getApiErrorMessage(err, "Failed to create user."));
-        return false;
-      }
-
-      const newUser = await res.json();
-      const createdRecord: UserAccount = {
-        id: newUser.id,
-        fullName: newUser.full_name,
-        email: newUser.email,
-        role: newUser.role,
-        status: newUser.is_active ? "Active" : "Inactive",
-        createdAt: newUser.created_at ? newUser.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
-      };
-
+      const createdRecord = await createUser(data);
       setUsers((prev) => [createdRecord, ...prev]);
-      if (newUser.role === "student" && newUser.signup_email_sent) {
+      if (createdRecord.role === "student" && createdRecord.signupEmailSent) {
         showNotification(
           "success",
-          `Student ${newUser.full_name} was created. A first-time password setup link was queued for delivery to ${newUser.email}.`,
+          `Student ${createdRecord.fullName} was created. A first-time password setup link was queued for delivery to ${createdRecord.email}.`,
         );
-      } else if (newUser.role === "student") {
+      } else if (createdRecord.role === "student") {
         showNotification(
           "error",
-          `Student ${newUser.full_name} was created, but the setup email was not queued. Check SMTP configuration and backend logs.`,
+          `Student ${createdRecord.fullName} was created, but the setup email was not queued. Check SMTP configuration and backend logs.`,
         );
       } else {
-        showNotification("success", `User ${newUser.full_name} provisioned successfully.`);
+        showNotification("success", `User ${createdRecord.fullName} provisioned successfully.`);
       }
       return true;
-    } catch {
-      showNotification("error", "Network error while provisioning user.");
+    } catch (error) {
+      showNotification("error", getErrorMessage(error, "Failed to create user."));
       return false;
     }
   };
 
   // 3. PATCH /users/{user_id} - Update Managed User
   const handleUpdateUser = async (user: UserAccount, data: EditUserData) => {
-    const token = getAuthToken();
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${user.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          role: data.role,
-          full_name: data.fullName ?? user.fullName,
-          email: data.email ?? user.email,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        showNotification("error", getApiErrorMessage(err, "Failed to update record."));
-        return;
-      }
-
-      const updatedUser = await res.json();
-      // Update state with response from backend
+      const updatedUser = await updateUser(user, data);
       setUsers((prev) =>
         prev.map((u) =>
           u.id === user.id
-            ? {
-                ...u,
-                fullName: updatedUser.full_name,
-                email: updatedUser.email,
-                role: updatedUser.role,
-              }
-            : u
-        )
+            ? { ...u, fullName: updatedUser.fullName, email: updatedUser.email, role: updatedUser.role }
+            : u,
+        ),
       );
-
-      showNotification("success", `Updated identity details for ${updatedUser.full_name}.`);
-    } catch (err) {
-      showNotification("error", "Network error while updating user.");
+      showNotification("success", `Updated identity details for ${updatedUser.fullName}.`);
+    } catch (error) {
+      showNotification("error", getErrorMessage(error, "Failed to update record."));
     }
   };
 
   // 4. DELETE /users/{user_id} - Soft-delete (Deactivate) User
   const handleDeactivateUser = async () => {
     if (!userToDeactivate) return;
-    const token = getAuthToken();
-
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${userToDeactivate.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (res.ok) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === userToDeactivate.id ? { ...u, status: "Inactive" } : u))
-        );
-        showNotification("success", `User ${userToDeactivate.fullName} deactivated.`);
-      } else {
-        const err = await res.json().catch(() => null);
-        showNotification("error", getApiErrorMessage(err, "Failed to deactivate record."));
-      }
-    } catch (err) {
-      showNotification("error", "Network error while deactivating user.");
+      await deactivateUser(userToDeactivate.id);
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userToDeactivate.id ? { ...u, status: "Inactive" } : u)),
+      );
+      showNotification("success", `User ${userToDeactivate.fullName} deactivated.`);
+    } catch (error) {
+      showNotification("error", getErrorMessage(error, "Failed to deactivate record."));
     } finally {
       setUserToDeactivate(null);
     }
@@ -308,24 +203,12 @@ export function AdminPageContent() {
 
   // 5. POST /users/{user_id}/activate - Reactivate User Account
   const handleActivateUser = async (user: UserAccount) => {
-    const token = getAuthToken();
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${user.id}/activate`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (res.ok) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === user.id ? { ...u, status: "Active" } : u))
-        );
-        showNotification("success", `User ${user.fullName} reactivated.`);
-      } else {
-        const err = await res.json().catch(() => null);
-        showNotification("error", getApiErrorMessage(err, "Failed to activate user."));
-      }
-    } catch (err) {
-      showNotification("error", "Network error while activating user.");
+      await activateUser(user.id);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, status: "Active" } : u)));
+      showNotification("success", `User ${user.fullName} reactivated.`);
+    } catch (error) {
+      showNotification("error", getErrorMessage(error, "Failed to activate user."));
     }
   };
 
@@ -336,37 +219,23 @@ export function AdminPageContent() {
       showNotification("error", `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
-    const token = getAuthToken();
 
     setIsResettingPassword(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${userToResetPassword.id}/reset-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ password: resetPasswordInput }),
-      });
-
-      if (res.ok) {
-        showNotification("success", `Password reset successfully for ${userToResetPassword.fullName}.`);
-        // Close only on success so a rejected password can be corrected in place.
-        setUserToResetPassword(null);
-        setResetPasswordInput("");
-      } else {
-        const err = await res.json().catch(() => null);
-        showNotification("error", getApiErrorMessage(err, "Failed to reset password."));
-      }
-    } catch (err) {
-      showNotification("error", "Network error while resetting password.");
+      await resetUserPassword(userToResetPassword.id, resetPasswordInput);
+      showNotification("success", `Password reset successfully for ${userToResetPassword.fullName}.`);
+      // Close only on success so a rejected password can be corrected in place.
+      setUserToResetPassword(null);
+      setResetPasswordInput("");
+    } catch (error) {
+      showNotification("error", getErrorMessage(error, "Failed to reset password."));
     } finally {
       setIsResettingPassword(false);
     }
   };
 
   const handleLogout = () => {
-    clearStoredSession();
+    signOut();
     router.replace("/login");
   };
 

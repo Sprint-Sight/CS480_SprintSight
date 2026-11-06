@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { readIngestionState } from "@/features/ingestion/state";
 import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
+import { useSession } from "@/lib/auth/session";
 
 export function useProgressData() {
-  const [role, setRole] = useState<"student" | "instructor" | null>(null);
+  const session = useSession();
+  const role: "student" | "instructor" | null = session ? (session.user?.role === "instructor" ? "instructor" : "student") : null;
   const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
   const [selectedCourseId, setSelectedCourseId] = useState(() => readIngestionState().selectedCourseId || "");
   const [ingestionVersion, setIngestionVersion] = useState(0);
@@ -25,7 +27,6 @@ export function useProgressData() {
     };
   }, [selectedCourseId, selectedProjectId, ingestionVersion]);
 
-  useEffect(() => setRole((sessionStorage.getItem("sprintsight-auth-role") as "student" | "instructor" | null) ?? "student"), []);
   useEffect(() => {
     const refresh = () => {
       const state = readIngestionState();

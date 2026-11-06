@@ -1,4 +1,4 @@
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
 import type { JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
 import type { PersistedGitMetrics, PersistedJiraSnapshot } from "@/features/ingestion/state";
@@ -54,8 +54,8 @@ export async function fetchProjectIngestion(
   ]);
 
   const errors: string[] = [];
-  if (git.status === "rejected") errors.push(git.reason instanceof Error ? git.reason.message : "Could not load Git data.");
-  if (jira.status === "rejected") errors.push(jira.reason instanceof Error ? jira.reason.message : "Could not load Jira data.");
+  if (git.status === "rejected") errors.push(getErrorMessage(git.reason, "Could not load Git data."));
+  if (jira.status === "rejected") errors.push(getErrorMessage(jira.reason, "Could not load Jira data."));
 
   return {
     gitRuns: git.status === "fulfilled" ? git.value : [],

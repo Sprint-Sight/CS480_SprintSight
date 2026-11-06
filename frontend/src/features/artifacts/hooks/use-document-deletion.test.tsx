@@ -2,10 +2,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest } from "@/lib/api/client";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 
-vi.mock("@/features/projects/components/projects-api", () => ({
+vi.mock("@/lib/api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/client")>()),
   apiRequest: vi.fn(),
 }));
 

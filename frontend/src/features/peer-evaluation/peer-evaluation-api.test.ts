@@ -5,9 +5,9 @@ import {
   setEvaluationConfig,
   updateEvaluation,
 } from "@/features/peer-evaluation/peer-evaluation-api";
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest } from "@/lib/api/client";
 
-vi.mock("@/features/projects/components/projects-api", () => ({
+vi.mock("@/lib/api/client", () => ({
   apiRequest: vi.fn(),
 }));
 
