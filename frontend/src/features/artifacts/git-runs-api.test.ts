@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest } from "@/lib/api/client";
 
-vi.mock("@/features/projects/components/projects-api", () => ({ apiRequest: vi.fn() }));
+vi.mock("@/lib/api/client", () => ({ apiRequest: vi.fn() }));
 
 const run = (sprint: string) => ({ sprint_id: sprint, commits: [{}, {}] });
 

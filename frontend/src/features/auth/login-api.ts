@@ -1,10 +1,9 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
+import { apiRequest } from "@/lib/api/client";
+import { getSession, setSession, type Session } from "@/lib/auth/session";
 
 export type LoginResponse = {
   access_token: string;
   must_change_password?: boolean;
-  error?: { message?: string };
-  detail?: string;
 };
 
 export type UserProfile = {
@@ -16,87 +15,79 @@ export type UserProfile = {
 
 /**
  * Authenticates a user with email and password.
- * 
- * SECURITY NOTE: Validates that response.ok before extracting tokens
- * to prevent BOLA/IDOR attacks. The backend enforces that each user
- * can only receive their own credentials via proper auth checks.
+ *
+ * SECURITY NOTE: apiRequest only resolves for a 2xx response, so a token is
+ * never extracted from a failed login.
  */
-export async function loginUser(
-  email: string,
-  password: string,
-): Promise<LoginResponse> {
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+export function loginUser(email: string, password: string): Promise<LoginResponse> {
+  return apiRequest<LoginResponse>("/auth/login", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    auth: false,
     body: JSON.stringify({
       email: email.trim().toLowerCase(),
       password,
     }),
   });
-
-  const data: unknown = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const errorData = data as LoginResponse;
-    const detail = errorData?.error?.message ?? errorData?.detail ?? "Invalid email or password.";
-    throw new Error(typeof detail === "string" ? detail : "Invalid email or password.");
-  }
-
-  return data as LoginResponse;
 }
 
 /**
- * Fetches the current authenticated user's profile.
- * Requires a valid JWT token in the Authorization header.
- * 
- * SECURITY NOTE: The backend validates the token and returns only
- * the authenticated user's profile, preventing BOLA/IDOR attacks.
+ * Fetches the profile for a specific token (used right after login, before the
+ * session is stored). The backend returns only the token owner's profile.
  */
-export async function fetchUserProfile(token: string): Promise<UserProfile> {
-  const response = await fetch(`${API_BASE_URL}/auth/me`, {
-    method: "GET",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-    },
+export function fetchUserProfile(token: string): Promise<UserProfile> {
+  return apiRequest<UserProfile>("/auth/me", {
+    auth: false,
+    headers: { Authorization: `Bearer ${token}` },
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch user profile data.");
-  }
-
-  return response.json() as Promise<UserProfile>;
 }
 
 /**
- * Changes the password for an authenticated user after first-time login.
- * Requires a valid JWT token from the login response.
- * 
- * SECURITY NOTE: The backend validates the token is tied to the user
- * and only allows password changes for the authenticated session,
- * preventing BOLA/IDOR attacks.
+ * Changes the password after a first-time login with the token from that login.
+ * The backend only allows the token owner to change their own password.
  */
 export async function changePasswordOnFirstLogin(
   token: string,
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+  await apiRequest<unknown>("/auth/change-password", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-    },
+    auth: false,
+    headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       current_password: currentPassword,
       new_password: newPassword,
     }),
   });
+}
 
-  const data: unknown = await response.json().catch(() => ({}));
+export function toSessionUser(profile: UserProfile): NonNullable<Session["user"]> {
+  return { id: profile.id, role: profile.role, email: profile.email, fullName: profile.full_name };
+}
 
-  if (!response.ok) {
-    const errorData = data as { detail?: string };
-    const detail = errorData?.detail ?? "Unable to change password.";
-    throw new Error(typeof detail === "string" ? detail : "Unable to change password.");
+/** Stores a freshly issued token together with its owner's profile. */
+export async function startSession(token: string): Promise<Session> {
+  const profile = await fetchUserProfile(token);
+  const session = { token, user: toSessionUser(profile) };
+  setSession(session);
+  return session;
+}
+
+/**
+ * Returns a complete session. When a token exists without a user (e.g. migrated
+ * from an older login), loads the user from `/auth/me` instead of forcing a new
+ * login. Returns null when signed out or when the token can't be used.
+ */
+export async function restoreSession(): Promise<Session | null> {
+  const session = getSession();
+  if (!session) return null;
+  if (session.user) return session;
+  try {
+    const profile = await apiRequest<UserProfile>("/auth/me");
+    const restored = { token: session.token, user: toSessionUser(profile) };
+    setSession(restored);
+    return restored;
+  } catch {
+    return null;
   }
 }

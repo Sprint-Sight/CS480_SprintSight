@@ -19,6 +19,7 @@ import {
   type PeerEvaluationConfigResponse,
   type SetConfigPayload,
 } from "@/features/peer-evaluation/peer-evaluation-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 type EvaluationFormData = {
   projectId: string;
@@ -51,7 +52,7 @@ export function usePeerEvaluation() {
       const data = await getMyEvaluations(projectId);
       setMyEvaluations(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load evaluations";
+      const message = getErrorMessage(err, "Failed to load evaluations");
       setError(message);
     } finally {
       setIsLoading(false);
@@ -65,7 +66,7 @@ export function usePeerEvaluation() {
       const data = await getCourseEvaluations(courseId);
       setCourseEvaluations(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load course evaluations";
+      const message = getErrorMessage(err, "Failed to load course evaluations");
       setError(message);
     } finally {
       setIsLoading(false);
@@ -80,7 +81,7 @@ export function usePeerEvaluation() {
       setMemberEvaluations(data);
       return data;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load member evaluations";
+      const message = getErrorMessage(err, "Failed to load member evaluations");
       setError(message);
       setMemberEvaluations(null);
       return null;
@@ -96,7 +97,7 @@ export function usePeerEvaluation() {
       const data = await getProjectEvaluations(projectId);
       setProjectEvaluations(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load project evaluations";
+      const message = getErrorMessage(err, "Failed to load project evaluations");
       setError(message);
     } finally {
       setIsLoading(false);
@@ -110,7 +111,7 @@ export function usePeerEvaluation() {
       setEvaluationStatus(data);
       return data;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to check evaluation status";
+      const message = getErrorMessage(err, "Failed to check evaluation status");
       setError(message);
       return null;
     }
@@ -122,7 +123,7 @@ export function usePeerEvaluation() {
       const data = await getEvaluationConfig(courseId);
       setEvaluationConfigState(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load evaluation config";
+      const message = getErrorMessage(err, "Failed to load evaluation config");
       setError(message);
     }
   }, []);
@@ -155,7 +156,7 @@ export function usePeerEvaluation() {
           return [...prev, result];
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to submit evaluation";
+        const message = getErrorMessage(err, "Failed to submit evaluation");
         setError(message);
         throw err;
       } finally {
@@ -174,7 +175,7 @@ export function usePeerEvaluation() {
         setEvaluationConfigState(result);
         return result;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to update evaluation window";
+        const message = getErrorMessage(err, "Failed to update evaluation window");
         setError(message);
         throw err;
       } finally {

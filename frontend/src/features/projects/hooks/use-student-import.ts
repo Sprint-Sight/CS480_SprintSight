@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { apiRequest, API_BASE_URL, getAuthToken } from "@/features/projects/components/projects-api";
+import { ApiError, apiRequest, getErrorMessage } from "@/lib/api/client";
 
 export interface StudentImportResult {
   course_id: string;
@@ -179,7 +179,7 @@ export function useStudentImport() {
             ? (err as StudentImportError)
             : {
                 code: "PARSE_ERROR",
-                message: err instanceof Error ? err.message : "Failed to parse CSV file.",
+                message: getErrorMessage(err, "Failed to parse CSV file."),
               };
 
         setError(importError);
@@ -206,54 +206,10 @@ export function useStudentImport() {
         const formData = new FormData();
         formData.append("file", csvFile);
 
-        const token = getAuthToken();
-        if (!token) {
-          throw new Error("You are not signed in. Please log in again.");
-        }
-
-        const response = await fetch(`${API_BASE_URL}/courses/${courseId}/students/import`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-          },
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const contentType = response.headers.get("content-type");
-          let errorData: unknown = null;
-
-          if (contentType?.includes("application/json")) {
-            errorData = await response.json();
-          } else {
-            const text = await response.text();
-            errorData = text || null;
-          }
-
-          const errorPayload = errorData as
-            | {
-                detail?: unknown;
-                message?: unknown;
-                error?: { message?: unknown };
-              }
-            | null;
-
-          const detail =
-            errorPayload?.detail ??
-            errorPayload?.error?.message ??
-            errorPayload?.message ??
-            "Failed to import students.";
-
-          const detailMessage = typeof detail === "string" ? detail : JSON.stringify(detail);
-
-          throw {
-            code: `HTTP_${response.status}`,
-            message: detailMessage,
-            details: Array.isArray(detail) ? (detail as string[]) : undefined,
-          };
-        }
-
-        const result: StudentImportResult = await response.json();
+        const result = await apiRequest<StudentImportResult>(
+          `/courses/${encodeURIComponent(courseId)}/students/import`,
+          { method: "POST", body: formData },
+        );
 
         // Clear state on success
         setCsvFile(null);
@@ -262,11 +218,15 @@ export function useStudentImport() {
         return result;
       } catch (err) {
         const importError: StudentImportError =
-          err && typeof err === "object" && "code" in err
-            ? (err as StudentImportError)
+          err instanceof ApiError
+            ? {
+                code: err.code,
+                message: err.message,
+                details: err.details.length > 0 ? err.details : undefined,
+              }
             : {
                 code: "IMPORT_ERROR",
-                message: err instanceof Error ? err.message : "Failed to import students.",
+                message: getErrorMessage(err, "Failed to import students."),
               };
 
         setError(importError);

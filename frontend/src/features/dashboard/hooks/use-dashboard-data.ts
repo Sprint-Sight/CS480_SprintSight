@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { apiRequest, isUuid } from "@/features/projects/components/projects-api";
+import { isUuid } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
 import { getStudentProjects } from "@/features/student/student-project-api";
 import type { DashboardProject, DashboardRole, GitMetrics, JiraRun, JiraSnapshot } from "@/features/dashboard/types";
+import { useSession } from "@/lib/auth/session";
 
 type DashboardState = {
   role: DashboardRole;
@@ -23,9 +25,11 @@ type DashboardState = {
 };
 
 export function useDashboardData(router: { replace: (path: string) => void }): DashboardState {
-  const [role, setRole] = useState<DashboardRole>("instructor");
-  const [fullName, setFullName] = useState("");
-  const [mounted, setMounted] = useState(false);
+  const session = useSession();
+  const sessionRole = session?.user?.role;
+  const role: DashboardRole = sessionRole === "student" ? "student" : "instructor";
+  const fullName = session?.user?.fullName ?? "";
+  const mounted = Boolean(session?.user) && sessionRole !== "admin";
   const [projects, setProjects] = useState<DashboardProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [sprintId, setSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
@@ -35,16 +39,8 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    const savedRole = sessionStorage.getItem("sprintsight-auth-role") as DashboardRole | null;
-    const savedName = sessionStorage.getItem("sprintsight-auth-name");
-    if (savedRole === "admin") {
-      router.replace("/admin");
-      return;
-    }
-    if (savedRole) setRole(savedRole);
-    if (savedName) setFullName(savedName);
-    setMounted(true);
-  }, [router]);
+    if (sessionRole === "admin") router.replace("/admin");
+  }, [router, sessionRole]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -56,7 +52,7 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
         setLoadError(projects.length ? "" : "You are not assigned to a project yet.");
         setIsLoading(false);
       }).catch((error) => {
-        setLoadError(error instanceof Error ? error.message : "Could not load your project.");
+        setLoadError(getErrorMessage(error, "Could not load your project."));
         setIsLoading(false);
       });
       return;
@@ -82,7 +78,7 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
           setIsLoading(false);
         }
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Unable to load project scope.");
+        setLoadError(getErrorMessage(error, "Unable to load project scope."));
         setIsLoading(false);
       }
     }
@@ -127,7 +123,7 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
           setJiraSnapshot(snapshot);
         }
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Unable to load ingested project data.");
+        setLoadError(getErrorMessage(error, "Unable to load ingested project data."));
       } finally {
         setIsLoading(false);
       }

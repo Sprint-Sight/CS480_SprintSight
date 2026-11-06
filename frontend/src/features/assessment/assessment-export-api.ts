@@ -1,4 +1,4 @@
-import { apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
+import { API_BASE_URL, ApiError, apiRequest } from "@/lib/api/client";
 
 export type ExportPreviewData = {
   recordCount: number;
@@ -71,31 +71,19 @@ export const downloadExportedFile = async (
   downloadUrl: string,
   fileName: string,
 ): Promise<void> => {
-  const authToken = getAuthToken();
-  if (!authToken) {
-    throw new Error("You are not signed in. Please log in again.");
-  }
-
   // Convert relative path to full backend URL
-  const backendApiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
-  const baseUrl = backendApiBase.replace(/\/api\/v1$/, ""); // Remove /api/v1 suffix
-  const fullUrl = downloadUrl.startsWith("http")
-    ? downloadUrl
-    : `${baseUrl}${downloadUrl}`;
+  const baseUrl = API_BASE_URL.replace(/\/api\/v1$/, ""); // Remove /api/v1 suffix
+  const fullUrl = downloadUrl.startsWith("http") ? downloadUrl : `${baseUrl}${downloadUrl}`;
 
-  const response = await fetch(fullUrl, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to download file. The download link may have expired.");
+  let blob: Blob;
+  try {
+    blob = await apiRequest<Blob>(fullUrl, { responseType: "blob" });
+  } catch (error) {
+    if (error instanceof ApiError && error.status !== 0 && error.status !== 401) {
+      throw new Error("Failed to download file. The download link may have expired.");
+    }
+    throw error;
   }
-
-  const blob = await response.blob();
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

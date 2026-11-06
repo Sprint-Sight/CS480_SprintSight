@@ -7,6 +7,7 @@ import {
   requestPasswordReset,
   type PasswordPurpose,
 } from "@/features/auth/auth-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 export function useForgotPassword() {
   const [email, setEmail] = useState("");
@@ -22,9 +23,7 @@ export function useForgotPassword() {
       setIsSubmitted(true);
     } catch (submitError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to request a password reset. Please try again.",
+        getErrorMessage(submitError, "Unable to request a password reset. Please try again."),
       );
     } finally {
       setIsLoading(false);
@@ -81,9 +80,7 @@ export function useSetPassword() {
       setIsComplete(true);
     } catch (submitError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to update your password. Please try again.",
+        getErrorMessage(submitError, "Unable to update your password. Please try again."),
       );
     } finally {
       setIsLoading(false);

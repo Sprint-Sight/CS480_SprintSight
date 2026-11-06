@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getCurrentUserId, type PeerTeammate } from "@/features/peer-evaluation/peer-evaluation-api";
 import type { StudentProject } from "@/features/student/student-project-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 export function usePeerTeammates(project: StudentProject | null) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -15,7 +16,7 @@ export function usePeerTeammates(project: StudentProject | null) {
         if (!cancelled) setCurrentUserId(id);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load your profile.");
+        if (!cancelled) setError(getErrorMessage(err, "Could not load your profile."));
       });
     return () => {
       cancelled = true;

@@ -2,12 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  loginUser,
-  fetchUserProfile,
-  changePasswordOnFirstLogin,
-} from "@/features/auth/login-api";
-import { writeStoredSession } from "@/features/auth/session";
+import { loginUser, changePasswordOnFirstLogin, startSession } from "@/features/auth/login-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 export function useLogin() {
   const router = useRouter();
@@ -16,8 +12,16 @@ export function useLogin() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  // Held in memory only: a temporary-password token must not become a usable
+  // session (e.g. in another tab) before the password has been changed.
+  const [pendingToken, setPendingToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  async function completeLogin(token: string) {
+    const session = await startSession(token);
+    router.replace(session.user?.role === "admin" ? "/admin" : "/");
+  }
 
   async function submitLogin() {
     setError("");
@@ -26,39 +30,16 @@ export function useLogin() {
     try {
       const loginResponse = await loginUser(email, password);
 
-      // Store JWT token in both session and local storage
-      sessionStorage.setItem("sprintsight-access-token", loginResponse.access_token);
-      localStorage.setItem("sprintsight-access-token", loginResponse.access_token);
-
       // If password must be changed on first login, show the form
       if (loginResponse.must_change_password) {
+        setPendingToken(loginResponse.access_token);
         setMustChangePassword(true);
-        setError("");
         return;
       }
 
-      // Fetch user profile to determine role and redirect
-      const user = await fetchUserProfile(loginResponse.access_token);
-
-      // Store user details in session storage
-      writeStoredSession(user);
-
-      // Redirect based on user role
-      if (user.role === "admin") {
-        router.replace("/admin");
-      } else {
-        router.replace("/");
-      }
+      await completeLogin(loginResponse.access_token);
     } catch (loginError) {
-      setError(
-        loginError instanceof Error
-          ? loginError.message
-          : "An unexpected error occurred. Please try again.",
-      );
-
-      // Clear tokens if login fails
-      sessionStorage.removeItem("sprintsight-access-token");
-      localStorage.removeItem("sprintsight-access-token");
+      setError(getErrorMessage(loginError, "Invalid email or password."));
     } finally {
       setIsLoading(false);
     }
@@ -77,8 +58,7 @@ export function useLogin() {
       return;
     }
 
-    const token = sessionStorage.getItem("sprintsight-access-token");
-    if (!token) {
+    if (!pendingToken) {
       setError("Your session has expired. Please log in again.");
       return;
     }
@@ -87,32 +67,14 @@ export function useLogin() {
 
     try {
       // Change password using the token from login
-      await changePasswordOnFirstLogin(token, password, newPassword);
+      await changePasswordOnFirstLogin(pendingToken, password, newPassword);
 
       // Log in with the new password to get a fresh session
       const loginResponse = await loginUser(email, newPassword);
-
-      // Update token with refreshed one
-      sessionStorage.setItem("sprintsight-access-token", loginResponse.access_token);
-      localStorage.setItem("sprintsight-access-token", loginResponse.access_token);
-
-      // Fetch user profile to get role and redirect
-      const user = await fetchUserProfile(loginResponse.access_token);
-
-      writeStoredSession(user);
-
-      // Redirect based on role
-      if (user.role === "admin") {
-        router.replace("/admin");
-      } else {
-        router.replace("/");
-      }
+      setPendingToken("");
+      await completeLogin(loginResponse.access_token);
     } catch (changeError) {
-      setError(
-        changeError instanceof Error
-          ? changeError.message
-          : "Unable to change password.",
-      );
+      setError(getErrorMessage(changeError, "Unable to change password."));
     } finally {
       setIsLoading(false);
     }

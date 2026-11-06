@@ -7,6 +7,7 @@ import {
   type BackendAssessmentReport,
 } from "@/features/assessment/assessment-api";
 import type { RubricScore, SprintAssessmentReport } from "@/features/assessment/types";
+import { getErrorMessage } from "@/lib/api/client";
 
 type UseAssessmentReportEditorOptions = {
   report: SprintAssessmentReport;
@@ -91,7 +92,7 @@ export function useAssessmentReportEditor({
       setIsEditing(false);
       setSaveMessage("Assessment report changes saved.");
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Could not save the assessment report.");
+      setSaveError(getErrorMessage(error, "Could not save the assessment report."));
     } finally {
       setIsSaving(false);
     }

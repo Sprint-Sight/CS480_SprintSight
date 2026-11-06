@@ -9,6 +9,8 @@ import {
   type ActionAuditRecord,
   type OverrideAuditRecord,
 } from "@/features/audit/audit-api";
+import { getSessionUser } from "@/lib/auth/session";
+import { getErrorMessage as getReadableError } from "@/lib/api/client";
 
 type AuditRole = "instructor" | "admin";
 
@@ -22,7 +24,7 @@ type AuditLogData = {
 };
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Could not load audit records.";
+  return getReadableError(error, "Could not load audit records.");
 }
 
 export function useAuditLog(role: AuditRole): AuditLogData {
@@ -35,7 +37,7 @@ export function useAuditLog(role: AuditRole): AuditLogData {
   const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
-    if (sessionStorage.getItem("sprintsight-auth-role") !== role) {
+    if (getSessionUser()?.role !== role) {
       router.replace("/login");
       return;
     }

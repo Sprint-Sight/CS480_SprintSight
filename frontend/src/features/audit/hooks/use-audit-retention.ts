@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { getErrorMessage as getReadableError } from "@/lib/api/client";
 import { getAuditRetentionConfig, updateAuditRetentionConfig, type AuditRetentionConfig, type AuditRetentionConfigUpdate } from "@/features/audit/audit-api";
 
 interface AuditRetentionState {
@@ -15,8 +16,7 @@ interface AuditRetentionState {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "An error occurred.";
+  return getReadableError(error, "An error occurred.");
 }
 
 export function useAuditRetention(): AuditRetentionState {

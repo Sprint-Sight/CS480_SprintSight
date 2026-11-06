@@ -24,9 +24,10 @@ import {
   X,
 } from "lucide-react";
 
-import { apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
+import { apiRequest } from "@/lib/api/client";
+import { signOut, useSession } from "@/lib/auth/session";
+import { restoreSession } from "@/features/auth/login-api";
 import { readIngestionState, writeIngestionState } from "@/features/ingestion/state";
-import { clearStoredSession, restoreSession } from "@/features/auth/session";
 import { useNotifications } from "@/hooks/use-notifications";
 import { NotificationsDropdown } from "@/components/ui/notifications-modal";
 
@@ -118,10 +119,13 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings" || pathname === "/audit-log";
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [role, setRole] = useState<"student" | "instructor">("instructor");
-  const [userName, setUserName] = useState<string>("");
-  const [userEmail, setUserEmail] = useState<string>("");
+  const session = useSession();
+  const sessionUser = session?.user ?? null;
+  const [isRestored, setIsRestored] = useState(false);
+  const isAuthorized = isRestored && Boolean(sessionUser) && sessionUser?.role !== "admin";
+  const role: "student" | "instructor" = sessionUser?.role === "student" ? "student" : "instructor";
+  const userName = sessionUser?.fullName ?? "";
+  const userEmail = sessionUser?.email ?? "";
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -149,33 +153,33 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   useEffect(() => {
     let isCurrent = true;
 
-    // Rebuilds role/email/name from the stored token when this tab has no session yet
-    // (new tab, browser restart), instead of bouncing a signed-in user to /login.
-    void restoreSession().then((session) => {
+    // Loads the user for a stored token when needed (e.g. a migrated older login)
+    // instead of bouncing a signed-in user to /login.
+    void restoreSession().then((restored) => {
       if (!isCurrent) return;
-      if (!session) {
+      if (!restored?.user) {
         router.replace("/login");
         return;
       }
 
       // Redirect admin users out of student/instructor sidebar routes
-      if (session.role === "admin") {
+      if (restored.user.role === "admin") {
         router.replace("/admin");
         return;
       }
 
-      setRole(session.role);
-      setUserEmail(session.email);
-      if (session.fullName) {
-        setUserName(session.fullName);
-      }
-      setIsAuthorized(true);
+      setIsRestored(true);
     });
 
     return () => {
       isCurrent = false;
     };
   }, [router]);
+
+  // Signing out in another tab clears the shared session; follow it here.
+  useEffect(() => {
+    if (isRestored && !session) router.replace("/login");
+  }, [isRestored, session, router]);
 
   // Fetch Scope options dynamically from DB for instructors
   useEffect(() => {
@@ -286,7 +290,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
 
   const handleLogout = () => {
-    clearStoredSession();
+    signOut();
     setIsProfileMenuOpen(false);
     router.replace("/login");
   };

@@ -7,6 +7,7 @@ import {
   type JiraContributionOutlierReport,
   type JiraContributionStudent,
 } from "@/features/peer-evaluation/peer-evaluation-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 export function useJiraContributionOutliers() {
   const [report, setReport] = useState<JiraContributionOutlierReport | null>(null);
@@ -26,7 +27,7 @@ export function useJiraContributionOutliers() {
       setReport(await getJiraContributionOutliers(courseId, onlyOutliers));
     } catch (err) {
       setReport(null);
-      setError(err instanceof Error ? err.message : "Failed to load Jira contribution report");
+      setError(getErrorMessage(err, "Failed to load Jira contribution report"));
     } finally {
       setIsLoading(false);
     }
@@ -40,7 +41,7 @@ export function useJiraContributionOutliers() {
       setError(null);
       setStudentDetail(await getStudentJiraContribution(courseId, studentId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load student Jira contribution");
+      setError(getErrorMessage(err, "Failed to load student Jira contribution"));
     } finally {
       setIsDetailLoading(false);
     }

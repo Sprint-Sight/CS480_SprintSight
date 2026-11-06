@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getProjectGitMetrics, readIngestionState } from "@/features/ingestion/state";
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
 
 type BackendProject = { id: string; project_name: string; team_name: string; course_code: string };
@@ -28,7 +28,7 @@ export function useProjectSprintData(projectId: string) {
     async function loadProject() {
       setError("");
       try { setProject(await apiRequest<BackendProject>(`/projects/${projectId}`)); }
-      catch (loadError) { setError(loadError instanceof Error ? loadError.message : "Failed to load project."); }
+      catch (loadError) { setError(getErrorMessage(loadError, "Failed to load project.")); }
     }
     void loadProject();
   }, [projectId]);

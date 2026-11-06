@@ -26,6 +26,7 @@ describe("Structural Architecture Tests", () => {
     const routeFiles = [
       "src/app/(dashboard)/audit-log/page.tsx",
       "src/app/admin/audit-log/page.tsx",
+      "src/app/(dashboard)/profile/page.tsx",
     ];
 
     routeFiles.forEach((filePath) => {
@@ -141,5 +142,48 @@ describe("Tooling configuration", () => {
         200,
       );
     });
+  });
+});
+
+function listSourceFiles(directory: string): string[] {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return listSourceFiles(fullPath);
+    return /\.(ts|tsx)$/.test(entry.name) && !/\.test\.(ts|tsx)$/.test(entry.name) ? [fullPath] : [];
+  });
+}
+
+function toRepoPath(filePath: string) {
+  return path.relative(process.cwd(), filePath).split(path.sep).join("/");
+}
+
+describe("API client and session boundaries", () => {
+  const sourceFiles = listSourceFiles(path.join(process.cwd(), "src")).filter(
+    (filePath) => !toRepoPath(filePath).startsWith("src/__tests__/") && !filePath.endsWith("test-utils.tsx"),
+  );
+
+  it("only the shared API client calls fetch (plus the assessment event stream)", () => {
+    const allowed = new Set(["src/lib/api/client.ts", "src/features/assessment/hooks/use-assessment-report.ts"]);
+    const offenders = sourceFiles
+      .filter((filePath) => !allowed.has(toRepoPath(filePath)))
+      .filter((filePath) => /(^|[^.\w])fetch\s*\(/.test(readFile(filePath)))
+      .map(toRepoPath);
+    expect(offenders).toEqual([]);
+  });
+
+  it("only the session module reads or writes auth storage keys", () => {
+    const offenders = sourceFiles
+      .filter((filePath) => toRepoPath(filePath) !== "src/lib/auth/session.ts")
+      .filter((filePath) => /sprintsight-(auth-|access-token|session)/.test(readFile(filePath)))
+      .map(toRepoPath);
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads the API base URL from a single place", () => {
+    const offenders = sourceFiles
+      .filter((filePath) => toRepoPath(filePath) !== "src/lib/api/client.ts")
+      .filter((filePath) => /NEXT_PUBLIC_API/.test(readFile(filePath)))
+      .map(toRepoPath);
+    expect(offenders).toEqual([]);
   });
 });

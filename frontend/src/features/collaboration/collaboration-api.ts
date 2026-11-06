@@ -1,4 +1,4 @@
-import { apiRequest } from "@/features/projects/components/projects-api";
+import { apiRequest } from "@/lib/api/client";
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
 import type {
   IngestionState,

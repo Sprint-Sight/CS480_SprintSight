@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { ResolvedAssessmentScope } from "@/features/assessment/assessment-scope";
 import { getInstructorGuidance, saveInstructorGuidance } from "@/features/instructor-feedback/instructor-ai-feedback-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 const MAX_GUIDANCE_LENGTH = 5000;
 
@@ -32,7 +33,7 @@ export function useInstructorAiFeedback(scope: ResolvedAssessmentScope | null, i
         setExpectationsText(response.expectations_text || "");
       } catch (loadError) {
         setExpectationsText("");
-        setError(loadError instanceof Error ? loadError.message : "Could not load instructor guidance.");
+        setError(getErrorMessage(loadError, "Could not load instructor guidance."));
       } finally {
         setIsLoading(false);
       }
@@ -65,7 +66,7 @@ export function useInstructorAiFeedback(scope: ResolvedAssessmentScope | null, i
       setExpectationsText(trimmedText);
       setSaveMessage("Guidance saved for the selected project and sprint.");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not save instructor guidance.");
+      setError(getErrorMessage(saveError, "Could not save instructor guidance."));
     } finally {
       setIsSaving(false);
     }

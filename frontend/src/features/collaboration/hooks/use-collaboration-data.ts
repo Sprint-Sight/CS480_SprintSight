@@ -7,6 +7,7 @@ import type { aggregateProjectSprints } from "@/features/collaboration/aggregate
 import { fetchCollaborationProjectData } from "@/features/collaboration/collaboration-api";
 import type { CollaborationDataset } from "@/features/collaboration/types";
 import { readIngestionState } from "@/features/ingestion/state";
+import { getErrorMessage } from "@/lib/api/client";
 
 const emptyIngestion: ReturnType<typeof aggregateProjectSprints> = {
   git: undefined,
@@ -61,7 +62,7 @@ export function useCollaborationData() {
       .catch((loadError: unknown) => {
         if (cancelled) return;
         setLiveIngestion(emptyIngestion);
-        setError(loadError instanceof Error ? loadError.message : "Unable to load Collaboration data.");
+        setError(getErrorMessage(loadError, "Unable to load Collaboration data."));
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);

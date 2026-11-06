@@ -10,16 +10,21 @@ import { ApiConnectionsSettings } from "@/features/settings/components/api-conne
 import { useModelSelection } from "@/features/settings/hooks/use-model-selection";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 import { useRubricWeights } from "@/features/settings/hooks/use-rubric-weights";
+import { useSession } from "@/lib/auth/session";
 
 export default function SettingsPageContent() {
   const router = useRouter();
-  const [isAuthorized, setIsAuthorized] = useState(false);
+  const session = useSession();
+  const isStudent = session?.user?.role === "student";
+  const isAuthorized = Boolean(session?.user) && !isStudent;
   const [saveMessage, setSaveMessage] = useState("");
   const modelSelection = useModelSelection(isAuthorized);
   const jiraCredentials = useInstructorJiraCredentials(isAuthorized);
   const rubricWeights = useRubricWeights(isAuthorized);
 
-  useEffect(() => { if (sessionStorage.getItem("sprintsight-auth-role") === "student") router.replace("/"); else setIsAuthorized(true); }, [router]);
+  useEffect(() => {
+    if (isStudent) router.replace("/");
+  }, [isStudent, router]);
   if (!isAuthorized) return null;
   const saveSettings = async () => {
     setSaveMessage("");

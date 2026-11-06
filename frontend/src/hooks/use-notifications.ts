@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiRequest, getAuthToken } from "@/features/projects/components/projects-api";
+import { apiRequest, getErrorMessage } from "@/lib/api/client";
+import { getSessionToken } from "@/lib/auth/session";
 
 export type DashboardNotification = {
   id: string;
@@ -35,7 +36,7 @@ export function useNotifications(): UseNotificationsReturn {
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const refresh = useCallback(async () => {
-    const token = getAuthToken();
+    const token = getSessionToken();
     if (!token) {
       setError("You are not signed in. Please log in again.");
       setIsLoading(false);
@@ -49,7 +50,7 @@ export function useNotifications(): UseNotificationsReturn {
       setUnreadCount(response.unread_count);
       setError("");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not load notifications.";
+      const message = getErrorMessage(err, "Could not load notifications.");
       setError(message);
       console.error("Failed to load notifications:", err);
     } finally {

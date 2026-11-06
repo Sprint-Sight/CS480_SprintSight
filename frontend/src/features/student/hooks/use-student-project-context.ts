@@ -11,6 +11,7 @@ import {
   type StudentCourse,
   type StudentProject,
 } from "@/features/student/student-project-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 type StudentProjectContext = {
   courses: StudentCourse[];
@@ -60,7 +61,7 @@ export function useStudentProjectContext(enabled: boolean): StudentProjectContex
           setReports(loadedReports);
         }
       } catch (loadError) {
-        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load your project context.");
+        if (!cancelled) setError(getErrorMessage(loadError, "Could not load your project context."));
       } finally {
         if (!cancelled) setIsLoading(false);
       }

@@ -7,6 +7,7 @@ import {
   saveInstructorJiraCredentials,
 } from "@/features/settings/settings-api";
 import { getDefaultJiraEmail } from "@/features/projects/components/projects-api";
+import { getErrorMessage } from "@/lib/api/client";
 
 export function useInstructorJiraCredentials(enabled: boolean) {
   const [jiraEmail, setJiraEmail] = useState("");
@@ -35,7 +36,7 @@ export function useInstructorJiraCredentials(enabled: boolean) {
       })
       .catch((loadError: unknown) => {
         if (!isCurrent) return;
-        setError(loadError instanceof Error ? loadError.message : "Unable to load Jira credentials.");
+        setError(getErrorMessage(loadError, "Unable to load Jira credentials."));
       })
       .finally(() => {
         if (isCurrent) setIsLoading(false);
@@ -65,7 +66,7 @@ export function useInstructorJiraCredentials(enabled: boolean) {
       setHasSavedSettings(credentials.is_saved);
       return true;
     } catch (saveError: unknown) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save Jira credentials.");
+      setError(getErrorMessage(saveError, "Unable to save Jira credentials."));
       return false;
     } finally {
       setIsSaving(false);

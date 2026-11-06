@@ -8,6 +8,7 @@ import {
   saveModelSelection,
 } from "@/features/settings/settings-api";
 import type { LlmModelOption } from "@/features/settings/types";
+import { getErrorMessage } from "@/lib/api/client";
 
 export function useModelSelection(enabled: boolean) {
   const [models, setModels] = useState<LlmModelOption[]>([]);
@@ -35,7 +36,7 @@ export function useModelSelection(enabled: boolean) {
       })
       .catch((loadError: unknown) => {
         if (!isCurrent) return;
-        setError(loadError instanceof Error ? loadError.message : "Unable to load AI models.");
+        setError(getErrorMessage(loadError, "Unable to load AI models."));
       })
       .finally(() => {
         if (isCurrent) setIsLoading(false);
@@ -58,7 +59,7 @@ export function useModelSelection(enabled: boolean) {
       setSelectedModelId(selection.model_id);
       return true;
     } catch (saveError) {
-      const message = saveError instanceof Error ? saveError.message : "Unable to save the AI model selection.";
+      const message = getErrorMessage(saveError, "Unable to save the AI model selection.");
       setError(message);
       return false;
     } finally {
