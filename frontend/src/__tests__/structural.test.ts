@@ -105,3 +105,41 @@ describe("Structural Architecture Tests", () => {
     expect(content).toMatch(/<AuditLogPage/);
   });
 });
+
+describe("Tooling configuration", () => {
+  it("lints with the jsx-a11y recommended rules on top of next/core-web-vitals", () => {
+    const eslintConfig = readFile(".eslintrc.json");
+    expect(eslintConfig).toContain('"next/core-web-vitals"');
+    expect(eslintConfig).toContain('"plugin:jsx-a11y/recommended"');
+  });
+
+  it("provides Prettier format scripts and a pinned Prettier dependency", () => {
+    const packageJson = JSON.parse(readFile("package.json")) as {
+      scripts: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    expect(packageJson.scripts.format).toBe("prettier --write .");
+    expect(packageJson.scripts["format:check"]).toBe("prettier --check .");
+    expect(packageJson.devDependencies.prettier).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(fs.existsSync(".prettierrc.json")).toBe(true);
+  });
+
+  it("keeps previously minified files formatted across multiple lines", () => {
+    const formattedFiles = [
+      "src/features/settings/components/rubric-settings.tsx",
+      "src/features/dashboard/components/commit-activity-chart.tsx",
+      "src/features/sprints/components/sprint-overview-page-content.tsx",
+      "src/features/assessment/hooks/use-assessment-report.ts",
+    ];
+
+    formattedFiles.forEach((filePath) => {
+      const lineLengths = readFile(filePath)
+        .split("\n")
+        .map((line) => line.length);
+      const longestLine = Math.max(...lineLengths);
+      expect(longestLine, `${filePath} has a ${longestLine}-character line`).toBeLessThanOrEqual(
+        200,
+      );
+    });
+  });
+});

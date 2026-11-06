@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { readIngestionState } from "@/features/ingestion/state";
+import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
 
 export function useProgressData() {
   const [role, setRole] = useState<"student" | "instructor" | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
   const [selectedCourseId, setSelectedCourseId] = useState(() => readIngestionState().selectedCourseId || "");
   const [ingestionVersion, setIngestionVersion] = useState(0);
+  const { isSyncing, syncError } = useIngestionSync({ projectId: selectedProjectId, courseId: selectedCourseId, enabled: role === "instructor" });
   const progressSignals = useMemo(() => {
     void ingestionVersion;
     const state = readIngestionState();
@@ -35,5 +37,5 @@ export function useProgressData() {
     return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
   }, []);
 
-  return { role, progressSignals };
+  return { role, progressSignals, isSyncing, syncError };
 }

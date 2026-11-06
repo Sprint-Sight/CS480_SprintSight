@@ -1,40 +1,36 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { INITIAL_SETTINGS } from "@/features/settings/data";
-import type { RubricWeight } from "@/features/settings/types";
 import { SettingsHeader } from "@/features/settings/components/settings-header";
 import { RubricSettings } from "@/features/settings/components/rubric-settings";
 import { LlmSettings } from "@/features/settings/components/llm-settings";
 import { ApiConnectionsSettings } from "@/features/settings/components/api-connections-settings";
 import { useModelSelection } from "@/features/settings/hooks/use-model-selection";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
-
-function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
+import { useRubricWeights } from "@/features/settings/hooks/use-rubric-weights";
 
 export default function SettingsPageContent() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [rubric, setRubric] = useState(INITIAL_SETTINGS.rubric);
   const [saveMessage, setSaveMessage] = useState("");
   const modelSelection = useModelSelection(isAuthorized);
   const jiraCredentials = useInstructorJiraCredentials(isAuthorized);
-  const totalWeight = useMemo(() => rubric.reduce((sum, item) => sum + item.value, 0), [rubric]);
+  const rubricWeights = useRubricWeights(isAuthorized);
 
   useEffect(() => { if (sessionStorage.getItem("sprintsight-auth-role") === "student") router.replace("/"); else setIsAuthorized(true); }, [router]);
-  const updateRubricWeight = (id: RubricWeight["id"], value: number) => setRubric((prev) => prev.map((item) => item.id === id ? { ...item, value: clamp(value, 0, 100) } : item));
   if (!isAuthorized) return null;
   const saveSettings = async () => {
     setSaveMessage("");
-    const [modelSaved, jiraEmailSaved] = await Promise.all([
+    const [modelSaved, jiraEmailSaved, rubricSaved] = await Promise.all([
       modelSelection.saveSelection(),
       jiraCredentials.hasUnsavedChanges
         ? jiraCredentials.saveCredentials()
         : Promise.resolve(true),
+      rubricWeights.saveWeights(),
     ]);
-    if (modelSaved && jiraEmailSaved) {
+    if (modelSaved && jiraEmailSaved && rubricSaved) {
       setSaveMessage(`Settings saved at ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`);
     }
   };
@@ -44,8 +40,9 @@ export default function SettingsPageContent() {
   };
   const isModelSelectionUnavailable = modelSelection.isLoading || modelSelection.isSaving || modelSelection.models.length === 0;
   const canSaveModelSelection = modelSelection.models.some((model) => model.id === modelSelection.selectedModelId);
-  const isSavingSettings = modelSelection.isSaving || jiraCredentials.isSaving;
-  const isSaveUnavailable = isModelSelectionUnavailable || jiraCredentials.isLoading;
+  const isSavingSettings = modelSelection.isSaving || jiraCredentials.isSaving || rubricWeights.isSaving;
+  const isRubricBlockingSave = rubricWeights.isLoading || (rubricWeights.hasUnsavedChanges && !rubricWeights.isValidTotal);
+  const isSaveUnavailable = isModelSelectionUnavailable || jiraCredentials.isLoading || isRubricBlockingSave;
   return (
     <div className="space-y-5 p-8">
       <div className="flex flex-wrap items-stretch justify-between gap-4">
@@ -71,7 +68,25 @@ export default function SettingsPageContent() {
       {modelSelection.isLoading && <p role="status" className="text-sm text-slate-600">Loading AI models...</p>}
       {modelSelection.error && <p role="alert" className="text-sm text-red-700">{modelSelection.error}</p>}
       <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <RubricSettings rubric={rubric} totalWeight={totalWeight} onChange={updateRubricWeight} />
+        <RubricSettings
+          rubric={rubricWeights.rubric}
+          totalWeight={rubricWeights.totalWeight}
+          isValidTotal={rubricWeights.isValidTotal}
+          hasUnsavedChanges={rubricWeights.hasUnsavedChanges}
+          courses={rubricWeights.courses}
+          selectedCourseId={rubricWeights.selectedCourseId}
+          isDisabled={rubricWeights.isLoading || rubricWeights.isSaving || !rubricWeights.selectedCourseId}
+          isLoading={rubricWeights.isLoading}
+          error={rubricWeights.error}
+          onCourseChange={(courseId) => {
+            rubricWeights.selectCourse(courseId);
+            setSaveMessage("");
+          }}
+          onChange={(id, value) => {
+            rubricWeights.updateWeight(id, value);
+            setSaveMessage("");
+          }}
+        />
         <ApiConnectionsSettings
           jiraEmail={jiraCredentials.jiraEmail}
           hasSavedToken={jiraCredentials.hasSavedToken}

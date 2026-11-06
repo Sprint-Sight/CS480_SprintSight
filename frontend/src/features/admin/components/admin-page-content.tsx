@@ -29,6 +29,9 @@ import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { useAdminDirectory } from "@/features/admin/hooks/use-admin-directory";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
+import { getApiErrorMessage, getAuthToken } from "@/features/projects/components/projects-api";
+import { clearStoredSession, restoreSession } from "@/features/auth/session";
+import { MIN_PASSWORD_LENGTH, ResetPasswordModal } from "@/features/admin/components/reset-password-modal";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
 
@@ -55,6 +58,7 @@ export function AdminPageContent() {
   const [userToDeactivate, setUserToDeactivate] = useState<UserAccount | null>(null);
   const [userToResetPassword, setUserToResetPassword] = useState<UserAccount | null>(null);
   const [resetPasswordInput, setResetPasswordInput] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Student import hook
   const { isLoading: isImporting, error: importError, parsedRows, validateAndPreview, submitImport, clearState: clearImportState } = useStudentImport();
@@ -70,8 +74,6 @@ export function AdminPageContent() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const getAuthToken = () => sessionStorage.getItem("sprintsight-access-token");
-
   const handleEditUser = async (user: UserAccount) => {
     const token = getAuthToken();
     try {
@@ -80,7 +82,7 @@ export function AdminPageContent() {
       });
       if (!res.ok) {
         const error = await res.json().catch(() => null);
-        throw new Error(error?.detail || error?.error?.message || "Failed to fetch user details.");
+        throw new Error(getApiErrorMessage(error, "Failed to fetch user details."));
       }
 
       const freshUser = await res.json();
@@ -156,21 +158,26 @@ export function AdminPageContent() {
   }, []);
 
   useEffect(() => {
-    const savedRole = sessionStorage.getItem("sprintsight-auth-role");
-    const savedName = sessionStorage.getItem("sprintsight-auth-name");
-    const savedEmail = sessionStorage.getItem("sprintsight-auth-email");
+    let isCurrent = true;
 
-    if (savedRole !== "admin") {
-      router.replace("/login");
-      return;
-    }
+    void restoreSession().then((session) => {
+      if (!isCurrent) return;
+      if (session?.role !== "admin") {
+        router.replace("/login");
+        return;
+      }
 
-    if (savedName) setAdminName(savedName);
-    if (savedEmail) setCurrentEmail(savedEmail);
+      if (session.fullName) setAdminName(session.fullName);
+      setCurrentEmail(session.email);
 
-    fetchUsers();
-    fetchCourses();
-    setMounted(true);
+      fetchUsers();
+      fetchCourses();
+      setMounted(true);
+    });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [router, fetchUsers, fetchCourses]);
 
   // 2. POST /users - Create Managed User
@@ -192,8 +199,8 @@ export function AdminPageContent() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        showNotification("error", err.detail || "Failed to create user.");
+        const err = await res.json().catch(() => null);
+        showNotification("error", getApiErrorMessage(err, "Failed to create user."));
         return false;
       }
 
@@ -246,8 +253,8 @@ export function AdminPageContent() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        showNotification("error", err.detail || "Failed to update record.");
+        const err = await res.json().catch(() => null);
+        showNotification("error", getApiErrorMessage(err, "Failed to update record."));
         return;
       }
 
@@ -289,8 +296,8 @@ export function AdminPageContent() {
         );
         showNotification("success", `User ${userToDeactivate.fullName} deactivated.`);
       } else {
-        const err = await res.json();
-        showNotification("error", err.detail || "Failed to deactivate record.");
+        const err = await res.json().catch(() => null);
+        showNotification("error", getApiErrorMessage(err, "Failed to deactivate record."));
       }
     } catch (err) {
       showNotification("error", "Network error while deactivating user.");
@@ -314,8 +321,8 @@ export function AdminPageContent() {
         );
         showNotification("success", `User ${user.fullName} reactivated.`);
       } else {
-        const err = await res.json();
-        showNotification("error", err.detail || "Failed to activate user.");
+        const err = await res.json().catch(() => null);
+        showNotification("error", getApiErrorMessage(err, "Failed to activate user."));
       }
     } catch (err) {
       showNotification("error", "Network error while activating user.");
@@ -324,9 +331,14 @@ export function AdminPageContent() {
 
   // 6. POST /users/{user_id}/reset-password - Admin Reset Password
   const handleResetPassword = async () => {
-    if (!userToResetPassword || !resetPasswordInput.trim()) return;
+    if (!userToResetPassword || isResettingPassword) return;
+    if (resetPasswordInput.length < MIN_PASSWORD_LENGTH) {
+      showNotification("error", `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
     const token = getAuthToken();
 
+    setIsResettingPassword(true);
     try {
       const res = await fetch(`${API_BASE_URL}/users/${userToResetPassword.id}/reset-password`, {
         method: "POST",
@@ -339,22 +351,22 @@ export function AdminPageContent() {
 
       if (res.ok) {
         showNotification("success", `Password reset successfully for ${userToResetPassword.fullName}.`);
+        // Close only on success so a rejected password can be corrected in place.
+        setUserToResetPassword(null);
+        setResetPasswordInput("");
       } else {
-        const err = await res.json();
-        showNotification("error", err.detail || "Failed to reset password.");
+        const err = await res.json().catch(() => null);
+        showNotification("error", getApiErrorMessage(err, "Failed to reset password."));
       }
     } catch (err) {
       showNotification("error", "Network error while resetting password.");
     } finally {
-      setUserToResetPassword(null);
-      setResetPasswordInput("");
+      setIsResettingPassword(false);
     }
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem("sprintsight-auth-role");
-    sessionStorage.removeItem("sprintsight-auth-email");
-    sessionStorage.removeItem("sprintsight-auth-name");
+    clearStoredSession();
     router.replace("/login");
   };
 
@@ -695,52 +707,19 @@ export function AdminPageContent() {
         cancelText="Cancel"
       />
 
-      {/* Password Reset Confirmation Modal */}
-      {userToResetPassword && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Reset User Password</h3>
-              <p className="text-sm text-slate-500 mb-5">
-                Set a new password for <span className="font-semibold text-slate-700">{userToResetPassword.fullName}</span>. They will be required to change it upon their next login.
-              </p>
-              
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  New Password
-                </label>
-                <input
-                  type="password"
-                  value={resetPasswordInput}
-                  onChange={(e) => setResetPasswordInput(e.target.value)}
-                  placeholder="Enter temporary password..."
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
-                  autoFocus
-                />
-              </div>
-            </div>
-            
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setUserToResetPassword(null);
-                  setResetPasswordInput("");
-                }}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResetPassword}
-                disabled={!resetPasswordInput.trim()}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                Reset Password
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Password Reset Modal */}
+      <ResetPasswordModal
+        user={userToResetPassword}
+        password={resetPasswordInput}
+        isSubmitting={isResettingPassword}
+        onPasswordChange={setResetPasswordInput}
+        onCancel={() => {
+          if (isResettingPassword) return;
+          setUserToResetPassword(null);
+          setResetPasswordInput("");
+        }}
+        onSubmit={() => void handleResetPassword()}
+      />
 
       {/* CSV Import Modal - For bulk student import */}
       {selectedCourseForImport && (
