@@ -1,6 +1,9 @@
 import { UserMinus, UserPlus, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type Student = { id: string; email: string; full_name: string; is_active: boolean };
+
+export type StudentFormErrors = { name?: string; email?: string; password?: string };
 
 type RosterModalProps = {
   isOpen: boolean;
@@ -11,6 +14,7 @@ type RosterModalProps = {
   isLoadingStudents: boolean;
   studentDirectoryError: string;
   studentForm: { email: string; full_name: string; password: string };
+  studentFormErrors?: StudentFormErrors;
   onClose: () => void;
   onCreateStudent: () => void;
   onEnrollExisting: (userId: string) => void;
@@ -31,6 +35,7 @@ export function RosterModal({
   isLoadingStudents,
   studentDirectoryError,
   studentForm,
+  studentFormErrors = {},
   onClose,
   onCreateStudent,
   onEnrollExisting,
@@ -52,11 +57,13 @@ export function RosterModal({
   });
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/40 p-4 sm:p-6">
-      <div className="mx-auto my-4 flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl sm:my-8">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent dismissOnOutsideClick={false} className="flex max-w-2xl flex-col rounded-2xl border border-slate-200 p-0">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Students & Course Roster</h2>
+            <DialogTitle asChild>
+              <h2 className="text-lg font-semibold text-slate-900">Students & Course Roster</h2>
+            </DialogTitle>
             <p className="mt-0.5 text-sm text-slate-500">
               Enroll existing students, or create new student accounts without a course.
             </p>
@@ -157,28 +164,38 @@ export function RosterModal({
               <span className="text-xs text-slate-400">No course enrollment yet</span>
             </div>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-              <input
-                type="text"
-                placeholder="Student Name"
-                value={studentForm.full_name}
-                onChange={(event) => setStudentForm((current) => ({ ...current, full_name: event.target.value }))}
-                className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-              <input
-                type="email"
-                placeholder="Student Email"
-                value={studentForm.email}
-                onChange={(event) => setStudentForm((current) => ({ ...current, email: event.target.value }))}
-                className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
+              <div className="min-w-0">
+                <input
+                  type="text"
+                  placeholder="Student Name"
+                  aria-invalid={Boolean(studentFormErrors.name)}
+                  value={studentForm.full_name}
+                  onChange={(event) => setStudentForm((current) => ({ ...current, full_name: event.target.value }))}
+                  className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+                {studentFormErrors.name && <p className="mt-1 text-xs text-red-600">{studentFormErrors.name}</p>}
+              </div>
+              <div className="min-w-0">
+                <input
+                  type="email"
+                  placeholder="Student Email"
+                  aria-invalid={Boolean(studentFormErrors.email)}
+                  value={studentForm.email}
+                  onChange={(event) => setStudentForm((current) => ({ ...current, email: event.target.value }))}
+                  className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+                {studentFormErrors.email && <p className="mt-1 text-xs text-red-600">{studentFormErrors.email}</p>}
+              </div>
             </div>
             <input
               type="password"
               placeholder="Fallback password (optional)"
+              aria-invalid={Boolean(studentFormErrors.password)}
               value={studentForm.password}
               onChange={(event) => setStudentForm((current) => ({ ...current, password: event.target.value }))}
               className="mt-3 h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
+            {studentFormErrors.password && <p className="mt-1 text-xs text-red-600">{studentFormErrors.password}</p>}
             <p className="mt-1.5 text-xs text-slate-500">
               Only needed when the setup email cannot be delivered. The student can log
               in with it once and is then forced to set their own password.
@@ -242,7 +259,7 @@ export function RosterModal({
             Close
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

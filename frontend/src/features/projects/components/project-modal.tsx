@@ -2,6 +2,7 @@ import { Loader2, X } from "lucide-react";
 
 import type { Project } from "@/features/projects/types";
 import type { ProjectFormValues } from "@/features/projects/components/projects-api";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type ProjectModalProps = {
   isOpen: boolean;
@@ -35,20 +36,23 @@ export function ProjectModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/40 p-4 sm:p-6">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent dismissOnOutsideClick={false} className="p-0 max-w-lg rounded-2xl border border-slate-200">
       <form
         onSubmit={(event) => {
           event.preventDefault();
           if (!isSaving) onSave();
         }}
         aria-busy={isSaving}
-        className="mx-auto my-4 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl sm:my-8"
+        className="flex w-full flex-col"
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              {editingProject ? "Edit Project" : "Create New Project"}
-            </h2>
+            <DialogTitle asChild>
+              <h2 className="text-lg font-semibold text-slate-900">
+                {editingProject ? "Edit Project" : "Create New Project"}
+              </h2>
+            </DialogTitle>
             <p className="mt-0.5 text-sm text-slate-500">Set up the project details for the selected course.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close project form" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
@@ -189,6 +193,7 @@ export function ProjectModal({
           </button>
         </div>
       </form>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

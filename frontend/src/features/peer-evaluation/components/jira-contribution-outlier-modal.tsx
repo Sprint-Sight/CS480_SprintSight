@@ -1,5 +1,6 @@
 import { AlertTriangle, X } from "lucide-react";
 import type { JiraContributionStudent } from "@/features/peer-evaluation/peer-evaluation-api";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type JiraContributionOutlierModalProps = {
   isOpen: boolean;
@@ -21,28 +22,23 @@ export function JiraContributionOutlierModal({
   error,
   onClose,
 }: JiraContributionOutlierModalProps) {
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
       }}
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="jira-contribution-modal-title"
-        className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
-      >
+      <DialogContent dismissOnOutsideClick className="max-w-4xl border border-slate-200 shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-600" />
-              <h2 id="jira-contribution-modal-title" className="text-lg font-semibold text-slate-900">
-                Jira contribution evidence
-              </h2>
+              <DialogTitle asChild>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Jira contribution evidence
+                </h2>
+              </DialogTitle>
             </div>
             <p className="mt-1 text-sm text-slate-600">{studentName}</p>
           </div>
@@ -139,8 +135,8 @@ export function JiraContributionOutlierModal({
             </>
           )}
         </div>
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

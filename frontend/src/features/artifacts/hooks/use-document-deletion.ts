@@ -4,12 +4,33 @@ import { useState } from "react";
 
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
 
+export type PendingDocumentDelete = {
+  projectId: string;
+  documentId: string;
+  filename: string;
+};
+
 export function useDocumentDeletion(onDeleted: (projectId: string, documentId: string) => void) {
   const [deletingDocumentIds, setDeletingDocumentIds] = useState<Set<string>>(() => new Set());
   const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({});
+  const [pendingDelete, setPendingDelete] = useState<PendingDocumentDelete | null>(null);
 
-  async function deleteDocument(projectId: string, documentId: string, filename: string) {
-    if (!window.confirm(`Delete "${filename}"? This action cannot be undone.`)) return;
+  function requestDelete(projectId: string, documentId: string, filename: string) {
+    setPendingDelete({ projectId, documentId, filename });
+  }
+
+  function cancelDelete() {
+    setPendingDelete(null);
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const { projectId, documentId } = pendingDelete;
+    setPendingDelete(null);
+    await deleteDocument(projectId, documentId);
+  }
+
+  async function deleteDocument(projectId: string, documentId: string) {
     if (deletingDocumentIds.has(documentId)) return;
 
     setDeletingDocumentIds((current) => new Set(current).add(documentId));
@@ -36,5 +57,5 @@ export function useDocumentDeletion(onDeleted: (projectId: string, documentId: s
     }
   }
 
-  return { deleteDocument, deletingDocumentIds, deleteErrors };
+  return { requestDelete, cancelDelete, confirmDelete, pendingDelete, deletingDocumentIds, deleteErrors };
 }

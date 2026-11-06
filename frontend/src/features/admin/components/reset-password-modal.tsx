@@ -3,6 +3,7 @@
 import { useId } from "react";
 import { Loader2 } from "lucide-react";
 
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { UserAccount } from "@/features/admin/types";
 
 /** Mirrors the backend `AdminPasswordReset.password` min_length. */
@@ -25,7 +26,6 @@ export function ResetPasswordModal({
   onCancel,
   onSubmit,
 }: ResetPasswordModalProps) {
-  const titleId = useId();
   const inputId = useId();
   const hintId = useId();
 
@@ -34,22 +34,19 @@ export function ResetPasswordModal({
   const isTooShort = password.length < MIN_PASSWORD_LENGTH;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <DialogContent dismissOnOutsideClick={false} className="max-w-md overflow-hidden rounded-2xl p-0">
       <form
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+        className="w-full"
         onSubmit={(event) => {
           event.preventDefault();
           if (!isTooShort && !isSubmitting) onSubmit();
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onCancel();
-        }}
       >
         <div className="p-6">
-          <h3 id={titleId} className="text-lg font-bold text-slate-900 mb-2">Reset User Password</h3>
+          <DialogTitle asChild>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Reset User Password</h3>
+          </DialogTitle>
           <p className="text-sm text-slate-500 mb-5">
             Set a new password for <span className="font-semibold text-slate-700">{user.fullName}</span>. They will be required to change it upon their next login.
           </p>
@@ -101,6 +98,7 @@ export function ResetPasswordModal({
           </button>
         </div>
       </form>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

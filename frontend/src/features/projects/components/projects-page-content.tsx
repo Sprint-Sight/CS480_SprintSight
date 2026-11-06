@@ -1,14 +1,16 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { BookOpen, Plus, Search, SlidersHorizontal, Users, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 
 import { CourseManagementModal } from "@/features/projects/components/course-management-modal";
 import { ProjectCard } from "@/features/projects/components/project-card";
+import { ProjectFilterModal } from "@/features/projects/components/project-filter-modal";
 import { ProjectMembersModal } from "@/features/projects/components/project-members-modal";
 import { ProjectModal } from "@/features/projects/components/project-modal";
-import { RosterModal } from "@/features/projects/components/roster-modal";
+import { RosterModal, type StudentFormErrors } from "@/features/projects/components/roster-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
@@ -31,8 +33,6 @@ const sortOptions = [
   { value: "completion-asc", label: "Completion (Lowest first)" },
   { value: "status-priority", label: "Status (At Risk first)" },
 ] as const;
-
-type SortValue = (typeof sortOptions)[number]["value"];
 
 const DEFAULT_FILTERS: ProjectFilters = {
   teamName: "",
@@ -64,6 +64,9 @@ export default function ProjectsPageContent() {
   const [selectedProjectMemberIds, setSelectedProjectMemberIds] = useState<string[]>([]);
   const [isAddingProjectMembers, setIsAddingProjectMembers] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<{ projectId: string; userId: string; fullName: string } | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [courseToDelete, setCourseToDelete] = useState<string | null>(null);
+  const [studentFormErrors, setStudentFormErrors] = useState<StudentFormErrors>({});
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const { isLoading: isImporting, error: importError, parsedRows, validateAndPreview, submitImport, clearState: clearImportState } = useStudentImport();
@@ -270,10 +273,17 @@ export default function ProjectsPageContent() {
     setIsProjectModalOpen(true);
   }
 
-  async function handleDeleteProject(projectId: string, event: React.MouseEvent) {
+  function handleDeleteProject(projectId: string, event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    if (!confirm("Are you sure you want to delete this project?")) return;
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (project) setProjectToDelete(project);
+  }
+
+  async function handleConfirmDeleteProject() {
+    if (!projectToDelete) return;
+    const projectId = projectToDelete.id;
+    setProjectToDelete(null);
 
     try {
       if (!isUuid(projectId)) {
@@ -282,9 +292,9 @@ export default function ProjectsPageContent() {
       await apiRequest(`/projects/${projectId}`, { method: "DELETE" });
       await loadProjects();
       invalidateProjectCaches(queryClient);
-      window.alert("Project deleted.");
+      toast.success("Project deleted.");
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to delete project."));
+      toast.error(getErrorMessage(error, "Failed to delete project."));
     }
   }
 
@@ -350,7 +360,7 @@ export default function ProjectsPageContent() {
         });
         await loadProjects();
         invalidateProjectCaches(queryClient);
-        window.alert("Project updated.");
+        toast.success("Project updated.");
       } else {
         await apiRequest(`/courses/${selectedCourseId}/projects`, {
           method: "POST",
@@ -358,11 +368,11 @@ export default function ProjectsPageContent() {
         });
         await loadProjects();
         invalidateProjectCaches(queryClient);
-        window.alert("Project created.");
+        toast.success("Project created.");
       }
       setIsProjectModalOpen(false);
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to save project."));
+      toast.error(getErrorMessage(error, "Failed to save project."));
     } finally {
       isSavingProjectRef.current = false;
       setIsSavingProject(false);
@@ -384,7 +394,7 @@ export default function ProjectsPageContent() {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
-        window.alert("Course updated.");
+        toast.success("Course updated.");
       } else {
         const createdCourse = await apiRequest<Course>("/courses", {
           method: "POST",
@@ -393,35 +403,40 @@ export default function ProjectsPageContent() {
 
         setCourses((previous) => [...previous, { id: String(createdCourse.id), code: createdCourse.code, name: createdCourse.name, section: createdCourse.section, year: createdCourse.year, term: createdCourse.term }]);
         setSelectedCourseId(String(createdCourse.id));
-        window.alert("Course created.");
+        toast.success("Course created.");
       }
 
       setIsCourseModalOpen(false);
       setEditingCourse(null);
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to save course."));
+      toast.error(getErrorMessage(error, "Failed to save course."));
     }
   }
 
-  async function handleDeleteCourse(courseId: string = selectedCourseId) {
+  function handleDeleteCourse(courseId: string = selectedCourseId) {
     if (!courseId || !isUuid(courseId)) {
-      window.alert("Please select a valid course before deleting it.");
+      toast.error("Please select a valid course before deleting it.");
       return;
     }
+    setCourseToDelete(courseId);
+  }
 
-    if (!confirm("Delete this course and all associated projects?")) return;
+  async function handleConfirmDeleteCourse() {
+    const courseId = courseToDelete;
+    setCourseToDelete(null);
+    if (!courseId) return;
 
     try {
       await apiRequest(`/courses/${courseId}`, { method: "DELETE" });
       invalidateProjectCaches(queryClient);
-      window.alert("Course deleted.");
+      toast.success("Course deleted.");
       if (selectedCourseId === courseId) {
         setSelectedCourseId("");
       }
       await reloadCourses();
       setIsCourseModalOpen(false);
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to delete course."));
+      toast.error(getErrorMessage(error, "Failed to delete course."));
     }
   }
 
@@ -430,14 +445,14 @@ export default function ProjectsPageContent() {
     const trimmedName = studentForm.full_name.trim();
     const fallbackPassword = studentForm.password;
 
-    if (!trimmedEmail || !trimmedName) {
-      window.alert("Student name and email are required.");
-      return;
-    }
+    const errors: StudentFormErrors = {};
+    if (!trimmedName) errors.name = "Full name is required.";
+    if (!trimmedEmail) errors.email = "Email is required.";
     if (fallbackPassword && fallbackPassword.length < 8) {
-      window.alert("The fallback password must be at least 8 characters.");
-      return;
+      errors.password = "Use at least 8 characters.";
     }
+    setStudentFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
     try {
       const student = await apiRequest<{
@@ -455,7 +470,7 @@ export default function ProjectsPageContent() {
       });
 
       if (student.signup_email_sent) {
-        window.alert(
+        toast.success(
           `Student ${student.full_name} was created. A first-time password setup link was queued for delivery to ${student.email}.${
             fallbackPassword
               ? " They can also log in once with the fallback password you set."
@@ -463,7 +478,7 @@ export default function ProjectsPageContent() {
           } Enroll them in a course from the student directory below.`,
         );
       } else {
-        window.alert(
+        toast.warning(
           `Student ${student.full_name} was created, but the setup email could not be queued. Check the backend SMTP configuration and logs.${
             fallbackPassword
               ? " They can still log in once with the fallback password you set."
@@ -473,15 +488,16 @@ export default function ProjectsPageContent() {
       }
 
       setStudentForm({ email: "", full_name: "", password: "" });
+      setStudentFormErrors({});
       await loadAllStudents();
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to create student."));
+      toast.error(getErrorMessage(error, "Failed to create student."));
     }
   }
 
   async function handleEnrollExistingStudent(userId: string) {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
-      window.alert("Please select a valid course before enrolling students.");
+      toast.error("Please select a valid course before enrolling students.");
       return;
     }
     try {
@@ -490,24 +506,24 @@ export default function ProjectsPageContent() {
         { method: "POST" },
       );
       await loadCourseStudents();
-      window.alert(`${student.full_name} was enrolled in this course.`);
+      toast.success(`${student.full_name} was enrolled in this course.`);
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to enroll student."));
+      toast.error(getErrorMessage(error, "Failed to enroll student."));
     }
   }
 
   async function handleUnenrollStudent(userId: string) {
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
-      window.alert("Please select a valid course before unenrolling a student.");
+      toast.error("Please select a valid course before unenrolling a student.");
       return;
     }
 
     try {
       await apiRequest(`/courses/${selectedCourseId}/students/${userId}`, { method: "DELETE" });
       setCourseStudents((previous) => previous.filter((student) => student.id !== userId));
-      window.alert("Student unenrolled.");
+      toast.success("Student unenrolled.");
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to unenroll student."));
+      toast.error(getErrorMessage(error, "Failed to unenroll student."));
     }
   }
 
@@ -515,7 +531,7 @@ export default function ProjectsPageContent() {
     event.preventDefault();
     event.stopPropagation();
     if (!selectedCourseId || !isUuid(selectedCourseId)) {
-      window.alert("Please select a valid course before adding a project member.");
+      toast.error("Please select a valid course before adding a project member.");
       return;
     }
     const project = projects.find((candidate) => candidate.id === projectId);
@@ -547,9 +563,9 @@ export default function ProjectsPageContent() {
       await apiRequest(`/projects/${memberToRemove.projectId}/members/${memberToRemove.userId}`, { method: "DELETE" });
       await loadProjects();
       invalidateProjectCaches(queryClient);
-      window.alert("Project member removed.");
+      toast.success("Project member removed.");
     } catch (error) {
-      window.alert(getErrorMessage(error, "Failed to remove project member."));
+      toast.error(getErrorMessage(error, "Failed to remove project member."));
     } finally {
       setMemberToRemove(null);
     }
@@ -592,7 +608,7 @@ export default function ProjectsPageContent() {
           const studentName = courseStudents.find((student) => student.id === id)?.full_name ?? id;
           return `${studentName}: ${message}`;
         });
-        window.alert(
+        toast.warning(
           `${addedStudentIds.length} student${addedStudentIds.length === 1 ? "" : "s"} added. ` +
           `${failedStudents.length} could not be added; failed students remain selected so you can retry.\n\n` +
           failureDetails.join("\n"),
@@ -600,7 +616,7 @@ export default function ProjectsPageContent() {
       } else {
         setProjectForMemberSelection(null);
         setSelectedProjectMemberIds([]);
-        window.alert(
+        toast.success(
           `${addedStudentIds.length} student${addedStudentIds.length === 1 ? "" : "s"} added to the project.`,
         );
       }
@@ -749,6 +765,7 @@ export default function ProjectsPageContent() {
         isLoadingStudents={isLoadingStudents}
         studentDirectoryError={studentDirectoryError}
         studentForm={studentForm}
+        studentFormErrors={studentFormErrors}
         onClose={() => {
           setIsRosterModalOpen(false);
         }}
@@ -820,69 +837,43 @@ export default function ProjectsPageContent() {
         cancelText="Keep Member"
       />
 
-      {isFilterModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Filter and sort projects</h2>
-                <p className="text-sm text-slate-500">Adjust criteria, then apply to refresh the project list.</p>
-              </div>
-              <button type="button" onClick={() => setIsFilterModalOpen(false)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700">
-                ×
-              </button>
-            </div>
+      <ConfirmationModal
+        isOpen={Boolean(projectToDelete)}
+        onClose={() => setProjectToDelete(null)}
+        onConfirm={() => void handleConfirmDeleteProject()}
+        title="Delete Project"
+        message={`Delete ${projectToDelete?.team_name || "this project"}? This cannot be undone.`}
+        confirmText="Delete Project"
+        cancelText="Cancel"
+        variant="danger"
+      />
 
-            <div className="grid grid-cols-1 gap-4 px-5 py-4 md:grid-cols-2">
-              <label className="space-y-1.5">
-                <span className="text-sm font-medium text-slate-700">Team name</span>
-                <input type="text" value={draftFilters.teamName} onChange={(event) => updateDraftFilter("teamName", event.target.value)} placeholder="e.g. Team Alpha" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none focus:border-blue-300" />
-              </label>
+      <ConfirmationModal
+        isOpen={Boolean(courseToDelete)}
+        onClose={() => setCourseToDelete(null)}
+        onConfirm={() => void handleConfirmDeleteCourse()}
+        title="Delete Course"
+        message="Delete this course and all associated projects? This cannot be undone."
+        confirmText="Delete Course"
+        cancelText="Cancel"
+        variant="danger"
+      />
 
-              <label className="space-y-1.5">
-                <span className="text-sm font-medium text-slate-700">Status</span>
-                <select value={draftFilters.status} onChange={(event) => updateDraftFilter("status", event.target.value as "All statuses" | ProjectStatus)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300">
-                  {statusOptions.map((statusOption) => (
-                    <option key={statusOption} value={statusOption}>{statusOption}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1.5">
-                <span className="text-sm font-medium text-slate-700">Module</span>
-                <select value={draftFilters.module} onChange={(event) => updateDraftFilter("module", event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300">
-                  {moduleOptions.map((moduleOption) => (
-                    <option key={moduleOption} value={moduleOption}>{moduleOption}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1.5">
-                <span className="text-sm font-medium text-slate-700">Sprint</span>
-                <select value={draftFilters.sprint} onChange={(event) => updateDraftFilter("sprint", event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300">
-                  {sprintOptions.map((sprintOption) => (
-                    <option key={sprintOption} value={sprintOption}>{sprintOption}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1.5 md:col-span-2">
-                <span className="text-sm font-medium text-slate-700">Sort by</span>
-                <select value={draftFilters.sortBy} onChange={(event) => updateDraftFilter("sortBy", event.target.value as SortValue)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300">
-                  {sortOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-              <button type="button" onClick={() => setDraftFilters(DEFAULT_FILTERS)} className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Clear form</button>
-              <button type="button" onClick={() => { setAppliedFilters(draftFilters); setIsFilterModalOpen(false); }} className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-800">Apply filters</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ProjectFilterModal
+        isOpen={isFilterModalOpen}
+        draftFilters={draftFilters}
+        statusOptions={statusOptions}
+        moduleOptions={moduleOptions}
+        sprintOptions={sprintOptions}
+        sortOptions={sortOptions}
+        onDraftChange={updateDraftFilter}
+        onClearForm={() => setDraftFilters(DEFAULT_FILTERS)}
+        onApply={() => {
+          setAppliedFilters(draftFilters);
+          setIsFilterModalOpen(false);
+        }}
+        onClose={() => setIsFilterModalOpen(false)}
+      />
     </div>
   );
 }

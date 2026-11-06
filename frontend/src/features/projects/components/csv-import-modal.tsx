@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Upload, X, AlertCircle, CheckCircle2, FileText } from "lucide-react";
 import type { ParsedStudentRow, StudentImportResult, StudentImportError } from "@/features/projects/hooks/use-student-import";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 type ImportStep = "upload" | "preview" | "importing" | "success" | "error";
 
@@ -118,13 +119,22 @@ export function CSVImportModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open && !isLoading) handleClose();
+      }}
+    >
+      <DialogContent dismissOnOutsideClick={false} className="max-w-2xl rounded-2xl border border-slate-200 bg-white">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Bulk Import Students</h2>
-            <p className="text-sm text-slate-500">Course: {courseName}</p>
+            <DialogTitle asChild>
+              <h2 className="text-lg font-semibold text-slate-900">Bulk Import Students</h2>
+            </DialogTitle>
+            <DialogDescription asChild>
+              <p className="text-sm text-slate-500">Course: {courseName}</p>
+            </DialogDescription>
           </div>
           <button
             type="button"
@@ -384,7 +394,7 @@ export function CSVImportModal({
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

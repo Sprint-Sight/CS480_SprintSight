@@ -19,17 +19,26 @@ describe("useDocumentDeletion", () => {
     vi.unstubAllGlobals();
   });
 
-  it("asks for confirmation and calls the project-scoped DELETE endpoint", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
+  it("stores a pending delete and calls the project-scoped DELETE endpoint only after confirmation", async () => {
     mockedApiRequest.mockResolvedValue(null);
     const onDeleted = vi.fn();
     const { result } = renderHook(() => useDocumentDeletion(onDeleted));
 
+    act(() => {
+      result.current.requestDelete("project-123", "document-456", "brief.pdf");
+    });
+    expect(result.current.pendingDelete).toEqual({
+      projectId: "project-123",
+      documentId: "document-456",
+      filename: "brief.pdf",
+    });
+    expect(mockedApiRequest).not.toHaveBeenCalled();
+
     await act(async () => {
-      await result.current.deleteDocument("project-123", "document-456", "brief.pdf");
+      await result.current.confirmDelete();
     });
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete "brief.pdf"? This action cannot be undone.');
+    expect(result.current.pendingDelete).toBeNull();
     expect(mockedApiRequest).toHaveBeenCalledWith(
       "/projects/project-123/documents/document-456",
       { method: "DELETE" },
@@ -37,27 +46,32 @@ describe("useDocumentDeletion", () => {
     expect(onDeleted).toHaveBeenCalledWith("project-123", "document-456");
   });
 
-  it("does not call the endpoint or remove the document when confirmation is canceled", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => false));
+  it("does not call the endpoint or remove the document when the pending delete is canceled", async () => {
     const onDeleted = vi.fn();
     const { result } = renderHook(() => useDocumentDeletion(onDeleted));
 
-    await act(async () => {
-      await result.current.deleteDocument("project-123", "document-456", "brief.pdf");
+    act(() => {
+      result.current.requestDelete("project-123", "document-456", "brief.pdf");
+    });
+    act(() => {
+      result.current.cancelDelete();
     });
 
+    expect(result.current.pendingDelete).toBeNull();
     expect(mockedApiRequest).not.toHaveBeenCalled();
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
   it("keeps the document and exposes the error when deletion fails", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
     mockedApiRequest.mockRejectedValue(new Error("Document storage is unavailable."));
     const onDeleted = vi.fn();
     const { result } = renderHook(() => useDocumentDeletion(onDeleted));
 
     await act(async () => {
-      await result.current.deleteDocument("project-123", "document-456", "brief.pdf");
+      result.current.requestDelete("project-123", "document-456", "notes.pdf");
+    });
+    await act(async () => {
+      await result.current.confirmDelete();
     });
 
     await waitFor(() => {
@@ -68,7 +82,6 @@ describe("useDocumentDeletion", () => {
   });
 
   it("tracks the document as deleting until the endpoint succeeds", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
     let resolveDelete: ((value: null) => void) | undefined;
     mockedApiRequest.mockImplementation(
       () => new Promise<null>((resolve) => {
@@ -79,7 +92,10 @@ describe("useDocumentDeletion", () => {
 
     let pendingDelete: Promise<void> | undefined;
     act(() => {
-      pendingDelete = result.current.deleteDocument("project-123", "document-456", "brief.pdf");
+      result.current.requestDelete("project-123", "document-456", "notes.pdf");
+    });
+    act(() => {
+      pendingDelete = result.current.confirmDelete();
     });
     await waitFor(() => expect(result.current.deletingDocumentIds.has("document-456")).toBe(true));
 

@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Shield,
   LogOut,
@@ -12,9 +13,6 @@ import {
   Filter,
   Edit3,
   Trash2,
-  X,
-  CheckCircle2,
-  AlertCircle,
   Users,
   UserCheck,
   FolderGit2,
@@ -74,15 +72,12 @@ export function AdminPageContent() {
   // Student import hook
   const { isLoading: isImporting, error: importError, parsedRows, validateAndPreview, submitImport, clearState: clearImportState } = useStudentImport();
 
-  // Notifications
-  const [notification, setNotification] = useState<{
-    type: "success" | "error";
-    message: string;
-  } | null>(null);
-
   const showNotification = (type: "success" | "error", message: string) => {
-    setNotification({ type, message });
-    setTimeout(() => setNotification(null), 4000);
+    if (type === "success") {
+      toast.success(message);
+    } else {
+      toast.error(message);
+    }
   };
 
   const handleEditUser = async (user: UserAccount) => {
@@ -245,27 +240,6 @@ export function AdminPageContent() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 bg-slate-50 min-h-screen">
-      {/* Toast Notification */}
-      {notification && (
-        <div
-          className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg transition-all ${
-            notification.type === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-rose-50 border-rose-200 text-rose-800"
-          }`}
-        >
-          {notification.type === "success" ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-          ) : (
-            <AlertCircle className="w-5 h-5 text-rose-600" />
-          )}
-          <span className="text-sm font-medium">{notification.message}</span>
-          <button onClick={() => setNotification(null)} className="ml-2 hover:opacity-75">
-            <X className="w-4 h-4 text-slate-500" />
-          </button>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

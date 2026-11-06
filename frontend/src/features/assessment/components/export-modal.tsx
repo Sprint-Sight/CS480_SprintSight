@@ -2,6 +2,7 @@
 
 import { Download, FileText, X, Loader2, Check, AlertCircle } from "lucide-react";
 import type { ExportPreviewData } from "@/features/assessment/assessment-export-api";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type ExportModalProps = {
   isOpen: boolean;
@@ -26,22 +27,14 @@ export function ExportModal({
   onExportPDF,
   onExportCSV,
 }: ExportModalProps) {
-  if (!isOpen) return null;
-
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/50"
-        role="presentation"
-      />
-
-      {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-lg">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent dismissOnOutsideClick={false} className="max-w-md border border-slate-200">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <DialogTitle asChild>
             <h2 className="text-lg font-semibold text-slate-900">Export Assessment Report</h2>
+          </DialogTitle>
             <button
               type="button"
               onClick={onClose}
@@ -162,8 +155,7 @@ export function ExportModal({
             {/* Success State */}
             {/* This is shown after export completes, but we close modal after 2s */}
           </div>
-        </div>
-      </div>
-    </>
+      </DialogContent>
+    </Dialog>
   );
 }

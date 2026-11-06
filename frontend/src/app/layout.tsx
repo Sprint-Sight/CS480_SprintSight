@@ -1,5 +1,7 @@
 import "./globals.css";
 
+import { Toaster } from "sonner";
+
 import { QueryProvider } from "@/lib/query/query-provider";
 
 export default function RootLayout({
@@ -14,6 +16,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased bg-slate-50 text-slate-900">
         <QueryProvider>{children}</QueryProvider>
+        <Toaster position="top-right" closeButton richColors />
       </body>
     </html>
   );

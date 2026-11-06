@@ -108,4 +108,19 @@ describe("ConfirmationModal - UI Component", () => {
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAttribute("aria-modal", "true");
   });
+
+  it("should style the confirm button as danger when variant is danger", () => {
+    renderComponent(
+      <ConfirmationModal
+        isOpen={true}
+        onClose={mockOnClose}
+        onConfirm={mockOnConfirm}
+        title="Delete"
+        message="Message"
+        confirmText="Delete Project"
+        variant="danger"
+      />
+    );
+    expect(screen.getByText("Delete Project")).toHaveClass("bg-red-600");
+  });
 });
