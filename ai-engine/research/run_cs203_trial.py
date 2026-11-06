@@ -12,15 +12,15 @@ import argparse, asyncio, json, mlflow
 from pathlib import Path
 from fastapi import BackgroundTasks
 
-from schemas.artifact_bundle import ArtifactBundle
-from prompts.dimension_criteria import DIMENSIONS
-from services.evaluator import evaluate_sprint
 from judges.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
+from prompts.dimension_criteria import DIMENSIONS
+from schemas.artifact_bundle import ArtifactBundle
+from services.evaluator import evaluate_sprint
 
 CS203g6_BUNDLE_PATH = Path(__file__).parent / "cs203g6_AB.json"
 CS203jy_BUNDLE_PATH = Path(__file__).parent / "cs203jy_AB.json"
-DEFAULT_EXPERIMENT_NAME = "CS203 research 25/10/26" # ChangeMe: Update this to a new experiment name for each run, so the judge can see the new traces and not be confused by old ones. The judge only looks at traces in the same experiment as the challenger prompt version.
+DEFAULT_EXPERIMENT_NAME = "CS203 research 6/11/26" # ChangeMe: Update this to a new experiment name for each run, so the judge can see the new traces and not be confused by old ones. The judge only looks at traces in the same experiment as the challenger prompt version.
 
 def load_ab_bundle(ab_bundle_path: Path) -> ArtifactBundle:
     with ab_bundle_path.open() as f:
@@ -32,31 +32,38 @@ def _bundles(dataset: str) -> list[ArtifactBundle]:
 def _production_prompts() -> dict[str, str]:
     prompts = {}
     for dim in DIMENSIONS:
-        production = get_production_prompt(f"Evaluate_Dimension_{dim}")
+        production = get_production_prompt(f"Evaluate_{dim}")
         if production is None:
-            raise SystemExit(f"No production prompt for Evaluate_Dimension_{dim}; run once without --baseline first.")
+            raise SystemExit(f"No production prompt for Evaluate_{dim}; run once without --baseline first.")
         prompts[dim] = production.template
     return prompts
 
 async def run_trial(model_name: str, experiment_name: str = DEFAULT_EXPERIMENT_NAME, repeats: int = 1) -> None:
     mlflow_client, background_tasks = mlflow.MlflowClient(), BackgroundTasks()
     prompts = _production_prompts()
-    for ab_bundle_path in (CS203g6_BUNDLE_PATH, CS203jy_BUNDLE_PATH):
-        print(f"Loading A/B bundle from {ab_bundle_path}...")
-        bundle = load_ab_bundle(ab_bundle_path)
-        for i in range(repeats):
-            print(f"[{i + 1}/{repeats}] Evaluating '{model_name}' against {bundle.team_id}...")
-            trace_ids = []  # fresh per run so a judge task only sees its own traces
-            assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
-            print(f"  trace_ids={trace_ids}  overall_score={assessment.overall_score}")
-            trace_id = trace_ids[0]
-            print(f"  trace_id={trace_id}  overall_score={assessment.overall_score}  prompts={prompt_versions_registered}")
-            background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_id, bundle.team_id,
-                                        prompt_versions_registered, mlflow_client, bundle.sprint_id)
-            # background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_ids, bundle.team_id, prompt_versions_registered, mlflow_client, bundle.sprint_id)
-            # print(f"  queued judging + promotion check for {bundle.team_id}")
-        print(f"  completed evaluation for {bundle.team_id}")
-    await background_tasks()  # outside FastAPI, queued tasks only run when awaited
+
+    try:
+        for ab_bundle_path in (CS203g6_BUNDLE_PATH, CS203jy_BUNDLE_PATH):
+            print(f"Loading A/B bundle from {ab_bundle_path}...")
+            bundle = load_ab_bundle(ab_bundle_path)
+            for i in range(repeats):
+                print(f"[{i + 1}/{repeats}] Evaluating '{model_name}' against {bundle.team_id}...")
+                trace_ids = [] # fresh per run so a judge task only sees its own traces
+                try:
+                    assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
+                except Exception as e:
+                    print(f"  Error evaluating {bundle.team_id}: {e}")
+                    continue
+                if not trace_ids:
+                    print(f"  No trace IDs returned for {bundle.team_id}; skipping judge + promotion.")
+                    continue
+                trace_id = trace_ids[0]
+                print(f"  trace_id={trace_id}  overall_score={assessment.overall_score}  prompts={prompt_versions_registered}")
+                background_tasks.add_task(judge_and_promote_trace, experiment_name, trace_id, bundle.team_id,
+                                            prompt_versions_registered, mlflow_client, bundle.sprint_id)
+
+    finally: # Judge everything that was queued, even if some evaluations failed
+        await background_tasks() # outside FastAPI, queued tasks only run when awaited
     print("All evaluations + judging + promotion checks complete.")
 
 def main() -> None:
