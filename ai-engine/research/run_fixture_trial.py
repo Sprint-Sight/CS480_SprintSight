@@ -19,7 +19,7 @@ from judges.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
 from research.fixtures import FIXTURES_TEAMS
 
-DEFAULT_EXPERIMENT_NAME = "Fixture test 3/11/26"
+DEFAULT_EXPERIMENT_NAME = "Fixture test 5/11/26"
 
 def load_ab_bundle(ab_bundle_path: Path) -> ArtifactBundle:
     with ab_bundle_path.open() as f:
