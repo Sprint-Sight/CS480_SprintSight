@@ -1,4 +1,5 @@
 import { Loader2, UserPlus, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type Student = { id: string; email: string; full_name: string };
 type AssignedStudent = Student & { projectName: string };
@@ -31,11 +32,13 @@ export function ProjectMembersModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
-      <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="project-members-title">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent dismissOnOutsideClick={false} className="max-w-lg overflow-hidden rounded-xl border border-slate-200 p-0">
         <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
           <div>
-            <h2 id="project-members-title" className="text-lg font-semibold text-slate-900">Add Project Member</h2>
+            <DialogTitle asChild>
+              <h2 className="text-lg font-semibold text-slate-900">Add Project Member</h2>
+            </DialogTitle>
             <p className="mt-0.5 text-sm text-slate-500">Choose an enrolled student for {projectName}.</p>
           </div>
           <button type="button" onClick={onClose} disabled={isAddingMembers} aria-label="Close project member picker" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">
@@ -114,7 +117,7 @@ export function ProjectMembersModal({
             {isAddingMembers ? "Adding..." : `Add ${selectedStudentIds.length || ""} to Project`}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

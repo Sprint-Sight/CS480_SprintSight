@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { X, Shield, User, Mail } from "lucide-react";
 import { Role, UserAccount, EditUserData } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface EditUserModalProps {
   user: UserAccount | null;
@@ -47,10 +48,12 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl border border-slate-100 shadow-xl w-full max-w-md p-6">
+      <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+        <DialogContent dismissOnOutsideClick={false} className="max-w-md border border-slate-100 p-6">
           <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">Modify Identity & Assignments</h2>
+            <DialogTitle asChild>
+              <h2 className="text-base font-bold text-slate-900">Modify Identity & Assignments</h2>
+            </DialogTitle>
             <button
               onClick={onClose}
               className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
@@ -129,8 +132,8 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
               </button>
             </div>
           </form>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmationModal
         isOpen={showConfirm}

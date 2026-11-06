@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, AlertCircle, CheckCircle2, Loader } from "lucide-react";
 import type { AuditRetentionConfig, AuditRetentionConfigUpdate } from "@/features/audit/audit-api";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface AuditRetentionModalProps {
   isOpen: boolean;
@@ -86,16 +87,16 @@ export function AuditRetentionModal({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-xl">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent dismissOnOutsideClick={false} className="max-w-lg rounded-2xl p-0">
         {/* Header */}
         <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Audit Log Retention Settings</h2>
+              <DialogTitle asChild>
+                <h2 className="text-lg font-bold text-slate-900">Audit Log Retention Settings</h2>
+              </DialogTitle>
               <p className="mt-1 text-sm text-slate-500">Configure how long audit records are retained in the system.</p>
             </div>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -236,7 +237,7 @@ export function AuditRetentionModal({
             {isSaving ? "Saving..." : "Save Settings"}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

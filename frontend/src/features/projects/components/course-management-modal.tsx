@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 
 import type { Course } from "@/features/projects/types";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type CourseManagementModalProps = {
   isOpen: boolean;
@@ -44,11 +45,13 @@ export function CourseManagementModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
-      <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent dismissOnOutsideClick={false} className="max-w-4xl rounded-2xl border border-slate-200 p-0">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Course Management</h2>
+            <DialogTitle asChild>
+              <h2 className="text-lg font-semibold text-slate-900">Course Management</h2>
+            </DialogTitle>
             <p className="text-sm text-slate-500">Manage all instructor-owned courses in one place.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
@@ -219,7 +222,7 @@ export function CourseManagementModal({
             {editingCourse ? "Save Changes" : "Create Course"}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

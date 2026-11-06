@@ -26,6 +26,7 @@ import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifa
 import { JiraBurndownChart, type JiraBurndownResponse } from "@/features/artifacts/components/jira-burndown-chart";
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
+import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 import { useSession } from "@/lib/auth/session";
 
@@ -787,7 +788,7 @@ export default function ArtifactViewerPageContent() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => void documentDeletion.deleteDocument(selectedProjectId, doc.id, doc.fileName)}
+                      onClick={() => documentDeletion.requestDelete(selectedProjectId, doc.id, doc.fileName)}
                       disabled={isDeleting}
                       aria-label={`Delete ${doc.fileName}`}
                       className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -860,6 +861,16 @@ export default function ArtifactViewerPageContent() {
           </table>
         </div>
       </section>}
+
+      <ConfirmationModal
+        isOpen={Boolean(documentDeletion.pendingDelete)}
+        onClose={documentDeletion.cancelDelete}
+        onConfirm={() => void documentDeletion.confirmDelete()}
+        title="Delete document"
+        message={`Delete "${documentDeletion.pendingDelete?.filename ?? "this document"}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }
