@@ -1,42 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
-import { readIngestionState } from "@/features/ingestion/state";
+import { useIngestionScope } from "@/features/ingestion/hooks/use-ingestion-scope";
 import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
+import { summarizeIngestionRuns } from "@/features/ingestion/ingestion-query";
 import { useSession } from "@/lib/auth/session";
 
 export function useProgressData() {
   const session = useSession();
   const role: "student" | "instructor" | null = session ? (session.user?.role === "instructor" ? "instructor" : "student") : null;
-  const [selectedProjectId, setSelectedProjectId] = useState(() => readIngestionState().selectedProjectId || "");
-  const [selectedCourseId, setSelectedCourseId] = useState(() => readIngestionState().selectedCourseId || "");
-  const [ingestionVersion, setIngestionVersion] = useState(0);
-  const { isSyncing, syncError } = useIngestionSync({ projectId: selectedProjectId, courseId: selectedCourseId, enabled: role === "instructor" });
-  const progressSignals = useMemo(() => {
-    void ingestionVersion;
-    const state = readIngestionState();
-    const belongsToSelectedScope = (item: { project_id: string; course_id: string }) => item.project_id === selectedProjectId && (!selectedCourseId || item.course_id === selectedCourseId);
-    const gitRuns = Object.values(state.gitBySprint).filter(belongsToSelectedScope);
-    const jiraRuns = Object.values(state.jiraBySprint).filter(belongsToSelectedScope);
-    return {
-      hasData: gitRuns.length > 0 || jiraRuns.length > 0,
-      gitCommits: gitRuns.reduce((total, run) => total + (run.pagination?.total ?? run.commits.length), 0),
-      codeChurn: gitRuns.reduce((total, run) => total + run.code_churn, 0),
-      jiraTickets: jiraRuns.reduce((total, run) => total + run.tickets.length, 0),
-    };
-  }, [selectedCourseId, selectedProjectId, ingestionVersion]);
-
-  useEffect(() => {
-    const refresh = () => {
-      const state = readIngestionState();
-      setSelectedProjectId(state.selectedProjectId || "");
-      setSelectedCourseId(state.selectedCourseId || "");
-      setIngestionVersion((version) => version + 1);
-    };
-    window.addEventListener("sprintsight-ingestion-updated", refresh);
-    return () => window.removeEventListener("sprintsight-ingestion-updated", refresh);
-  }, []);
+  const { scope } = useIngestionScope();
+  const selectedProjectId = scope.selectedProjectId || "";
+  const { gitRuns, jiraSnapshots, isSyncing, syncError } = useIngestionSync({
+    projectId: selectedProjectId,
+    courseId: scope.selectedCourseId || undefined,
+    enabled: role === "instructor",
+  });
+  const progressSignals = useMemo(() => summarizeIngestionRuns(gitRuns, jiraSnapshots), [gitRuns, jiraSnapshots]);
 
   return { role, progressSignals, isSyncing, syncError };
 }

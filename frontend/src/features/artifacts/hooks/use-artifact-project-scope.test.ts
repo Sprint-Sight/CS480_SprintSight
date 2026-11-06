@@ -2,10 +2,12 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getStudentProjects, apiRequest, readIngestionState } = vi.hoisted(() => ({
+import { createTestWrapper } from "@/test-utils";
+
+const { getStudentProjects, apiRequest, readScope } = vi.hoisted(() => ({
   getStudentProjects: vi.fn(),
   apiRequest: vi.fn(),
-  readIngestionState: vi.fn(),
+  readScope: vi.fn(),
 }));
 
 vi.mock("@/features/student/student-project-api", () => ({ getStudentProjects }));
@@ -13,15 +15,19 @@ vi.mock("@/lib/api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/client")>()),
   apiRequest,
 }));
-vi.mock("@/features/ingestion/state", () => ({ readIngestionState }));
+vi.mock("@/features/ingestion/scope-store", () => ({
+  readScope,
+  subscribeScope: vi.fn(() => () => undefined),
+}));
 
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 
 describe("useArtifactProjectScope", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    readIngestionState.mockReturnValue({
+    readScope.mockReturnValue({
       selectedProjectId: "unrelated-browser-project",
+      selectedCourseId: "",
       selectedSprintId: "sprint-9",
     });
   });
@@ -37,7 +43,7 @@ describe("useArtifactProjectScope", () => {
       },
     ]);
 
-    const { result } = renderHook(() => useArtifactProjectScope("student"));
+    const { result } = renderHook(() => useArtifactProjectScope("student"), { wrapper: createTestWrapper() });
 
     await waitFor(() => expect(result.current.isLoadingProjects).toBe(false));
     expect(result.current.selectedProjectId).toBe("student-project-id");
@@ -45,13 +51,13 @@ describe("useArtifactProjectScope", () => {
       { id: "student-project-id", label: "Team A - SprintSight" },
     ]);
     expect(apiRequest).not.toHaveBeenCalled();
-    expect(readIngestionState).not.toHaveBeenCalled();
+    expect(readScope).not.toHaveBeenCalled();
   });
 
   it("does not select a project if loading the student's authorized projects fails", async () => {
     getStudentProjects.mockRejectedValue(new Error("Project lookup failed"));
 
-    const { result } = renderHook(() => useArtifactProjectScope("student"));
+    const { result } = renderHook(() => useArtifactProjectScope("student"), { wrapper: createTestWrapper() });
 
     await waitFor(() => expect(result.current.isLoadingProjects).toBe(false));
     expect(result.current.selectedProjectId).toBe("");

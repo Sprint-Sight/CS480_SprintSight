@@ -1,66 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { isUuid } from "@/features/projects/components/projects-api";
-import { getProjectGitMetrics, mergeIngestionRuns } from "@/features/ingestion/state";
-import { fetchProjectIngestion, resolveProjectCourseId } from "@/features/ingestion/ingestion-api";
+import { scopeProjectsQueryOptions } from "@/features/projects/course-projects-api";
+import { indexIngestionRuns, projectIngestionQueryOptions } from "@/features/ingestion/ingestion-query";
 import { getErrorMessage } from "@/lib/api/client";
 
 type UseIngestionSyncOptions = {
   projectId: string;
-  /** Optional; resolved from the course list when not known (e.g. deep links). */
+  /** Optional; resolved from the shared course cache when not known (e.g. deep links). */
   courseId?: string;
   enabled?: boolean;
 };
 
 /**
- * Pulls the project's Git and Jira runs from the backend into the shared ingestion
- * store, so pages that derive their view from that store work on a fresh browser
- * instead of only after the Artifact Viewer has been opened.
+ * Loads the project's Git and Jira runs through the query cache. Pages read from the
+ * returned `runs` index, so they work on a fresh browser without visiting the Artifact Viewer.
  */
 export function useIngestionSync({ projectId, courseId, enabled = true }: UseIngestionSyncOptions) {
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState("");
+  const queryClient = useQueryClient();
+  const canQuery = enabled && isUuid(projectId);
 
-  useEffect(() => {
-    if (!enabled || !isUuid(projectId)) {
-      setIsSyncing(false);
-      setSyncError("");
-      return;
-    }
+  const scopeQuery = useQuery({
+    ...scopeProjectsQueryOptions(queryClient),
+    enabled: canQuery && !courseId,
+  });
+  const resolvedCourseId =
+    courseId ||
+    scopeQuery.data?.find(({ projects }) => projects.some((project) => project.id === projectId))?.course.id ||
+    "";
 
-    let isCurrent = true;
-    setIsSyncing(true);
-    setSyncError("");
+  const ingestionQuery = useQuery({
+    ...projectIngestionQueryOptions(projectId, resolvedCourseId),
+    enabled: canQuery && Boolean(resolvedCourseId),
+  });
 
-    async function sync() {
-      try {
-        const resolvedCourseId = courseId || (await resolveProjectCourseId(projectId));
-        if (!isCurrent) return;
-        if (!resolvedCourseId) {
-          setSyncError("Could not find the course for this project.");
-          return;
-        }
+  const runs = useMemo(() => indexIngestionRuns(ingestionQuery.data), [ingestionQuery.data]);
 
-        const knownSprintIds = getProjectGitMetrics(projectId).map((run) => run.sprint_id);
-        const result = await fetchProjectIngestion(projectId, resolvedCourseId, knownSprintIds);
-        if (!isCurrent) return;
+  const courseMissing = canQuery && !courseId && scopeQuery.isSuccess && !resolvedCourseId;
+  const syncError = courseMissing
+    ? "Could not find the course for this project."
+    : ingestionQuery.error
+      ? getErrorMessage(ingestionQuery.error, "Could not load ingestion data.")
+      : (ingestionQuery.data?.errors.join(" ") ?? "");
 
-        mergeIngestionRuns(result.gitRuns, result.jiraSnapshots);
-        setSyncError(result.errors.join(" "));
-      } catch (error) {
-        if (isCurrent) setSyncError(getErrorMessage(error, "Could not load ingestion data."));
-      } finally {
-        if (isCurrent) setIsSyncing(false);
-      }
-    }
-
-    void sync();
-    return () => {
-      isCurrent = false;
-    };
-  }, [projectId, courseId, enabled]);
-
-  return { isSyncing, syncError };
+  return {
+    runs,
+    gitRuns: ingestionQuery.data?.gitRuns ?? [],
+    jiraSnapshots: ingestionQuery.data?.jiraSnapshots ?? [],
+    isSyncing: ingestionQuery.isFetching || scopeQuery.isFetching,
+    syncError,
+    refetch: ingestionQuery.refetch,
+  };
 }

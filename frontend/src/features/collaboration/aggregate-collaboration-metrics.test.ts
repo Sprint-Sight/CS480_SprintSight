@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { aggregateCollaborationMetrics } from "@/features/collaboration/aggregate-collaboration-metrics";
-import type { PersistedGitMetrics, PersistedJiraSnapshot } from "@/features/ingestion/state";
+import type { PersistedGitMetrics, PersistedJiraSnapshot } from "@/features/ingestion/types";
 
 const git: PersistedGitMetrics = {
   course_id: "course-1",
@@ -65,6 +65,7 @@ describe("aggregateCollaborationMetrics", () => {
     const result = aggregateCollaborationMetrics(
       { git, jira },
       new Map([["student-1", "SprintSight Student"]]),
+      "Team A - Project",
     );
 
     expect(result?.commitsByMember).toEqual([
@@ -99,6 +100,7 @@ describe("aggregateCollaborationMetrics", () => {
     const result = aggregateCollaborationMetrics(
       { git: unmatchedGit, jira: unmatchedJira },
       new Map(),
+      "Team A - Project",
     );
 
     expect(result?.commitsByMember).toEqual([]);
@@ -123,11 +125,24 @@ describe("aggregateCollaborationMetrics", () => {
         ["student-1", "Same Name"],
         ["student-2", "Same Name"],
       ]),
+      "Team A - Project",
     );
 
     expect(result?.commitsByMember.map((metric) => metric.id)).toEqual([
       "student:student-1",
       "student:student-2",
     ]);
+  });
+
+  it("labels the risk indicator with the real project label", () => {
+    const result = aggregateCollaborationMetrics({ git, jira }, new Map(), "Team A - Project");
+
+    expect(result?.riskIndicators[0].team).toBe("Team A - Project");
+  });
+
+  it("shows a dash instead of a placeholder when the project label is blank", () => {
+    const result = aggregateCollaborationMetrics({ git, jira }, new Map(), "   ");
+
+    expect(result?.riskIndicators[0].team).toBe("—");
   });
 });

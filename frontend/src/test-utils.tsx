@@ -1,12 +1,20 @@
 import { ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, RenderOptions } from "@testing-library/react";
+
+/** Wraps components in the app's providers. Each call gets a fresh query cache with retries off. */
+export function createTestWrapper() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return function TestWrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  };
+}
 
 /**
  * Custom render function for testing React components.
- * Wraps components in required providers (if any are added in future).
  */
 export function renderComponent(ui: ReactElement, options?: Omit<RenderOptions, "wrapper">) {
-  return render(ui, options);
+  return render(ui, { wrapper: createTestWrapper(), ...options });
 }
 
 /**

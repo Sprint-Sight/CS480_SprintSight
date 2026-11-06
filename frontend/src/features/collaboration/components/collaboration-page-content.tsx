@@ -38,7 +38,7 @@ function InstructorCollaborationPage() {
         <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
           <h2 className="text-lg font-semibold text-blue-950">Live Project Signals</h2>
           <p className="mt-1 text-sm text-slate-700">
-            {liveIngestion.git?.commits.length ?? 0} unique Git commits, {liveIngestion.jira?.tickets.length ?? 0} unique Jira tickets, and {liveIngestion.documents} documents are available for this project.
+            {liveIngestion.git?.commits.length ?? 0} unique Git commits, {liveIngestion.jira?.tickets.length ?? 0} unique Jira tickets are available for this project.
           </p>
         </section>
       )}

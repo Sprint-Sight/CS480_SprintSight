@@ -1,10 +1,12 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
+import { scopeProjectsQueryOptions } from "@/features/projects/course-projects-api";
 import { isUuid } from "@/features/projects/components/projects-api";
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
-import { getProjectIngestion, readIngestionState } from "@/features/ingestion/state";
+import { readScope, subscribeScope } from "@/features/ingestion/scope-store";
 import { getStudentProjects } from "@/features/student/student-project-api";
 import type { DashboardProject, DashboardRole, GitMetrics, JiraRun, JiraSnapshot } from "@/features/dashboard/types";
 import { useSession } from "@/lib/auth/session";
@@ -26,13 +28,14 @@ type DashboardState = {
 
 export function useDashboardData(router: { replace: (path: string) => void }): DashboardState {
   const session = useSession();
+  const queryClient = useQueryClient();
   const sessionRole = session?.user?.role;
   const role: DashboardRole = sessionRole === "student" ? "student" : "instructor";
   const fullName = session?.user?.fullName ?? "";
   const mounted = Boolean(session?.user) && sessionRole !== "admin";
   const [projects, setProjects] = useState<DashboardProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [sprintId, setSprintId] = useState(() => readIngestionState().selectedSprintId || "sprint-1");
+  const [sprintId, setSprintId] = useState(() => readScope().selectedSprintId);
   const [gitMetrics, setGitMetrics] = useState<GitMetrics | null>(null);
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,17 +63,13 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
 
     async function loadProjects() {
       try {
-        const courses = await apiRequest<Array<{ id: string }>>("/courses");
-        const groups = await Promise.all(courses.map(async (course) => ({
-          courseId: course.id,
-          projects: await apiRequest<Array<{ id: string; team_name: string; project_name: string }>>(`/courses/${course.id}/projects`),
-        })));
-        const options = groups.flatMap(({ courseId, projects: courseProjects }) => courseProjects.map((project) => ({
+        const groups = await queryClient.fetchQuery(scopeProjectsQueryOptions(queryClient));
+        const options = groups.flatMap(({ course, projects: courseProjects }) => courseProjects.map((project) => ({
           id: project.id,
-          courseId,
+          courseId: course.id,
           label: `${project.team_name} - ${project.project_name}`,
         })));
-        const persisted = readIngestionState();
+        const persisted = readScope();
         setProjects(options);
         setSelectedProjectId(options.find((project) => project.id === persisted.selectedProjectId)?.id || options[0]?.id || "");
         if (options.length === 0) {
@@ -83,16 +82,15 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
       }
     }
     loadProjects();
-  }, [mounted, role]);
+  }, [mounted, role, queryClient]);
 
   useEffect(() => {
     const updateScope = () => {
-      const state = readIngestionState();
-      if (state.selectedProjectId) setSelectedProjectId(state.selectedProjectId);
-      setSprintId(state.selectedSprintId || "sprint-1");
+      const scope = readScope();
+      if (scope.selectedProjectId) setSelectedProjectId(scope.selectedProjectId);
+      setSprintId(scope.selectedSprintId);
     };
-    window.addEventListener("sprintsight-ingestion-updated", updateScope);
-    return () => window.removeEventListener("sprintsight-ingestion-updated", updateScope);
+    return subscribeScope(updateScope);
   }, []);
 
   useEffect(() => {

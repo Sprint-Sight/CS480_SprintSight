@@ -14,7 +14,7 @@ export default function SprintOverviewPageContent() {
 }
 
 function InstructorSprintOverview() {
-  const { payload, liveIngestion, isSyncing, syncError } = useSprintOverviewData();
+  const { payload, liveTotals, isSyncing, syncError } = useSprintOverviewData();
   if (!payload)
     return (
       <div className="p-8">
@@ -50,21 +50,18 @@ function InstructorSprintOverview() {
         </p>
       )}
       <SprintSummaryCards summary={payload.summary} />
-      {(liveIngestion.git || liveIngestion.jira) && (
+      {liveTotals.hasData && (
         <section className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
           <h2 className="text-lg font-semibold text-blue-950">Live Ingestion Summary</h2>
           <div className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
             <p className="text-slate-700">
-              Git commits:{" "}
-              <strong>
-                {liveIngestion.git?.pagination?.total ?? liveIngestion.git?.commits.length ?? 0}
-              </strong>
+              Git commits: <strong>{liveTotals.gitCommits}</strong>
             </p>
             <p className="text-slate-700">
-              Git churn: <strong>{liveIngestion.git?.code_churn ?? 0}</strong>
+              Git churn: <strong>{liveTotals.codeChurn}</strong>
             </p>
             <p className="text-slate-700">
-              Jira tickets: <strong>{liveIngestion.jira?.tickets.length ?? 0}</strong>
+              Jira tickets: <strong>{liveTotals.jiraTickets}</strong>
             </p>
           </div>
         </section>

@@ -10,6 +10,7 @@ import { ApiConnectionsSettings } from "@/features/settings/components/api-conne
 import { useModelSelection } from "@/features/settings/hooks/use-model-selection";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 import { useRubricWeights } from "@/features/settings/hooks/use-rubric-weights";
+import { useUnsavedChangesGuard } from "@/features/settings/hooks/use-unsaved-changes-guard";
 import { useSession } from "@/lib/auth/session";
 
 export default function SettingsPageContent() {
@@ -21,6 +22,7 @@ export default function SettingsPageContent() {
   const modelSelection = useModelSelection(isAuthorized);
   const jiraCredentials = useInstructorJiraCredentials(isAuthorized);
   const rubricWeights = useRubricWeights(isAuthorized);
+  useUnsavedChangesGuard(rubricWeights.hasUnsavedChanges);
 
   useEffect(() => {
     if (isStudent) router.replace("/");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useSession } from "@/lib/auth/session";
 import { getTeachingSummary } from "@/features/profile/profile-api";
@@ -13,6 +14,7 @@ export function useProfileData() {
   const email = user?.email ?? "";
   const name = user?.fullName || (email ? email.split("@")[0] : "User");
   const isFaculty = role === "instructor" || role === "admin";
+  const queryClient = useQueryClient();
 
   const [teaching, setTeaching] = useState({ activeSectionsCount: 0, teamsMonitoredCount: 0 });
   const [isLoading, setIsLoading] = useState(isFaculty);
@@ -25,7 +27,7 @@ export function useProfileData() {
 
     let isCurrent = true;
     setIsLoading(true);
-    getTeachingSummary()
+    getTeachingSummary(queryClient)
       .then((summary) => {
         if (isCurrent) setTeaching(summary);
       })
@@ -40,20 +42,20 @@ export function useProfileData() {
     return () => {
       isCurrent = false;
     };
-  }, [isFaculty]);
+  }, [isFaculty, queryClient]);
 
-  // NOTE: students receive a 403 on GET /courses, and there is no endpoint yet for a
-  // student's courses, department, or pending reviews, so those stay as placeholders.
+  // No endpoint yet provides department, pending reviews, a student's team, or a student's
+  // enrolled courses, so those stay null and render as "—" instead of invented values.
   const profile: UserProfile = {
     name,
     email,
     role,
-    department: "Software Engineering",
+    department: null,
     activeSectionsCount: teaching.activeSectionsCount,
     teamsMonitoredCount: teaching.teamsMonitoredCount,
-    pendingReviewsCount: 0, // Implement if you add a reviews endpoint later
-    teamName: "Unassigned", // Would require an endpoint to fetch student's specific project
-    enrolledCoursesCount: role === "student" ? 1 : 0, // Placeholder for student
+    pendingReviewsCount: null,
+    teamName: null,
+    enrolledCoursesCount: null,
   };
 
   return { profile, isLoading };

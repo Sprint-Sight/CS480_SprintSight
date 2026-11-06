@@ -1,9 +1,8 @@
-import type { ProjectSprint, SprintStatus, StudentProject } from "@/features/projects/types";
+import type { ProjectSprint } from "@/features/projects/types";
 
 export type SprintActivity = {
   commits: number;
   tasks: number;
-  documents: number;
 };
 
 export type SprintOverviewRow = {
@@ -20,11 +19,10 @@ export type SprintOverviewRow = {
 export type SprintOverviewSummary = {
   totalCommits: number;
   totalTasks: number;
-  totalDocuments: number;
-}
+};
 
 export type SprintOverviewPayload = {
-  project: StudentProject;
+  project: { id: string; name: string };
   rows: SprintOverviewRow[];
   summary: SprintOverviewSummary;
 };

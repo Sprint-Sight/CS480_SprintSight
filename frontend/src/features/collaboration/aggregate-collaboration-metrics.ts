@@ -8,7 +8,7 @@ import type {
 import type {
   PersistedGitMetrics,
   PersistedJiraSnapshot,
-} from "@/features/ingestion/state";
+} from "@/features/ingestion/types";
 
 type IngestionAggregate = {
   git: PersistedGitMetrics | undefined;
@@ -22,6 +22,7 @@ function displayStudentName(studentId: string, memberNames: Map<string, string>)
 export function aggregateCollaborationMetrics(
   ingestion: IngestionAggregate,
   memberNames: Map<string, string>,
+  projectLabel: string,
 ): Pick<
   CollaborationDataset,
   "commitsByMember" | "unmatchedCommits" | "workloadDistribution" | "participationHeatmap" | "riskIndicators"
@@ -124,7 +125,7 @@ export function aggregateCollaborationMetrics(
     workloadDistribution,
     participationHeatmap,
     riskIndicators: [{
-      team: "Selected project",
+      team: projectLabel.trim() || "—",
       risk: balanceScore >= 70 ? "Low" : balanceScore >= 45 ? "Medium" : "High",
       summary: `${commitsByMember.length} Git contributors across ${totalCommits} commits`,
       balanceScore,

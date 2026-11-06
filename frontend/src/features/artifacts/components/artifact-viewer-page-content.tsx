@@ -11,11 +11,12 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isUuid } from "@/features/projects/components/projects-api";
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
-import { getProjectGitMetrics, saveDocumentCount, saveGitMetrics, saveJiraSnapshot } from "@/features/ingestion/state";
+import { ingestionQueryKeys } from "@/features/ingestion/ingestion-query";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
 import { useArtifactTab } from "@/features/artifacts/hooks/use-artifact-tab";
@@ -182,6 +183,7 @@ export default function ArtifactViewerPageContent() {
       : "student"
     : null;
   const { projectOptions, selectedProjectId, isLoadingProjects, projectLoadError } = useArtifactProjectScope(role);
+  const queryClient = useQueryClient();
 
   
   // Local state for documents to allow instant UI updates upon upload
@@ -190,12 +192,8 @@ export default function ArtifactViewerPageContent() {
   const [documentError, setDocumentError] = useState("");
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const documentDeletion = useDocumentDeletion((projectId, documentId) => {
-    setLocalDocuments((previous) => {
-      const updated = previous.filter((document) => document.id !== documentId);
-      if (projectId === selectedProjectId) saveDocumentCount(projectId, updated.length);
-      return updated;
-    });
+  const documentDeletion = useDocumentDeletion((_projectId, documentId) => {
+    setLocalDocuments((previous) => previous.filter((document) => document.id !== documentId));
   });
   const [sprintId, setSprintId] = useState("");
   const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
@@ -240,7 +238,6 @@ export default function ArtifactViewerPageContent() {
 
   useEffect(() => {
     let cancelled = false;
-    const persistedGitRuns = getProjectGitMetrics(selectedProjectId) as RepoIngestionData[];
     const applyRuns = (runs: RepoIngestionData[]) => {
       setGitRuns(runs);
       const selectedGitRun = [...runs].sort(
@@ -251,15 +248,14 @@ export default function ArtifactViewerPageContent() {
         selectedGitRun?.sprint_id || buildNextSprintId(runs.map((run) => run.sprint_id)),
       );
     };
-    applyRuns(persistedGitRuns);
+    applyRuns([]);
 
     if (role !== "instructor" || !isUuid(selectedProjectId) || !selectedCourseId) return;
     setIsLoadingGit(true);
     setGitError("");
-    fetchProjectGitRuns<RepoIngestionData>(selectedProjectId, selectedCourseId, persistedGitRuns.map((run) => run.sprint_id))
+    fetchProjectGitRuns<RepoIngestionData>(selectedProjectId, selectedCourseId, [])
       .then((runs) => {
         if (cancelled) return;
-        runs.forEach(saveGitMetrics);
         applyRuns(runs);
       })
       .catch((error) => {
@@ -301,7 +297,6 @@ export default function ArtifactViewerPageContent() {
       try {
         const documents = await apiRequest<BackendDocument[]>(`/projects/${selectedProjectId}/documents`);
         setLocalDocuments(documents.map(toDocumentArtifact));
-        saveDocumentCount(selectedProjectId, documents.length);
       } catch (error) {
         setDocumentError(getErrorMessage(error, "Failed to load documents."));
         setLocalDocuments([]);
@@ -379,7 +374,6 @@ export default function ArtifactViewerPageContent() {
         `/repo-ingestion/runs/${selectedProjectId}/${encodeURIComponent(sprint)}?course_id=${encodeURIComponent(project.courseId)}`
       );
       setGitMetrics(metrics);
-      saveGitMetrics(metrics);
     } catch (error) {
       setGitError(getErrorMessage(error, "Failed to load Git ingestion data."));
     } finally {
@@ -400,7 +394,6 @@ export default function ArtifactViewerPageContent() {
       );
       if (requestId !== jiraBurndownRequestId.current) return;
       setJiraSnapshot(snapshot);
-      saveJiraSnapshot(snapshot);
       try {
         const burndown = await apiRequest<JiraBurndownResponse>(
           `/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}/burndown`
@@ -465,6 +458,7 @@ export default function ArtifactViewerPageContent() {
       await loadCleanedRun(processedRun);
       await loadSprintRuns(sprint);
       setSprintId(buildNextSprintId([...jiraRuns.map((run) => run.sprint_id), sprint]));
+      await queryClient.invalidateQueries({ queryKey: ingestionQueryKeys.project(selectedProjectId) });
     } catch (error) {
       setJiraError(getErrorMessage(error, "Jira ingestion failed."));
     } finally {
@@ -502,10 +496,10 @@ export default function ArtifactViewerPageContent() {
         },
       };
       setGitMetrics(metrics);
-      saveGitMetrics(metrics);
       const updatedRuns = [...gitRuns.filter((run) => run.sprint_id !== sprint), metrics];
       setGitRuns(updatedRuns);
       setGitSprintId(sprint);
+      await queryClient.invalidateQueries({ queryKey: ingestionQueryKeys.project(selectedProjectId) });
     } catch (error) {
       setGitError(getErrorMessage(error, "Git ingestion failed."));
     } finally {
@@ -537,11 +531,7 @@ export default function ArtifactViewerPageContent() {
         method: "POST",
         body: formData,
       });
-      setLocalDocuments((previous) => {
-        const updated = [...response.documents.map(toDocumentArtifact), ...previous];
-        saveDocumentCount(selectedProjectId, updated.length);
-        return updated;
-      });
+      setLocalDocuments((previous) => [...response.documents.map(toDocumentArtifact), ...previous]);
     } catch (error) {
       setDocumentError(getErrorMessage(error, "Failed to upload documents."));
     } finally {
