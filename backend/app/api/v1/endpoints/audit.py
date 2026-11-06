@@ -27,7 +27,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 @router.get("/overrides")
 def get_override_audits(
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[AuditRepository, Depends(get_audit_repository)],
 ):
     return list_audit_records(repository, faculty_user)
@@ -35,7 +35,7 @@ def get_override_audits(
 
 @router.get("/actions")
 def get_action_audits(
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ):
     return list_action_audit_records(repository, faculty_user)
@@ -44,7 +44,9 @@ def get_action_audits(
 @router.get("/retention", response_model=AuditRetentionConfigResponse)
 def get_audit_retention_config(
     _: Annotated[UserRecord, Depends(require_admin)],
-    repository: Annotated[AuditRetentionConfigRepository, Depends(get_audit_retention_config_repository)],
+    repository: Annotated[
+        AuditRetentionConfigRepository, Depends(get_audit_retention_config_repository)
+    ],
 ) -> AuditRetentionConfigResponse:
     return repository.get_config()
 
@@ -53,7 +55,9 @@ def get_audit_retention_config(
 def update_audit_retention_config(
     payload: AuditRetentionConfigUpdate,
     current_user: Annotated[UserRecord, Depends(require_admin)],
-    repository: Annotated[AuditRetentionConfigRepository, Depends(get_audit_retention_config_repository)],
+    repository: Annotated[
+        AuditRetentionConfigRepository, Depends(get_audit_retention_config_repository)
+    ],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> AuditRetentionConfigResponse:
     updated = repository.update_config(

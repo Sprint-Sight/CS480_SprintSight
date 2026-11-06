@@ -6,7 +6,6 @@ import pandas as pd
 from dotenv import load_dotenv
 from mlflow import MlflowClient
 from mlflow.entities import AssessmentSourceType, Trace
-from mlflow.genai.scorers import scorer
 from mlflow.exceptions import RestException
 from mlflow.genai.scorers import scorer
 

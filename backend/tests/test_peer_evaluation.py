@@ -51,7 +51,12 @@ def _setup_course_with_project():
     """Create a course and project owned by faculty@sprintsight.edu (u-faculty-1)."""
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     # Create two students
     student_a = UserRecord(
@@ -105,13 +110,9 @@ def _override_repos(
 ):
     app.dependency_overrides[get_project_repository] = lambda: project_repository
     app.dependency_overrides[get_user_repository] = lambda: user_repository
-    app.dependency_overrides[get_peer_evaluation_repository] = (
-        lambda: peer_evaluation_repository
-    )
+    app.dependency_overrides[get_peer_evaluation_repository] = lambda: peer_evaluation_repository
     if assessment_repository is not None:
-        app.dependency_overrides[get_assessment_repository] = (
-            lambda: assessment_repository
-        )
+        app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
 
 
 def _clear_overrides():
@@ -247,7 +248,12 @@ def test_instructor_403_when_not_assigned_to_course(override_user_repository) ->
     )
     user_repository.create_user(other_instructor)
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-other-instr",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-other-instr",
     )
 
     _override_repos(project_repository, user_repository, peer_eval_repo)
@@ -287,9 +293,7 @@ def test_student_submits_peer_evaluation(override_user_repository) -> None:
         )
     )
 
-    _override_repos(
-        project_repository, user_repository, peer_eval_repo, assessment_repository
-    )
+    _override_repos(project_repository, user_repository, peer_eval_repo, assessment_repository)
 
     try:
         token = _token_for("student.a@sprintsight.edu")
@@ -988,7 +992,12 @@ def test_instructor_403_viewing_other_course_evaluations(override_user_repositor
     )
     user_repository.create_user(other_instructor)
     course = project_repository.create_course(
-        "CS499", "Other Course", "A", 2026, "Fall", "u-other-instr-2",
+        "CS499",
+        "Other Course",
+        "A",
+        2026,
+        "Fall",
+        "u-other-instr-2",
     )
 
     _override_repos(project_repository, user_repository, peer_eval_repo)
@@ -1157,7 +1166,12 @@ def test_instructor_sets_opens_at_and_expires_at(override_user_repository) -> No
     )
     user_repository.create_user(other_instructor)
     course = project_repository.create_course(
-        "CS499", "Other Course", "A", 2026, "Fall", "u-other-instr-2",
+        "CS499",
+        "Other Course",
+        "A",
+        2026,
+        "Fall",
+        "u-other-instr-2",
     )
 
     _override_repos(project_repository, user_repository, peer_eval_repo)
@@ -1352,9 +1366,7 @@ def test_instructor_gets_member_evaluations_with_outlier_stats(
         assert remarks["u-student-b"] == "Rarely available"
         assert remarks["u-student-d"] == "Helped me on the demo"
 
-        outlier_scores = [
-            item["score"] for item in data["evaluations"] if item["is_score_outlier"]
-        ]
+        outlier_scores = [item["score"] for item in data["evaluations"] if item["is_score_outlier"]]
         assert outlier_scores == [5]
     finally:
         _clear_overrides()
@@ -1390,4 +1402,3 @@ def test_member_evaluations_404_when_not_in_project(override_user_repository) ->
         assert response.status_code == 404, response.text
     finally:
         _clear_overrides()
-

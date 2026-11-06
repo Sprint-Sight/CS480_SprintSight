@@ -93,7 +93,9 @@ def faculty_token() -> str:
     return response.json()["access_token"]
 
 
-def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_timeout(monkeypatch) -> None:
+def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_timeout(
+    monkeypatch,
+) -> None:
     called = {}
 
     class DummyResponse:
@@ -112,26 +114,48 @@ def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_t
     monkeypatch.setattr("app.services.middleManService.service.httpx.post", fake_post)
     monkeypatch.setattr(
         "app.services.middleManService.service.get_settings",
-        lambda: SimpleNamespace(ai_engine_url="http://host.docker.internal:8001/", default_model_name="mock-rubric-v1"),
+        lambda: SimpleNamespace(
+            ai_engine_url="http://host.docker.internal:8001/", default_model_name="mock-rubric-v1"
+        ),
     )
 
-    result = send_assessment_to_ai_engine({"sprint_context": {"project_id": "demo"}}, "sprintsight-qwen")
+    result = send_assessment_to_ai_engine(
+        {"sprint_context": {"project_id": "demo"}}, "sprintsight-qwen"
+    )
 
     assert result == {"status": "ok"}
-    assert called["url"] == "http://host.docker.internal:8001/assess/sprint/data?modelname=sprintsight-qwen"
+    assert (
+        called["url"]
+        == "http://host.docker.internal:8001/assess/sprint/data?modelname=sprintsight-qwen"
+    )
     assert called["json"] == {"sprint_context": {"project_id": "demo"}}
     assert called["timeout"] is None
 
 
-def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_user_repository) -> None:
+def test_assess_and_override_writes_audit(
+    monkeypatch, tmp_path: Path, override_user_repository
+) -> None:
     repository_root = tmp_path / "repos"
     repository_path = repository_root / "cs-203-project"
     repository_path.mkdir(parents=True)
     subprocess.run(["git", "init", str(repository_path)], check=True, capture_output=True)
     (repository_path / "README.md").write_text("# CS203 project\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(repository_path), "add", "README.md"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(repository_path), "-c", "user.name=Test User", "-c", "user.email=test@example.com", "commit", "-m", "Initial commit"],
+        ["git", "-C", str(repository_path), "add", "README.md"], check=True, capture_output=True
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_path),
+            "-c",
+            "user.name=Test User",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "Initial commit",
+        ],
         check=True,
         capture_output=True,
     )
@@ -152,7 +176,6 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
         ),
         [],
     )
-
 
     monkeypatch.setattr(
         "app.services.assessmentService.service.send_assessment_to_ai_engine",
@@ -184,9 +207,16 @@ def test_assess_and_override_writes_audit(monkeypatch, tmp_path: Path, override_
             project_id="proj-a",
             sprint_id="sp1",
             generated_at=datetime.now(UTC),
-            rubric_weights={"delivery": 0.35, "collaboration": 0.30, "quality": 0.20, "documentation": 0.15},
+            rubric_weights={
+                "delivery": 0.35,
+                "collaboration": 0.30,
+                "quality": 0.20,
+                "documentation": 0.15,
+            },
             team_score=TeamScore(score=80.0, rationale="Initial team assessment."),
-            individual_scores=[StudentScore(student_id="stu-001", score=80.0, rationale="Initial contribution.")],
+            individual_scores=[
+                StudentScore(student_id="stu-001", score=80.0, rationale="Initial contribution.")
+            ],
             recommendations=["Increase unit testing."],
             rubric_scores={},
             strengths=["Delivery"],
@@ -234,7 +264,9 @@ def test_instructor_mutation_actions_are_logged() -> None:
 
 
 def test_admin_reset_password_is_logged() -> None:
-    admin_headers = {"Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'admin@sprintsight.edu', 'password': 'password123'}).json()['access_token']}"}
+    admin_headers = {
+        "Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'admin@sprintsight.edu', 'password': 'password123'}).json()['access_token']}"
+    }
     user_response = client.post(
         "/api/v1/users",
         json={
@@ -283,7 +315,9 @@ def test_admin_reset_password_is_logged() -> None:
 
 def test_audit_actions_are_scoped_to_actor_and_project_changes_are_logged() -> None:
     instructor_headers = {"Authorization": f"Bearer {faculty_token()}"}
-    admin_headers = {"Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'admin@sprintsight.edu', 'password': 'password123'}).json()['access_token']}"}
+    admin_headers = {
+        "Authorization": f"Bearer {client.post('/api/v1/auth/login', json={'email': 'admin@sprintsight.edu', 'password': 'password123'}).json()['access_token']}"
+    }
 
     course = client.post(
         "/api/v1/courses",
@@ -358,15 +392,30 @@ def test_audit_actions_are_scoped_to_actor_and_project_changes_are_logged() -> N
     assert "delete_project" in actions
 
 
-def test_assessment_job_contract_returns_accepted_and_job_id(monkeypatch, tmp_path: Path, override_user_repository) -> None:
+def test_assessment_job_contract_returns_accepted_and_job_id(
+    monkeypatch, tmp_path: Path, override_user_repository
+) -> None:
     repository_root = tmp_path / "repos"
     repository_path = repository_root / "cs-203-project"
     repository_path.mkdir(parents=True)
     subprocess.run(["git", "init", str(repository_path)], check=True, capture_output=True)
     (repository_path / "README.md").write_text("# CS203 project\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(repository_path), "add", "README.md"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(repository_path), "-c", "user.name=Test User", "-c", "user.email=test@example.com", "commit", "-m", "Initial commit"],
+        ["git", "-C", str(repository_path), "add", "README.md"], check=True, capture_output=True
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_path),
+            "-c",
+            "user.name=Test User",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "Initial commit",
+        ],
         check=True,
         capture_output=True,
     )

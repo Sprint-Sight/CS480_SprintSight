@@ -86,14 +86,36 @@ def test_extract_local_commits_includes_file_evidence(tmp_path: Path) -> None:
 def test_link_commit_authors_only_to_active_project_students() -> None:
     timestamp = datetime.now(UTC)
     commits = [
-        CommitInfo(sha="student", author="Student One", author_email=" Student@Example.com ", message="", timestamp=timestamp),
-        CommitInfo(sha="instructor", author="Instructor", author_email="instructor@example.com", message="", timestamp=timestamp),
-        CommitInfo(sha="unknown", author="Unknown", author_email="unknown@example.com", message="", timestamp=timestamp),
+        CommitInfo(
+            sha="student",
+            author="Student One",
+            author_email=" Student@Example.com ",
+            message="",
+            timestamp=timestamp,
+        ),
+        CommitInfo(
+            sha="instructor",
+            author="Instructor",
+            author_email="instructor@example.com",
+            message="",
+            timestamp=timestamp,
+        ),
+        CommitInfo(
+            sha="unknown",
+            author="Unknown",
+            author_email="unknown@example.com",
+            message="",
+            timestamp=timestamp,
+        ),
     ]
-    users = StubUserRepository([
-        UserRecord("student-1", "student@example.com", "Student One", Role.STUDENT, "hash"),
-        UserRecord("instructor-1", "instructor@example.com", "Instructor", Role.INSTRUCTOR, "hash"),
-    ])
+    users = StubUserRepository(
+        [
+            UserRecord("student-1", "student@example.com", "Student One", Role.STUDENT, "hash"),
+            UserRecord(
+                "instructor-1", "instructor@example.com", "Instructor", Role.INSTRUCTOR, "hash"
+            ),
+        ]
+    )
 
     _link_commit_authors_to_students(commits, "project-1", StubProjectRepository(), users)
 
@@ -146,7 +168,11 @@ def test_collect_repository_snapshot_reads_head_without_checkout(tmp_path: Path)
     git(repository, "add", ".")
     git(repository, "commit", "-m", "First")
     first_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repository, check=True, capture_output=True, text=True,
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     (repository / "src" / "app.py").write_text("print('v2')\nprint('more')\n", encoding="utf-8")
     git(repository, "commit", "-am", "Second")

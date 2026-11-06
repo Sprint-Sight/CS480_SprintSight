@@ -77,6 +77,7 @@ def override_user_repository():
     peer_evaluation_repository = InMemoryPeerEvaluationRepository()
     app.dependency_overrides[get_user_repository] = lambda: repository
     from app.dependencies.auth import get_project_repository
+
     app.dependency_overrides[get_project_repository] = lambda: project_repository
     app.dependency_overrides[get_document_repository] = lambda: document_repository
     app.dependency_overrides[get_manual_text_repository] = lambda: manual_text_repository
@@ -84,7 +85,9 @@ def override_user_repository():
     app.dependency_overrides[get_audit_repository] = lambda: audit_repository
     app.dependency_overrides[get_action_audit_repository] = lambda: action_audit_repository
     app.dependency_overrides[get_notification_repository] = lambda: notification_repository
-    app.dependency_overrides[get_audit_retention_config_repository] = lambda: audit_retention_config_repository
+    app.dependency_overrides[get_audit_retention_config_repository] = lambda: (
+        audit_retention_config_repository
+    )
     app.dependency_overrides[get_export_log_repository] = lambda: export_log_repository
     app.dependency_overrides[get_peer_evaluation_repository] = lambda: peer_evaluation_repository
     yield project_repository

@@ -1,8 +1,8 @@
 # app/core/storage.py
 import os
 
-import boto3
-from botocore.client import Config
+import boto3  # type: ignore[import-untyped]
+from botocore.client import Config  # type: ignore[import-untyped]
 
 from app.core.config import get_settings
 
@@ -15,16 +15,18 @@ def get_minio_client():
         aws_access_key_id=settings.minio_access_key,
         aws_secret_access_key=settings.minio_secret_key,
         config=Config(signature_version="s3v4"),
-        region_name="us-east-1"        # MinIO ignores this but boto3 requires it
+        region_name="us-east-1",  # MinIO ignores this but boto3 requires it
     )
+
 
 def init_buckets() -> None:
     """Call this once at app startup to ensure buckets exist."""
     client = get_minio_client()
     for bucket in [
         os.getenv("MINIO_BUCKET_SPRINTS"),
-        os.getenv("MINIO_BUCKET_REPORTS")
-        , os.getenv("MINIO_BUCKET_RAW"), os.getenv("MINIO_BUCKET_DOCUMENTS", "project-documents"),
+        os.getenv("MINIO_BUCKET_REPORTS"),
+        os.getenv("MINIO_BUCKET_RAW"),
+        os.getenv("MINIO_BUCKET_DOCUMENTS", "project-documents"),
         get_settings().minio_bucket_audit_archive,
     ]:
         try:
@@ -34,6 +36,7 @@ def init_buckets() -> None:
                 continue
             client.create_bucket(Bucket=bucket)
             print(f"Created bucket: {bucket}")
+
 
 def upload_object(
     bucket: str,
@@ -45,9 +48,10 @@ def upload_object(
     client = get_minio_client()
     request = {"Bucket": bucket, "Key": key, "Body": data, "ContentType": mime_type}
     if metadata:
-        request["Metadata"] = metadata
+        request["Metadata"] = metadata  # type: ignore[assignment]
     client.put_object(**request)
     return key
+
 
 def download_object(bucket: str, key: str) -> bytes:
     client = get_minio_client()
@@ -63,6 +67,7 @@ def head_object(bucket: str, key: str) -> dict:
 def delete_object(bucket: str, key: str) -> None:
     client = get_minio_client()
     client.delete_object(Bucket=bucket, Key=key)
+
 
 def list_objects(bucket: str, prefix: str = "") -> list[dict]:
     client = get_minio_client()
@@ -98,6 +103,7 @@ class StorageService:
 
     def list(self, bucket: str, prefix: str = "") -> list[dict]:
         return list_objects(bucket, prefix)
+
 
 # This is the instance main.py imports
 storage = StorageService()

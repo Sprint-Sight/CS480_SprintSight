@@ -24,7 +24,13 @@ def test_project_stores_jira_token_encrypted_and_omits_it_from_responses() -> No
     instructor = headers(token("faculty@sprintsight.edu"))
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA1", "name": "Jira Creds", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA1",
+            "name": "Jira Creds",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=instructor,
     ).json()
     created = client.post(
@@ -61,7 +67,13 @@ def test_patch_without_token_keeps_configured_flag_and_empty_token_clears_it() -
     instructor = headers(token("faculty@sprintsight.edu"))
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA2", "name": "Jira Patch", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA2",
+            "name": "Jira Patch",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=instructor,
     ).json()
     project = client.post(
@@ -112,7 +124,13 @@ def test_patch_replaces_token_only_after_jira_validation(monkeypatch) -> None:
     instructor = headers(token("faculty@sprintsight.edu"))
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA3", "name": "Jira Validation", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA3",
+            "name": "Jira Validation",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=instructor,
     ).json()
     project = client.post(
@@ -155,7 +173,13 @@ def test_patch_rejects_invalid_token_without_overwriting_existing_token(monkeypa
     instructor = headers(token("faculty@sprintsight.edu"))
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA4", "name": "Jira Rejection", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA4",
+            "name": "Jira Rejection",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=instructor,
     ).json()
     project = client.post(

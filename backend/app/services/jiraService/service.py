@@ -27,7 +27,7 @@ from app.repositories.interfaces import (
     UserRecord,
     UserRepository,
 )
-from app.schemas.assessment import IngestionRequest
+from app.schemas.assessment import AssessRequest, IngestionRequest
 from app.schemas.jira_outlier import (
     JiraContributionOutlierReport,
     JiraContributionOutlierResponse,
@@ -41,7 +41,7 @@ OUTLIER_Z_THRESHOLD = 1.0
 # ---------------------------------------------------------------------------
 # Mock enrichment (while DB and external adapters are pending)
 # ---------------------------------------------------------------------------
-def enrich_jira_metrics(payload: IngestionRequest) -> IngestionMetricBundle | None:
+def enrich_jira_metrics(payload: IngestionRequest | AssessRequest) -> IngestionMetricBundle | None:
     return metrics_repo.get_metrics(payload.course_id, payload.project_id, payload.sprint_id)
 
 
@@ -88,7 +88,11 @@ def _resolve_jira_auth(
     instructor_credentials: tuple[str, str] | None = None,
 ) -> tuple[str, str, str]:
     settings = get_settings()
-    domain = normalize_jira_domain(project.jira_domain) or normalize_jira_domain(settings.jira_domain) or ""
+    domain = (
+        normalize_jira_domain(project.jira_domain)
+        or normalize_jira_domain(settings.jira_domain)
+        or ""
+    )
     if instructor_credentials:
         email, api_token = instructor_credentials
         if domain and email and api_token:
@@ -102,7 +106,7 @@ def _resolve_jira_auth(
                 detail="Stored Jira credentials could not be decrypted. Re-save the API token.",
             ) from exc
         email = project.jira_email
-        project_domain = normalize_jira_domain(project.jira_domain)
+        project_domain = normalize_jira_domain(project.jira_domain)  # type: ignore
         if not email or not project_domain or not token:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -215,9 +219,7 @@ def _fetch_jira_changelogs(
     changes_by_issue: dict[str, list[dict]] = {issue_id: [] for issue_id in issue_ids}
     field_ids = list(
         dict.fromkeys(
-            field_id
-            for field_id in ("status", sprint_field, story_points_field)
-            if field_id
+            field_id for field_id in ("status", sprint_field, story_points_field) if field_id
         )
     )
 
@@ -242,9 +244,7 @@ def _fetch_jira_changelogs(
                 elif exc.response.status_code == 401:
                     detail = "Jira rejected the credentials while reading issue changelogs."
                 else:
-                    detail = (
-                        f"Jira changelog API returned HTTP {exc.response.status_code}."
-                    )
+                    detail = f"Jira changelog API returned HTTP {exc.response.status_code}."
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=detail,
@@ -677,7 +677,7 @@ def _load_course_contributions(
         for ticket in _tickets_from_run(run):
             if not ticket.ticket_id:
                 continue
-            student_id = _resolve_assignee_id(
+            student_id = _resolve_assignee_id(  # type: ignore[assignment]
                 ticket,
                 enrolled_set,
                 users_by_id,
@@ -713,9 +713,7 @@ def _load_course_contributions(
     students_below_average = 0
     if course_mean is not None:
         students_below_average = sum(
-            1
-            for student_id in enrolled_ids
-            if totals_by_student[student_id] < course_mean
+            1 for student_id in enrolled_ids if totals_by_student[student_id] < course_mean
         )
 
     return _CourseContributionData(
@@ -739,9 +737,7 @@ def _build_student_response(
     total_points = data.totals_by_student[student_id]
     tickets = data.tickets_by_student[student_id]
     total_tickets = len(tickets)
-    average_per_ticket = (
-        round(total_points / total_tickets, 2) if total_tickets else 0.0
-    )
+    average_per_ticket = round(total_points / total_tickets, 2) if total_tickets else 0.0
 
     z = _z_score(float(total_points), data.course_mean, data.course_stdev)
     is_outlier = _is_outlier(z)
@@ -814,9 +810,7 @@ def get_jira_contribution_outliers(
         user_repo=user_repo,
         project_repo=project_repo,
     )
-    responses = [
-        _build_student_response(data, student_id) for student_id in data.enrolled_ids
-    ]
+    responses = [_build_student_response(data, student_id) for student_id in data.enrolled_ids]
     responses.sort(
         key=lambda response: (-response.total_story_points, response.student_full_name.lower())
     )

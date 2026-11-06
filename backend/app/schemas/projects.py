@@ -10,6 +10,7 @@ from app.schemas.auth import Role, UserResponse
 # Shared field-level helpers (reused by both Create and Update)
 # ---------------------------------------------------------------------------
 
+
 def _validate_github_url(value: str | None) -> str | None:
     if value is None:
         return None
@@ -37,13 +38,16 @@ def _validate_local_path(value: str | None) -> str | None:
             "not an absolute path (e.g. use 'team-alpha/repo', not '/app/repo/...')."
         )
     if any(segment == ".." for segment in value.replace("\\", "/").split("/")):
-        raise ValueError("Local repository path must not contain '..' (path traversal is not allowed).")
+        raise ValueError(
+            "Local repository path must not contain '..' (path traversal is not allowed)."
+        )
     return value
 
 
 # ---------------------------------------------------------------------------
 # Course schemas
 # ---------------------------------------------------------------------------
+
 
 class CourseCreate(BaseModel):
     code: str = Field(min_length=1, max_length=20)
@@ -75,6 +79,7 @@ class CourseUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # Project — Create
 # ---------------------------------------------------------------------------
+
 
 class ProjectCreate(BaseModel):
     project_name: str = Field(min_length=1, max_length=150)
@@ -138,6 +143,7 @@ class ProjectCreate(BaseModel):
 # Project — Update
 # ---------------------------------------------------------------------------
 
+
 class ProjectUpdate(BaseModel):
     project_name: str | None = Field(default=None, min_length=1, max_length=150)
     team_name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -195,6 +201,7 @@ class ProjectUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # Project — Response
 # ---------------------------------------------------------------------------
+
 
 class ProjectResponse(BaseModel):
     id: UUID

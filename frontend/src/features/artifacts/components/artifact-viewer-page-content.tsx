@@ -111,9 +111,12 @@ type JiraTicket = {
   summary: string;
   assignee: string | null;
   status: string | null;
+  status_category: string | null;
   issue_type: string | null;
   story_points: number | null;
   sprint_id: string | null;
+  created_at: string | null;
+  timestamp: string | null;
 };
 
 type JiraCleanedSnapshot = {

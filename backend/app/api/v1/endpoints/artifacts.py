@@ -8,7 +8,12 @@ from app.dependencies.auth import (
     get_project_repository,
     require_student_or_faculty,
 )
-from app.repositories.interfaces import JiraIngestionRunRepository, ProjectRecord, ProjectRepository
+from app.repositories.interfaces import (  # noqa: E501
+    JiraIngestionRunRepository,
+    ProjectRecord,
+    ProjectRepository,
+    UserRecord,
+)
 from app.schemas.artifacts import ArtifactCommitView, ArtifactFileView, ArtifactTicketView
 from app.schemas.auth import Role
 from app.services.artifactViewerService.service import (
@@ -23,18 +28,28 @@ from app.services.gitlabGithub.service import ArtifactNotFoundError, resolve_loc
 router = APIRouter(prefix="/artifacts", tags=["artifacts"])
 
 
-def _get_authorized_project(project_id: str, current_user: object, projects: ProjectRepository) -> ProjectRecord:
+def _get_authorized_project(
+    project_id: str, current_user: object, projects: ProjectRepository
+) -> ProjectRecord:
     project = projects.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    if current_user.role == Role.STUDENT and current_user.id not in projects.list_member_ids(project_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view artifacts for your project.")
+    if current_user.role == Role.STUDENT and current_user.id not in projects.list_member_ids(
+        project_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view artifacts for your project.",
+        )
     return project
 
 
 def _repository_path(project: ProjectRecord) -> Path:
     if not project.local_repo_path:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project has no local repository configured.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project has no local repository configured.",
+        )
     try:
         return resolve_local_repository_path(project.local_repo_path)
     except ValueError as exc:
@@ -44,10 +59,12 @@ def _repository_path(project: ProjectRecord) -> Path:
 @router.get("/projects/{project_id}/file", response_model=ArtifactFileView)
 def get_artifact_file(
     project_id: str,
-    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     path: Annotated[str, Query(min_length=1, max_length=1024)],
-    ref: Annotated[str | None, Query(max_length=40, description="Commit SHA; defaults to the repository HEAD.")] = None,
+    ref: Annotated[
+        str | None, Query(max_length=40, description="Commit SHA; defaults to the repository HEAD.")
+    ] = None,
     start: Annotated[int | None, Query(ge=1, description="First line to highlight.")] = None,
     end: Annotated[int | None, Query(ge=1, description="Last line to highlight.")] = None,
 ) -> ArtifactFileView:
@@ -62,7 +79,7 @@ def get_artifact_file(
 def get_artifact_commit(
     project_id: str,
     commit_sha: str,
-    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> ArtifactCommitView:
     project = _get_authorized_project(project_id, current_user, projects)
@@ -76,9 +93,11 @@ def get_artifact_commit(
 def get_artifact_ticket(
     project_id: str,
     ticket_id: str,
-    current_user: Annotated[object, Depends(require_student_or_faculty)],
+    current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
-    jira_ingestion_repository: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    jira_ingestion_repository: Annotated[
+        JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)
+    ],
 ) -> ArtifactTicketView:
     project = _get_authorized_project(project_id, current_user, projects)
     try:

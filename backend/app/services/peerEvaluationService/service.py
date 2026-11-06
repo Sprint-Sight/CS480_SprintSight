@@ -102,9 +102,7 @@ class PeerEvaluationService:
             target_id=course_id,
             details={
                 "is_open": payload.is_open,
-                "expires_at": payload.expires_at.isoformat()
-                if payload.expires_at
-                else None,
+                "expires_at": payload.expires_at.isoformat() if payload.expires_at else None,
             },
         )
 
@@ -117,9 +115,7 @@ class PeerEvaluationService:
             updated_at=saved.updated_at,
         )
 
-    def get_evaluation_config(
-        self, course_id: str
-    ) -> PeerEvaluationConfigResponse | None:
+    def get_evaluation_config(self, course_id: str) -> PeerEvaluationConfigResponse | None:
         config = self._peer_evaluation_repository.get_config(course_id)
         if config is None:
             return None
@@ -400,9 +396,7 @@ class PeerEvaluationService:
         Students can only see their own evaluations of others — never
         evaluations written about them or by other students.
         """
-        records = self._peer_evaluation_repository.list_evaluations_by_rater(
-            rater_id, project_id
-        )
+        records = self._peer_evaluation_repository.list_evaluations_by_rater(rater_id, project_id)
         return [
             PeerEvaluationResponse(
                 evaluation_id=r.evaluation_id,
@@ -433,17 +427,13 @@ class PeerEvaluationService:
             )
 
         # Verify instructor is assigned to the course.
-        if not self._project_repository.is_instructor_assigned(
-            project.course_id, current_user_id
-        ):
+        if not self._project_repository.is_instructor_assigned(project.course_id, current_user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not assigned to teach this course.",
             )
 
-        records = self._peer_evaluation_repository.list_evaluations_by_project(
-            project_id
-        )
+        records = self._peer_evaluation_repository.list_evaluations_by_project(project_id)
 
         evaluations = []
         total_score = 0
@@ -451,9 +441,7 @@ class PeerEvaluationService:
             evaluations.append(self._to_instructor_view(r))
             total_score += r.score
 
-        average_score = (
-            round(total_score / len(evaluations), 2) if evaluations else None
-        )
+        average_score = round(total_score / len(evaluations), 2) if evaluations else None
 
         return PeerEvaluationSummary(
             project_id=project_id,
@@ -463,16 +451,12 @@ class PeerEvaluationService:
             evaluations=evaluations,
         )
 
-    def get_course_evaluations(
-        self, course_id: str, current_user_id: str
-    ):
+    def get_course_evaluations(self, course_id: str, current_user_id: str):
         """Instructor view: all peer evaluations across all projects in a course."""
         from app.schemas.peer_evaluation import CoursePeerEvaluationSummary
 
         # Verify instructor is assigned to the course.
-        if not self._project_repository.is_instructor_assigned(
-            course_id, current_user_id
-        ):
+        if not self._project_repository.is_instructor_assigned(course_id, current_user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not assigned to teach this course.",
@@ -500,9 +484,7 @@ class PeerEvaluationService:
             projects=project_summaries,
         )
 
-    def get_evaluation_status(
-        self, course_id: str, student_id: str
-    ):
+    def get_evaluation_status(self, course_id: str, student_id: str):
         """Return whether a student can currently submit evaluations."""
         config = self._peer_evaluation_repository.get_config(course_id)
         if config is None or not config.is_open:
@@ -520,7 +502,7 @@ class PeerEvaluationService:
                 "is_open": True,
                 "opens_at": config.opens_at,
                 "expires_at": config.expires_at,
-                "message": f"Peer evaluation has not opened yet. Opens at {config.opens_at.isoformat()}.",
+                "message": f"Peer evaluation has not opened yet. Opens at {config.opens_at.isoformat()}.",  # noqa: E501
             }
         if config.expires_at is not None and now > config.expires_at:
             return {
@@ -552,9 +534,7 @@ class PeerEvaluationService:
                 detail="Project not found.",
             )
 
-        if not self._project_repository.is_instructor_assigned(
-            project.course_id, current_user_id
-        ):
+        if not self._project_repository.is_instructor_assigned(project.course_id, current_user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not assigned to teach this course.",
@@ -570,9 +550,7 @@ class PeerEvaluationService:
         member = self._user_repository.get_by_id(member_id)
         received = [
             r
-            for r in self._peer_evaluation_repository.list_evaluations_by_project(
-                project_id
-            )
+            for r in self._peer_evaluation_repository.list_evaluations_by_project(project_id)
             if r.rated_id == member_id
         ]
 
@@ -594,9 +572,7 @@ class PeerEvaluationService:
         total_score = sum(r.score for r in received)
         average_score = _round_or_none(score_mean)
 
-        enrolled_ids = self._project_repository.list_enrolled_student_ids(
-            project.course_id
-        )
+        enrolled_ids = self._project_repository.list_enrolled_student_ids(project.course_id)
         enrolled_set = set(enrolled_ids)
         course_records = self._peer_evaluation_repository.list_evaluations_by_course(
             project.course_id
@@ -609,16 +585,12 @@ class PeerEvaluationService:
             totals_by_student[record.rated_id] += record.score
             students_with_evals.add(record.rated_id)
 
-        comparable_totals = [
-            float(totals_by_student[sid]) for sid in students_with_evals
-        ]
+        comparable_totals = [float(totals_by_student[sid]) for sid in students_with_evals]
         course_mean, course_stdev = _mean_and_sample_stdev(comparable_totals)
         students_below_average = 0
         if course_mean is not None:
             students_below_average = sum(
-                1
-                for sid in enrolled_ids
-                if totals_by_student[sid] < course_mean
+                1 for sid in enrolled_ids if totals_by_student[sid] < course_mean
             )
 
         total_z = None
@@ -650,9 +622,7 @@ class PeerEvaluationService:
             students_below_course_average=students_below_average,
         )
 
-    def _to_instructor_view(
-        self, record: PeerEvaluationRecord
-    ) -> PeerEvaluationInstructorView:
+    def _to_instructor_view(self, record: PeerEvaluationRecord) -> PeerEvaluationInstructorView:
         rater = self._user_repository.get_by_id(record.rater_id)
         rated = self._user_repository.get_by_id(record.rated_id)
         return PeerEvaluationInstructorView(

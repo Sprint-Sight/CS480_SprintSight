@@ -221,9 +221,7 @@ def test_deleting_a_course_notifies_its_students(override_user_repository) -> No
 
     response = client.get("/api/v1/notifications", headers=student_headers)
     deletions = [
-        item
-        for item in response.json()["notifications"]
-        if item["event_type"] == "course_deletion"
+        item for item in response.json()["notifications"] if item["event_type"] == "course_deletion"
     ]
     assert len(deletions) == 1
     assert deletions[0]["title"] == "Course deleted"

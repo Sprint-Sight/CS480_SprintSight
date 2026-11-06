@@ -47,13 +47,14 @@ def deactivate_user_cascade(
         user.email,
         user.full_name,
         user.role,
-        False,          # is_active = False → soft delete
+        False,  # is_active = False → soft delete
     )
 
 
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
 
 def _remove_student_memberships(
     user_id: str,

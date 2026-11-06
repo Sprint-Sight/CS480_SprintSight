@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-from jose import JWTError, jwt
+from jose import JWTError, jwt  # type: ignore
 
 from app.core.config import Settings, get_settings
 from app.core.security import TokenPayloadError

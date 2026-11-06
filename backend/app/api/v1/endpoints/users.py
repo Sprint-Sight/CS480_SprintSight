@@ -88,7 +88,10 @@ def get_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     if current_user.role == Role.INSTRUCTOR and user.role != Role.STUDENT:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors can only view student accounts.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructors can only view student accounts.",
+        )
     return user_response(user)
 
 
@@ -148,9 +151,15 @@ def update_managed_user(
 
     if current_user.role == Role.INSTRUCTOR:
         if user.role != Role.STUDENT:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors can only manage student accounts.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Instructors can only manage student accounts.",
+            )
         if payload.role not in (None, Role.STUDENT):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructors cannot change a user's role.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Instructors cannot change a user's role.",
+            )
 
     # Prevent admins from locking themselves out or demoting themselves
     if user_id == current_user.id and (
@@ -183,9 +192,7 @@ def update_managed_user(
     if target_role == Role.STUDENT:
         student_number = payload.student_number or user.student_number
         existing_number = (
-            repository.get_by_student_number(student_number)
-            if student_number is not None
-            else None
+            repository.get_by_student_number(student_number) if student_number is not None else None
         )
         if existing_number and existing_number.id != user_id:
             raise HTTPException(
@@ -215,7 +222,11 @@ def update_managed_user(
         action="update_user",
         target_type="user",
         target_id=user_id,
-        details={"email": email, "role": (payload.role or user.role).value, "is_active": payload.is_active if payload.is_active is not None else user.is_active},
+        details={
+            "email": email,
+            "role": (payload.role or user.role).value,
+            "is_active": payload.is_active if payload.is_active is not None else user.is_active,
+        },
     )
     return user_response(updated)
 
@@ -292,11 +303,7 @@ def deactivate_managed_user(
             detail="Admins cannot disable themselves.",
         )
 
-    if (
-        user.role == Role.ADMIN
-        and user.is_active
-        and _active_admin_count(users) <= 1
-    ):
+    if user.role == Role.ADMIN and user.is_active and _active_admin_count(users) <= 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one active admin is required.",

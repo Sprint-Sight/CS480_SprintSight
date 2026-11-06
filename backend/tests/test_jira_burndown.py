@@ -130,6 +130,101 @@ def test_burndown_keeps_in_progress_story_points_remaining() -> None:
     assert result.daily_points[1].completed_tickets == 0
 
 
+def test_burndown_recognizes_custom_status_in_jira_done_category() -> None:
+    run = JiraIngestionRunRecord(
+        id="custom-done-run",
+        course_id="course-1",
+        project_id="project-1",
+        sprint_id="sprint-1",
+        jira_project_key="TEST",
+        jql="project = TEST",
+        raw_bucket="jira",
+        raw_object_key="custom-done.json",
+        issue_count=1,
+        captured_at=datetime(2026, 11, 4, tzinfo=UTC),
+        cleaned_snapshot=JiraCleanedSnapshot(
+            normalization_version="2",
+            jira_project_key="TEST",
+            course_id="course-1",
+            project_id="project-1",
+            sprint_id="sprint-1",
+            captured_at=datetime(2026, 11, 4, tzinfo=UTC),
+            sprint_start_date=datetime(2026, 11, 2, tzinfo=UTC).date(),
+            sprint_end_date=datetime(2026, 11, 16, tzinfo=UTC).date(),
+            changelog_captured=True,
+            tickets=[
+                JiraTicket(
+                    ticket_id="TEST-CUSTOM-DONE",
+                    summary="Custom completed issue",
+                    story_points=5,
+                    status="QA Passed",
+                    status_category="done",
+                    changelog=[
+                        JiraIssueChange(
+                            created=datetime(2026, 11, 3, 10, tzinfo=UTC),
+                            items=[
+                                JiraIssueChangeItem(
+                                    field="status",
+                                    field_id="status",
+                                    from_string="In Progress",
+                                    to_string="QA Passed",
+                                )
+                            ],
+                        )
+                    ],
+                )
+            ],
+        ),
+    )
+
+    result = get_burndown_data(run=run)
+
+    assert result is not None
+    assert [point.remaining_points for point in result.daily_points] == [5, 0, 0]
+    assert result.daily_points[1].completed_points == 5
+
+
+def test_burndown_adds_issues_created_during_the_sprint_on_their_creation_day() -> None:
+    run = JiraIngestionRunRecord(
+        id="mid-sprint-created-run",
+        course_id="course-1",
+        project_id="project-1",
+        sprint_id="sprint-1",
+        jira_project_key="TEST",
+        jql="project = TEST",
+        raw_bucket="jira",
+        raw_object_key="mid-sprint-created.json",
+        issue_count=1,
+        captured_at=datetime(2026, 11, 4, tzinfo=UTC),
+        cleaned_snapshot=JiraCleanedSnapshot(
+            normalization_version="2",
+            jira_project_key="TEST",
+            course_id="course-1",
+            project_id="project-1",
+            sprint_id="sprint-1",
+            captured_at=datetime(2026, 11, 4, tzinfo=UTC),
+            sprint_start_date=datetime(2026, 11, 2, tzinfo=UTC).date(),
+            sprint_end_date=datetime(2026, 11, 16, tzinfo=UTC).date(),
+            changelog_captured=True,
+            tickets=[
+                JiraTicket(
+                    ticket_id="TEST-CREATED-DURING-SPRINT",
+                    summary="Issue created after sprint start",
+                    story_points=5,
+                    status="In Progress",
+                    created_at=datetime(2026, 11, 3, 10, tzinfo=UTC),
+                )
+            ],
+        ),
+    )
+
+    result = get_burndown_data(run=run)
+
+    assert result is not None
+    assert result.total_story_points == 0
+    assert [point.remaining_points for point in result.daily_points] == [0, 5, 5]
+
+
 def test_burndown_replays_story_point_changes_before_completion() -> None:
     run = JiraIngestionRunRecord(
         id="estimate-run",
@@ -269,6 +364,45 @@ def test_burndown_rejects_done_issues_without_completion_evidence() -> None:
     with pytest.raises(
         BurndownDataUnavailableError,
         match="without a resolution date or a changelog status transition",
+    ):
+        get_burndown_data(run=run)
+
+
+def test_burndown_rejects_missing_story_point_estimates() -> None:
+    run = JiraIngestionRunRecord(
+        id="unestimated-run",
+        course_id="course-1",
+        project_id="project-1",
+        sprint_id="sprint-1",
+        jira_project_key="TEST",
+        jql="project = TEST",
+        raw_bucket="jira",
+        raw_object_key="unestimated.json",
+        issue_count=1,
+        captured_at=datetime(2026, 11, 3, 23, tzinfo=UTC),
+        cleaned_snapshot=JiraCleanedSnapshot(
+            normalization_version="2",
+            jira_project_key="TEST",
+            course_id="course-1",
+            project_id="project-1",
+            sprint_id="sprint-1",
+            captured_at=datetime(2026, 11, 3, 23, tzinfo=UTC),
+            sprint_start_date=datetime(2026, 11, 2, tzinfo=UTC).date(),
+            sprint_end_date=datetime(2026, 11, 16, tzinfo=UTC).date(),
+            changelog_captured=True,
+            tickets=[
+                JiraTicket(
+                    ticket_id="TEST-UNESTIMATED",
+                    summary="Issue without an estimate",
+                    status="In Progress",
+                )
+            ],
+        ),
+    )
+
+    with pytest.raises(
+        BurndownDataUnavailableError,
+        match="missing story-point estimates.*TEST-UNESTIMATED",
     ):
         get_burndown_data(run=run)
 

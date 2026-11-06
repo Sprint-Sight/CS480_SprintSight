@@ -178,9 +178,7 @@ class EmailQueue:
 
     def pending_count(self) -> int:
         return sum(
-            1
-            for record in self._repository.list_emails(limit=1000)
-            if record.status == "pending"
+            1 for record in self._repository.list_emails(limit=1000) if record.status == "pending"
         )
 
 
@@ -197,9 +195,7 @@ class EmailDispatcher:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run, name="email-dispatcher", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="email-dispatcher", daemon=True)
         self._thread.start()
         logger.info("Email dispatcher started (every %ss).", self._interval)
 

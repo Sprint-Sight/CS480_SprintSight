@@ -167,7 +167,12 @@ def test_assigned_active_instructor_reports_completed_email() -> None:
     user_repository = InMemoryUserRepository()
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     notifications = FakeNotificationService()
 
@@ -189,7 +194,12 @@ def test_inactive_instructor_is_not_notified() -> None:
     user_repository = InMemoryUserRepository()
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     _create_user(
         user_repository,
@@ -217,7 +227,12 @@ def test_unassigned_instructor_is_not_notified() -> None:
     user_repository = InMemoryUserRepository()
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     _create_user(
         user_repository,
@@ -244,7 +259,12 @@ def test_all_assigned_active_instructors_are_notified() -> None:
     user_repository = InMemoryUserRepository()
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     second = _create_user(
         user_repository,
@@ -275,7 +295,12 @@ def test_no_instructors_does_not_crash_and_sends_no_email() -> None:
     user_repository = InMemoryUserRepository()
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     # The creator is auto-assigned; unassign them so there are zero instructors.
     project_repository.unassign_instructor(course.id, "u-faculty-1")
@@ -298,7 +323,12 @@ def test_smtp_delivery_failure_is_handled_gracefully_and_continues() -> None:
     user_repository = InMemoryUserRepository()
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     second = _create_user(
         user_repository,
@@ -345,7 +375,12 @@ def test_run_assessment_job_saves_report_and_notifies_instructor(monkeypatch) ->
     notifications = FakeNotificationService()
 
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     project = project_repository.create_project(
         ProjectRecord(

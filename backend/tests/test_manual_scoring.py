@@ -152,7 +152,10 @@ def test_patch_persists_all_report_content_edits(override_user_repository) -> No
     assert result["rubric_scores"]["testing"]["score"] == 88
     assert result["rubric_scores"]["testing"]["justification"] == "Regression coverage is strong."
     assert result["rubric_scores"]["cicd"]["score"] == 76
-    assert result["rubric_scores"]["cicd"]["justification"] == "Pipeline is configured but lacks deployment checks."
+    assert (
+        result["rubric_scores"]["cicd"]["justification"]
+        == "Pipeline is configured but lacks deployment checks."
+    )
 
     reloaded = client.get(
         "/api/v1/assessments/latest?course_id=manual-course&project_id=manual-project&sprint_id=sprint-1",
@@ -161,7 +164,10 @@ def test_patch_persists_all_report_content_edits(override_user_repository) -> No
     assert reloaded.status_code == 200, reloaded.text
     reloaded_report = reloaded.json()
     assert reloaded_report["team_score"]["rationale"] == "Updated overall rationale"
-    assert reloaded_report["rubric_scores"]["testing"]["justification"] == "Regression coverage is strong."
+    assert (
+        reloaded_report["rubric_scores"]["testing"]["justification"]
+        == "Regression coverage is strong."
+    )
     assert reloaded_report["rubric_scores"]["cicd"]["score"] == 76
     assert reloaded_report["strengths"] == ["Strong delivery"]
     assert reloaded_report["weaknesses"] == ["Needs more tests"]
@@ -223,10 +229,16 @@ def test_patch_keeps_ai_evidence_details_the_editor_does_not_send(override_user_
             score=7,
             justification="AI justification",
             evidence_citations=["src/app.py:L3-L5 — Small focused class."],
-            evidence_details=[EvidenceDetail(
-                identifier="src/app.py:L3-L5", reason="Small focused class.", kind="file_lines",
-                file_path="src/app.py", line_start=3, line_end=5,
-            )],
+            evidence_details=[
+                EvidenceDetail(
+                    identifier="src/app.py:L3-L5",
+                    reason="Small focused class.",
+                    kind="file_lines",
+                    file_path="src/app.py",
+                    line_start=3,
+                    line_end=5,
+                )
+            ],
         ),
     }
     assessment_repository.save_report(original)
@@ -234,11 +246,15 @@ def test_patch_keeps_ai_evidence_details_the_editor_does_not_send(override_user_
 
     response = client.patch(
         "/api/v1/assessments/reports/rpt-manual-1",
-        json=payload(rubric_scores={"code_quality": {
-            "score": 9,
-            "justification": "Instructor raised the score.",
-            "evidence_citations": ["src/app.py:L3-L5 — Small focused class."],
-        }}),
+        json=payload(
+            rubric_scores={
+                "code_quality": {
+                    "score": 9,
+                    "justification": "Instructor raised the score.",
+                    "evidence_citations": ["src/app.py:L3-L5 — Small focused class."],
+                }
+            }
+        ),
         headers=headers("faculty@sprintsight.edu"),
     )
 

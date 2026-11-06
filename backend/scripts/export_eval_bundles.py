@@ -56,6 +56,7 @@ def _import_backend_bits():
         create_user_pool,
     )
     from app.services.documentsService.service import collect_project_context_documents
+
     return (
         get_settings,
         create_user_pool,
@@ -113,7 +114,9 @@ def _bundle_dict_from_db(
             f"repo first via /api/v1/ingestion/sync, then rerun this export."
         )
     jira_tickets = _latest_jira_tickets(jira_repo, project_id, sprint_id)
-    manual_text = manual_repo.get(course_id, project_id, sprint_id) or "No instructor guidance provided."
+    manual_text = (
+        manual_repo.get(course_id, project_id, sprint_id) or "No instructor guidance provided."
+    )
 
     project_context_documents: list[dict] = []
     if include_documents and document_repo is not None and storage is not None:
@@ -121,7 +124,10 @@ def _bundle_dict_from_db(
             # Re-use the production path so the export is faithful to what
             # the AI engine actually sees in a live /assess call.
             from app.services.documentsService.service import collect_project_context_documents
-            project_context_documents = collect_project_context_documents(project_id, document_repo, storage)
+
+            project_context_documents = collect_project_context_documents(
+                project_id, document_repo, storage
+            )
         except Exception:
             log.exception("Document collection failed; writing bundle without context docs.")
 
@@ -152,21 +158,31 @@ def _parse_triple(raw: str) -> tuple[str, str, str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
-        "--triple", action="append", type=_parse_triple, required=True, metavar="C,P,S,NAME",
+        "--triple",
+        action="append",
+        type=_parse_triple,
+        required=True,
+        metavar="C,P,S,NAME",
         help="course_id,project_id,sprint_id,output_name. Repeat for multiple sprints.",
     )
     parser.add_argument(
-        "--out", type=Path, required=True,
+        "--out",
+        type=Path,
+        required=True,
         help="Output directory (e.g. ../ai-engine/research/eval/data/real_sprints).",
     )
     parser.add_argument(
-        "--with-documents", action="store_true",
+        "--with-documents",
+        action="store_true",
         help="Include extracted project_context_documents. Requires MinIO env vars.",
     )
     parser.add_argument(
-        "--overwrite", action="store_true",
+        "--overwrite",
+        action="store_true",
         help="Overwrite existing JSON files; default is to skip them.",
     )
     args = parser.parse_args(argv)
@@ -177,10 +193,10 @@ def main(argv: list[str] | None = None) -> int:
     (
         get_settings,
         create_user_pool,
-        MetricsRepo,
-        JiraRepo,
-        ManualTextRepo,
-        DocumentRepo,
+        metrics_repo_cls,
+        jira_repo_cls,
+        manual_text_repo_cls,
+        document_repo_cls,
         _collect,
     ) = _import_backend_bits()
 
@@ -188,9 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     pool = create_user_pool(settings.database_connection_string())
     pool.open(wait=True)
     try:
-        metrics_repo = MetricsRepo(pool)
-        jira_repo = JiraRepo(pool)
-        manual_repo = ManualTextRepo(pool)
+        metrics_repo = metrics_repo_cls(pool)
+        jira_repo = jira_repo_cls(pool)
+        manual_repo = manual_text_repo_cls(pool)
 
         storage = None
         document_repo = None
@@ -198,7 +214,8 @@ def main(argv: list[str] | None = None) -> int:
             # Imported here so a bundle export without --with-documents
             # doesn't require boto3/MinIO to be reachable.
             from app.core.storage import storage as default_storage
-            document_repo = DocumentRepo(pool)
+
+            document_repo = document_repo_cls(pool)
             storage = default_storage
 
         exit_code = 0
@@ -209,9 +226,14 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             try:
                 bundle = _bundle_dict_from_db(
-                    course_id, project_id, sprint_id,
-                    metrics_repo, jira_repo, manual_repo,
-                    document_repo=document_repo, storage=storage,
+                    course_id,
+                    project_id,
+                    sprint_id,
+                    metrics_repo,
+                    jira_repo,
+                    manual_repo,
+                    document_repo=document_repo,
+                    storage=storage,
                     include_documents=args.with_documents,
                 )
             except LookupError as exc:

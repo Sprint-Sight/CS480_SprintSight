@@ -56,7 +56,9 @@ def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -
         response = httpx.post(request_url, json=payload, timeout=None)
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise RuntimeError(f"AI engine rejected the assessment payload: {exc.response.text}") from exc
+        raise RuntimeError(
+            f"AI engine rejected the assessment payload: {exc.response.text}"
+        ) from exc
     except httpx.HTTPError as exc:
         raise RuntimeError(f"AI engine request failed: {exc}") from exc
 

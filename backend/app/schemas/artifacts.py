@@ -10,6 +10,7 @@ ExternalSource = Literal["github", "gitlab", "bitbucket", "jira"]
 
 class EvidenceTarget(BaseModel):
     """The artifact one evidence citation points at."""
+
     type: Literal["file", "commit", "ticket"]
     file_path: str | None = None
     line_start: int | None = None
