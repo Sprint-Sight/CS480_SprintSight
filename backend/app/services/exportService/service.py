@@ -9,9 +9,9 @@ import io
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.utils import simpleSplit
-from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter  # type: ignore
+from reportlab.lib.utils import simpleSplit  # type: ignore
+from reportlab.pdfgen import canvas  # type: ignore
 
 from app.repositories.interfaces import (
     AssessmentRepository,
@@ -65,9 +65,7 @@ class ExportService:
         download_token = str(uuid4())
 
         # Locate the latest assessment report for the course/project/sprint.
-        report = self._get_report(
-            request.course_id, request.project_id, request.sprint_id
-        )
+        report = self._get_report(request.course_id, request.project_id, request.sprint_id)
         if report is None:
             raise ValueError(
                 f"No assessment report found for course {request.course_id}, "
@@ -298,9 +296,7 @@ class ExportService:
         writer.writerow(["Dimension", "Score", "Justification"])
         if report.rubric_scores:
             for dimension, detail in report.rubric_scores.items():
-                writer.writerow(
-                    [dimension, detail.score, detail.justification or ""]
-                )
+                writer.writerow([dimension, detail.score, detail.justification or ""])
         else:
             writer.writerow(["No rubric scores available", "", ""])
         writer.writerow([])

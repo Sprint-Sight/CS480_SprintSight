@@ -1,0 +1,90 @@
+{
+  "sprint_id": "2026-08-10_to_2026-08-21",
+  "team_id": "Team_Delta",
+  "prompt_version": "v1.0",
+  "overall_score": 6.17,
+  "rubric_scores": {
+    "code_quality": {
+      "dimension": "code_quality", "score": 6, "evaluation_failed": false,
+      "justification": "7 commits (+243/-4) spread evenly across members (Ivy 3, Jack 2, Kim 2), with clear, mostly ticket-keyed messages ('DEL-3: Add client-side email and password validation') and a PR merge (#6). Volume is modest: no commit exceeds +69 lines and the login page is only a skeleton, so contributions are moderate rather than substantial.",
+      "evidence_citations": [
+        {"identifier": "16ff1a41f228e3a36d90d2cce8803c14535d75e5", "reason": "'DEL-3: Add client-side email and password validation' (+34) is small but clearly described and scoped."},
+        {"identifier": "0115b7c5495a703e797bd440f3aa15a7e12d24ed", "reason": "'DEL-1: Add login page skeleton with email/password fields' (+50/-1) shows the main feature is still a skeleton."},
+        {"identifier": "09c3a4d8cd74883f89c1fbc6b02fa788ee705981", "reason": "'Merge pull request #6' shows Kim's validation work was reviewed before merging."}
+      ],
+      "strengths": ["Clear, ticket-keyed commit messages", "Even commit distribution across members", "PR-based merge"],
+      "areas_for_improvement": ["Low code volume for a two-week sprint", "Login page not yet wired to the backend"]
+    },
+    "testing": {
+      "dimension": "testing", "score": 6, "evaluation_failed": false,
+      "justification": "One explicit test commit, 'DEL-3: Add unit tests for validation helpers' (+41, validation.test.js), covers the validation utilities. Login.jsx and Navbar.jsx have no tests, there is no testing ticket, and the lint workflow does not run tests, so coverage is clearly incomplete.",
+      "evidence_citations": [
+        {"identifier": "d9c573b20e12c0ef1d016ca375714f2201d57704", "reason": "'DEL-3: Add unit tests for validation helpers' adds frontend/src/utils/validation.test.js (+41)."},
+        {"identifier": "DEL-3", "reason": "'Add form validation' is Done and is the only ticket whose work has associated tests."},
+        {"identifier": "0115b7c5495a703e797bd440f3aa15a7e12d24ed", "reason": "'DEL-1: Add login page skeleton…' adds Login.jsx with no component test."}
+      ],
+      "strengths": ["Validation helpers are unit tested", "Tests committed separately with a clear message"],
+      "areas_for_improvement": ["Add component tests for Login and Navbar", "Run tests in the lint workflow"]
+    },
+    "documentation": {
+      "dimension": "documentation", "score": 6, "evaluation_failed": false,
+      "justification": "'Update README with setup steps and component overview' (+27/-3) is a minor but useful README update, and Jira summaries are short but clear ('Connect login form to auth API'). There is no component or API documentation beyond the README.",
+      "evidence_citations": [
+        {"identifier": "fc87642028ad60ea9e498f5c9b13735b1342b635", "reason": "'Update README with setup steps and component overview' modifies README.md (+27/-3)."},
+        {"identifier": "DEL-4", "reason": "'Connect login form to auth API' clearly states the intended deliverable."},
+        {"identifier": "DEL-2", "reason": "'Style navbar' is clear but gives no detail on the responsive behaviour delivered."}
+      ],
+      "strengths": ["README updated with setup steps", "Readable ticket summaries"],
+      "areas_for_improvement": ["Document component props and the planned auth API contract", "Add descriptions to Jira tickets"]
+    },
+    "requirements": {
+      "dimension": "requirements", "score": 6, "evaluation_failed": false,
+      "justification": "3 of 4 tickets are Done (DEL-1, DEL-2, DEL-3) for 8 of 13 story points. DEL-4 'Connect login form to auth API' (5 points) is In Progress at sprint end: spillover rather than abandoned, but it is the largest ticket and the one that makes login functional. Most tickets Done but velocity is low, so the bottom of 6-8.",
+      "evidence_citations": [
+        {"identifier": "DEL-1", "reason": "'Build login page' (3 points) is Done."},
+        {"identifier": "DEL-4", "reason": "'Connect login form to auth API' (5 points) is still In Progress, leaving 5 of 13 points undelivered."},
+        {"identifier": "DEL-2", "reason": "'Style navbar' (2 points) is Done, one of three small tickets completed."}
+      ],
+      "strengths": ["Most tickets completed", "All tickets estimated and assigned"],
+      "areas_for_improvement": ["Prioritise the integration ticket earlier in the sprint", "Commit to more points once velocity is known"]
+    },
+    "collaboration": {
+      "dimension": "collaboration", "score": 8, "evaluation_failed": false,
+      "justification": "Peer ratings average 4.33 (26/30: two 5s, four 4s) with specific, supportive comments about pairing, same-day PR reviews and stand-ups. Workload is mostly balanced by tickets (Ivy 2, Jack 1, Kim 1), although Ivy holds 8 of 13 points, which Kim flags as the reason DEL-4 slipped. Top of band 6-8.",
+      "evidence_citations": [
+        {"identifier": "Ivy -> Jack (5/5)", "reason": "'Paired with me on the navbar breakpoints and set up the lint check' shows active pairing."},
+        {"identifier": "Jack -> Ivy (5/5)", "reason": "'Runs our stand-ups and reviews PRs the same day' shows a working review and stand-up routine."},
+        {"identifier": "Kim -> Ivy (4/5)", "reason": "'DEL-4 slipped because she took on too much' is honest feedback on workload concentration."}
+      ],
+      "strengths": ["Consistently positive, specific peer feedback", "Regular stand-ups and same-day reviews"],
+      "areas_for_improvement": ["Rebalance points: Ivy holds 8 of 13", "Split large tickets so others can help"]
+    },
+    "cicd": {
+      "dimension": "cicd", "score": 5, "evaluation_failed": false,
+      "justification": "'Add lint workflow for pull requests' adds .github/workflows/lint.yml (+22), so PRs are linted automatically, but the workflow has no test, build or deploy step and is never revisited during the sprint. CI is only partially implemented.",
+      "evidence_citations": [
+        {"identifier": "e789e7562682794f78a40d801eb8cb0785e4e3db", "reason": "'Add lint workflow for pull requests' adds .github/workflows/lint.yml (+22), the only pipeline file."},
+        {"identifier": "d9c573b20e12c0ef1d016ca375714f2201d57704", "reason": "validation.test.js exists, but nothing in the bundle shows CI running it."},
+        {"identifier": ".github/workflows/lint.yml", "reason": "Added once on 08-17 and never updated, so the pipeline did not grow with the code."}
+      ],
+      "strengths": ["Automated lint on every PR"],
+      "areas_for_improvement": ["Add a test step to the workflow", "Add a build step so broken builds are caught"]
+    }
+  },
+  "member_contributions": [
+    {"student_id": "Ivy", "contribution_score": 7,
+     "primary_contributions": ["Login page skeleton (DEL-1)", "README update and PR merge (#6)", "Owns in-progress DEL-4"],
+     "evidence": ["3 commits (1 PR merge), +77/-4", "0115b7c5495a703e797bd440f3aa15a7e12d24ed DEL-1: Add login page skeleton with email/password fields", "Peer ratings 5 and 4"]},
+    {"student_id": "Jack", "contribution_score": 7,
+     "primary_contributions": ["Navbar styling (DEL-2)", "Lint workflow for PRs"],
+     "evidence": ["2 commits, +91/-0", "a6b9e756a644c301db8a69ca5d83a39703e16a3f DEL-2: Style navbar and add mobile breakpoint", "Peer ratings 5 and 4"]},
+    {"student_id": "Kim", "contribution_score": 6,
+     "primary_contributions": ["Form validation (DEL-3)", "Unit tests for validation helpers"],
+     "evidence": ["2 commits, +75/-0", "d9c573b20e12c0ef1d016ca375714f2201d57704 DEL-3: Add unit tests for validation helpers", "Peer ratings 4 and 4"]}
+  ],
+  "executive_summary": "In the 2026-08-10 to 2026-08-21 sprint Team_Delta collaborated well (peer average 4.33/5, even commits, PR reviews) but produced little: 7 commits (+243/-4) for a login page skeleton, navbar and form validation, with 3 of 4 tickets (8/13 points) Done and the API hookup still In Progress. Testing, documentation and CI are present but thin: one test file, a README update and a lint-only workflow.",
+  "strengths": ["Strong, specific peer feedback and regular stand-ups", "Clear ticket-keyed commits spread across members", "Some testing, documentation and CI from the start"],
+  "weaknesses": ["Low output for a two-week sprint", "Key integration ticket (DEL-4) not finished", "CI runs lint only"],
+  "key_recommendations": ["Prioritise integration work (DEL-4) earlier in the sprint.", "Add component tests and run them in the workflow.", "Rebalance story points so Ivy is not the bottleneck.", "Commit to more points once velocity is established."],
+  "failed_dimensions": []
+}

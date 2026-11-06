@@ -36,8 +36,10 @@ export type JiraTicket = {
   ticket_id: string;
   summary: string;
   status: string | null;
+  status_category?: string | null;
   assignee: string | null;
   story_points: number | null;
+  created_at?: string | null;
 };
 
 export type JiraSnapshot = {

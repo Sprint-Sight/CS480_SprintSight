@@ -1,4 +1,5 @@
 import json
+from dataclasses import fields
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated
 from uuid import uuid4
@@ -37,6 +38,7 @@ from app.schemas.assessment import (
     PaginationMetadata,
 )
 from app.schemas.auth import Role
+from app.schemas.jira_burndown import JiraBurndownResponse
 from app.services.auditLogService.service import append_action_audit
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
 from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
@@ -52,7 +54,9 @@ def sync_raw_jira_data(
     payload: JiraRawSyncRequest,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
-    instructor_credentials: Annotated[InstructorJiraCredentialsRepository, Depends(get_instructor_jira_credentials_repository)],
+    instructor_credentials: Annotated[
+        InstructorJiraCredentialsRepository, Depends(get_instructor_jira_credentials_repository)
+    ],
     runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> dict[str, object]:
@@ -60,10 +64,15 @@ def sync_raw_jira_data(
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if not projects.is_instructor_assigned(project.course_id, current_user.id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructor is not assigned to this course.",
+        )
     jira_project_key = payload.jira_project_key or project.jira_project_key
     if not jira_project_key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project key is required.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project key is required."
+        )
     credential_record = instructor_credentials.get_credentials(current_user.id)
     shared_credentials = None
     if credential_record and credential_record.jira_email:
@@ -89,13 +98,20 @@ def sync_raw_jira_data(
         payload.jql,
         instructor_credentials=shared_credentials,
     )
-    run = runs.create_run(JiraIngestionRunRecord(
-        id=str(uuid4()), course_id=project.course_id, project_id=project_id,
-        sprint_id=payload.sprint_id, jira_project_key=str(result["jira_project_key"]),
-        jql=str(result["jql"]), raw_bucket=str(result["bucket"]),
-        raw_object_key=str(result["object_key"]), issue_count=int(result["issue_count"]),
-        captured_at=result["captured_at"],
-    ))
+    run = runs.create_run(
+        JiraIngestionRunRecord(
+            id=str(uuid4()),
+            course_id=project.course_id,
+            project_id=project_id,
+            sprint_id=payload.sprint_id,
+            jira_project_key=str(result["jira_project_key"]),
+            jql=str(result["jql"]),
+            raw_bucket=str(result["bucket"]),
+            raw_object_key=str(result["object_key"]),
+            issue_count=int(result["issue_count"]),  # type: ignore[call-overload]
+            captured_at=result["captured_at"],  # type: ignore[arg-type]
+        )
+    )
     append_action_audit(
         action_audits,
         actor_id=current_user.id,
@@ -113,7 +129,10 @@ def _authorized_project(project_id: str, user: UserRecord, projects: ProjectRepo
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if not projects.is_instructor_assigned(project.course_id, user.id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructor is not assigned to this course.",
+        )
     return project
 
 
@@ -130,7 +149,7 @@ def _run_response(run: JiraIngestionRunRecord) -> JiraIngestionRun:
         issue_count=run.issue_count,
         captured_at=run.captured_at,
         processed_at=run.processed_at,
-        processing_status=run.processing_status,
+        processing_status=run.processing_status,  # type: ignore[arg-type]
         normalization_version=run.normalization_version,
         processing_error=run.processing_error,
     )
@@ -159,7 +178,9 @@ def list_jira_runs(
     return [_run_response(run) for run in runs.list_runs(project.id, sprint_id)]
 
 
-@jira_ingestion_router.post("/runs/{project_id}/{sprint_id}/{run_id}/process", response_model=JiraIngestionRun)
+@jira_ingestion_router.post(
+    "/runs/{project_id}/{sprint_id}/{run_id}/process", response_model=JiraIngestionRun
+)
 def process_jira_run(
     project_id: str,
     sprint_id: str,
@@ -172,7 +193,9 @@ def process_jira_run(
     project = _authorized_project(project_id, current_user, projects)
     run = runs.get_run(project_id, sprint_id, run_id)
     if not run:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found."
+        )
     try:
         envelope = json.loads(storage.download(run.raw_bucket, run.raw_object_key))
         # Build student lookup maps from project members only (active students
@@ -193,18 +216,62 @@ def process_jira_run(
                     ids_by_name.setdefault(user.full_name.strip().lower(), []).append(member_id)
         snapshot = normalize_jira_envelope(
             envelope,
-            story_points_field=get_settings().jira_story_points_field or None,
+            story_points_field=(
+                envelope.get("story_points_field") or get_settings().jira_story_points_field or None
+            ),
+            sprint_field=(
+                envelope.get("sprint_field")
+                or get_settings().jira_sprint_field
+                or "customfield_10020"
+            ),
+            completion_date_field=(
+                envelope.get("completion_date_field")
+                or get_settings().jira_completed_date_field
+                or None
+            ),
+            sprint_start_date_field=(
+                envelope.get("sprint_start_date_field")
+                or get_settings().jira_sprint_start_date_field
+                or None
+            ),
+            sprint_end_date_field=(
+                envelope.get("sprint_end_date_field")
+                or get_settings().jira_sprint_end_date_field
+                or None
+            ),
             users_by_id=users_by_id,
             ids_by_email=ids_by_email,
             ids_by_name=ids_by_name,
             project_member_ids=project_member_ids,
         )
     except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
-        runs.update_processed_run(project_id, sprint_id, run_id, "failed", datetime.now(UTC), None, str(exc), None)
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Jira raw data could not be normalized.") from exc
+        runs.update_processed_run(
+            project_id, sprint_id, run_id, "failed", datetime.now(UTC), None, str(exc), None
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Jira raw data could not be normalized.",
+        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Jira raw data could not be retrieved from storage.") from exc
-    updated = runs.update_processed_run(project_id, sprint_id, run_id, "completed", datetime.now(UTC), snapshot.normalization_version, None, snapshot)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Jira raw data could not be retrieved from storage.",
+        ) from exc
+    updated = runs.update_processed_run(
+        project_id,
+        sprint_id,
+        run_id,
+        "completed",
+        datetime.now(UTC),
+        snapshot.normalization_version,
+        None,
+        snapshot,
+    )
+    if updated is None:
+        raise HTTPException(  # noqa: E501
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Jira ingestion run could not be updated.",
+        )
     return _run_response(updated)
 
 
@@ -215,7 +282,9 @@ class ReprocessRunResult(BaseModel):
     error: str | None = None
 
 
-@jira_ingestion_router.post("/runs/{project_id}/reprocess-all", response_model=list[ReprocessRunResult])
+@jira_ingestion_router.post(
+    "/runs/{project_id}/reprocess-all", response_model=list[ReprocessRunResult]
+)
 def reprocess_all_jira_runs(
     project_id: str,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
@@ -262,7 +331,31 @@ def reprocess_all_jira_runs(
 
             snapshot = normalize_jira_envelope(
                 envelope,
-                story_points_field=get_settings().jira_story_points_field or None,
+                story_points_field=(
+                    envelope.get("story_points_field")
+                    or get_settings().jira_story_points_field
+                    or None
+                ),
+                sprint_field=(
+                    envelope.get("sprint_field")
+                    or get_settings().jira_sprint_field
+                    or "customfield_10020"
+                ),
+                completion_date_field=(
+                    envelope.get("completion_date_field")
+                    or get_settings().jira_completed_date_field
+                    or None
+                ),
+                sprint_start_date_field=(
+                    envelope.get("sprint_start_date_field")
+                    or get_settings().jira_sprint_start_date_field
+                    or None
+                ),
+                sprint_end_date_field=(
+                    envelope.get("sprint_end_date_field")
+                    or get_settings().jira_sprint_end_date_field
+                    or None
+                ),
                 users_by_id=users_by_id,
                 ids_by_email=ids_by_email,
                 ids_by_name=ids_by_name,
@@ -279,7 +372,9 @@ def reprocess_all_jira_runs(
                 None,
                 snapshot,
             )
-            results.append(ReprocessRunResult(run_id=run_id, sprint_id=sprint_id, status="processed"))
+            results.append(
+                ReprocessRunResult(run_id=run_id, sprint_id=sprint_id, status="processed")
+            )
 
         except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
             runs.update_processed_run(
@@ -313,7 +408,11 @@ def reprocess_all_jira_runs(
     return results
 
 
-@jira_ingestion_router.get("/runs/{project_id}/{sprint_id}/{run_id}/cleaned", response_model=JiraCleanedSnapshot)
+@jira_ingestion_router.get(
+    "/runs/{project_id}/{sprint_id}/{run_id}/cleaned",
+    response_model=JiraCleanedSnapshot,
+    response_model_exclude={"tickets": {"__all__": {"changelog"}}},
+)
 def get_cleaned_jira_run(
     project_id: str,
     sprint_id: str,
@@ -325,13 +424,77 @@ def get_cleaned_jira_run(
     _authorized_project(project_id, current_user, projects)
     run = runs.get_run(project_id, sprint_id, run_id)
     if not run:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found."
+        )
     if not run.cleaned_snapshot:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Jira ingestion run has not been processed.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Jira ingestion run has not been processed.",
+        )
     return run.cleaned_snapshot
 
 
-@router.get("/runs/{project_id}/{sprint_id}", response_model=IngestionDataResponse)
+# Diffs are captured for the AI engine only. Leaving them out of API
+# responses keeps the ingestion contract unchanged and stops every listing
+# the frontend fetches from carrying megabytes of diff text.
+_COMMIT_DIFF_FIELDS = {"files_changed": {"__all__": {"diff", "diff_truncated"}}}
+
+
+@jira_ingestion_router.get(
+    "/runs/{project_id}/{sprint_id}/{run_id}/burndown",
+    response_model=JiraBurndownResponse,
+)
+def get_burndown(
+    project_id: str,
+    sprint_id: str,
+    run_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> JiraBurndownResponse:
+    """Return burndown chart data for a completed Jira ingestion run.
+
+    Returns daily remaining story points and an ideal linear decline line
+    for charting burndown over the sprint.
+    """
+    _authorized_project(project_id, current_user, projects)
+    run = runs.get_run(project_id, sprint_id, run_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found."
+        )
+    if not run.cleaned_snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Jira ingestion run has not been processed.",
+        )
+
+    from app.services.burndownService.service import (
+        BurndownDataUnavailableError,
+        get_burndown_data,
+    )
+
+    try:
+        result = get_burndown_data(run=run)
+    except BurndownDataUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No tickets found in this run to build a burndown chart.",
+        )
+    return result
+
+
+@router.get(
+    "/runs/{project_id}/{sprint_id}",
+    response_model=IngestionDataResponse,
+    response_model_exclude={"commits": {"__all__": _COMMIT_DIFF_FIELDS}},
+)
 def get_repo_ingestion_data(
     project_id: str,
     sprint_id: str,
@@ -349,9 +512,14 @@ def get_repo_ingestion_data(
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if project.course_id != course_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course."
+        )
     if not projects.is_instructor_assigned(course_id, current_user.id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructor is not assigned to this course.",
+        )
 
     if pagination and (limit is None or offset is None):
         raise HTTPException(
@@ -371,9 +539,7 @@ def get_repo_ingestion_data(
         )
     start_datetime = datetime.combine(start_date, time.min, tzinfo=UTC) if start_date else None
     end_datetime = (
-        datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=UTC)
-        if end_date
-        else None
+        datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=UTC) if end_date else None
     )
     if start_datetime and end_datetime and start_datetime >= end_datetime:
         raise HTTPException(
@@ -383,7 +549,7 @@ def get_repo_ingestion_data(
 
     if pagination:
         metrics, total = metrics_repository.get_metrics_page(
-            course_id, project_id, sprint_id, limit, offset, start_datetime, end_datetime
+            course_id, project_id, sprint_id, limit, offset, start_datetime, end_datetime  # type: ignore[arg-type]
         )
     else:
         metrics = metrics_repository.get_metrics(
@@ -391,7 +557,9 @@ def get_repo_ingestion_data(
         )
         total = len(metrics.commits) if metrics else 0
     if not metrics:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingestion data not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Ingestion data not found."
+        )
     return IngestionDataResponse(
         course_id=metrics.course_id,
         project_id=metrics.project_id,
@@ -408,7 +576,9 @@ def get_repo_ingestion_data(
             limit=limit if pagination else None,
             offset=offset if pagination else None,
             total=total,
-            has_more=bool(pagination and offset is not None and offset + len(metrics.commits) < total),
+            has_more=bool(
+                pagination and offset is not None and offset + len(metrics.commits) < total
+            ),
         ),
     )
 
@@ -416,7 +586,7 @@ def get_repo_ingestion_data(
 @router.post("/sync")
 def sync_repository_ingestion(
     payload: IngestionRequest,
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
@@ -426,14 +596,21 @@ def sync_repository_ingestion(
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
     if project.course_id != payload.course_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course."
+        )
     if not project.local_repo_path:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project has no local repository configured.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project has no local repository configured.",
+        )
     try:
         repository_path = resolve_local_repository_path(project.local_repo_path)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    github_metrics = ingest_github_metrics(payload, repository_path, metrics_repository, projects, users)
+    github_metrics = ingest_github_metrics(
+        payload, repository_path, metrics_repository, projects, users
+    )
     jira_metrics = enrich_jira_metrics(payload)
     append_action_audit(
         action_audits,
@@ -445,6 +622,12 @@ def sync_repository_ingestion(
         details={"course_id": payload.course_id, "sprint_id": payload.sprint_id},
     )
     return {
-        "github_metrics": github_metrics,
+        "github_metrics": {
+            **{field.name: getattr(github_metrics, field.name) for field in fields(github_metrics)},
+            "commits": [
+                commit.model_dump(mode="json", exclude=_COMMIT_DIFF_FIELDS)
+                for commit in github_metrics.commits
+            ],
+        },
         "jira_metrics": jira_metrics,
     }

@@ -35,7 +35,12 @@ mlruns/
 # ==========================================
 # 3. Node.js / React (Frontend)
 # ==========================================
+<<<<<<< HEAD
 node_modules/
+=======
+frontend/node_modules/
+/node_modules/
+>>>>>>> df038ad13d02a84ce7739cbe5009666781d624ab
 frontend/build/
 frontend/dist/
 frontend/.pnpm-debug.log*
@@ -53,6 +58,7 @@ uploads/
 artifacts_temp/
 ai-engine/audit_logs/*
 !ai-engine/audit_logs/.gitkeep
+ai-engine/gpu_logs/
 
 # ==========================================
 # 5. IDEs, Editors & OS Metadata
@@ -73,6 +79,11 @@ Thumbs.db
 # ==========================================
 *.tar
 *.gz
+
+# ==========================================
+# 7. AI Engine & MLflow
+# ==========================================
+ai-engine/research/validation_results/*
 
 # ==========================================
 # TypeScript

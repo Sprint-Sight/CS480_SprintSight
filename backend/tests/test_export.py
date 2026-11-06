@@ -43,6 +43,7 @@ def _token_for(email: str, password: str = "password123") -> str:
     assert response.status_code == 200, response.text
     return response.json()["access_token"]
 
+
 def _make_report(course_id: str, project_id: str, sprint_id: str) -> AssessmentReport:
     return AssessmentReport(
         report_id="rpt-export-1",
@@ -86,11 +87,17 @@ def _clear_export_store():
 # Helpers to build a course + project owned by faculty@sprintsight.edu (u-faculty-1)
 # ---------------------------------------------------------------------------
 
+
 def _setup_course_and_project():
     """Create a course and project owned by the seeded faculty user."""
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     project_repository.create_project(
         ProjectRecord(
@@ -194,7 +201,12 @@ def test_export_preview_403_when_not_assigned_to_course(override_user_repository
     # A different instructor (u-other-instr) owns the course; faculty@sprintsight.edu
     # (u-faculty-1) is not assigned to it.
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-other-instr",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-other-instr",
     )
     project_repository.create_project(
         ProjectRecord(
@@ -379,7 +391,7 @@ def test_export_rate_limit_caps_at_five_per_minute(override_user_repository) -> 
                 },
                 headers=headers,
             )
-            assert response.status_code == 200, f"Export {i+1} failed: {response.text}"
+            assert response.status_code == 200, f"Export {i + 1} failed: {response.text}"
 
         # 6th export should be rate-limited.
         response = client.post(

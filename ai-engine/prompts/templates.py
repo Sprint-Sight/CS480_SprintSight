@@ -92,20 +92,30 @@ def render_dimension_prompt(
 
     CRITICAL CITATION RULES:
     1. Cite AS MANY distinct, relevant pieces of evidence as you can find and
-        ground in the Student Artifacts, up to a maximum of 15. Include every 
-        commit, ticket, file, or metric that genuinely supports the score, but 
-        do NOT pad with weak, duplicate, or redundant citations. Each item MUST 
-        be an object with EXACTLY two fields: `identifier` and `reason`.
-    2. `identifier` MUST be copied verbatim from Student Artifacts: a commit
-        SHA, Jira ticket ID, filename, or supplied metric value. Never use
-        placeholders such as "commit 1", and never invent an identifier.
-        Never cite a filename or passage from PROJECT BACKGROUND CONTEXT —
-        those documents are reference material, not Student Artifacts.
+        ground in the Student Artifacts, up to a maximum of 15. When the
+        artifacts contain that much relevant evidence, aim for 8 to 15
+        citations covering BOTH strengths and weaknesses, but do NOT pad with
+        weak, duplicate, or redundant citations. Each item MUST be an object
+        with EXACTLY two fields: `identifier` and `reason`.
+    2. `identifier` MUST be copied from Student Artifacts. Prefer the most
+        specific anchor available, in this order:
+        a. File lines: every FILE and DIFF block ends its header with
+           "cite as <anchor>", e.g. `src/app.py:L10-L24` (file at the
+           submitted HEAD) or `src/app.py:L10-L24@abc1234` (lines added in
+           commit abc1234). Copy that anchor, or narrow it to the exact
+           lines you mean, using the line numbers printed at the start of
+           each line. Never cite line numbers you were not shown.
+        b. Otherwise a commit SHA from the commit ledger, a Jira ticket ID,
+           a file path from the file tree, or a supplied metric value.
+        Never use placeholders such as "commit 1", and never invent an
+        identifier. Never cite a filename or passage from PROJECT BACKGROUND
+        CONTEXT — those documents are reference material, not Student
+        Artifacts.
     3. `reason` MUST be at least 15 characters and explain why that specific
         identifier supports the score, referring to details that actually
-        belong to THAT SPECIFIC record (its real commit message, its real
-        file names, its real ticket status) — never a generic-sounding reason
-        that could apply to any commit.
+        belong to THAT SPECIFIC record (the code on those lines, its real
+        commit message, its real ticket status) — never a generic-sounding
+        reason that could apply to anything.
     4. Do NOT repeat benchmark, fixture, or example strings from prior prompts.
         Use only the actual Student Artifacts provided below.
     5. If a citation cannot be matched to the current bundle, do not include it.

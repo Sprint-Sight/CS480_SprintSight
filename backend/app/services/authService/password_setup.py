@@ -25,7 +25,7 @@ def send_password_setup_email(
     """
     if not notification_service.is_configured:
         logger.warning(
-            "Password setup email was not sent to user %s because email delivery is not configured.",
+            "Password setup email was not sent to user %s because email delivery is not configured.",  # noqa: E501
             user.id,
         )
         return False

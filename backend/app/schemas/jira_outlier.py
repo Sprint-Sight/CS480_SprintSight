@@ -13,9 +13,7 @@ class JiraContributionTicketEvidence(BaseModel):
 
     ticket_id: str = Field(..., description="Jira issue key, e.g. PROJ-123.")
     summary: str = Field(default="", description="Issue summary.")
-    story_points: float = Field(
-        default=0.0, description="Story points recorded for this ticket."
-    )
+    story_points: float = Field(default=0.0, description="Story points recorded for this ticket.")
     status: str | None = Field(default=None, description="Jira issue status.")
     issue_type: str | None = Field(default=None, description="Jira issue type.")
     project_id: str | None = Field(
@@ -38,12 +36,8 @@ class JiraContributionOutlierResponse(BaseModel):
     )
 
     # ---- Raw Jira metrics -------------------------------------------------
-    total_tickets: int = Field(
-        ..., description="Number of Jira tickets assigned to the student."
-    )
-    total_story_points: float = Field(
-        ..., description="Sum of story points across those tickets."
-    )
+    total_tickets: int = Field(..., description="Number of Jira tickets assigned to the student.")
+    total_story_points: float = Field(..., description="Sum of story points across those tickets.")
     average_points_per_ticket: float = Field(
         ...,
         description="Mean story points per ticket (0 when the student has no tickets).",
@@ -73,8 +67,7 @@ class JiraContributionOutlierResponse(BaseModel):
     )
     outlier_direction: str | None = Field(
         default=None,
-        description='"low" if the student’s total is below the course average, '
-        '"high" if above.',
+        description='"low" if the student’s total is below the course average, "high" if above.',
     )
 
     # ---- Helpful counts ----------------------------------------------------

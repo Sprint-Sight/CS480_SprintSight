@@ -4,12 +4,17 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-# LLM can see if commit touched readme file or test_auth without having to rely soley on the git commit message.
+# LLM can see if commit touched readme file or test_auth without having to rely solely on the git commit message.
 class FileDiff(BaseModel):
     filename: str = Field(description="Path of the changed file")
     change_type: Literal["added", "modified", "deleted", "renamed"] = "modified"
     lines_added: int = Field(default=0, ge=0)
     lines_deleted: int = Field(default=0, ge=0)
+    # Unified diff for this file, capped by the backend at ingestion. Lets the
+    # model read the actual change and cite new-file line numbers. None for
+    # noise/binary files and for bundles ingested before diffs were captured.
+    diff: str | None = None
+    diff_truncated: bool = False
 
 #sha provides exact ID the model needs for evidence citation
 class CommitInfo(BaseModel):

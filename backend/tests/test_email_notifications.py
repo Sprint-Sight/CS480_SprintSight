@@ -6,8 +6,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
-from app.dependencies.auth import get_assessment_repository
-from app.dependencies.auth import get_project_repository
+from app.dependencies.auth import get_assessment_repository, get_project_repository
 from app.main import app
 from app.repositories.in_memory import InMemoryProjectRepository, InMemoryUserRepository
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
@@ -70,14 +69,20 @@ def test_first_time_password_setup_uses_email_token(monkeypatch) -> None:
     )
     assert complete.status_code == 200
     assert complete.json()["must_change_password"] is False
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"email": recipient, "password": "emailFirst123"},
-    ).status_code == 200
-    assert client.post(
-        "/api/v1/auth/first-time-password/complete",
-        json={"token": _token_from_email(body), "new_password": "replayed123"},
-    ).status_code == 400
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": recipient, "password": "emailFirst123"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/v1/auth/first-time-password/complete",
+            json={"token": _token_from_email(body), "new_password": "replayed123"},
+        ).status_code
+        == 400
+    )
 
 
 def test_instructor_can_create_student_without_enrolling(monkeypatch) -> None:
@@ -187,14 +192,20 @@ def test_password_reset_email_is_single_use_and_unknown_accounts_are_generic(mon
         json={"token": _token_from_email(body), "new_password": "emailReset123"},
     )
     assert complete.status_code == 200
-    assert client.post(
-        "/api/v1/auth/password-reset/complete",
-        json={"token": _token_from_email(body), "new_password": "replayed123"},
-    ).status_code == 400
-    assert client.post(
-        "/api/v1/auth/password-reset/request",
-        json={"email": "not.registered@sprintsight.edu"},
-    ).json() == response.json()
+    assert (
+        client.post(
+            "/api/v1/auth/password-reset/complete",
+            json={"token": _token_from_email(body), "new_password": "replayed123"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/v1/auth/password-reset/request",
+            json={"email": "not.registered@sprintsight.edu"},
+        ).json()
+        == response.json()
+    )
     assert len(notifications.messages) == 1
 
 
@@ -204,10 +215,13 @@ def test_unauthenticated_legacy_password_change_is_not_available() -> None:
         json={"email": "faculty@sprintsight.edu", "password": "attacker123"},
     )
     assert response.status_code == 405
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"email": "faculty@sprintsight.edu", "password": "password123"},
-    ).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": "faculty@sprintsight.edu", "password": "password123"},
+        ).status_code
+        == 200
+    )
 
 
 def test_smtp_email_contains_clickable_html_link(monkeypatch) -> None:
@@ -249,8 +263,7 @@ def test_smtp_email_contains_clickable_html_link(monkeypatch) -> None:
     )
 
     html_part = next(
-        part for part in sent_messages[0].walk()
-        if part.get_content_type() == "text/html"
+        part for part in sent_messages[0].walk() if part.get_content_type() == "text/html"
     )
     assert html_part
     assert (
@@ -263,7 +276,12 @@ def test_completed_report_email_targets_assigned_active_instructors() -> None:
     user_repository = InMemoryUserRepository()
     project_repository = InMemoryProjectRepository()
     course = project_repository.create_course(
-        "CS480", "SprintSight", "001", 2026, "Fall", "u-faculty-1",
+        "CS480",
+        "SprintSight",
+        "001",
+        2026,
+        "Fall",
+        "u-faculty-1",
     )
     notifications = FakeNotificationService()
     report = AssessmentReport(

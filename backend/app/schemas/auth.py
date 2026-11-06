@@ -1,9 +1,9 @@
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, EmailStr, Field
 
 
-class Role(str, Enum):
+class Role(StrEnum):
     INSTRUCTOR = "instructor"
     STUDENT = "student"
     ADMIN = "admin"

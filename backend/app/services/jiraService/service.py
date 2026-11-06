@@ -27,7 +27,7 @@ from app.repositories.interfaces import (
     UserRecord,
     UserRepository,
 )
-from app.schemas.assessment import IngestionRequest
+from app.schemas.assessment import AssessRequest, IngestionRequest
 from app.schemas.jira_outlier import (
     JiraContributionOutlierReport,
     JiraContributionOutlierResponse,
@@ -41,7 +41,7 @@ OUTLIER_Z_THRESHOLD = 1.0
 # ---------------------------------------------------------------------------
 # Mock enrichment (while DB and external adapters are pending)
 # ---------------------------------------------------------------------------
-def enrich_jira_metrics(payload: IngestionRequest) -> IngestionMetricBundle | None:
+def enrich_jira_metrics(payload: IngestionRequest | AssessRequest) -> IngestionMetricBundle | None:
     return metrics_repo.get_metrics(payload.course_id, payload.project_id, payload.sprint_id)
 
 
@@ -88,7 +88,11 @@ def _resolve_jira_auth(
     instructor_credentials: tuple[str, str] | None = None,
 ) -> tuple[str, str, str]:
     settings = get_settings()
-    domain = normalize_jira_domain(project.jira_domain) or normalize_jira_domain(settings.jira_domain) or ""
+    domain = (
+        normalize_jira_domain(project.jira_domain)
+        or normalize_jira_domain(settings.jira_domain)
+        or ""
+    )
     if instructor_credentials:
         email, api_token = instructor_credentials
         if domain and email and api_token:
@@ -102,7 +106,7 @@ def _resolve_jira_auth(
                 detail="Stored Jira credentials could not be decrypted. Re-save the API token.",
             ) from exc
         email = project.jira_email
-        project_domain = normalize_jira_domain(project.jira_domain)
+        project_domain = normalize_jira_domain(project.jira_domain)  # type: ignore
         if not email or not project_domain or not token:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -204,6 +208,72 @@ def _build_jira_search_jql(jira_project_key: str, sprint_id: str | None, jql: st
     return f"{query} ORDER BY updated DESC"
 
 
+def _fetch_jira_changelogs(
+    client: httpx.Client,
+    issues: list[dict],
+    sprint_field: str,
+    story_points_field: str,
+) -> dict[str, list[dict]]:
+    issue_ids = [str(issue.get("id") or issue.get("key")) for issue in issues]
+    issue_ids = [issue_id for issue_id in issue_ids if issue_id and issue_id != "None"]
+    changes_by_issue: dict[str, list[dict]] = {issue_id: [] for issue_id in issue_ids}
+    field_ids = list(
+        dict.fromkeys(
+            field_id for field_id in ("status", sprint_field, story_points_field) if field_id
+        )
+    )
+
+    for offset in range(0, len(issue_ids), 1000):
+        next_page_token: str | None = None
+        seen_tokens: set[str] = set()
+        issue_batch = issue_ids[offset : offset + 1000]
+        while True:
+            body: dict[str, object] = {
+                "issueIdsOrKeys": issue_batch,
+                "fieldIds": field_ids,
+                "maxResults": 1000,
+            }
+            if next_page_token:
+                body["nextPageToken"] = next_page_token
+            response = client.post("/rest/api/3/changelog/bulkfetch", json=body)
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 403:
+                    detail = "Jira account lacks permission to read issue changelogs."
+                elif exc.response.status_code == 401:
+                    detail = "Jira rejected the credentials while reading issue changelogs."
+                else:
+                    detail = f"Jira changelog API returned HTTP {exc.response.status_code}."
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=detail,
+                ) from exc
+            page = response.json()
+            if not isinstance(page, dict):
+                raise ValueError("Jira changelog response was not a JSON object.")
+            issue_histories = page.get("issueChangeLogs", [])
+            if not isinstance(issue_histories, list):
+                raise ValueError("Jira changelog response did not contain issueChangeLogs.")
+            for issue_history in issue_histories:
+                if not isinstance(issue_history, dict):
+                    continue
+                issue_id = str(issue_history.get("issueId") or "")
+                histories = issue_history.get("changeHistories", [])
+                if issue_id in changes_by_issue and isinstance(histories, list):
+                    changes_by_issue[issue_id].extend(histories)
+
+            next_page_token = page.get("nextPageToken")
+            if not next_page_token:
+                break
+            next_page_token = str(next_page_token)
+            if next_page_token in seen_tokens:
+                raise ValueError("Jira changelog pagination repeated a page token.")
+            seen_tokens.add(next_page_token)
+
+    return changes_by_issue
+
+
 def fetch_and_store_raw_jira_data(
     course_id: str,
     project_id: str,
@@ -220,6 +290,11 @@ def fetch_and_store_raw_jira_data(
     issues: list[dict] = []
     next_page_token: str | None = None
     page_size = 100
+    story_points_field = settings.jira_story_points_field or ""
+    sprint_field = settings.jira_sprint_field or "customfield_10020"
+    completion_date_field = settings.jira_completed_date_field or ""
+    sprint_start_date_field = settings.jira_sprint_start_date_field or ""
+    sprint_end_date_field = settings.jira_sprint_end_date_field or ""
 
     try:
         with httpx.Client(
@@ -244,6 +319,15 @@ def fetch_and_store_raw_jira_data(
                 next_page_token = page.get("nextPageToken")
                 if not page_issues or not next_page_token:
                     break
+            changes_by_issue = _fetch_jira_changelogs(
+                client,
+                issues,
+                sprint_field=sprint_field,
+                story_points_field=story_points_field,
+            )
+            for issue in issues:
+                issue_id = str(issue.get("id") or issue.get("key") or "")
+                issue["changelog"] = {"histories": changes_by_issue.get(issue_id, [])}
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -251,7 +335,8 @@ def fetch_and_store_raw_jira_data(
         ) from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not retrieve Jira data."
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not retrieve Jira issues and changelogs.",
         ) from exc
 
     captured_at = datetime.now(UTC)
@@ -264,6 +349,12 @@ def fetch_and_store_raw_jira_data(
         "course_id": course_id,
         "project_id": project_id,
         "sprint_id": sprint_id,
+        "sprint_field": sprint_field,
+        "story_points_field": story_points_field,
+        "completion_date_field": completion_date_field,
+        "sprint_start_date_field": sprint_start_date_field,
+        "sprint_end_date_field": sprint_end_date_field,
+        "changelog_captured": True,
         "issues": issues,
     }
     object_key = (
@@ -326,6 +417,17 @@ def _coerce_story_points(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return points if points >= 0 else None
+
+
+def _coerce_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
 
 
 def _story_points_from_fields(fields: dict) -> float:
@@ -392,6 +494,7 @@ class _ContributionTicket:
     issue_type: str | None
     project_id: str
     sprint_id: str | None
+    timestamp: datetime | None = None
 
 
 def _tickets_from_run(run: JiraIngestionRunRecord) -> list[_ContributionTicket]:
@@ -430,6 +533,7 @@ def _tickets_from_run(run: JiraIngestionRunRecord) -> list[_ContributionTicket]:
                         sprint_id=str(issue.get("sprint_id") or run.sprint_id)
                         if issue.get("sprint_id") or run.sprint_id
                         else None,
+                        timestamp=_coerce_datetime(issue.get("timestamp")),
                     )
                 )
                 continue
@@ -469,6 +573,7 @@ def _tickets_from_run(run: JiraIngestionRunRecord) -> list[_ContributionTicket]:
                 issue_type=getattr(ticket, "issue_type", None),
                 project_id=run.project_id,
                 sprint_id=getattr(ticket, "sprint_id", None) or run.sprint_id,
+                timestamp=getattr(ticket, "timestamp", None),
             )
         )
     return tickets
@@ -572,7 +677,7 @@ def _load_course_contributions(
         for ticket in _tickets_from_run(run):
             if not ticket.ticket_id:
                 continue
-            student_id = _resolve_assignee_id(
+            student_id = _resolve_assignee_id(  # type: ignore[assignment]
                 ticket,
                 enrolled_set,
                 users_by_id,
@@ -608,9 +713,7 @@ def _load_course_contributions(
     students_below_average = 0
     if course_mean is not None:
         students_below_average = sum(
-            1
-            for student_id in enrolled_ids
-            if totals_by_student[student_id] < course_mean
+            1 for student_id in enrolled_ids if totals_by_student[student_id] < course_mean
         )
 
     return _CourseContributionData(
@@ -634,9 +737,7 @@ def _build_student_response(
     total_points = data.totals_by_student[student_id]
     tickets = data.tickets_by_student[student_id]
     total_tickets = len(tickets)
-    average_per_ticket = (
-        round(total_points / total_tickets, 2) if total_tickets else 0.0
-    )
+    average_per_ticket = round(total_points / total_tickets, 2) if total_tickets else 0.0
 
     z = _z_score(float(total_points), data.course_mean, data.course_stdev)
     is_outlier = _is_outlier(z)
@@ -709,9 +810,7 @@ def get_jira_contribution_outliers(
         user_repo=user_repo,
         project_repo=project_repo,
     )
-    responses = [
-        _build_student_response(data, student_id) for student_id in data.enrolled_ids
-    ]
+    responses = [_build_student_response(data, student_id) for student_id in data.enrolled_ids]
     responses.sort(
         key=lambda response: (-response.total_story_points, response.student_full_name.lower())
     )

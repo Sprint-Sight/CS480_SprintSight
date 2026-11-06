@@ -2,11 +2,11 @@ import base64
 import hashlib
 import hmac
 import secrets
-from uuid import uuid4
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
-from jose import JWTError, jwt
+from jose import JWTError, jwt  # type: ignore[import-untyped]
 
 from app.core.config import get_settings
 
@@ -40,10 +40,12 @@ def hash_password(password: str) -> str:
     )
 
 
-def create_access_token(subject: str, role: str, token_version: int = 0, expires_delta_minutes: int | None = None) -> str:
+def create_access_token(
+    subject: str, role: str, token_version: int = 0, expires_delta_minutes: int | None = None
+) -> str:
     settings = get_settings()
     expire_minutes = expires_delta_minutes or settings.access_token_expire_minutes
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
+    expires_at = datetime.now(UTC) + timedelta(minutes=expire_minutes)
     payload: dict[str, Any] = {
         "sub": subject,
         "role": role,

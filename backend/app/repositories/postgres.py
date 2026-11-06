@@ -83,7 +83,9 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )"""
         )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON project_documents(project_id)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON project_documents(project_id)"
+        )
         connection.execute(
             """CREATE TABLE IF NOT EXISTS jira_ingestion_runs (
                 run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -244,9 +246,7 @@ class PostgresEmailOutboxRepository(EmailOutboxRepository):
                 (sent_at, UUID(email_id)),
             )
 
-    def mark_email_failed(
-        self, email_id: str, error: str, retry_after: datetime | None
-    ) -> None:
+    def mark_email_failed(self, email_id: str, error: str, retry_after: datetime | None) -> None:
         status = "pending" if retry_after else "failed"
         with self._pool.connection() as connection:
             connection.execute(
@@ -385,8 +385,7 @@ def ensure_audit_schema(pool: ConnectionPool) -> None:
             new_score DOUBLE PRECISION NOT NULL,
             reason_comment TEXT NOT NULL
         )""",
-        "CREATE INDEX IF NOT EXISTS idx_action_audit_created_at "
-        "ON action_audit_events(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_action_audit_created_at ON action_audit_events(created_at)",
         "CREATE INDEX IF NOT EXISTS idx_action_audit_actor_created "
         "ON action_audit_events(actor_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_override_audit_timestamp "
@@ -550,10 +549,7 @@ class PostgresAuditRepository:
                           report_id, original_score, new_score, reason_comment
                    FROM override_audit_events ORDER BY timestamp DESC, override_id"""
             ).fetchall()
-        return [
-            AuditRecord.model_validate(row)
-            for row in rows or []
-        ]
+        return [AuditRecord.model_validate(row) for row in rows or []]
 
     def list_audits_before(
         self,
@@ -575,9 +571,7 @@ class PostgresAuditRepository:
             return 0
         with self._pool.connection() as connection:
             with connection.transaction():
-                connection.execute(
-                    "SELECT set_config('sprintsight.audit_retention', 'on', true)"
-                )
+                connection.execute("SELECT set_config('sprintsight.audit_retention', 'on', true)")
                 cursor = connection.execute(
                     "DELETE FROM override_audit_events WHERE override_id = ANY(%s)",
                     (override_ids,),
@@ -639,9 +633,7 @@ class PostgresActionAuditRepository:
             return 0
         with self._pool.connection() as connection:
             with connection.transaction():
-                connection.execute(
-                    "SELECT set_config('sprintsight.audit_retention', 'on', true)"
-                )
+                connection.execute("SELECT set_config('sprintsight.audit_retention', 'on', true)")
                 cursor = connection.execute(
                     "DELETE FROM action_audit_events WHERE audit_id = ANY(%s)",
                     (audit_ids,),
@@ -749,12 +741,23 @@ class PostgresUserRepository(UserRepository):
                 """INSERT INTO users (user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number""",
-                (UUID(user.id), user.email.lower(), user.full_name, user.hashed_password, user.role.value,
-                 user.is_active, user.must_change_password, user.token_version, user.student_number),
+                (
+                    UUID(user.id),
+                    user.email.lower(),
+                    user.full_name,
+                    user.hashed_password,
+                    user.role.value,
+                    user.is_active,
+                    user.must_change_password,
+                    user.token_version,
+                    user.student_number,
+                ),
             ).fetchone()
         return self._to_record(row)
 
-    def update_user(self, user_id: str, email: str, full_name: str, role: Role, is_active: bool) -> UserRecord | None:
+    def update_user(
+        self, user_id: str, email: str, full_name: str, role: Role, is_active: bool
+    ) -> UserRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """UPDATE users SET email = %s, full_name = %s, role = %s, is_active = %s
@@ -764,7 +767,9 @@ class PostgresUserRepository(UserRepository):
             ).fetchone()
         return self._to_record(row) if row else None
 
-    def update_password(self, user_id: str, hashed_password: str, must_change_password: bool) -> UserRecord | None:
+    def update_password(
+        self, user_id: str, hashed_password: str, must_change_password: bool
+    ) -> UserRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """UPDATE users SET password_hash = %s, must_change_password = %s, token_version = token_version + 1
@@ -796,36 +801,56 @@ class PostgresProjectRepository(ProjectRepository):
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
 
-    def create_course(self, code: str, name: str, section: str, year: int, term: str, created_by: str) -> CourseRecord:
+    def create_course(
+        self, code: str, name: str, section: str, year: int, term: str, created_by: str
+    ) -> CourseRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
                 "INSERT INTO courses (code, name, section, year, term, created_by) VALUES (%s, %s, %s, %s, %s, %s) RETURNING course_id, code, name, section, year, term, created_by, created_at",
                 (code.upper(), name, section, year, term, UUID(created_by)),
             ).fetchone()
-            connection.execute("INSERT INTO course_instructors (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (row["course_id"], UUID(created_by)))
+            connection.execute(
+                "INSERT INTO course_instructors (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (row["course_id"], UUID(created_by)),
+            )
         return self._course(row)
 
     def get_course(self, course_id: str) -> CourseRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
-                "SELECT course_id, code, name, section, year, term, created_by, created_at FROM courses WHERE course_id = %s", (UUID(course_id),)
+                "SELECT course_id, code, name, section, year, term, created_by, created_at FROM courses WHERE course_id = %s",
+                (UUID(course_id),),
             ).fetchone()
         return self._course(row) if row else None
 
     def list_courses(self) -> list[CourseRecord]:
         with self._pool.connection() as connection:
-            rows = connection.execute("SELECT course_id, code, name, section, year, term, created_by, created_at FROM courses ORDER BY code, year, term, section").fetchall()
+            rows = connection.execute(
+                "SELECT course_id, code, name, section, year, term, created_by, created_at FROM courses ORDER BY code, year, term, section"
+            ).fetchall()
         return [self._course(row) for row in rows]
 
     @staticmethod
     def _course(row: dict) -> CourseRecord:
-        return CourseRecord(str(row["course_id"]), row["code"], row["name"], row["section"], row["year"], row["term"], str(row["created_by"]), row["created_at"])
+        return CourseRecord(
+            str(row["course_id"]),
+            row["code"],
+            row["name"],
+            row["section"],
+            row["year"],
+            row["term"],
+            str(row["created_by"]),
+            row["created_at"],
+        )
 
     def assign_instructor(self, course_id: str, user_id: str) -> None:
         with self._pool.connection() as connection:
-            connection.execute("INSERT INTO course_instructors (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (UUID(course_id), UUID(user_id)))
-            
-    def unassign_instructor(self, course_id: str, user_id: str) -> None:   # ← add this
+            connection.execute(
+                "INSERT INTO course_instructors (course_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (UUID(course_id), UUID(user_id)),
+            )
+
+    def unassign_instructor(self, course_id: str, user_id: str) -> None:  # ← add this
         with self._pool.connection() as connection:
             connection.execute(
                 "DELETE FROM course_instructors WHERE course_id = %s AND user_id = %s",
@@ -834,41 +859,56 @@ class PostgresProjectRepository(ProjectRepository):
 
     def is_instructor_assigned(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
-            row = connection.execute("SELECT 1 FROM course_instructors WHERE course_id = %s AND user_id = %s", (UUID(course_id), UUID(user_id))).fetchone()
+            row = connection.execute(
+                "SELECT 1 FROM course_instructors WHERE course_id = %s AND user_id = %s",
+                (UUID(course_id), UUID(user_id)),
+            ).fetchone()
         return row is not None
 
     def enroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
             # A student can enroll in a course code only once, across terms and sections.
-            row = connection.execute("""
+            row = connection.execute(
+                """
                 SELECT 1 FROM course_students cs
                 JOIN courses c ON c.course_id = cs.course_id
                 WHERE cs.user_id = %s
                 AND lower(trim(c.code)) = lower(trim((SELECT code FROM courses WHERE course_id = %s)))
-            """, (UUID(user_id), UUID(course_id))).fetchone()
+            """,
+                (UUID(user_id), UUID(course_id)),
+            ).fetchone()
 
             if row:
                 return False
 
-            inserted = connection.execute("""
+            inserted = connection.execute(
+                """
                 INSERT INTO course_students (course_id, user_id, code, term, year)
                 SELECT %s, %s, c.code, c.term, c.year
                 FROM courses c
                 WHERE c.course_id = %s
                 ON CONFLICT DO NOTHING
                 RETURNING course_id
-            """, (UUID(course_id), UUID(user_id), UUID(course_id))).fetchone()
+            """,
+                (UUID(course_id), UUID(user_id), UUID(course_id)),
+            ).fetchone()
 
         return inserted is not None
 
     def is_student_enrolled(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
-            row = connection.execute("SELECT 1 FROM course_students WHERE course_id = %s AND user_id = %s", (UUID(course_id), UUID(user_id))).fetchone()
+            row = connection.execute(
+                "SELECT 1 FROM course_students WHERE course_id = %s AND user_id = %s",
+                (UUID(course_id), UUID(user_id)),
+            ).fetchone()
         return row is not None
 
     def unenroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
-            row = connection.execute("DELETE FROM course_students WHERE course_id = %s AND user_id = %s RETURNING course_id", (UUID(course_id), UUID(user_id))).fetchone()
+            row = connection.execute(
+                "DELETE FROM course_students WHERE course_id = %s AND user_id = %s RETURNING course_id",
+                (UUID(course_id), UUID(user_id)),
+            ).fetchone()
         if row is None:
             return False
         self.remove_student_from_projects_in_course(course_id, user_id)
@@ -889,18 +929,21 @@ class PostgresProjectRepository(ProjectRepository):
 
     def list_enrolled_student_ids(self, course_id: str) -> list[str]:
         with self._pool.connection() as connection:
-            rows = connection.execute("SELECT user_id FROM course_students WHERE course_id = %s ORDER BY enrolled_at", (UUID(course_id),)).fetchall()
+            rows = connection.execute(
+                "SELECT user_id FROM course_students WHERE course_id = %s ORDER BY enrolled_at",
+                (UUID(course_id),),
+            ).fetchall()
         return [str(row["user_id"]) for row in rows]
 
-    def list_student_course_codes(self, user_id: str) -> list[str]:
+    def update_course(
+        self, course_id: str, code: str, name: str, section: str, year: int, term: str
+    ) -> CourseRecord | None:
         with self._pool.connection() as connection:
-            rows = connection.execute("SELECT c.code FROM course_students cs JOIN courses c ON c.course_id = cs.course_id WHERE cs.user_id = %s", (UUID(user_id),)).fetchall()
-        return [row["code"] for row in rows]
-
-    def update_course(self, course_id: str, code: str, name: str, section: str, year: int, term: str) -> CourseRecord | None:
-        with self._pool.connection() as connection:
-            row = connection.execute("""UPDATE courses SET code = %s, name = %s, section = %s, year = %s, term = %s
-                WHERE course_id = %s RETURNING course_id, code, name, section, year, term, created_by, created_at""", (code.upper(), name, section, year, term, UUID(course_id))).fetchone()
+            row = connection.execute(
+                """UPDATE courses SET code = %s, name = %s, section = %s, year = %s, term = %s
+                WHERE course_id = %s RETURNING course_id, code, name, section, year, term, created_by, created_at""",
+                (code.upper(), name, section, year, term, UUID(course_id)),
+            ).fetchone()
         return self._course(row) if row else None
 
     def delete_course(self, course_id: str) -> CourseRecord | None:
@@ -923,17 +966,23 @@ class PostgresProjectRepository(ProjectRepository):
                         github_repo_url, local_repo_path, created_by, created_at,
                         jira_email, jira_domain, jira_project_key, jira_api_token_encrypted""",
                 (
-                    UUID(project.id), project.project_name, project.team_name,
-                    project.description, UUID(project.course_id),
-                    project.github_repo_url, project.local_repo_path,
-                    UUID(project.created_by), project.jira_email, project.jira_domain,
-                    project.jira_project_key, project.jira_api_token_encrypted,
+                    UUID(project.id),
+                    project.project_name,
+                    project.team_name,
+                    project.description,
+                    UUID(project.course_id),
+                    project.github_repo_url,
+                    project.local_repo_path,
+                    UUID(project.created_by),
+                    project.jira_email,
+                    project.jira_domain,
+                    project.jira_project_key,
+                    project.jira_api_token_encrypted,
                 ),
             ).fetchone()
 
             course = connection.execute(
-                "SELECT code FROM courses WHERE course_id = %s",
-                (UUID(project.course_id),)
+                "SELECT code FROM courses WHERE course_id = %s", (UUID(project.course_id),)
             ).fetchone()
             row["course_code"] = course["code"]
 
@@ -943,7 +992,7 @@ class PostgresProjectRepository(ProjectRepository):
                     """INSERT INTO project_members (project_id, course_id, user_id)
                     VALUES (%s, %s, %s)
                     ON CONFLICT DO NOTHING""",
-                    (UUID(project.id), UUID(project.course_id), UUID(member_id))
+                    (UUID(project.id), UUID(project.course_id), UUID(member_id)),
                 )
 
         return self._project(row)
@@ -998,7 +1047,9 @@ class PostgresProjectRepository(ProjectRepository):
                 ),
             ).fetchone()
             if row:
-                course = connection.execute("SELECT code FROM courses WHERE course_id = %s", (row["course_id"],)).fetchone()
+                course = connection.execute(
+                    "SELECT code FROM courses WHERE course_id = %s", (row["course_id"],)
+                ).fetchone()
                 row["course_code"] = course["code"]
         return self._project(row) if row else None
 
@@ -1006,15 +1057,16 @@ class PostgresProjectRepository(ProjectRepository):
         project = self.get_project(project_id)
         if project:
             with self._pool.connection() as connection:
-                connection.execute("DELETE FROM projects WHERE project_id = %s", (UUID(project_id),))
+                connection.execute(
+                    "DELETE FROM projects WHERE project_id = %s", (UUID(project_id),)
+                )
         return project
 
     def set_members(self, project_id: str, member_ids: list[str]) -> None:
         with self._pool.connection() as connection:
             # Get course_id from the project first
             project_row = connection.execute(
-                "SELECT course_id FROM projects WHERE project_id = %s",
-                (UUID(project_id),)
+                "SELECT course_id FROM projects WHERE project_id = %s", (UUID(project_id),)
             ).fetchone()
 
             if not project_row:
@@ -1023,8 +1075,7 @@ class PostgresProjectRepository(ProjectRepository):
             course_id = project_row["course_id"]
 
             connection.execute(
-                "DELETE FROM project_members WHERE project_id = %s",
-                (UUID(project_id),)
+                "DELETE FROM project_members WHERE project_id = %s", (UUID(project_id),)
             )
 
             # ← FIX: include course_id in the insert
@@ -1032,12 +1083,14 @@ class PostgresProjectRepository(ProjectRepository):
                 connection.execute(
                     """INSERT INTO project_members (project_id, course_id, user_id)
                     VALUES (%s, %s, %s)""",
-                    (UUID(project_id), course_id, UUID(member_id))
+                    (UUID(project_id), course_id, UUID(member_id)),
                 )
 
     def list_member_ids(self, project_id: str) -> list[str]:
         with self._pool.connection() as connection:
-            rows = connection.execute("SELECT user_id FROM project_members WHERE project_id = %s", (UUID(project_id),)).fetchall()
+            rows = connection.execute(
+                "SELECT user_id FROM project_members WHERE project_id = %s", (UUID(project_id),)
+            ).fetchall()
         return [str(row["user_id"]) for row in rows]
 
     @staticmethod
@@ -1088,9 +1141,18 @@ class PostgresDocumentRepository(DocumentRepository):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING document_id, project_id, uploader_id, filename, mime_type,
                           byte_size, checksum, storage_bucket, storage_key, created_at""",
-                (UUID(document.id), UUID(document.project_id), UUID(document.uploaded_by),
-                 document.filename, document.mime_type, document.byte_size, document.checksum,
-                 document.storage_bucket, document.storage_key, document.created_at),
+                (
+                    UUID(document.id),
+                    UUID(document.project_id),
+                    UUID(document.uploaded_by),
+                    document.filename,
+                    document.mime_type,
+                    document.byte_size,
+                    document.checksum,
+                    document.storage_bucket,
+                    document.storage_key,
+                    document.created_at,
+                ),
             ).fetchone()
         return self._document(row)
 
@@ -1141,8 +1203,13 @@ class PostgresManualTextRepository(ManualTextRepository):
                 DO UPDATE SET expectations_text = EXCLUDED.expectations_text,
                               updated_by = EXCLUDED.updated_by,
                               updated_at = CURRENT_TIMESTAMP""",
-                (UUID(payload.course_id), UUID(payload.project_id), payload.sprint_id,
-                 " ".join(payload.expectations_text.split()), UUID(updated_by)),
+                (
+                    UUID(payload.course_id),
+                    UUID(payload.project_id),
+                    payload.sprint_id,
+                    " ".join(payload.expectations_text.split()),
+                    UUID(updated_by),
+                ),
             )
 
     def get(self, course_id: str, project_id: str, sprint_id: str) -> str | None:
@@ -1187,7 +1254,9 @@ class PostgresRubricWeightsRepository(RubricWeightsRepository):
             updated_at=row["updated_at"],
         )
 
-    def set_weights(self, course_id: str, weights: dict[str, float], updated_by: str) -> RubricWeightsRecord:
+    def set_weights(
+        self, course_id: str, weights: dict[str, float], updated_by: str
+    ) -> RubricWeightsRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """INSERT INTO rubric_weight_configs (course_id, weights, updated_by)
@@ -1343,9 +1412,7 @@ class PostgresPeerEvaluationRepository(PeerEvaluationRepository):
                 ).fetchall()
         return [self._evaluation(row) for row in db_rows or []]
 
-    def list_evaluations_by_project(
-        self, project_id: str
-    ) -> list[PeerEvaluationRecord]:
+    def list_evaluations_by_project(self, project_id: str) -> list[PeerEvaluationRecord]:
         with self._pool.connection() as connection:
             rows = connection.execute(
                 """SELECT * FROM peer_evaluations
@@ -1355,9 +1422,7 @@ class PostgresPeerEvaluationRepository(PeerEvaluationRepository):
             ).fetchall()
         return [self._evaluation(row) for row in rows or []]
 
-    def list_evaluations_by_course(
-        self, course_id: str
-    ) -> list[PeerEvaluationRecord]:
+    def list_evaluations_by_course(self, course_id: str) -> list[PeerEvaluationRecord]:
         with self._pool.connection() as connection:
             rows = connection.execute(
                 """SELECT * FROM peer_evaluations
@@ -1378,9 +1443,7 @@ class PostgresPeerEvaluationRepository(PeerEvaluationRepository):
             ).fetchone()
         return self._evaluation(row) if row else None
 
-    def save_config(
-        self, config: PeerEvaluationConfigRecord
-    ) -> PeerEvaluationConfigRecord:
+    def save_config(self, config: PeerEvaluationConfigRecord) -> PeerEvaluationConfigRecord:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """INSERT INTO peer_evaluation_configs
@@ -1593,7 +1656,9 @@ def ensure_assessment_schema(pool: ConnectionPool) -> None:
             END $$"""
         )
         connection.execute("DROP TABLE IF EXISTS assessment_override")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_assessment_reports_course_project_sprint ON assessment_reports(course_id, project_id, sprint_id, generated_at DESC)"
+        )
 
 
 class PostgresAssessmentRepository(AssessmentRepository):
@@ -1624,7 +1689,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
                               strengths = EXCLUDED.strengths,
                               weaknesses = EXCLUDED.weaknesses""",
                 (
-                    UUID(report.report_id.replace('rpt-', '')) if report.report_id.startswith('rpt-') else UUID(report.report_id),
+                    UUID(report.report_id.replace("rpt-", ""))
+                    if report.report_id.startswith("rpt-")
+                    else UUID(report.report_id),
                     report.model_name,
                     report.mode,
                     UUID(report.course_id),
@@ -1632,10 +1699,10 @@ class PostgresAssessmentRepository(AssessmentRepository):
                     report.sprint_id,
                     report.generated_at,
                     Json(report.rubric_weights),
-                    Json(report.team_score.model_dump(mode='json')),
-                    Json([score.model_dump(mode='json') for score in report.individual_scores]),
+                    Json(report.team_score.model_dump(mode="json")),
+                    Json([score.model_dump(mode="json") for score in report.individual_scores]),
                     Json(report.recommendations),
-                    Json({k: v.model_dump(mode='json') for k, v in report.rubric_scores.items()}),
+                    Json({k: v.model_dump(mode="json") for k, v in report.rubric_scores.items()}),
                     Json(report.strengths),
                     Json(report.weaknesses),
                 ),
@@ -1649,7 +1716,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
             ).fetchone()
             return self._report(row) if row else None
 
-    def update_manual_assessment(self, report_id: str, patch: dict[str, object]) -> AssessmentReport | None:
+    def update_manual_assessment(
+        self, report_id: str, patch: dict[str, object]
+    ) -> AssessmentReport | None:
         columns = {
             "requirements_score": "requirements_score",
             "code_quality_score": "code_quality_score",
@@ -1693,7 +1762,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
             ).fetchone()
         return self._report(row) if row else None
 
-    def list_reports(self, course_id: str, project_id: str, sprint_id: str) -> list[AssessmentReport]:
+    def list_reports(
+        self, course_id: str, project_id: str, sprint_id: str
+    ) -> list[AssessmentReport]:
         with self._pool.connection() as connection:
             rows = connection.execute(
                 """SELECT * FROM assessment_reports
@@ -1713,7 +1784,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
             ).fetchall()
         return [self._report(row) for row in rows or []]
 
-    def get_latest_report(self, course_id: str, project_id: str, sprint_id: str) -> AssessmentReport | None:
+    def get_latest_report(
+        self, course_id: str, project_id: str, sprint_id: str
+    ) -> AssessmentReport | None:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """SELECT * FROM assessment_reports
@@ -1726,6 +1799,7 @@ class PostgresAssessmentRepository(AssessmentRepository):
     @staticmethod
     def _report(row: dict) -> AssessmentReport:
         from app.schemas.assessment import RubricDimensionScoreDetail, StudentScore, TeamScore
+
         rubric_scores = {}
         if row.get("rubric_scores"):
             for key, value in row["rubric_scores"].items():
@@ -1747,10 +1821,18 @@ class PostgresAssessmentRepository(AssessmentRepository):
             strengths=row["strengths"],
             weaknesses=row["weaknesses"],
             override=row.get("override", False),
-            requirements_score=float(row["requirements_score"]) if row.get("requirements_score") is not None else None,
-            code_quality_score=float(row["code_quality_score"]) if row.get("code_quality_score") is not None else None,
-            documentation_score=float(row["documentation_score"]) if row.get("documentation_score") is not None else None,
-            collaboration_score=float(row["collaboration_score"]) if row.get("collaboration_score") is not None else None,
+            requirements_score=float(row["requirements_score"])
+            if row.get("requirements_score") is not None
+            else None,
+            code_quality_score=float(row["code_quality_score"])
+            if row.get("code_quality_score") is not None
+            else None,
+            documentation_score=float(row["documentation_score"])
+            if row.get("documentation_score") is not None
+            else None,
+            collaboration_score=float(row["collaboration_score"])
+            if row.get("collaboration_score") is not None
+            else None,
             requirements_justification=row.get("requirements_justification"),
             code_quality_justification=row.get("code_quality_justification"),
             documentation_justification=row.get("documentation_justification"),
@@ -1769,7 +1851,6 @@ class PostgresMetricsRepository(MetricsRepository):
                     "DELETE FROM ingestion_runs WHERE project_id = %s AND sprint_id = %s",
                     (UUID(metrics.project_id), metrics.sprint_id),
                 )
-                head_sha = metrics.commits[0].sha if metrics.commits else None
                 run = connection.execute(
                     """INSERT INTO ingestion_runs
                     (course_id, project_id, sprint_id, local_repo_path, head_sha,
@@ -1777,10 +1858,19 @@ class PostgresMetricsRepository(MetricsRepository):
                      assigned_story_points, completion_percent, captured_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING ingestion_run_id""",
-                    (UUID(metrics.course_id), UUID(metrics.project_id), metrics.sprint_id,
-                     metrics.local_repo_path, metrics.head_sha, metrics.commit_frequency, metrics.code_churn,
-                     metrics.pr_turnaround_hours, metrics.assigned_story_points,
-                     metrics.completion_percent, metrics.captured_at),
+                    (
+                        UUID(metrics.course_id),
+                        UUID(metrics.project_id),
+                        metrics.sprint_id,
+                        metrics.local_repo_path,
+                        metrics.head_sha,
+                        metrics.commit_frequency,
+                        metrics.code_churn,
+                        metrics.pr_turnaround_hours,
+                        metrics.assigned_story_points,
+                        metrics.completion_percent,
+                        metrics.captured_at,
+                    ),
                 ).fetchone()
                 for commit in metrics.commits:
                     connection.execute(
@@ -1788,9 +1878,18 @@ class PostgresMetricsRepository(MetricsRepository):
                         (ingestion_run_id, sha, author, author_email, student_id, message, timestamp,
                          lines_added, lines_deleted, files_changed)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (run["ingestion_run_id"], commit.sha, commit.author, commit.author_email, commit.student_id, commit.message,
-                         commit.timestamp, commit.lines_added, commit.lines_deleted,
-                         Json([file.model_dump() for file in commit.files_changed])),
+                        (
+                            run["ingestion_run_id"],
+                            commit.sha,
+                            commit.author,
+                            commit.author_email,
+                            commit.student_id,
+                            commit.message,
+                            commit.timestamp,
+                            commit.lines_added,
+                            commit.lines_deleted,
+                            Json([file.model_dump() for file in commit.files_changed]),
+                        ),
                     )
 
     def get_metrics(
@@ -1833,10 +1932,14 @@ class PostgresMetricsRepository(MetricsRepository):
                 commit_params,
             ).fetchall()
         from app.schemas.assessment import CommitInfo
+
         return IngestionMetricBundle(
-            course_id=str(row["course_id"]), project_id=str(row["project_id"]),
-            sprint_id=row["sprint_id"], commit_frequency=row["commit_frequency"],
-            code_churn=row["code_churn"], pr_turnaround_hours=row["pr_turnaround_hours"],
+            course_id=str(row["course_id"]),
+            project_id=str(row["project_id"]),
+            sprint_id=row["sprint_id"],
+            commit_frequency=row["commit_frequency"],
+            code_churn=row["code_churn"],
+            pr_turnaround_hours=row["pr_turnaround_hours"],
             assigned_story_points=row["assigned_story_points"],
             completion_percent=row["completion_percent"],
             commits=[
@@ -1900,10 +2003,14 @@ class PostgresMetricsRepository(MetricsRepository):
                 [*commit_params, limit, offset],
             ).fetchall()
         from app.schemas.assessment import CommitInfo
+
         return IngestionMetricBundle(
-            course_id=str(row["course_id"]), project_id=str(row["project_id"]),
-            sprint_id=row["sprint_id"], commit_frequency=row["commit_frequency"],
-            code_churn=row["code_churn"], pr_turnaround_hours=row["pr_turnaround_hours"],
+            course_id=str(row["course_id"]),
+            project_id=str(row["project_id"]),
+            sprint_id=row["sprint_id"],
+            commit_frequency=row["commit_frequency"],
+            code_churn=row["code_churn"],
+            pr_turnaround_hours=row["pr_turnaround_hours"],
             assigned_story_points=row["assigned_story_points"],
             completion_percent=row["completion_percent"],
             commits=[
@@ -1916,7 +2023,8 @@ class PostgresMetricsRepository(MetricsRepository):
                 )
                 for commit in commit_rows
             ],
-            local_repo_path=row["local_repo_path"], head_sha=row["head_sha"],
+            local_repo_path=row["local_repo_path"],
+            head_sha=row["head_sha"],
             captured_at=row["captured_at"],
         ), total
 
@@ -1954,13 +2062,24 @@ class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
                  raw_bucket, raw_object_key, issue_count, captured_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *""",
-                (UUID(run.id), UUID(run.course_id), UUID(run.project_id), run.sprint_id,
-                 run.jira_project_key, run.jql, run.raw_bucket, run.raw_object_key,
-                 run.issue_count, run.captured_at),
+                (
+                    UUID(run.id),
+                    UUID(run.course_id),
+                    UUID(run.project_id),
+                    run.sprint_id,
+                    run.jira_project_key,
+                    run.jql,
+                    run.raw_bucket,
+                    run.raw_object_key,
+                    run.issue_count,
+                    run.captured_at,
+                ),
             ).fetchone()
         return self._run(row)
 
-    def get_run(self, project_id: str, sprint_id: str, run_id: str) -> JiraIngestionRunRecord | None:
+    def get_run(
+        self, project_id: str, sprint_id: str, run_id: str
+    ) -> JiraIngestionRunRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
                 "SELECT * FROM jira_ingestion_runs WHERE project_id = %s AND sprint_id = %s AND run_id = %s",
@@ -1984,7 +2103,17 @@ class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
             ).fetchall()
         return [self._run(row) for row in rows]
 
-    def update_processed_run(self, project_id: str, sprint_id: str, run_id: str, status: str, processed_at: datetime | None, normalization_version: str | None, processing_error: str | None, cleaned_snapshot: JiraCleanedSnapshot | None) -> JiraIngestionRunRecord | None:
+    def update_processed_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        status: str,
+        processed_at: datetime | None,
+        normalization_version: str | None,
+        processing_error: str | None,
+        cleaned_snapshot: JiraCleanedSnapshot | None,
+    ) -> JiraIngestionRunRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
                 """UPDATE jira_ingestion_runs SET processing_status = %s,
@@ -1992,9 +2121,16 @@ class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
                 cleaned_snapshot = %s
                 WHERE project_id = %s AND sprint_id = %s AND run_id = %s
                 RETURNING *""",
-                (status, processed_at, normalization_version, processing_error,
-                 Json(cleaned_snapshot.model_dump(mode="json")) if cleaned_snapshot else None,
-                 UUID(project_id), sprint_id, UUID(run_id)),
+                (
+                    status,
+                    processed_at,
+                    normalization_version,
+                    processing_error,
+                    Json(cleaned_snapshot.model_dump(mode="json")) if cleaned_snapshot else None,
+                    UUID(project_id),
+                    sprint_id,
+                    UUID(run_id),
+                ),
             ).fetchone()
         return self._run(row) if row else None
 

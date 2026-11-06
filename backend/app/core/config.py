@@ -26,19 +26,28 @@ class Settings(BaseSettings):
     jira_email: str = Field(default="", alias="JIRA_EMAIL")
     jira_domain: str = Field(default="", alias="JIRA_DOMAIN")
     jira_timeout_seconds: float = Field(default=30, alias="JIRA_TIMEOUT_SECONDS")
-    jira_story_points_field: str = Field(default="customfield_10016", alias="JIRA_STORY_POINTS_FIELD")
+    jira_story_points_field: str = Field(
+        default="customfield_10016", alias="JIRA_STORY_POINTS_FIELD"
+    )
     jira_sprint_field: str = Field(default="customfield_10020", alias="JIRA_SPRINT_FIELD")
+    jira_completed_date_field: str = Field(default="", alias="JIRA_COMPLETED_DATE_FIELD")
+    jira_sprint_start_date_field: str = Field(default="", alias="JIRA_SPRINT_START_DATE_FIELD")
+    jira_sprint_end_date_field: str = Field(default="", alias="JIRA_SPRINT_END_DATE_FIELD")
     minio_bucket_raw: str = Field(default="raw-jira-data", alias="MINIO_BUCKET_RAW")
     minio_bucket_documents: str = Field(default="project-documents", alias="MINIO_BUCKET_DOCUMENTS")
     document_max_file_size: int = Field(default=25 * 1024 * 1024, alias="DOCUMENT_MAX_FILE_SIZE")
-    document_max_request_size: int = Field(default=100 * 1024 * 1024, alias="DOCUMENT_MAX_REQUEST_SIZE")
+    document_max_request_size: int = Field(
+        default=100 * 1024 * 1024, alias="DOCUMENT_MAX_REQUEST_SIZE"
+    )
 
     bootstrap_admin_email: str = Field(default="", alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: str = Field(default="", alias="BOOTSTRAP_ADMIN_PASSWORD")
     bootstrap_admin_name: str = Field(default="System Admin", alias="BOOTSTRAP_ADMIN_NAME")
     bootstrap_instructor_email: str = Field(default="", alias="BOOTSTRAP_INSTRUCTOR_EMAIL")
     bootstrap_instructor_password: str = Field(default="", alias="BOOTSTRAP_INSTRUCTOR_PASSWORD")
-    bootstrap_instructor_name: str = Field(default="Sample Instructor", alias="BOOTSTRAP_INSTRUCTOR_NAME")
+    bootstrap_instructor_name: str = Field(
+        default="Sample Instructor", alias="BOOTSTRAP_INSTRUCTOR_NAME"
+    )
     bootstrap_student_email: str = Field(default="", alias="BOOTSTRAP_STUDENT_EMAIL")
     bootstrap_student_password: str = Field(default="", alias="BOOTSTRAP_STUDENT_PASSWORD")
     bootstrap_student_name: str = Field(default="Sample Student", alias="BOOTSTRAP_STUDENT_NAME")
@@ -55,32 +64,57 @@ class Settings(BaseSettings):
     email_outbox_path: Path = Field(default=Path("logs/email-outbox"), alias="EMAIL_OUTBOX_PATH")
     email_daily_send_cap: int = Field(default=450, alias="EMAIL_DAILY_SEND_CAP", ge=0)
     email_send_interval_seconds: float = Field(
-        default=1.0, alias="EMAIL_SEND_INTERVAL_SECONDS", ge=0.0, le=60.0,
+        default=1.0,
+        alias="EMAIL_SEND_INTERVAL_SECONDS",
+        ge=0.0,
+        le=60.0,
     )
     email_dispatch_interval_seconds: float = Field(
-        default=5.0, alias="EMAIL_DISPATCH_INTERVAL_SECONDS", ge=0.5, le=300.0,
+        default=5.0,
+        alias="EMAIL_DISPATCH_INTERVAL_SECONDS",
+        ge=0.5,
+        le=300.0,
     )
     email_smtp_max_attempts: int = Field(default=3, alias="EMAIL_SMTP_MAX_ATTEMPTS", ge=1, le=10)
     email_smtp_retry_backoff_seconds: float = Field(
-        default=2.0, alias="EMAIL_SMTP_RETRY_BACKOFF_SECONDS", ge=0.0, le=60.0,
+        default=2.0,
+        alias="EMAIL_SMTP_RETRY_BACKOFF_SECONDS",
+        ge=0.0,
+        le=60.0,
     )
     email_smtp_circuit_breaker_seconds: int = Field(
-        default=300, alias="EMAIL_SMTP_CIRCUIT_BREAKER_SECONDS", ge=0, le=86400,
+        default=300,
+        alias="EMAIL_SMTP_CIRCUIT_BREAKER_SECONDS",
+        ge=0,
+        le=86400,
     )
     email_quota_backoff_seconds: int = Field(
-        default=1800, alias="EMAIL_QUOTA_BACKOFF_SECONDS", ge=0, le=86400,
+        default=1800,
+        alias="EMAIL_QUOTA_BACKOFF_SECONDS",
+        ge=0,
+        le=86400,
     )
     email_queue_max_attempts: int = Field(
-        default=5, alias="EMAIL_QUEUE_MAX_ATTEMPTS", ge=1, le=100,
+        default=5,
+        alias="EMAIL_QUEUE_MAX_ATTEMPTS",
+        ge=1,
+        le=100,
     )
     email_frontend_base_url: str = Field(
-        default="http://localhost:3000", alias="EMAIL_FRONTEND_BASE_URL",
+        default="http://localhost:3000",
+        alias="EMAIL_FRONTEND_BASE_URL",
     )
     email_first_time_token_expire_minutes: int = Field(
-        default=1440, alias="EMAIL_FIRST_TIME_TOKEN_EXPIRE_MINUTES", ge=1, le=10080,
+        default=1440,
+        alias="EMAIL_FIRST_TIME_TOKEN_EXPIRE_MINUTES",
+        ge=1,
+        le=10080,
     )
     email_password_reset_token_expire_minutes: int = Field(
-        default=30, alias="EMAIL_PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", ge=1, le=1440,
+        default=30,
+        alias="EMAIL_PASSWORD_RESET_TOKEN_EXPIRE_MINUTES",
+        ge=1,
+        le=1440,
     )
 
     ollama_base_url: str = Field(default="http://ollama:11434", alias="OLLAMA_BASE_URL")
@@ -91,10 +125,18 @@ class Settings(BaseSettings):
 
     audit_log_path: str = Field(default="logs/audit.log", alias="AUDIT_LOG_PATH")
     audit_hot_retention_days: int = Field(default=168, alias="AUDIT_HOT_RETENTION_DAYS", ge=1)
-    audit_action_archive_retention_days: int = Field(default=365, alias="AUDIT_ACTION_ARCHIVE_RETENTION_DAYS", ge=1)
-    audit_override_archive_retention_days: int = Field(default=365, alias="AUDIT_OVERRIDE_ARCHIVE_RETENTION_DAYS", ge=1)
-    audit_archive_batch_size: int = Field(default=500, alias="AUDIT_ARCHIVE_BATCH_SIZE", ge=1, le=10000)
-    minio_bucket_audit_archive: str = Field(default="audit-archive", alias="MINIO_BUCKET_AUDIT_ARCHIVE")
+    audit_action_archive_retention_days: int = Field(
+        default=365, alias="AUDIT_ACTION_ARCHIVE_RETENTION_DAYS", ge=1
+    )
+    audit_override_archive_retention_days: int = Field(
+        default=365, alias="AUDIT_OVERRIDE_ARCHIVE_RETENTION_DAYS", ge=1
+    )
+    audit_archive_batch_size: int = Field(
+        default=500, alias="AUDIT_ARCHIVE_BATCH_SIZE", ge=1, le=10000
+    )
+    minio_bucket_audit_archive: str = Field(
+        default="audit-archive", alias="MINIO_BUCKET_AUDIT_ARCHIVE"
+    )
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
@@ -102,16 +144,15 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
-    
+
     minio_endpoint_url: str = Field(default="http://minio:9000", alias="MINIO_ENDPOINT_URL")
     minio_access_key: str = Field(alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(alias="MINIO_SECRET_KEY")
 
     def database_connection_string(self) -> str:
         if self.database_url:
-            return (
-                self.database_url.replace("postgresql+asyncpg://", "postgresql://")
-                .replace("postgresql+psycopg2://", "postgresql://")
+            return self.database_url.replace("postgresql+asyncpg://", "postgresql://").replace(
+                "postgresql+psycopg2://", "postgresql://"
             )
         return (
             f"host={self.postgres_server} port=5432 dbname={self.postgres_db} "
@@ -121,4 +162,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings()  # type: ignore[call-arg]

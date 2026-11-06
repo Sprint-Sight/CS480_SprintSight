@@ -27,10 +27,7 @@ def list_notifications(
     repository: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> NotificationListResponse:
     return NotificationListResponse(
-        notifications=[
-            _response(item)
-            for item in repository.list_notifications(current_user.id)
-        ],
+        notifications=[_response(item) for item in repository.list_notifications(current_user.id)],
         unread_count=repository.count_unread_notifications(current_user.id),
     )
 

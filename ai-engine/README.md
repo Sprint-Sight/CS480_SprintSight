@@ -89,6 +89,7 @@ missing:
 - `sprintsight-qwen` from `models/Modelfile.qwen`
 - `sprintsight-mistral` from `models/Modelfile.mistral`
 - `sprintsight-gemma` from `models/Modelfile.gemma`
+- `sprintsight-judge-phi` from `models/Modelfile.phi`
 
 This means repeated `docker compose up` runs are mostly idempotent because the
 initializer checks `ollama list` for the target model aliases and skips the
@@ -172,14 +173,40 @@ The endpoint returns a `SprintAssessment` containing:
   payload to `api/assessment.py`.
 2. `api/assessment.py` validates the payload and builds an `ArtifactBundle`.
 3. `services/evaluator.py` starts one task per rubric dimension.
-4. `services/llm_client.py` serializes the full `ArtifactBundle` and sends
-   rubric-specific prompt to Ollama.
+4. `services/llm_client.py` builds each dimension's prompt: computed facts
+   over ALL commits, then `services/evidence_packer.py` fills the token
+   budget with the evidence that dimension needs (see below).
 5. Instructor validates the response as `RubricDimensionScore`, retrying up to
-   three times for a dimension-level failure.
+   three times for a dimension-level failure. `services/grounding.py` then
+   resolves every citation against the evidence the model was shown: it
+   keeps exact file/line anchors, clamps ranges to the lines shown,
+   downgrades unseen line numbers to file level, and drops anything else.
 6. The evaluator collects successful dimensions, calculates their average, and
    builds `SprintAssessment`.
 7. MLflow records traces and the average score. The HTTP client hooks write
    request/response audit files under `audit_logs/`.
+
+## Evidence packing
+
+The backend sends, besides commits and Jira data, per-file diffs (captured at
+ingestion) and `repo_snapshot`: every tracked file at the submitted HEAD.
+For each dimension the packer renders, within
+`min(num_ctx, LLM_EVIDENCE_CONTEXT_CAP)` minus the prompt scaffold and the
+answer reserve:
+
+| Section | What | Dimensions |
+|---|---|---|
+| Fixed inputs | Instructor expectations, Jira tickets (one JSON per line), metrics | per `_DIMENSION_ARTIFACT_FIELDS` |
+| Commit ledger | One line per commit for the whole history; shorter format, then most-relevant subset, only if it cannot fit | all except requirements |
+| File tree | Every file at HEAD with line counts | code_quality, testing, documentation, cicd |
+| HEAD contents | Line-numbered files of the dimension's category, ranked by churn and spread across modules | same |
+| Code outline | Definition/test-name lines of files not shown in full | code_quality, testing |
+| Diff excerpts | New-file line-numbered hunks, round-robin across authors | code_quality, testing, documentation, cicd |
+
+Every file and diff block carries a `cite as path:Lx-Ly[@sha7]` anchor, and the
+resolved citation (kind, file_path, line_start, line_end, commit_sha) is
+returned in `evidence_citations`. Inspect what any dataset example would send
+with `python -m research.eval.inspect_bundle --example <id>`.
 
 ## Audit records
 
@@ -239,6 +266,9 @@ DEFAULT_MODEL_NAME=sprintsight-qwen
 MLFLOW_TRACKING_URI=http://mlflow_service:5000
 MLFLOW_EXPERIMENT_NAME=sprintsight_experiment
 LLM_AUDIT_LOG_DIR=/app/audit_logs
+LLM_EVIDENCE_MODE=packed            # or legacy (30-commit JSON sample)
+LLM_EVIDENCE_CONTEXT_CAP=32000      # prompt + answer tokens per call
+LLM_CHARS_PER_TOKEN=3.0             # calibrated from audit_logs usage
 ```
 
 For a clean FastAPI image rebuild:
@@ -271,6 +301,14 @@ docker compose up -d --force-recreate sprintsight_ai
 # Gateway (Unlikely for our project?)
 - Control & audit who is actually doing what LLMs were called and provide agents access
 
+# Choosing the right model for LLM judge
+STARTING OUT:
+- Prob lack use-case-specific grading criteria
+- Use powerful model (ex. GPT-4o), which can help to deeply explore traces, identify patterns, etc.
+PRODUCTION:
+- Eventally can use cheaper lightweight models
+- Likely to collect more data
+
 ## The Evaluation Challenge (2:14 - 3:08):
 
 Beyond Math: Unlike traditional machine learning models (e.g., linear regression), where outputs can be easily validated with quantitative metrics, generative AI requires a qualitative understanding. It is difficult to mathematically define if a model's long-form response is accurate, concise, or contextually appropriate.
@@ -280,3 +318,36 @@ How LLM-as-a-Judge Rescues the Process (3:08 - 6:02):
 Interpreting Traces: An LLM-as-a-judge uses a trace—the fundamental unit of logging for an AI's inference call—to inspect inputs, outputs, and specific events like tool calls (3:36).
 Defining Rubrics: By providing the judge LLM with a system prompt, you can define your own evaluation criteria or scoring rubrics (e.g., a 1-to-5 scale), allowing the judge to provide nuanced, qualitative feedback on whether the agent performed as expected (4:02).
 Ground Truth Integration: You can pass in an evaluation set with expected outcomes (the "gold standard"), allowing the judge to compare the agent's behavior against your desired criteria and determine if the model followed the correct course of action (4:37).
+
+# GPU
+WHAT CHANGED
+- ai-engine/hpc/ (new folder):
+    setup_ollama_container.sh   one-time enroot import+create of ollama/ollama
+    ollama_gpu.sbatch           Slurm job: requests 1 GPU, runs Ollama, builds
+                                 the 4 sprintsight-* models, serves until --time
+    ollama-entrypoint.sh        POSIX sh entrypoint (image has no bash/curl)
+    README.md                   full instructions + command reference
+- ai-engine/.env: added OLLAMA_BASE_URL=http://host.docker.internal:11435/v1
+- Everything else (db, mlflow_service, sprintsight_ai) is UNCHANGED — it still
+  runs locally via docker compose, just pointed at the remote Ollama.
+
+EVERY TIME YOU WANT GPU ACCESS
+  1. origami:      sbatch ollama_gpu.sbatch  →  note the node from squeue --me
+  2. local laptop: ssh -L <port>:<node>:11434 <netid>@origami.smu.edu.sg
+                   (keep this open)
+  3. local laptop (ai-engine/):
+       docker compose up -d db mlflow_service
+       docker compose up -d --no-deps --build sprintsight_ai
+  4. verify:       curl.exe http://localhost:8001/health
+
+# To add new sprintsight judge phi to GPU cluster run
+1. `ollama pull phi4:14b`
+2. `ollama create sprintsight-judge-phi -f models/Modelfile.phi`
+3. `bash hpc/hpc-dev.sh models`
+4. `curl -s http://localhost:11435/api/create -d '{"model":"sprintsight-judge-phi","from":"phi4:14b" "parameters":{"temperature":0.1,"num_ctx":49152}}'`
+
+## Running LLM judge and code-based scorer
+1. Start the Ollama GPU container on the cluster node (see above).
+2. On another terminal, `cd ai-engine`
+3. run `bash hpc/hpc-dev.sh`
+4. run `docker compose exec sprintsight_ai python -m judges.run_judges`

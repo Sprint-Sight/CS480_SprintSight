@@ -36,10 +36,14 @@ def _get_authorized_project(project_id: str, current_user: UserRecord, projects:
     project = projects.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    allowed = current_user.role == Role.INSTRUCTOR and projects.is_instructor_assigned(project.course_id, current_user.id)
+    allowed = current_user.role == Role.INSTRUCTOR and projects.is_instructor_assigned(
+        project.course_id, current_user.id
+    )
     allowed = allowed or current_user.id in projects.list_member_ids(project_id)
     if not allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this project."
+        )
     return project
 
 
@@ -70,7 +74,9 @@ async def upload_project_documents(
     project = _get_authorized_project(project_id, current_user, projects)
     uploaded_files = [(file.filename or "", file.content_type, await file.read()) for file in files]
     try:
-        records = upload_documents(project_id, current_user.id, uploaded_files, documents, storage, get_settings())
+        records = upload_documents(
+            project_id, current_user.id, uploaded_files, documents, storage, get_settings()
+        )
     except DocumentValidationError as exc:
         raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
     append_action_audit(

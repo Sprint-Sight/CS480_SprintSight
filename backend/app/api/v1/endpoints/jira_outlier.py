@@ -43,9 +43,7 @@ router = APIRouter(
 )
 def list_jira_contribution_outliers(
     course_id: str,
-    jira_repo: Annotated[
-        JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)
-    ],
+    jira_repo: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
     project_repo: Annotated[ProjectRepository, Depends(get_project_repository)],
     only_outliers: bool = Query(
@@ -75,9 +73,7 @@ def list_jira_contribution_outliers(
 def jira_contribution_outlier(
     course_id: str,
     student_id: str,
-    jira_repo: Annotated[
-        JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)
-    ],
+    jira_repo: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
     project_repo: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> JiraContributionOutlierResponse:

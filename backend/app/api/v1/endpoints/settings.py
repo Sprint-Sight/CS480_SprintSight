@@ -14,6 +14,7 @@ from app.repositories.interfaces import (
     ActionAuditRepository,
     InstructorJiraCredentialsRecord,
     InstructorJiraCredentialsRepository,
+    UserRecord,
 )
 from app.services.auditLogService.service import append_action_audit
 
@@ -46,7 +47,7 @@ def _response(
 
 @router.get("/jira-credentials", response_model=JiraCredentialsResponse)
 def get_jira_credentials(
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[
         InstructorJiraCredentialsRepository,
         Depends(get_instructor_jira_credentials_repository),
@@ -62,7 +63,7 @@ def get_jira_credentials(
 @router.put("/jira-credentials", response_model=JiraCredentialsResponse)
 def put_jira_credentials(
     payload: JiraCredentialsPayload,
-    faculty_user: Annotated[object, Depends(require_faculty)],
+    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[
         InstructorJiraCredentialsRepository,
         Depends(get_instructor_jira_credentials_repository),
@@ -76,7 +77,9 @@ def put_jira_credentials(
         if "jira_email" in fields_set and payload.jira_email
         else None
         if "jira_email" in fields_set
-        else existing.jira_email if existing else None
+        else existing.jira_email
+        if existing
+        else None
     )
 
     if "jira_api_token" in fields_set:

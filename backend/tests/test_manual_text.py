@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-
 client = TestClient(app)
 
 
@@ -69,14 +68,31 @@ def test_manual_text_is_replaced_per_sprint() -> None:
 
     first = {**base, "expectations_text": "First guidance text is long enough."}
     second = {**base, "expectations_text": "Replacement guidance text is long enough."}
-    other_sprint = {**base, "sprint_id": "sprint-2", "expectations_text": "Different sprint guidance text."}
+    other_sprint = {
+        **base,
+        "sprint_id": "sprint-2",
+        "expectations_text": "Different sprint guidance text.",
+    }
 
-    assert client.post("/api/v1/manual-text", json=first, headers=instructor_headers).status_code == 200
-    assert client.post("/api/v1/manual-text", json=second, headers=instructor_headers).status_code == 200
-    assert client.post("/api/v1/manual-text", json=other_sprint, headers=instructor_headers).status_code == 200
+    assert (
+        client.post("/api/v1/manual-text", json=first, headers=instructor_headers).status_code
+        == 200
+    )
+    assert (
+        client.post("/api/v1/manual-text", json=second, headers=instructor_headers).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/v1/manual-text", json=other_sprint, headers=instructor_headers
+        ).status_code
+        == 200
+    )
 
     first_result = client.get("/api/v1/manual-text", params=base, headers=instructor_headers)
-    second_result = client.get("/api/v1/manual-text", params=other_sprint, headers=instructor_headers)
+    second_result = client.get(
+        "/api/v1/manual-text", params=other_sprint, headers=instructor_headers
+    )
     assert first_result.json() == {"expectations_text": second["expectations_text"]}
     assert second_result.json() == {"expectations_text": other_sprint["expectations_text"]}
 
@@ -101,10 +117,21 @@ def test_manual_text_is_instructor_only() -> None:
         "expectations_text": "Instructor-only guidance text is long enough.",
     }
 
-    assert client.post("/api/v1/manual-text", json=payload, headers=headers(token("student@sprintsight.edu"))).status_code == 403
-    assert client.get(
-        "/api/v1/manual-text",
-        params=payload,
-        headers=headers(token("admin@sprintsight.edu")),
-    ).status_code == 403
-    assert client.post("/api/v1/manual-text", json=payload, headers=instructor_headers).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/manual-text", json=payload, headers=headers(token("student@sprintsight.edu"))
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            "/api/v1/manual-text",
+            params=payload,
+            headers=headers(token("admin@sprintsight.edu")),
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post("/api/v1/manual-text", json=payload, headers=instructor_headers).status_code
+        == 200
+    )

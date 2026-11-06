@@ -107,8 +107,24 @@ check_slurm() {
 submit_job() {
     check_vpn || return 1
     info "Submitting Slurm GPU job..."
+    # Forward Ollama server settings set on this machine (or in .env.hpc) to
+    # the job; ollama_gpu.sbatch falls back to its own defaults for any unset.
+    local job_env="" name
+    for name in OLLAMA_NUM_PARALLEL OLLAMA_KV_CACHE_TYPE OLLAMA_KEEP_ALIVE OLLAMA_MAX_LOADED_MODELS OLLAMA_MODEL_NUM_THREAD GPU_SAMPLE_MS; do
+        if [[ -n "${!name:-}" ]]; then
+            job_env+="${name}=${!name} "
+        fi
+    done
+    # Command-line --gres overrides the script's `gpu:1`, pinning a GPU model
+    # so benchmarks from different jobs run on the same hardware. List the
+    # cluster's types with: sinfo -o "%N %G"
+    local gres=""
+    if [[ -n "${HPC_GPU_TYPE:-}" ]]; then
+        gres="--gres=gpu:${HPC_GPU_TYPE}:1 "
+    fi
+    [[ -n "$job_env" ]] && info "Job settings: ${job_env}"
     local out
-    out=$(ssh_hpc "sbatch ~/CS480_SprintSight/ai-engine/hpc/ollama_gpu.sbatch" 2>&1)
+    out=$(ssh_hpc "${job_env}sbatch ${gres}~/CS480_SprintSight/ai-engine/hpc/ollama_gpu.sbatch" 2>&1)
     echo "  $out"
     if echo "$out" | grep -q "Submitted batch job"; then
         ok "Job submitted. The cluster may queue it for a bit before it starts."
@@ -303,6 +319,9 @@ ensure_models() {
     create_model_via_api "sprintsight-qwen25-32b"  "qwen2.5:32b"       "Modelfile.qwen25-32b"
     create_model_via_api "sprintsight-r1-32b"      "deepseek-r1:32b"   "Modelfile.deepseek-r1"
     create_model_via_api "sprintsight-coder-32b"   "qwen2.5-coder:32b" "Modelfile.qwen25-coder"
+    # Judge model for evaluation
+    create_model_via_api "sprintsight-judge-phi"   "phi4:14b"  "Modelfile.phi"
+
     echo ""
     info "Remote models:"
     list_models
@@ -319,6 +338,12 @@ write_hpc_env() {
 OLLAMA_BASE_URL=http://host.docker.internal:${LOCAL_OLLAMA_PORT}/v1
 LOG_BUNDLE_DISPLAY=true
 EOF
+    # Keep the engine's own LLM_* tuning (e.g. LLM_DIMENSION_CONCURRENCY)
+    # across restarts; only the connection settings above are HPC-specific.
+    if [[ -f "${env_file}.bak" ]] && grep -qE '^LLM_[A-Z0-9_]+=' "${env_file}.bak"; then
+        grep -E '^LLM_[A-Z0-9_]+=' "${env_file}.bak" >> "$env_file"
+        info "Kept LLM_* settings from the previous .env"
+    fi
     ok ".env written for HPC mode (port ${LOCAL_OLLAMA_PORT})"
 }
 
@@ -507,6 +532,52 @@ watch_gpu() {
         "srun --jobid=${jobid} --overlap --pty ${nvidia_cmd}"
 }
 
+fetch_gpu_logs() {
+    # Copies the per-job nvidia-smi telemetry that ollama_gpu.sbatch writes to
+    # ~/sprintsight/gpu-logs on the cluster into ai-engine/gpu_logs/, for
+    # research/gpu_report.py. Defaults to the running job; pass a job ID for
+    # an older one.
+    check_vpn || return 1
+    local jobid="${1:-}"
+    if [[ -z "$jobid" ]]; then
+        check_slurm || { fail "No running job; pass a job ID: bash hpc/hpc-dev.sh gpu-logs <jobid>"; return 1; }
+        jobid=$(get_job_info | awk '{print $1}')
+    fi
+
+    local dest="$AI_ENGINE_DIR/gpu_logs"
+    mkdir -p "$dest"
+    info "Fetching GPU telemetry for job ${jobid}..."
+    # One SSH session: the remote clock is read just before the files stream
+    # back, and the local clock right after, so the offset between them is
+    # accurate to the transfer time (well under the 1 s sample interval for a
+    # few MB). gpu_report.py applies it so GPU samples line up with the AI
+    # engine's request timestamps.
+    # Unpacked into a fresh folder first, so a failed transfer can never leave
+    # an older copy in gpu_logs/ looking like the latest (it did once: the
+    # report then found no requests inside the stale log's time range).
+    local tmp="$dest/.fetch-${jobid}"
+    rm -rf "$tmp" && mkdir -p "$tmp"
+    local remote_epoch local_epoch
+    remote_epoch=$(ssh_hpc "date +%s.%N; cd ~/sprintsight/gpu-logs && tar -cf - ${jobid}.gpu.csv ${jobid}.gpu-info.csv" \
+        | { IFS= read -r first; printf '%s' "$first"; tar -xf - -C "$tmp"; }) || true
+    # Python, not `date +%s.%N`: macOS date has no %N.
+    local_epoch=$($PY -c "import time; print(time.time())")
+
+    if [[ ! -s "$tmp/${jobid}.gpu.csv" ]]; then
+        rm -rf "$tmp"
+        fail "No telemetry received for job ${jobid} (see any tar/ssh error above). Check on the cluster:"
+        echo "    ls -la ~/sprintsight/gpu-logs/${jobid}.* && tail -1 ~/sprintsight/gpu-logs/${jobid}.gpu.csv"
+        return 1
+    fi
+    mv -f "$tmp/${jobid}.gpu.csv" "$tmp/${jobid}.gpu-info.csv" "$dest/" && rm -rf "$tmp"
+    $PY -c "import sys; print(f'{float(sys.argv[1]) - float(sys.argv[2]):.3f}')" \
+        "$remote_epoch" "$local_epoch" > "$dest/${jobid}.clock-offset.txt"
+    ok "Saved to ${dest}/${jobid}.gpu.csv"
+    # The range shows at a glance whether the log covers the runs you made.
+    info "Samples (UTC): $(sed -n 2p "$dest/${jobid}.gpu.csv" | cut -d, -f1) -> $(tail -1 "$dest/${jobid}.gpu.csv" | cut -d, -f1) ($(( $(wc -l < "$dest/${jobid}.gpu.csv") - 1 )) rows)"
+    info "Cluster clock minus local clock: $(cat "$dest/${jobid}.clock-offset.txt") s"
+}
+
 # ── Guidance for teammates new to the HPC/GPU workflow ────────────────────────
 #
 # How the GPU connection actually works (read this once if you're new):
@@ -615,8 +686,9 @@ case "$cmd" in
     tunnel-bg)  open_tunnel_bg ;;
     stop)       stop_all ;;
     gpu)     watch_gpu "${2:-once}" ;;
+    gpu-logs) fetch_gpu_logs "${2:-}" ;;
     *)
-        echo "Usage: bash hpc/hpc-dev.sh {full|status|models|docker|submit|tunnel|stop|gpu}"
+        echo "Usage: bash hpc/hpc-dev.sh {full|status|models|docker|submit|tunnel|stop|gpu|gpu-logs}"
         echo ""
         echo "Commands:"
         echo "  full          Check tunnel, create models, start Docker (default)"
@@ -630,6 +702,7 @@ case "$cmd" in
         echo "  gpu           One snapshot of nvidia-smi on the GPU compute node"
         echo "  gpu --watch   Stream GPU utilisation every 2s (Ctrl+C to stop)"
         echo "  gpu --processes  List PIDs/processes holding VRAM on the GPU"
+        echo "  gpu-logs [jobid] Copy the job's GPU telemetry CSV into ai-engine/gpu_logs/"
         exit 1
         ;;
 esac

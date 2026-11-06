@@ -1,11 +1,11 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
+from app.dependencies.auth import get_assessment_repository
 from app.main import app
 from app.repositories.in_memory import assessment_repo
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
-from datetime import datetime, timezone
-from app.dependencies.auth import get_assessment_repository
-
 
 client = TestClient(app)
 
@@ -22,7 +22,9 @@ def test_login_success_faculty() -> None:
 
 
 def test_admin_and_instructor_share_faculty_routes() -> None:
-    instructor_headers = {"Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"}
+    instructor_headers = {
+        "Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"
+    }
     admin_headers = {"Authorization": f"Bearer {login('admin@sprintsight.edu', 'password123')}"}
 
     instructor_response = client.get("/api/v1/users", headers=instructor_headers)
@@ -80,10 +82,18 @@ def test_logout_revokes_student_token() -> None:
 
 
 def test_student_can_view_own_courses_projects_and_reports() -> None:
-    instructor_headers = {"Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"}
+    instructor_headers = {
+        "Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"
+    }
     course = client.post(
         "/api/v1/courses",
-        json={"code": "CS499", "name": "Student Flow", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "CS499",
+            "name": "Student Flow",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=instructor_headers,
     )
     assert course.status_code == 201
@@ -91,12 +101,18 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
 
     student = client.post(
         f"/api/v1/courses/{course_id}/students",
-        json={"email": "student.flow@sprintsight.edu", "full_name": "Student Flow User", "password": "temporary123"},
+        json={
+            "email": "student.flow@sprintsight.edu",
+            "full_name": "Student Flow User",
+            "password": "temporary123",
+        },
         headers=instructor_headers,
     )
     assert student.status_code == 201
     student_id = student.json()["id"]
-    student_headers = {"Authorization": f"Bearer {login('student.flow@sprintsight.edu', 'temporary123')}"}
+    student_headers = {
+        "Authorization": f"Bearer {login('student.flow@sprintsight.edu', 'temporary123')}"
+    }
 
     project = client.post(
         f"/api/v1/courses/{course_id}/projects",
@@ -115,11 +131,15 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
     assert project.status_code == 201
     project_id = project.json()["id"]
 
-    empty_sprints_response = client.get(f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers)
+    empty_sprints_response = client.get(
+        f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers
+    )
     assert empty_sprints_response.status_code == 200
     assert empty_sprints_response.json() == []
 
-    empty_reports_response = client.get(f"/api/v1/students/projects/{project_id}/reports", headers=student_headers)
+    empty_reports_response = client.get(
+        f"/api/v1/students/projects/{project_id}/reports", headers=student_headers
+    )
     assert empty_reports_response.status_code == 200
     assert empty_reports_response.json() == []
 
@@ -130,16 +150,23 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
         course_id=course_id,
         project_id=project_id,
         sprint_id="sprint-1",
-        generated_at=datetime.now(timezone.utc),
-        rubric_weights={"delivery": 0.35, "collaboration": 0.30, "quality": 0.20, "documentation": 0.15},
+        generated_at=datetime.now(UTC),
+        rubric_weights={
+            "delivery": 0.35,
+            "collaboration": 0.30,
+            "quality": 0.20,
+            "documentation": 0.15,
+        },
         team_score=TeamScore(score=85.0, rationale="Good sprint delivery."),
-        individual_scores=[StudentScore(student_id=student_id, score=85.0, rationale="Strong contribution.")],
+        individual_scores=[
+            StudentScore(student_id=student_id, score=85.0, rationale="Strong contribution.")
+        ],
         recommendations=["Keep improving documentation."],
         rubric_scores={},
         strengths=["Delivery"],
         weaknesses=["Documentation"],
     )
-    
+
     app.dependency_overrides[get_assessment_repository]().save_report(report)
     assessment_repo.save_report(report)
 
@@ -151,24 +178,38 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
     assert projects_response.status_code == 200
     assert any(project_item["id"] == project_id for project_item in projects_response.json())
 
-    project_detail_response = client.get(f"/api/v1/students/projects/{project_id}", headers=student_headers)
+    project_detail_response = client.get(
+        f"/api/v1/students/projects/{project_id}", headers=student_headers
+    )
     assert project_detail_response.status_code == 200
     assert project_detail_response.json()["id"] == project_id
 
-    sprints_response = client.get(f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers)
+    sprints_response = client.get(
+        f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers
+    )
     assert sprints_response.status_code == 200
     assert "sprint-1" in sprints_response.json()
 
-    reports_response = client.get(f"/api/v1/students/projects/{project_id}/reports", headers=student_headers)
+    reports_response = client.get(
+        f"/api/v1/students/projects/{project_id}/reports", headers=student_headers
+    )
     assert reports_response.status_code == 200
     assert any(item["report_id"] == "rpt-student-flow" for item in reports_response.json())
 
 
 def test_student_reports_and_sprints_when_list_project_reports_returns_none() -> None:
-    instructor_headers = {"Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"}
+    instructor_headers = {
+        "Authorization": f"Bearer {login('faculty@sprintsight.edu', 'password123')}"
+    }
     course = client.post(
         "/api/v1/courses",
-        json={"code": "CS498", "name": "Empty Reports", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "CS498",
+            "name": "Empty Reports",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=instructor_headers,
     )
     assert course.status_code == 201
@@ -176,12 +217,18 @@ def test_student_reports_and_sprints_when_list_project_reports_returns_none() ->
 
     student = client.post(
         f"/api/v1/courses/{course_id}/students",
-        json={"email": "student.empty-reports@sprintsight.edu", "full_name": "Empty Reports User", "password": "temporary123"},
+        json={
+            "email": "student.empty-reports@sprintsight.edu",
+            "full_name": "Empty Reports User",
+            "password": "temporary123",
+        },
         headers=instructor_headers,
     )
     assert student.status_code == 201
     student_id = student.json()["id"]
-    student_headers = {"Authorization": f"Bearer {login('student.empty-reports@sprintsight.edu', 'temporary123')}"}
+    student_headers = {
+        "Authorization": f"Bearer {login('student.empty-reports@sprintsight.edu', 'temporary123')}"
+    }
 
     project = client.post(
         f"/api/v1/courses/{course_id}/projects",
@@ -206,10 +253,14 @@ def test_student_reports_and_sprints_when_list_project_reports_returns_none() ->
 
     app.dependency_overrides[get_assessment_repository] = lambda: NoneReportsRepo()
 
-    sprints_response = client.get(f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers)
+    sprints_response = client.get(
+        f"/api/v1/students/projects/{project_id}/sprints", headers=student_headers
+    )
     assert sprints_response.status_code == 200
     assert sprints_response.json() == []
 
-    reports_response = client.get(f"/api/v1/students/projects/{project_id}/reports", headers=student_headers)
+    reports_response = client.get(
+        f"/api/v1/students/projects/{project_id}/reports", headers=student_headers
+    )
     assert reports_response.status_code == 200
     assert reports_response.json() == []

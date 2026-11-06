@@ -5,7 +5,9 @@ import logging
 import os
 import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
@@ -14,23 +16,28 @@ import httpx
 import instructor
 import mlflow
 from dotenv import load_dotenv
+from instructor.core import IncompleteOutputException
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
 
-from prompts.templates import (
-    render_dimension_prompt,
-    render_sprint_feedback_prompt,
-)
+from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.modelname import MODEL_NUM_CTX
+from schemas.modelname import MODEL_CHARS_PER_TOKEN, MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import (
     DimensionName,
     ModelOutput,
     RubricDimensionScore,
 )
 from schemas.sprint_feedback import SprintFeedback
-from services.audit_logger import write_audit_record
-from services.grounding import find_ungrounded_citations
+from services.audit_logger import write_audit_record, write_request_marker
+from services.evidence_packer import (
+    CHARS_PER_TOKEN,
+    EvidenceIndex,
+    estimate_tokens,
+    is_noise_path,
+    pack_dimension_evidence,
+)
+from services.grounding import find_ungrounded_citations, resolve_citations
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -79,6 +86,20 @@ _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "audit_context", default=None
 )
 
+@contextmanager
+def audit_scope(*, team_id, sprint_id, dimension, model, prompt_version=None):
+    token = _audit_context.set({
+        "request_id": str(uuid4()),
+        "team_id": team_id,
+        "sprint_id": sprint_id,
+        "dimension": dimension,
+        "model": model,
+        "prompt_version": prompt_version,
+    })
+    try:
+        yield
+    finally:
+        _audit_context.reset(token)
 # Per-caller token accumulator. When a caller wants the token totals from a
 # full evaluate_sprint() (6 dimension calls), it sets this to a fresh dict
 # BEFORE calling and reads the sums AFTER. The _capture_response hook below
@@ -96,6 +117,24 @@ def new_token_accumulator() -> dict:
     evaluate_sprint call it wants token totals for."""
     return {"prompt": 0, "completion": 0, "total": 0, "calls": 0}
 
+
+# Per-assessment-run tags (run_id, concurrency) copied onto every request
+# marker, so research/gpu_report.py can group GPU samples by run and by
+# concurrency setting. Set once in evaluator.evaluate_sprint; the dimension
+# tasks asyncio.gather creates inherit it.
+_run_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "run_context", default=None
+)
+
+
+@contextmanager
+def run_context(**fields: Any) -> Iterator[None]:
+    token = _run_context.set(fields)
+    try:
+        yield
+    finally:
+        _run_context.reset(token)
+
 # Extensions treated as data/generated output rather than authored logic when
 # computing the "meaningful lines changed" fact below — e.g. exported test
 # fixtures, logs, or generated JSON, which inflate line counts without
@@ -103,18 +142,6 @@ def new_token_accumulator() -> dict:
 # extensions that are overwhelmingly non-code in this project's repos.
 _LOW_SIGNAL_EXTENSIONS = {".txt", ".json"}
 
-_NOISE_PATH_SEGMENTS = {
-    "node_modules/", "vendor/", "venv/", ".venv/", "env/",
-    "dist/", "build/", "out/", "__pycache__/", ".next/", ".nuxt/",
-    "target/", "bower_components/", ".gradle/", ".m2/", "Pods/",
-    "DerivedData/", ".terraform/", ".angular/", ".cache/",
-}
-_LOCKFILE_NAMES = {
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
-    "Pipfile.lock", "Cargo.lock", "go.sum", "composer.lock",
-    "Gemfile.lock", "shrinkwrap.yaml", "bun.lockb",
-}
-_GENERATED_EXTENSIONS = {".min.js", ".min.css", ".map", ".chunk.js", ".bundle.js"}
 _MAX_FILES_PER_COMMIT = int(os.getenv("LLM_MAX_FILES_PER_COMMIT", "20"))
 
 # Commit messages so generic they carry ~no information about what changed.
@@ -126,6 +153,47 @@ _GENERIC_COMMIT_MESSAGES = {
 }
 
 _COMMIT_BUDGET = int(os.getenv("LLM_COMMIT_BUDGET", "30"))
+
+# "packed" (default): services/evidence_packer.py fits the WHOLE commit
+# history, line-numbered file contents at HEAD, and diff excerpts into a
+# token budget, and citations are resolved to file/line locations.
+# "legacy": the old fixed sample of LLM_COMMIT_BUDGET commits as JSON, kept
+# as a rollback switch and so earlier eval runs stay reproducible.
+_EVIDENCE_MODE = os.getenv("LLM_EVIDENCE_MODE", "packed").strip().lower()
+
+# Total tokens (prompt + answer) a dimension call aims to use, even when the
+# model's num_ctx allows more. qwen3:8b (sprintsight-qwen) was trained on a
+# 32K window; past that, and generally as small models' prompts grow, they
+# attend less reliably to the middle of the prompt, and every extra token
+# costs latency on the GPU. Raise it for larger models once evals show the
+# extra context helps.
+_CONTEXT_CAP = int(os.getenv("LLM_EVIDENCE_CONTEXT_CAP", "32000"))
+# Room left for the model's JSON answer (15 citations + justification is
+# ~1-1.5K tokens) so a long prompt can never squeeze the output.
+_OUTPUT_RESERVE_TOKENS = int(os.getenv("LLM_OUTPUT_RESERVE_TOKENS", "2048"))
+# Most tokens a model may generate per call, sent as OpenAI `max_tokens`
+# (which Ollama's /v1 endpoint does honour, unlike `options`). Normal answers
+# are 250-4,100 tokens. Uncapped, a model that starts looping only stops at the
+# client timeout (OLLAMA_TIMEOUT_SECONDS, 20 min) with the GPU at full power
+# the whole time, as llama3.1 and mistral did.
+_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "8192"))
+# instructor does not re-ask a capped (incomplete) answer: it raises
+# IncompleteOutputException and the dimension fails. So a capped answer is
+# re-asked here, up to this many times, with a note asking for a concise
+# answer. Resending the identical prompt at temperature 0 would most likely
+# loop the same way; the note changes the prompt.
+_LENGTH_REASKS = int(os.getenv("LLM_LENGTH_REASKS", "1"))
+_LENGTH_REASK_NOTE = (
+    "\n\nIMPORTANT: your previous answer to this request was cut off at the length "
+    "limit because it kept repeating itself. Reply with ONE complete JSON object "
+    "only, keep every text field short, and do not repeat any item."
+)
+# Safety margin when a model's real context is converted into the evidence
+# packer's estimated token units (see _prompt_context).
+_TOKENIZER_MARGIN = 0.95
+# Instructor puts the JSON schema of ModelOutput into a system message.
+_SCHEMA_OVERHEAD_TOKENS = estimate_tokens(json.dumps(ModelOutput.model_json_schema())) + 200
+_MIN_EVIDENCE_TOKENS = 2000
 
 _DIMENSION_FILE_PATTERNS: dict[str, list[str] | None] = {
     "code_quality": None,
@@ -162,19 +230,13 @@ _DIMENSION_ARTIFACT_FIELDS = {
 
 
 def _is_noise_file(path: str) -> bool:
-    lower = path.lower().replace("\\", "/")
-    if any(seg in lower for seg in _NOISE_PATH_SEGMENTS):
-        return True
-    basename = lower.rsplit("/", 1)[-1]
-    if basename in _LOCKFILE_NAMES:
-        return True
-    return any(basename.endswith(ext) for ext in _GENERATED_EXTENSIONS)
+    return is_noise_path(path)
 
 
 def _trim_commits(raw_commits: list[dict]) -> list[dict]:
     result = []
     for c in raw_commits:
-        files = [fc["filename"] for fc in c["files_changed"]]
+        files = [fc["filename"].replace("\\", "/") for fc in c["files_changed"]]
         files = [f for f in files if not _is_noise_file(f)]
         if len(files) > _MAX_FILES_PER_COMMIT:
             files = files[:_MAX_FILES_PER_COMMIT]
@@ -195,7 +257,6 @@ def _commit_matches_patterns(commit: dict, patterns: list[str]) -> bool:
     return any(
         any(p in fname.lower() for p in patterns) for fname in files
     )
-
 
 def _select_representative_commits(
     commits: list[dict],
@@ -402,7 +463,7 @@ def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> 
             f"{len(s['days'])} active day(s)"
         )
 
-    # ── File change heatmap (top 10) ──
+    # File change heatmap (top 10)
     file_freq: Counter[str] = Counter()
     for commit in commits:
         for fname in commit.get("files_changed") or []:
@@ -441,15 +502,105 @@ def _compute_commit_facts(commits: list[dict], budget: int = _COMMIT_BUDGET) -> 
     return "\n    ".join(lines)
 
 
+# NOTE: Ollama's OpenAI-compatible /v1 endpoint, which this client calls,
+# ignores `options` (checked on Ollama 0.34.4: a /v1 request with
+# options.num_ctx=1024 kept the model's 40960 context and an untruncated
+# prompt, while native /api/chat applied it). The context size actually used
+# is the Modelfile's PARAMETER num_ctx (capped at the model's maximum), and
+# other runtime settings such as num_thread are baked in by
+# hpc/ollama-entrypoint.sh.
 def _request_extra_body(num_ctx: int | None) -> dict:
     if num_ctx is None:
         return {}
     return {"options": {"num_ctx": num_ctx}}
 
-
 def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> int:
-    """Rough token estimate (chars // 4) for one dimension's trimmed bundle."""
-    return len(_dimension_bundle_data(bundle, dimension_name)) // 4
+    """Rough token estimate for one dimension's legacy (unpacked) bundle."""
+    return estimate_tokens(_dimension_bundle_data(bundle, dimension_name))
+
+
+class DimensionPrompt:
+    """Everything evaluate_dimension sends for one dimension, built without
+    calling the model, so research/eval/inspect_bundle.py can show exactly
+    the same thing."""
+
+    def __init__(self, prompt: str, bundle_data: str, index: EvidenceIndex | None, stats: dict[str, Any]):
+        self.prompt = prompt
+        self.bundle_data = bundle_data
+        self.index = index
+        self.stats = stats
+
+
+def _prompt_context(model_name: str, num_ctx: int | None) -> int:
+    """Token budget for a whole dimension call, in the packer's estimated units.
+
+    _CONTEXT_CAP is a deliberate size target in those units. The model's
+    context is a hard limit in *real* tokens, so for a tokenizer denser than
+    the packer assumes (MODEL_CHARS_PER_TOKEN below LLM_CHARS_PER_TOKEN) it is
+    converted into estimated units, with a margin, before taking the smaller of
+    the two. Models with room to spare keep the cap, so their prompts are
+    unchanged; mistral (32K context) and the 32B models (16K) get less.
+    """
+    model_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
+    chars_per_token = MODEL_CHARS_PER_TOKEN.get(str(getattr(model_name, "value", model_name)))
+    if chars_per_token and chars_per_token < CHARS_PER_TOKEN:
+        model_ctx = int(model_ctx * chars_per_token / CHARS_PER_TOKEN * _TOKENIZER_MARGIN)
+    return min(model_ctx, _CONTEXT_CAP)
+
+
+def build_dimension_prompt(
+    bundle: ArtifactBundle,
+    dimension_name: str,
+    dimension_prompt: str,
+    model_name: str,
+    num_ctx: int | None = None,
+) -> DimensionPrompt:
+    fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name)
+    if fields is None:
+        raise ValueError(f"Unknown rubric dimension: {dimension_name}")
+    full_bundle = bundle.model_dump(mode="json")
+    packed = _EVIDENCE_MODE != "legacy"
+
+    # Facts always come from ALL commits, whatever is shown below them.
+    commit_facts = ""
+    sampled_commits: list[dict] | None = None
+    if "commits" in fields:
+        all_trimmed = _trim_commits(full_bundle["commits"])
+        if packed:
+            commit_facts = _compute_commit_facts(all_trimmed, budget=len(all_trimmed))
+        else:
+            commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
+            sampled_commits = _select_representative_commits(all_trimmed, dimension_name, _COMMIT_BUDGET)
+    jira_facts = _compute_jira_facts(full_bundle["jira_tickets"]) if "jira_tickets" in fields else ""
+    computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
+    project_context = _format_project_context_documents(bundle)
+
+    if not packed:
+        bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
+        prompt = render_dimension_prompt(
+            dimension_name, dimension_prompt, bundle_data, computed_facts, project_context,
+        )
+        stats = {"mode": "legacy", "commits_listed": len(sampled_commits or [])}
+        return DimensionPrompt(prompt, bundle_data, None, stats)
+
+    scaffold = render_dimension_prompt(
+        dimension_name, dimension_prompt, "", computed_facts, project_context,
+    )
+    context = _prompt_context(model_name, num_ctx)
+    budget = context - estimate_tokens(scaffold) - _SCHEMA_OVERHEAD_TOKENS - _OUTPUT_RESERVE_TOKENS
+    if budget < _MIN_EVIDENCE_TOKENS:
+        log.warning(
+            ">>> Dimension '%s': only ~%d tokens left for evidence after the prompt scaffold "
+            "(uploaded context documents are likely very long); packing %d anyway.",
+            dimension_name, budget, _MIN_EVIDENCE_TOKENS,
+        )
+        budget = _MIN_EVIDENCE_TOKENS
+    evidence = pack_dimension_evidence(full_bundle, dimension_name, fields, budget)
+    prompt = render_dimension_prompt(
+        dimension_name, dimension_prompt, evidence.text, computed_facts, project_context,
+    )
+    stats = {"mode": "packed", **evidence.stats.as_dict()}
+    return DimensionPrompt(prompt, evidence.text, evidence.index, stats)
 
 
 # Minimum num_ctx to fall back to when a sprint's bundle is small. Defaults to
@@ -461,7 +612,6 @@ def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> in
 # via LLM_NUM_CTX_FLOOR once you've verified with `ollama ps` that your actual
 # bundles are consistently far below the ceiling.
 _NUM_CTX_FLOOR = int(os.getenv("LLM_NUM_CTX_FLOOR", "0")) or None
-
 
 def select_run_num_ctx(bundle: ArtifactBundle, model_name: str, dimension_names: Sequence[str]) -> int | None:
     """
@@ -492,12 +642,15 @@ def select_run_num_ctx(bundle: ArtifactBundle, model_name: str, dimension_names:
     needed = largest_prompt_tokens + 1024  # headroom for prompt scaffolding + generated output
     return min(max(needed, _NUM_CTX_FLOOR), ceiling)
 
-
 async def _capture_request(request: httpx.Request) -> None:
     if request.url.path.endswith("/chat/completions"):
         context = _audit_context.get()
         if context is not None:
+            # A previous attempt that never got a response is being retried.
+            _record_unanswered(context)
             context["request_started_at"] = time.perf_counter()
+            context["request_started_utc"] = datetime.now(UTC).isoformat()
+            context["awaiting_response"] = True
             context["request"] = request.content.decode("utf-8", errors="replace")
 
 async def _capture_response(response: httpx.Response) -> None:
@@ -505,7 +658,10 @@ async def _capture_response(response: httpx.Response) -> None:
         context = _audit_context.get()
         if context is not None:
             body = await response.aread()
+            context["awaiting_response"] = False
             started_at = context.get("request_started_at", time.perf_counter())
+            duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            finished_utc = datetime.now(UTC).isoformat()
             raw_body = body.decode("utf-8", errors="replace")
             write_audit_record(
                 {
@@ -513,15 +669,28 @@ async def _capture_response(response: httpx.Response) -> None:
                     "request": json.loads(context.get("request", "{}")),
                     "raw_response": raw_body,
                     "http_status": response.status_code,
-                    "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                    "duration_ms": duration_ms,
+                    "request_finished_utc": finished_utc,
                 }
             )
+            marker = _request_marker(
+                context, raw_body, response.status_code, duration_ms, finished_utc,
+                prompt_truncated=_prompt_truncated(raw_body, context),
+            )
+            write_request_marker(marker)
+            if marker["finish_reason"] == "length":
+                log.warning(
+                    ">>> Dimension '%s': answer hit LLM_MAX_OUTPUT_TOKENS=%d (likely runaway "
+                    "generation); the answer is incomplete.",
+                    context.get("dimension"), _MAX_OUTPUT_TOKENS,
+                )
 
             # Opt-in token capture: only accumulates when the caller has
             # set _token_accumulator for this ContextVar scope. Ollama's
             # OpenAI-compat endpoint returns `usage` on the chat completion;
             # instructor's retries each produce one response, so we sum
             # across all of them (retries legitimately burn tokens too).
+
             accumulator = _token_accumulator.get()
             if accumulator is not None:
                 try:
@@ -534,6 +703,81 @@ async def _capture_response(response: httpx.Response) -> None:
                     # Non-JSON body (streaming leftover, error page, etc.)
                     # — best-effort capture; skip without failing the call.
                     pass
+
+
+def _record_unanswered(context: dict) -> None:
+    """Marker for an attempt that got no response (client timeout or dropped
+    connection), so reports count that time as GPU work, not idle: Ollama
+    keeps generating until the client gives up."""
+    if not context.get("awaiting_response"):
+        return
+    context["awaiting_response"] = False
+    duration_ms = round((time.perf_counter() - context.get("request_started_at", time.perf_counter())) * 1000, 2)
+    log.error(
+        ">>> Dimension '%s': no response from Ollama after %.0f s (client timeout or dropped "
+        "connection); the model was most likely still generating.",
+        context.get("dimension"), duration_ms / 1000,
+    )
+    write_request_marker({
+        **_request_marker(context, "", 0, duration_ms, datetime.now(UTC).isoformat()),
+        "error": "no response",
+    })
+
+
+def _request_marker(
+    context: dict, raw_body: str, http_status: int, duration_ms: float, finished_utc: str,
+    prompt_truncated: bool | None = None,
+) -> dict:
+    try:
+        body = json.loads(raw_body)
+        usage = body.get("usage") or {}
+        finish_reason = (body.get("choices") or [{}])[0].get("finish_reason")
+    except (json.JSONDecodeError, AttributeError, IndexError, TypeError):
+        usage, finish_reason = {}, None
+    return {
+        **(_run_context.get() or {}),
+        "request_id": context.get("request_id"),
+        "team_id": context.get("team_id"),
+        "sprint_id": context.get("sprint_id"),
+        "dimension": context.get("dimension"),
+        "model": context.get("model"),
+        "num_ctx": context.get("num_ctx"),
+        "started_at": context.get("request_started_utc"),
+        "finished_at": finished_utc,
+        "duration_ms": duration_ms,
+        "http_status": http_status,
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "finish_reason": finish_reason,
+        "prompt_truncated": prompt_truncated,
+    }
+
+
+def _prompt_truncated(raw_body: str, context: dict) -> bool:
+    """Ollama does not error when a prompt exceeds its context: it silently
+    drops the start of the prompt (the rubric and instructions) and reports
+    the shortened length. Two fingerprints: prompt_tokens at the num_ctx
+    ceiling, or far fewer prompt tokens than were sent (mistral's ~36K-token
+    prompts arrived as 16,387). Retries resend the prompt plus the failed
+    answer, so they are never legitimately shorter. Flag it loudly instead of
+    trusting a grade made on partial evidence."""
+    try:
+        prompt_tokens = int((json.loads(raw_body).get("usage") or {}).get("prompt_tokens") or 0)
+    except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+        return False
+    if not prompt_tokens:
+        return False
+    num_ctx = context.get("num_ctx")
+    sent = context.get("estimated_prompt_tokens")
+    at_ceiling = isinstance(num_ctx, int) and num_ctx > 0 and prompt_tokens >= num_ctx * 0.98
+    shrunk = isinstance(sent, int) and sent > 0 and prompt_tokens < sent * 0.75
+    if at_ceiling or shrunk:
+        log.error(
+            ">>> Dimension '%s': Ollama reported %d prompt tokens (~%s sent, num_ctx=%s); the "
+            "prompt was most likely truncated, so this grade saw partial evidence.",
+            context.get("dimension"), prompt_tokens, sent, num_ctx,
+        )
+    return at_ceiling or shrunk
 
 
 def create_llm_client(provider="ollama"):
@@ -576,6 +820,28 @@ def create_llm_client(provider="ollama"):
     )
     return client
 
+async def _create_with_length_reask(client: Any, prompt: str, **kwargs: Any) -> Any:
+    """client.chat.completions.create for a single user prompt, re-asking with
+    _LENGTH_REASK_NOTE when the answer hits _MAX_OUTPUT_TOKENS (see there).
+    Answers that finish normally are never affected."""
+    content = prompt
+    for attempt in range(_LENGTH_REASKS + 1):
+        try:
+            return await client.chat.completions.create(
+                messages=[{"role": "user", "content": content}], **kwargs,
+            )
+        except IncompleteOutputException:
+            if attempt == _LENGTH_REASKS:
+                raise
+            log.warning(
+                ">>> Dimension '%s': re-asking for a concise answer after hitting the length cap "
+                "(%d of %d).",
+                (_audit_context.get() or {}).get("dimension"), attempt + 1, _LENGTH_REASKS,
+            )
+            content = prompt + _LENGTH_REASK_NOTE
+    raise AssertionError("unreachable")
+
+
 # # Each child span of the parent span (Evaluate_Complete_Sprint)
 # @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
 # async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
@@ -592,198 +858,173 @@ def create_llm_client(provider="ollama"):
 #     return client
 
 # Each child span of the parent span (Evaluate_Complete_Sprint)
-@mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
 async def evaluate_dimension(
     bundle: ArtifactBundle,
     dimension_name: DimensionName,
     model_name: str,
-    dimention_prompt,
+    dimension_prompt,
     num_ctx: int | None = None,
 ) -> RubricDimensionScore:
-    # Evaluate a single rubric dimension.
-    fields = _DIMENSION_ARTIFACT_FIELDS.get(dimension_name, ())
-    full_bundle = bundle.model_dump(mode="json")
-
-    # ── Stats from ALL commits, then sample for the bundle ──
-    sampled_commits: list[dict] | None = None
-    if "commits" in fields:
-        all_trimmed = _trim_commits(full_bundle["commits"])
-        commit_facts = _compute_commit_facts(all_trimmed, _COMMIT_BUDGET)
-        sampled_commits = _select_representative_commits(
-            all_trimmed, dimension_name, _COMMIT_BUDGET,
-        )
+    with mlflow.start_span(name=f"Evaluate_Dimension_{dimension_name}", span_type=SpanType.LLM):
+        built = build_dimension_prompt(bundle, dimension_name, dimension_prompt, model_name, num_ctx)
+        prompt, bundle_data = built.prompt, built.bundle_data
+        bundle_hash = hashlib.sha256(bundle_data.encode("utf-8")).hexdigest()
+    
+        approx_tokens = estimate_tokens(prompt) + _SCHEMA_OVERHEAD_TOKENS
         log.info(
-            ">>> Dimension '%s': %d total commits -> %d sampled (budget=%d)",
-            dimension_name, len(all_trimmed), len(sampled_commits), _COMMIT_BUDGET,
-        )
-    else:
-        commit_facts = ""
-
-    jira_facts = (
-        _compute_jira_facts(full_bundle["jira_tickets"])
-        if "jira_tickets" in fields else ""
-    )
-
-    computed_facts = "\n\n    ".join(filter(None, [commit_facts, jira_facts]))
-
-    bundle_data = _dimension_bundle_data(bundle, dimension_name, sampled_commits)
-    bundle_hash = hashlib.sha256(
-        bundle_data.encode("utf-8")
-    ).hexdigest()
-
-    approx_tokens = len(bundle_data) // 4
-    log.info(
-        ">>> Dimension '%s': bundle_data is %d chars (~%d tokens estimated)",
-        dimension_name,
-        len(bundle_data),
-        approx_tokens,
-    )
-
-    effective_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
-    if approx_tokens > effective_ctx * 0.85:
-        log.warning(
-            ">>> Dimension '%s': prompt (~%d tokens) approaches num_ctx (%d). "
-            "Output quality may degrade from silent truncation.",
-            dimension_name, approx_tokens, effective_ctx,
+            ">>> Dimension '%s': prompt is %d chars (~%d tokens estimated); evidence: %s",
+            dimension_name, len(prompt), approx_tokens, built.stats,
         )
 
-    project_context = _format_project_context_documents(bundle)
-    prompt = render_dimension_prompt(
-        dimension_name, dimention_prompt, bundle_data, computed_facts, project_context,
-    )
-
-    client = create_llm_client()  # Create a new client for this model
-
-    audit_token = _audit_context.set(
-        {
-            "request_id": str(uuid4()),
-            "team_id": bundle.team_id,
-            "sprint_id": bundle.sprint_id,
-            "dimension": dimension_name,
-            "model": model_name,
-            "bundle_hash": bundle_hash,
-            "bundle_bytes": len(bundle_data.encode("utf-8")),
-            "commit_count": len(bundle.commits),
-            "jira_ticket_count": len(bundle.jira_tickets),
-            "peer_evaluation_count": len(bundle.peer_evaluations),
-            "artifact_metric_keys": sorted(bundle.artifact_metrics),
-        }
-    )
-    try:
-        # The transport hooks capture the exact request and raw Ollama response.
-        model_output = await client.chat.completions.create(
-            model=model_name,
-            response_model=ModelOutput,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=LLM_TEMPERATURE,
-            max_retries=3,
-            extra_body=_request_extra_body(num_ctx),
-        )
-
-        # dimension/evaluation_failed are assigned here, in code, rather than
-        # asked of the model — it can't get the dimension wrong if it's never
-        # given the chance to answer it.
-        result = RubricDimensionScore(
-            dimension=dimension_name,
-            **model_output.model_dump(),
-        )
-
-        # Drop only fabricated/ungrounded citations rather than discarding
-        # the whole dimension over a single bad citation.
-        ungrounded = find_ungrounded_citations(
-            bundle_data,
-            result.evidence_citations or [],
-        )
-
-        if ungrounded:
+        effective_ctx = num_ctx or MODEL_NUM_CTX.get(model_name, 49152)
+        if approx_tokens > effective_ctx * 0.85:
             log.warning(
-                "Dimension '%s': dropping %d ungrounded citation(s) "
-                "rather than failing the whole dimension: %r",
-                dimension_name,
-                len(ungrounded),
-                ungrounded,
+                ">>> Dimension '%s': prompt (~%d tokens) approaches num_ctx (%d). "
+                "Output quality may degrade from silent truncation.",
+                dimension_name, approx_tokens, effective_ctx,
             )
+
+        client = create_llm_client()  # Create a new client for this model
+
+        audit_token = _audit_context.set(
+            {
+                "request_id": str(uuid4()),
+                "team_id": bundle.team_id,
+                "sprint_id": bundle.sprint_id,
+                "dimension": dimension_name,
+                "model": model_name,
+                "bundle_hash": bundle_hash,
+                "bundle_bytes": len(bundle_data.encode("utf-8")),
+                "commit_count": len(bundle.commits),
+                "jira_ticket_count": len(bundle.jira_tickets),
+                "peer_evaluation_count": len(bundle.peer_evaluations),
+                "artifact_metric_keys": sorted(bundle.artifact_metrics),
+                "num_ctx": effective_ctx,
+                "estimated_prompt_tokens": approx_tokens,
+                "evidence": built.stats,
+            }
+        )
+
+        try: # The transport hooks capture the exact request and raw Ollama response.
+            model_output = await _create_with_length_reask(
+                client, prompt,
+                model=model_name,
+                response_model=ModelOutput,
+                temperature=LLM_TEMPERATURE,
+                max_retries=3,
+                max_tokens=_MAX_OUTPUT_TOKENS,
+                extra_body=_request_extra_body(num_ctx),
+            )
+
+            # dimension/evaluation_failed are assigned here, in code, rather than
+            # asked of the model — it can't get the dimension wrong if it's never
+            # given the chance to answer it.
+            result = RubricDimensionScore(
+                dimension=dimension_name,
+                **model_output.model_dump(),
+            )
+
+            # Drop only fabricated/ungrounded citations rather than discarding
+            # the whole dimension over a single bad citation. In packed mode each
+            # surviving citation is also resolved to its file/lines/commit.
+            downgraded = 0
+            if built.index is not None:
+                resolved, ungrounded, downgraded = resolve_citations(
+                    result.evidence_citations or [], built.index,
+                )
+                result = RubricDimensionScore.model_validate(
+                    {**result.model_dump(), "evidence_citations": resolved}
+                )
+            else:
+                ungrounded = find_ungrounded_citations(bundle_data, result.evidence_citations or [])
+                result.evidence_citations = [
+                    citation for citation in (result.evidence_citations or []) if citation not in ungrounded
+                ]
+
+            result.citations_dropped = len(ungrounded) # read back by judges/trace_adapters.read_candidate
+
+            if ungrounded or downgraded:
+                log.warning(
+                    "Dimension '%s': dropping %d ungrounded citation(s) rather than failing the "
+                    "whole dimension, and downgraded %d line citation(s) to file level: %r",
+                    dimension_name, len(ungrounded), downgraded, ungrounded,
+                )
+                write_audit_record(
+                    {
+                        **(_audit_context.get() or {}),
+                        "ungrounded_citations_dropped": [
+                            (citation.model_dump() if hasattr(citation, "model_dump") else citation)
+                            for citation in ungrounded
+                        ],
+                        "line_citations_downgraded": downgraded,
+                    }
+                )
+
+            return result
+
+        except Exception as error:
+            context = _audit_context.get()
 
             write_audit_record(
                 {
-                    **(_audit_context.get() or {}),
-                    "ungrounded_citations_dropped": [
-                        (
-                            citation.model_dump()
-                            if hasattr(citation, "model_dump")
-                            else citation
-                        )
-                        for citation in ungrounded
-                    ],
+                    **(context or {}),
+                    "error": str(error),
                 }
             )
+            raise
 
-            result.evidence_citations = [
-                citation
-                for citation in (result.evidence_citations or [])
-                if citation not in ungrounded
-            ]
+        finally: # Every attempt failed without a response (e.g. the last one timed out).
+            _record_unanswered(_audit_context.get() or {})
+            _audit_context.reset(audit_token)
 
-        return result
-
-    except Exception as error:
-        context = _audit_context.get()
-
-        write_audit_record(
-            {
-                **(context or {}),
-                "error": str(error),
-            }
-        )
-        raise
-
-    finally:
-        _audit_context.reset(audit_token)
-
-
-async def generate_sprint_feedback(
+async def generate_sprint_feedback( # Generate strengths, weakenesses, & recommendations for whole sprint
     bundle: ArtifactBundle,
     rubric_scores: dict[str, dict],
     model_name: str,
     num_ctx: int | None = None,
+    sprint_feedback_prompt_name: str | None = None,
 ) -> SprintFeedback:
-    """Generate strengths, weaknesses, and recommendations for the whole sprint."""
-    scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
-    project_context = _format_project_context_documents(bundle)
-    prompt = render_sprint_feedback_prompt(
-        bundle.team_id,
-        bundle.sprint_id,
-        scores_data,
-        bundle.instructor_expectations,
-        project_context,
-    )
-    audit_token = _audit_context.set(
-        {
-            "request_id": str(uuid4()),
-            "team_id": bundle.team_id,
-            "sprint_id": bundle.sprint_id,
-            "dimension": "sprint_feedback",
-            "model": model_name,
-        }
-    )
-    try:
-        client = create_llm_client()
-        full_prompt_chars = len(prompt)
-        log.info(
-            ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
-            "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
+    with mlflow.start_span(name=sprint_feedback_prompt_name or "Generate_Sprint_Feedback", span_type=SpanType.LLM) as span:
+        scores_data = json.dumps(rubric_scores, indent=2, ensure_ascii=True, default=str)
+        project_context = _format_project_context_documents(bundle)
+        prompt = render_sprint_feedback_prompt(
+            bundle.team_id,
+            bundle.sprint_id,
+            scores_data,
+            bundle.instructor_expectations,
+            project_context,
         )
-        return await client.chat.completions.create(
-            model=model_name,
-            response_model=SprintFeedback,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=LLM_TEMPERATURE,
-            max_retries=3,
-            extra_body=_request_extra_body(num_ctx),
+        span.set_attributes({'sprint_feedback_prompt': sprint_feedback_prompt_name or "Generate_Sprint_Feedback"})
+        audit_token = _audit_context.set(
+            {
+                "request_id": str(uuid4()),
+                "team_id": bundle.team_id,
+                "sprint_id": bundle.sprint_id,
+                "dimension": "sprint_feedback",
+                "model": model_name,
+                "sprint_feedback_prompt": sprint_feedback_prompt_name,
+            }
         )
-    finally:
-        _audit_context.reset(audit_token)
 
+        try:
+            client = create_llm_client()
+            full_prompt_chars = len(prompt)
+            log.info(
+                ">>> Dimension '%s': full user-message prompt is %d chars (~%d tokens estimated)",
+                "sprint_feedback", full_prompt_chars, full_prompt_chars // 4,
+            )
+            return await _create_with_length_reask(
+                client, prompt,
+                model=model_name,
+                response_model=SprintFeedback,
+                temperature=LLM_TEMPERATURE,
+                max_retries=3,
+                max_tokens=_MAX_OUTPUT_TOKENS,
+                extra_body=_request_extra_body(num_ctx),
+            )
+        finally:
+            _record_unanswered(_audit_context.get() or {})
+            _audit_context.reset(audit_token)
 
 async def check_ollama_health(model_name: str) -> dict:
     """
@@ -832,7 +1073,6 @@ async def check_ollama_health(model_name: str) -> dict:
             "error":  str(e),
         }
 
-
 async def pull_model_if_missing(model_name: str) -> None:
     """
     Triggers an Ollama model pull if the model is not already downloaded.
@@ -856,3 +1096,37 @@ async def pull_model_if_missing(model_name: str) -> None:
     except Exception as e:
         log.error("Failed to pull model '%s': %s", model_name, e)
         raise
+
+def _with_default_tag(name: str) -> str:
+    return name if ":" in name else f"{name}:latest"
+
+def parse_loaded_models(ps_body: dict) -> list[dict]:
+    """Ollama's /api/ps body -> one dict per loaded model. `offload_ratio` is
+    the share of the model's memory in VRAM: below 1.0 Ollama has put some
+    layers on the CPU, and every generated token then waits on the CPU."""
+    loaded = []
+    for entry in ps_body.get("models") or []:
+        size = int(entry.get("size") or 0)
+        size_vram = int(entry.get("size_vram") or 0)
+        loaded.append({
+            "name": entry.get("name") or entry.get("model"),
+            "size": size,
+            "size_vram": size_vram,
+            "context_length": entry.get("context_length"),
+            "offload_ratio": round(size_vram / size, 4) if size else None,
+        })
+    return loaded
+
+def find_loaded_model(loaded: list[dict], model_name: str) -> dict | None:
+    # Callers may pass a ModelName enum, whose str() is "ModelName.X", not the value.
+    wanted = _with_default_tag(str(getattr(model_name, "value", model_name)))
+    return next((m for m in loaded if m["name"] and _with_default_tag(m["name"]) == wanted), None)
+
+async def snapshot_loaded_models() -> list[dict]:
+    """Which models Ollama has loaded right now, and how much of each is on
+    the GPU. Raises on connection/HTTP errors; callers treat it as optional."""
+    ps_url = OLLAMA_BASE_URL.replace("/v1", "") + "/api/ps"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(ps_url)
+        response.raise_for_status()
+        return parse_loaded_models(response.json())

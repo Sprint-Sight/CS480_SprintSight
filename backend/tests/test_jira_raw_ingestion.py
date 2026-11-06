@@ -1,10 +1,12 @@
 import json
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi.testclient import TestClient
 
 from app.core.storage import storage
 from app.main import app
+from app.services.jiraService.service import _fetch_jira_changelogs
 
 client = TestClient(app)
 
@@ -15,11 +17,71 @@ def login(email: str) -> str:
     return response.json()["access_token"]
 
 
+def test_bulk_changelog_fetch_follows_page_tokens() -> None:
+    request_bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        request_bodies.append(body)
+        if body.get("nextPageToken") == "page-2":
+            return httpx.Response(
+                200,
+                json={
+                    "issueChangeLogs": [
+                        {
+                            "issueId": "10001",
+                            "changeHistories": [{"id": "second"}],
+                        }
+                    ]
+                },
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "issueChangeLogs": [
+                    {
+                        "issueId": "10001",
+                        "changeHistories": [{"id": "first"}],
+                    }
+                ],
+                "nextPageToken": "page-2",
+            },
+            request=request,
+        )
+
+    with httpx.Client(
+        base_url="https://team.atlassian.net",
+        transport=httpx.MockTransport(handler),
+    ) as jira_client:
+        changelogs = _fetch_jira_changelogs(
+            jira_client,
+            [{"id": "10001", "key": "JIRA-1"}],
+            sprint_field="customfield_10020",
+            story_points_field="customfield_10016",
+        )
+
+    assert len(request_bodies) == 2
+    assert request_bodies[0]["issueIdsOrKeys"] == ["10001"]
+    assert request_bodies[0]["fieldIds"] == [
+        "status",
+        "customfield_10020",
+        "customfield_10016",
+    ]
+    assert [history["id"] for history in changelogs["10001"]] == ["first", "second"]
+
+
 def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA480", "name": "Jira Test", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA480",
+            "name": "Jira Test",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project_response = client.post(
@@ -36,7 +98,12 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     )
     assert project_response.status_code == 201, project_response.text
     project = project_response.json()
-    raw_bytes = b'{"issues":[{"key":"JIRA-1","fields":{"summary":"Raw issue"}}],"total":1}'
+    raw_bytes = (
+        b'{"issues":[{"id":"10001","key":"JIRA-1","fields":{"summary":"Raw issue",'
+        b'"customfield_10020":[{"id":1,"name":"Sprint 1",'
+        b'"startDate":"2026-11-02T00:00:00.000Z","endDate":"2026-11-16T00:00:00.000Z"}]}}],'
+        b'"total":1}'
+    )
     uploaded = {}
 
     captured_client = {}
@@ -51,11 +118,40 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     original_post = httpx.Client.post
 
     def fake_post(self, url, **kwargs):
+        if url == "/rest/api/3/changelog/bulkfetch":
+            assert kwargs["json"]["issueIdsOrKeys"] == ["10001"]
+            return httpx.Response(
+                200,
+                json={
+                    "issueChangeLogs": [
+                        {
+                            "issueId": "10001",
+                            "changeHistories": [
+                                {
+                                    "created": "2026-11-03T11:00:00.000+0000",
+                                    "items": [
+                                        {
+                                            "field": "status",
+                                            "fieldId": "status",
+                                            "fromString": "To Do",
+                                            "toString": "In Progress",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+                request=httpx.Request("POST", url),
+            )
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
         assert captured_client["auth"] == ("jira.owner@university.edu", "project-jira-token")
         assert captured_client["base_url"] == "https://team.atlassian.net"
-        assert kwargs["json"]["jql"] == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        assert (
+            kwargs["json"]["jql"]
+            == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        )
         assert kwargs["json"]["fields"] == ["*all"]
         return httpx.Response(200, content=raw_bytes, request=httpx.Request("POST", url))
 
@@ -75,15 +171,155 @@ def test_jira_raw_sync_stores_complete_response(monkeypatch) -> None:
     assert response.json()["issue_count"] == 1
     document = json.loads(uploaded["data"])
     assert document["issues"][0]["key"] == "JIRA-1"
+    assert document["changelog_captured"] is True
+    assert (
+        document["issues"][0]["changelog"]["histories"][0]["items"][0]["toString"] == "In Progress"
+    )
     assert uploaded["mime_type"] == "application/json"
     assert uploaded["key"].startswith(f"raw/jira/{course['id']}/{project['id']}/sprint-1/")
+
+
+def test_live_shaped_jira_sync_process_and_burndown(monkeypatch) -> None:
+    token = login("faculty@sprintsight.edu")
+    headers = {"Authorization": f"Bearer {token}"}
+    course = client.post(
+        "/api/v1/courses",
+        json={
+            "code": "JIRAE2E",
+            "name": "Jira E2E",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
+        headers=headers,
+    ).json()
+    project_response = client.post(
+        f"/api/v1/courses/{course['id']}/projects",
+        json={
+            "project_name": "Jira E2E Project",
+            "team_name": "Jira E2E Team",
+            "jira_email": "jira.owner@university.edu",
+            "jira_domain": "https://team.atlassian.net",
+            "jira_project_key": "E2E",
+            "jira_api_token": "project-jira-token",
+        },
+        headers=headers,
+    )
+    assert project_response.status_code == 201, project_response.text
+    project = project_response.json()
+
+    today = datetime.now(UTC).date()
+    sprint_start = today - timedelta(days=1)
+    sprint_end = today + timedelta(days=13)
+    completion = datetime.combine(sprint_start + timedelta(days=1), datetime.min.time(), UTC)
+    changelog_timestamp = int((completion + timedelta(hours=12)).timestamp())
+    raw_store: dict[str, bytes] = {}
+
+    def fake_upload(bucket, key, data, mime_type):
+        raw_store[key] = data
+        return key
+
+    def fake_download(bucket, key):
+        return raw_store[key]
+
+    original_post = httpx.Client.post
+
+    def fake_post(self, url, **kwargs):
+        if url == "/rest/api/3/search/jql":
+            return httpx.Response(
+                200,
+                json={
+                    "issues": [
+                        {
+                            "id": "10001",
+                            "key": "E2E-1",
+                            "fields": {
+                                "summary": "Completed live sprint issue",
+                                "status": {"name": "Done"},
+                                "customfield_10016": 5,
+                                "customfield_10020": [
+                                    {
+                                        "id": 1,
+                                        "name": "Sprint 1",
+                                        "startDate": f"{sprint_start.isoformat()}T00:00:00.000Z",
+                                        "endDate": f"{sprint_end.isoformat()}T00:00:00.000Z",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "isLast": True,
+                },
+                request=httpx.Request("POST", url),
+            )
+        if url == "/rest/api/3/changelog/bulkfetch":
+            return httpx.Response(
+                200,
+                json={
+                    "issueChangeLogs": [
+                        {
+                            "issueId": "10001",
+                            "changeHistories": [
+                                {
+                                    "created": changelog_timestamp,
+                                    "items": [
+                                        {
+                                            "field": "status",
+                                            "fieldId": "status",
+                                            "fromString": "In Progress",
+                                            "toString": "Done",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+                request=httpx.Request("POST", url),
+            )
+        return original_post(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(storage, "upload", fake_upload)
+    monkeypatch.setattr(storage, "download", fake_download)
+
+    sync_response = client.post(
+        f"/api/v1/jira-ingestion/raw/{project['id']}",
+        json={"sprint_id": "sprint-1", "jira_project_key": "E2E"},
+        headers=headers,
+    )
+    assert sync_response.status_code == 200, sync_response.text
+    run = sync_response.json()
+
+    process_response = client.post(
+        f"/api/v1/jira-ingestion/runs/{project['id']}/sprint-1/{run['run_id']}/process",
+        headers=headers,
+    )
+    assert process_response.status_code == 200, process_response.text
+
+    burndown_response = client.get(
+        f"/api/v1/jira-ingestion/runs/{project['id']}/sprint-1/{run['run_id']}/burndown",
+        headers=headers,
+    )
+    assert burndown_response.status_code == 200, burndown_response.text
+    burndown = burndown_response.json()
+    assert burndown["total_story_points"] == 5
+    assert burndown["total_tickets"] == 1
+    assert burndown["daily_points"][0]["remaining_points"] == 5
+    assert burndown["daily_points"][1]["remaining_points"] == 0
 
 
 def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None:
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA481", "name": "Jira Stored Key", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA481",
+            "name": "Jira Stored Key",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project = client.post(
@@ -104,7 +340,10 @@ def test_jira_raw_sync_uses_stored_project_key_when_omitted(monkeypatch) -> None
     def fake_post(self, url, **kwargs):
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
-        assert kwargs["json"]["jql"] == 'project = "STORED" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        assert (
+            kwargs["json"]["jql"]
+            == 'project = "STORED" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        )
         return httpx.Response(
             200,
             content=b'{"issues":[],"total":0}',
@@ -126,7 +365,13 @@ def test_jira_raw_sync_filters_by_requested_sprint(monkeypatch) -> None:
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA482", "name": "Jira Sprint Filter", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA482",
+            "name": "Jira Sprint Filter",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project = client.post(
@@ -147,7 +392,10 @@ def test_jira_raw_sync_filters_by_requested_sprint(monkeypatch) -> None:
     def fake_post(self, url, **kwargs):
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
-        assert kwargs["json"]["jql"] == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        assert (
+            kwargs["json"]["jql"]
+            == 'project = "JIRA" AND cf[10020] = "Sprint 1" ORDER BY updated DESC'
+        )
         return httpx.Response(
             200,
             content=b'{"issues":[],"total":0}',
@@ -169,7 +417,13 @@ def test_jira_raw_sync_requires_project_credentials() -> None:
     token = login("faculty@sprintsight.edu")
     course = client.post(
         "/api/v1/courses",
-        json={"code": "JIRA482", "name": "Jira Missing Creds", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "JIRA482",
+            "name": "Jira Missing Creds",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     project = client.post(
@@ -213,7 +467,13 @@ def test_reprocess_all_jira_runs_happy_path(monkeypatch) -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO1", "name": "Reprocess Test", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO1",
+            "name": "Reprocess Test",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=headers,
     ).json()
 
@@ -245,11 +505,17 @@ def test_reprocess_all_jira_runs_happy_path(monkeypatch) -> None:
     original_post = httpx.Client.post
 
     def fake_post(self, url, **kwargs):
+        if url == "/rest/api/3/changelog/bulkfetch":
+            return httpx.Response(
+                200,
+                json={"issueChangeLogs": [], "nextPageToken": None},
+                request=httpx.Request("POST", url),
+            )
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
         return httpx.Response(
             200,
-            content=b'{"issues":[{"key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
+            content=b'{"issues":[{"id":"10001","key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
             request=httpx.Request("POST", url),
         )
 
@@ -284,7 +550,13 @@ def test_reprocess_all_jira_runs_empty(monkeypatch) -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO2", "name": "Empty Project", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO2",
+            "name": "Empty Project",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
 
@@ -315,7 +587,13 @@ def test_reprocess_all_jira_runs_failed_run(monkeypatch) -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO3", "name": "Bad Data Project", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO3",
+            "name": "Bad Data Project",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers={"Authorization": f"Bearer {token}"},
     ).json()
 
@@ -347,11 +625,17 @@ def test_reprocess_all_jira_runs_failed_run(monkeypatch) -> None:
     original_post = httpx.Client.post
 
     def fake_post(self, url, **kwargs):
+        if url == "/rest/api/3/changelog/bulkfetch":
+            return httpx.Response(
+                200,
+                json={"issueChangeLogs": [], "nextPageToken": None},
+                request=httpx.Request("POST", url),
+            )
         if url != "/rest/api/3/search/jql":
             return original_post(self, url, **kwargs)
         return httpx.Response(
             200,
-            content=b'{"issues":[{"key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
+            content=b'{"issues":[{"id":"10001","key":"REPRO-1","fields":{"summary":"Test","customfield_10009":5,"assignee":{"id":"u-student-a","displayName":"Student A","emailAddress":"student.a@sprintsight.edu"}}}],"total":1}',
             request=httpx.Request("POST", url),
         )
 
@@ -397,7 +681,13 @@ def test_reprocess_all_jira_runs_403_non_faculty() -> None:
 
     course = client.post(
         "/api/v1/courses",
-        json={"code": "REPRO4", "name": "Auth Project", "section": "001", "year": 2026, "term": "Fall"},
+        json={
+            "code": "REPRO4",
+            "name": "Auth Project",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
         headers=headers,
     ).json()
 
