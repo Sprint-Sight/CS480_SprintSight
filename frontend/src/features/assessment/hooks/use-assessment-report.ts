@@ -29,6 +29,12 @@ type AssessmentProjectOption = {
 };
 type JobEvent = { status?: string; progress?: number; message?: string; error_message?: string };
 
+// Checked structurally (ApiError.status) so tests can mock the client module freely.
+function isNotFound(error: unknown) {
+  const status = (error as { status?: unknown } | null)?.status;
+  return status === 404;
+}
+
 const labels: Record<string, string> = {
   requirements: "Requirements",
   code_quality: "Code Quality",
@@ -72,8 +78,7 @@ export const toSprintAssessmentReport = (
   generatedAt: new Date(data.generated_at).toLocaleString(),
   overallScore: Math.round(data.team_score.score),
   overallGrade:
-    data.team_score.overall_grade ||
-    (data.team_score.score >= 85 ? "A" : data.team_score.score >= 75 ? "B" : "C"),
+    data.team_score.overall_grade || "—",
   overallSummary: data.team_score.rationale,
   rubricScores: Object.entries(data.rubric_scores || {}).map(([categoryKey, detail]) => {
     const dimension = getSupportedDimension(categoryKey);
@@ -161,9 +166,11 @@ export function useAssessmentReport() {
       );
     } catch (error) {
       clearLiveReport(scope.projectId, scope.sprintId);
-      setAssessmentError(
-        getErrorMessage(error, "Failed to load the latest assessment."),
-      );
+      if (!isNotFound(error)) {
+        setAssessmentError(
+          getErrorMessage(error, "Failed to load the latest assessment."),
+        );
+      }
     } finally {
       setIsLoadingReport(false);
     }

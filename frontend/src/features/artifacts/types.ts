@@ -48,7 +48,6 @@ export type ArtifactSourceSummary = {
   source: "GitHub" | "Jira" | "Documents";
   records: number;
   lastSyncedAt: string;
-  parserStatus: "Healthy" | "Warning";
   evaluationUsage: string;
 };
 

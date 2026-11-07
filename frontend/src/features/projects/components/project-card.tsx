@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { Edit, Trash2, TrendingUp, UserMinus, UserPlus, Users } from "lucide-react";
+import { Edit, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 
 import type { Project } from "@/features/projects/types";
-import { getStatusStyles } from "@/features/projects/components/projects-api";
 
 type ProjectCardProps = {
   project: Project;
@@ -28,10 +27,6 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${getStatusStyles(project.status)}`}>
-              {project.status}
-            </span>
-
             <button
               type="button"
               onClick={(event) => onEdit(project, event)}
@@ -86,20 +81,6 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
             <UserPlus className="h-4 w-4" />
             Add member
           </button>
-        </div>
-      </div>
-
-      <div className="mt-6 border-t border-slate-100 pt-4">
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-1.5 font-semibold text-blue-900">
-            <TrendingUp className="h-4 w-4" />
-            {project.score}/100
-          </div>
-          <div className="text-slate-500">{project.completion}% complete</div>
-        </div>
-
-        <div className="mt-2 h-2 rounded-full bg-slate-100">
-          <div className="h-full rounded-full bg-blue-700" style={{ width: `${project.completion}%` }} />
         </div>
       </div>
     </Link>

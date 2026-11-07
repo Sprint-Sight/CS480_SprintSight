@@ -16,6 +16,7 @@ type DashboardState = {
   fullName: string;
   mounted: boolean;
   projects: DashboardProject[];
+  courseCount: number;
   selectedProjectId: string;
   sprintId: string;
   gitMetrics: GitMetrics | null;
@@ -26,6 +27,11 @@ type DashboardState = {
   setSprintId: (sprintId: string) => void;
 };
 
+// Checked structurally (ApiError.status) so tests can mock the client module freely.
+function isNotFound(error: unknown): boolean {
+  return (error as { status?: unknown } | null)?.status === 404;
+}
+
 export function useDashboardData(router: { replace: (path: string) => void }): DashboardState {
   const session = useSession();
   const queryClient = useQueryClient();
@@ -34,6 +40,7 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
   const fullName = session?.user?.fullName ?? "";
   const mounted = Boolean(session?.user) && sessionRole !== "admin";
   const [projects, setProjects] = useState<DashboardProject[]>([]);
+  const [courseCount, setCourseCount] = useState(0);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [sprintId, setSprintId] = useState(() => readScope().selectedSprintId);
   const [gitMetrics, setGitMetrics] = useState<GitMetrics | null>(null);
@@ -70,6 +77,7 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
           label: `${project.team_name} - ${project.project_name}`,
         })));
         const persisted = readScope();
+        setCourseCount(groups.length);
         setProjects(options);
         setSelectedProjectId(options.find((project) => project.id === persisted.selectedProjectId)?.id || options[0]?.id || "");
         if (options.length === 0) {
@@ -106,28 +114,32 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
       return;
     }
 
+    async function loadJiraSnapshot(): Promise<JiraSnapshot | null> {
+      const runs = await apiRequest<JiraRun[]>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}`);
+      const completedRun = runs.find((run) => run.processing_status === "completed");
+      if (!completedRun) return null;
+      return apiRequest<JiraSnapshot>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(completedRun.sprint_id)}/${completedRun.run_id}/cleaned`);
+    }
+
     async function loadDashboard() {
       setIsLoading(true);
       setLoadError("");
       setGitMetrics(null);
       setJiraSnapshot(null);
-      try {
-        const git = await apiRequest<GitMetrics>(`/repo-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}?course_id=${encodeURIComponent(courseId)}`);
-        setGitMetrics(git);
-        const runs = await apiRequest<JiraRun[]>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}`);
-        const completedRun = runs.find((run) => run.processing_status === "completed");
-        if (completedRun) {
-          const snapshot = await apiRequest<JiraSnapshot>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(completedRun.sprint_id)}/${completedRun.run_id}/cleaned`);
-          setJiraSnapshot(snapshot);
-        }
-      } catch (error) {
-        setLoadError(getErrorMessage(error, "Unable to load ingested project data."));
-      } finally {
-        setIsLoading(false);
-      }
+      const [gitResult, jiraResult] = await Promise.allSettled([
+        apiRequest<GitMetrics>(`/repo-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}?course_id=${encodeURIComponent(courseId)}`),
+        loadJiraSnapshot(),
+      ]);
+      const errors: string[] = [];
+      if (gitResult.status === "fulfilled") setGitMetrics(gitResult.value);
+      else if (!isNotFound(gitResult.reason)) errors.push(getErrorMessage(gitResult.reason, "Unable to load Git data."));
+      if (jiraResult.status === "fulfilled") setJiraSnapshot(jiraResult.value);
+      else if (!isNotFound(jiraResult.reason)) errors.push(getErrorMessage(jiraResult.reason, "Unable to load Jira data."));
+      setLoadError(errors.join(" "));
+      setIsLoading(false);
     }
     loadDashboard();
   }, [projects, role, selectedProjectId, sprintId]);
 
-  return { role, fullName, mounted, projects, selectedProjectId, sprintId, gitMetrics, jiraSnapshot, isLoading, loadError, setSelectedProjectId, setSprintId };
+  return { role, fullName, mounted, projects, courseCount, selectedProjectId, sprintId, gitMetrics, jiraSnapshot, isLoading, loadError, setSelectedProjectId, setSprintId };
 }

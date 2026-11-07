@@ -18,7 +18,6 @@ import {
   LayoutDashboard,
   Menu,
   MessageSquare,
-  Search,
   Settings,
   User,
   Loader2,
@@ -34,6 +33,7 @@ import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync"
 import { isString, readPersistentState, usePersistentState } from "@/lib/storage/persistent-state";
 import { useNotifications } from "@/hooks/use-notifications";
 import { NotificationsDropdown } from "@/components/ui/notifications-modal";
+import { PageSkeleton } from "@/components/ui/page-skeleton";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -56,9 +56,7 @@ type ScopeTeam = {
   id: string;
   name: string;
   courseId: string;
-  status: string;
   studentCount: number;
-  averageScore: number;
 };
 
 const instructorNavItems: NavItem[] = [
@@ -205,9 +203,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
         const scopeTeams = projectGroups.flatMap(({ course, projects }) => projects.map((project) => ({
           id: project.id,
           name: project.team_name,
-          status: "Active",
           studentCount: project.members.length,
-          averageScore: 0,
           courseId: course.id,
         })));
         const semesters = [...new Set(courses.map(semesterLabel))];
@@ -336,7 +332,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
     router.replace("/login");
   };
 
-  if (!isAuthorized) {
+  if (isRestored && !isAuthorized) {
     return null;
   }
 
@@ -427,16 +423,6 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                   <Menu className="h-5 w-5" />
                 </button>
 
-                {/* Search Bar - Hidden on small screens */}
-                <div className="relative hidden min-w-0 w-full max-w-xl flex-1 sm:block">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search projects, sprints, students..."
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-
                 {/* Top right actions */}
                 <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
                   {/* Notifications */}
@@ -489,10 +475,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
                     {isProfileMenuOpen && (
                       <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)]">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100"
-                        >
+                        <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-slate-700">
                           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700 flex-shrink-0">
                             {profileUser.initials}
                           </div>
@@ -500,7 +483,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                             <div className="font-semibold text-slate-900">{profileUser.name}</div>
                             <div className="text-xs text-slate-500">{profileUser.label}</div>
                           </div>
-                        </button>
+                        </div>
 
                         <div className="my-1 h-px bg-slate-200" />
 
@@ -531,7 +514,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 </div>
               </div>
 
-              {role === "instructor" && showsInstructorScope && (
+              {isRestored && role === "instructor" && showsInstructorScope && (
                 <div className="mt-4 flex min-w-0 flex-row flex-wrap items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
                   <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 flex-shrink-0">
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
@@ -611,8 +594,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                   <div className="ml-auto flex min-w-0 max-w-full items-center gap-3 sm:flex-shrink-0">
                     {currentTeamStats && (
                       <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs text-blue-700 sm:text-sm">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                        <span className="truncate">{currentTeamStats.status} · {currentTeamStats.studentCount} students · avg {currentTeamStats.averageScore}</span>
+                        <span className="truncate">{currentTeamStats.studentCount} students</span>
                       </div>
                     )}
                   </div>
@@ -620,7 +602,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
               )}
             </header>
             <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
-              {children}
+              {isRestored ? children : <PageSkeleton variant="cards" />}
             </main>
           </section>
         </div>

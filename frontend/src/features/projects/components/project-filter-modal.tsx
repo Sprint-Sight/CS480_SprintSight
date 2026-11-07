@@ -6,9 +6,7 @@ type SortOption = { value: ProjectFilters["sortBy"]; label: string };
 type ProjectFilterModalProps = {
   isOpen: boolean;
   draftFilters: ProjectFilters;
-  statusOptions: ProjectFilters["status"][];
   moduleOptions: string[];
-  sprintOptions: string[];
   sortOptions: ReadonlyArray<SortOption>;
   onDraftChange: <K extends keyof ProjectFilters>(key: K, value: ProjectFilters[K]) => void;
   onClearForm: () => void;
@@ -22,9 +20,7 @@ const selectClassName =
 export function ProjectFilterModal({
   isOpen,
   draftFilters,
-  statusOptions,
   moduleOptions,
-  sprintOptions,
   sortOptions,
   onDraftChange,
   onClearForm,
@@ -69,19 +65,6 @@ export function ProjectFilterModal({
           </label>
 
           <label className="space-y-1.5">
-            <span className="text-sm font-medium text-slate-700">Status</span>
-            <select
-              value={draftFilters.status}
-              onChange={(event) => onDraftChange("status", event.target.value as ProjectFilters["status"])}
-              className={selectClassName}
-            >
-              {statusOptions.map((statusOption) => (
-                <option key={statusOption} value={statusOption}>{statusOption}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="space-y-1.5">
             <span className="text-sm font-medium text-slate-700">Module</span>
             <select
               value={draftFilters.module}
@@ -90,19 +73,6 @@ export function ProjectFilterModal({
             >
               {moduleOptions.map((moduleOption) => (
                 <option key={moduleOption} value={moduleOption}>{moduleOption}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="space-y-1.5">
-            <span className="text-sm font-medium text-slate-700">Sprint</span>
-            <select
-              value={draftFilters.sprint}
-              onChange={(event) => onDraftChange("sprint", event.target.value)}
-              className={selectClassName}
-            >
-              {sprintOptions.map((sprintOption) => (
-                <option key={sprintOption} value={sprintOption}>{sprintOption}</option>
               ))}
             </select>
           </label>
