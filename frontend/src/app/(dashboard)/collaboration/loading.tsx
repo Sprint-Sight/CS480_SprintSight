@@ -1,5 +1,5 @@
-import DashboardLoading from "@/components/ui/dashboard-loading";
+import { PageSkeleton } from "@/components/ui/page-skeleton";
 
 export default function Loading() {
-  return <DashboardLoading />;
+  return <PageSkeleton variant="cards" />;
 }

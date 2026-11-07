@@ -12,6 +12,7 @@ import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-inst
 import { useRubricWeights } from "@/features/settings/hooks/use-rubric-weights";
 import { useUnsavedChangesGuard } from "@/features/settings/hooks/use-unsaved-changes-guard";
 import { useSession } from "@/lib/auth/session";
+import { PageSkeleton } from "@/components/ui/page-skeleton";
 
 export default function SettingsPageContent() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function SettingsPageContent() {
   useEffect(() => {
     if (isStudent) router.replace("/");
   }, [isStudent, router]);
-  if (!isAuthorized) return null;
+  if (!isAuthorized) return <PageSkeleton variant="form" />;
   const saveSettings = async () => {
     setSaveMessage("");
     const [modelSaved, jiraEmailSaved, rubricSaved] = await Promise.all([

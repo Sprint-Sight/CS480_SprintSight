@@ -24,6 +24,7 @@ import { UserAccount, CreateUserData, EditUserData } from "@/features/admin/type
 import { CreateUserModal } from "@/features/admin/components/create-user-modal";
 import { EditUserModal } from "@/features/admin/components/edit-user-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { PageSkeleton } from "@/components/ui/page-skeleton";
 import { useAdminDirectory } from "@/features/admin/hooks/use-admin-directory";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
@@ -238,7 +239,7 @@ export function AdminPageContent() {
 
   const { filteredUsers, stats } = useAdminDirectory(users, searchQuery, selectedRoleFilter, selectedStatusFilter);
 
-  if (!mounted) return null;
+  if (!mounted) return <PageSkeleton variant="table" />;
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 bg-slate-50 min-h-screen">

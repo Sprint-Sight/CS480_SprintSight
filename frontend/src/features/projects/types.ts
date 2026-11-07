@@ -1,5 +1,3 @@
-export type ProjectStatus = "Active" | "At Risk" | "Completed";
-
 export type SprintStatus = "On Track" | "Needs Attention" | "Completed";
 
 export type Course = {
@@ -22,11 +20,7 @@ export type Project = {
   project_name: string;
   team_name: string;
   description?: string;
-  status: ProjectStatus;
-  score: number;
-  completion: number;
   module: string;
-  sprints: { name: string }[];
   members: ProjectMember[];
   jira_project_key?: string;
   jira_email?: string;
@@ -46,15 +40,3 @@ export type ProjectSprint = {
   capturedAt: string;
 };
 
-export type StudentProject = {
-  id: string;
-  name: string;
-  teamName: string;
-  module: string;
-  status: ProjectStatus;
-  score: number;
-  completion: number;
-  members: string[];
-  currentSprint: string;
-  sprints: ProjectSprint[];
-};
