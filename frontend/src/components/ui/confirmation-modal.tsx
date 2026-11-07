@@ -1,11 +1,14 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useAsyncAction } from "@/hooks/use-async-action";
 
 type ConfirmationModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  // May return a promise; the confirm button stays pending until it settles.
+  onConfirm: () => void | Promise<unknown>;
   title: string;
   message: string;
   confirmText?: string;
@@ -23,32 +26,30 @@ export function ConfirmationModal({
   cancelText = "Cancel",
   variant = "default",
 }: ConfirmationModalProps) {
-  const confirmClassName =
-    variant === "danger"
-      ? "bg-red-600 hover:bg-red-700 focus:ring-red-500"
-      : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500";
+  const { run: runConfirm, isPending } = useAsyncAction(() => onConfirm());
+
+  const handleConfirm = () => {
+    // Failures are reported by the caller's own handler, so the rejection is intentionally dropped here.
+    void runConfirm().catch(() => undefined);
+  };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !isPending && onClose()}>
       <DialogContent className="max-w-md p-6">
         <DialogTitle className="text-lg font-semibold text-slate-900">{title}</DialogTitle>
         <DialogDescription className="mt-2 text-sm text-slate-600">{message}</DialogDescription>
-        
+
         <div className="mt-6 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-200"
-          >
+          <Button variant="ghost" onClick={onClose} disabled={isPending}>
             {cancelText}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${confirmClassName}`}
+          </Button>
+          <Button
+            variant={variant === "danger" ? "danger" : "primary"}
+            onClick={handleConfirm}
+            isPending={isPending}
           >
             {confirmText}
-          </button>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

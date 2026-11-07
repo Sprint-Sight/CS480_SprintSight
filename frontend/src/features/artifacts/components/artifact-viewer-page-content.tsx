@@ -27,6 +27,7 @@ import { JiraBurndownChart, type JiraBurndownResponse } from "@/features/artifac
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { Button } from "@/components/ui/button";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 import { useSession } from "@/lib/auth/session";
 
@@ -753,15 +754,15 @@ export default function ArtifactViewerPageContent() {
                 accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 multiple
               />
-              <button
+              <Button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                disabled={!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)}
+                isPending={isUploading}
               >
-                <Upload className="h-4 w-4" />
+                {!isUploading && <Upload className="h-4 w-4" />}
                 {isUploading ? "Uploading..." : "Upload Document"}
-              </button>
+              </Button>
             </div>
             <p className="text-sm text-slate-500">Accepted formats: PDF, DOCX, and PPTX.</p>
 
