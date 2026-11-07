@@ -75,24 +75,30 @@ export function useNotifications(): UseNotificationsReturn {
   );
 
   const markAllAsRead = useCallback(async () => {
-    // Filter to get unread notifications from current state
-    setNotifications((prev) => {
-      const unreadNotifications = prev.filter((n) => !n.read_at);
-      
-      // Send PATCH requests for all unread notifications
-      unreadNotifications.forEach((n) => {
-        void apiRequest(`/notifications/${n.id}/read`, { method: "PATCH" }).catch((err) => {
-          console.error(`Failed to mark notification ${n.id} as read:`, err);
-        });
-      });
+    const unread = notifications.filter((n) => !n.read_at);
 
-      // Remove all notifications from the list
-      return [];
-    });
-
-    // Reset unread count
+    // Optimistically clear the list; failed requests are restored below.
+    setNotifications([]);
     setUnreadCount(0);
-  }, []);
+
+    const results = await Promise.allSettled(
+      unread.map((n) => apiRequest(`/notifications/${n.id}/read`, { method: "PATCH" })),
+    );
+
+    const failed = unread.filter((_, index) => results[index].status === "rejected");
+    if (failed.length === 0) return;
+
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        console.error(`Failed to mark notification ${unread[index].id} as read:`, result.reason);
+      }
+    });
+    setNotifications((prev) => [
+      ...prev,
+      ...failed.filter((f) => !prev.some((p) => p.id === f.id)),
+    ]);
+    setUnreadCount((prev) => prev + failed.length);
+  }, [notifications]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

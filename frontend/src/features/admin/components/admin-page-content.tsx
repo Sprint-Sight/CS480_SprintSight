@@ -164,7 +164,7 @@ export function AdminPageContent() {
   };
 
   // 3. PATCH /users/{user_id} - Update Managed User
-  const handleUpdateUser = async (user: UserAccount, data: EditUserData) => {
+  const handleUpdateUser = async (user: UserAccount, data: EditUserData): Promise<boolean> => {
     try {
       const updatedUser = await updateUser(user, data);
       setUsers((prev) =>
@@ -175,8 +175,10 @@ export function AdminPageContent() {
         ),
       );
       showNotification("success", `Updated identity details for ${updatedUser.fullName}.`);
+      return true;
     } catch (error) {
       showNotification("error", getErrorMessage(error, "Failed to update record."));
+      return false;
     }
   };
 
