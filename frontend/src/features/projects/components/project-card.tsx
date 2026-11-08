@@ -26,23 +26,25 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
             <p className="mt-0.5 text-sm font-medium text-slate-500">{project.team_name}</p>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={(event) => onEdit(project, event)}
               title="Edit Project"
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+              aria-label={`Edit project ${project.project_name}`}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-blue-600"
             >
-              <Edit className="h-4 w-4" />
+              <Edit className="h-4 w-4" aria-hidden="true" />
             </button>
 
             <button
               type="button"
               onClick={(event) => onDelete(project.id, event)}
               title="Delete Project"
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+              aria-label={`Delete project ${project.project_name}`}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -62,7 +64,7 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
                   <button
                     type="button"
                     onClick={(event) => onRemoveMember(project.id, member.id, event)}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-rose-600 transition hover:bg-rose-100"
+                    className="relative inline-flex h-6 w-6 items-center justify-center rounded-md text-rose-600 transition hover:bg-rose-100 before:absolute before:-inset-2.5 before:content-['']"
                     title="Remove member"
                     aria-label={`Remove ${member.full_name} from project`}
                   >
@@ -76,7 +78,7 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
           <button
             type="button"
             onClick={(event) => onAddMember(project.id, event)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
           >
             <UserPlus className="h-4 w-4" />
             Add member
