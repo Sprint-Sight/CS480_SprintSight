@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useId } from "react";
 import { X, Shield, Key, Mail } from "lucide-react";
 import { Role, CreateUserData } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { scrollFieldIntoView } from "@/lib/scroll-field-into-view";
 
 interface CreateUserModalProps {
   isOpen: boolean;
@@ -21,6 +22,10 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
   });
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const fullNameId = useId();
+  const emailId = useId();
+  const roleId = useId();
+  const passwordId = useId();
 
   if (!isOpen) return null;
 
@@ -54,18 +59,23 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
               <h2 className="text-lg font-bold text-slate-900">Provision New User</h2>
             </DialogTitle>
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close"
               className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <form onSubmit={handleSubmit} onFocus={scrollFieldIntoView} className="mt-4 space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+              <label htmlFor={fullNameId} className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
               <input
+                id={fullNameId}
+                name="fullName"
                 type="text"
+                autoComplete="name"
                 required
                 value={formData.fullName}
                 onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
@@ -75,9 +85,12 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+              <label htmlFor={emailId} className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
               <input
+                id={emailId}
+                name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -87,11 +100,13 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={roleId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-blue-600" />
                 Assigned Role
               </label>
               <select
+                id={roleId}
+                name="role"
                 value={formData.role}
                 onChange={(e) => {
                   const role = e.target.value as Role;
@@ -112,12 +127,15 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
                   The student will receive an email with a secure link to set their
                   first password. No initial password is required.
                 </p>
-                <label className="mt-3 block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <label htmlFor={passwordId} className="mt-3 block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                   <Key className="h-3.5 w-3.5 text-blue-600" />
                   Fallback Password <span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <input
+                  id={passwordId}
+                  name="password"
                   type="password"
+                  autoComplete="new-password"
                   minLength={8}
                   value={formData.password || ""}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -131,12 +149,15 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
               </div>
             ) : (
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <label htmlFor={passwordId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                   <Key className="w-3.5 h-3.5 text-blue-600" />
                   Initial Password
                 </label>
                 <input
+                  id={passwordId}
+                  name="password"
                   type="password"
+                  autoComplete="new-password"
                   required
                   minLength={8}
                   value={formData.password || ""}

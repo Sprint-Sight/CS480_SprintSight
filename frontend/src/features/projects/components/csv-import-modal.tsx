@@ -140,7 +140,8 @@ export function CSVImportModal({
             type="button"
             onClick={handleClose}
             disabled={isLoading}
-            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+            aria-label="Close import dialog"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
           >
             <X className="h-5 w-5" />
           </button>

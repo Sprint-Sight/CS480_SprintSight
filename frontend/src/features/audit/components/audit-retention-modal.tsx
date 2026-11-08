@@ -99,7 +99,7 @@ export function AuditRetentionModal({
               </DialogTitle>
               <p className="mt-1 text-sm text-slate-500">Configure how long audit records are retained in the system.</p>
             </div>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <button onClick={onClose} aria-label="Close audit retention" className="text-slate-400 hover:text-slate-600 transition-colors">
               <X className="h-5 w-5" />
             </button>
           </div>

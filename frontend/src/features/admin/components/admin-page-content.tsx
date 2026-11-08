@@ -11,17 +11,14 @@ import {
   ClipboardList,
   Search,
   Filter,
-  Edit3,
-  Trash2,
   Users,
   UserCheck,
   FolderGit2,
-  KeyRound,
-  RotateCcw,
   Upload,
 } from "lucide-react";
 import { UserAccount, CreateUserData, EditUserData } from "@/features/admin/types";
 import { CreateUserModal } from "@/features/admin/components/create-user-modal";
+import { UserRowActions } from "@/features/admin/components/user-row-actions";
 import { EditUserModal } from "@/features/admin/components/edit-user-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { PageSkeleton } from "@/components/ui/page-skeleton";
@@ -476,47 +473,18 @@ export function AdminPageContent() {
                         </span>
                       </td>
                       <td className="py-4 px-6 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleEditUser(user)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                            title="Edit Role / User Details"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setUserToResetPassword(user);
-                              setResetPasswordInput(""); // <-- ADD THIS
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                            title="Reset Password"
-                          >
-                            <KeyRound className="w-4 h-4" />
-                          </button>
-                          {user.status === "Active" ? (
-                            <button
-                              disabled={isSelf}
-                              onClick={() => setUserToDeactivate(user)}
-                              className={`p-1.5 rounded-lg transition-colors ${
-                                isSelf
-                                  ? "text-slate-300 cursor-not-allowed"
-                                  : "text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                              }`}
-                              title={isSelf ? "Cannot deactivate yourself" : "Deactivate User"}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleActivateUser(user)}
-                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                              title="Activate User"
-                            >
-                              <RotateCcw className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
+                        <UserRowActions
+                          userName={user.fullName}
+                          isActive={user.status === "Active"}
+                          isSelf={isSelf}
+                          onEdit={() => handleEditUser(user)}
+                          onResetPassword={() => {
+                            setUserToResetPassword(user);
+                            setResetPasswordInput("");
+                          }}
+                          onDeactivate={() => setUserToDeactivate(user)}
+                          onActivate={() => handleActivateUser(user)}
+                        />
                       </td>
                     </tr>
                   );

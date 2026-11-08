@@ -54,7 +54,7 @@ export function CourseManagementModal({
             </DialogTitle>
             <p className="text-sm text-slate-500">Manage all instructor-owned courses in one place.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+          <button type="button" onClick={onClose} aria-label="Close course management" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
             <X className="h-4 w-4" />
           </button>
         </div>

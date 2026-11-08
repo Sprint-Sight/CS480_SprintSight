@@ -369,7 +369,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 <button
                   type="button"
                   onClick={() => setIsSidebarOpen(false)}
-                  className="md:hidden p-1 hover:bg-slate-100 rounded-lg text-slate-600"
+                  className="md:hidden inline-flex h-11 w-11 items-center justify-center hover:bg-slate-100 rounded-lg text-slate-600"
                   aria-label="Close sidebar"
                 >
                   <X className="h-5 w-5" />
@@ -416,7 +416,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 <button
                   type="button"
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                  className="md:hidden p-2 hover:bg-slate-100 rounded-lg text-slate-600"
+                  className="md:hidden inline-flex h-11 w-11 items-center justify-center hover:bg-slate-100 rounded-lg text-slate-600"
                   aria-label="Toggle sidebar"
                   aria-expanded={isSidebarOpen}
                 >
@@ -430,7 +430,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     <button
                       type="button"
                       onClick={() => setIsNotificationsModalOpen(!isNotificationsModalOpen)}
-                      className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
+                      className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
                       aria-label="Notifications"
                       title="Open notifications"
                       aria-expanded={isNotificationsModalOpen}

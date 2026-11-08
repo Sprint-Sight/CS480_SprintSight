@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useId } from "react";
 import { X, Shield, User, Mail } from "lucide-react";
 import { Role, UserAccount, EditUserData } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
@@ -20,6 +20,9 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
   const [email, setEmail] = useState<string>("");
   const [role, setRole] = useState<Role>("student");
   const [showConfirm, setShowConfirm] = useState(false);
+  const fullNameId = useId();
+  const emailId = useId();
+  const roleId = useId();
 
   const { run: saveUser, isPending: isSubmitting } = useAsyncAction(async () => {
     if (!user) return;
@@ -56,7 +59,9 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
               <h2 className="text-base font-bold text-slate-900">Modify Identity & Assignments</h2>
             </DialogTitle>
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close"
               className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
             >
               <X className="w-5 h-5" />
@@ -65,12 +70,15 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
 
           <form onSubmit={handleSubmit} className="mt-4 space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={fullNameId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-blue-600" />
                 Full Name
               </label>
               <input
+                id={fullNameId}
+                name="fullName"
                 type="text"
+                autoComplete="name"
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
@@ -80,12 +88,15 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={emailId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-blue-600" />
                 Email Address
               </label>
               <input
+                id={emailId}
+                name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -95,11 +106,13 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={roleId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-blue-600" />
                 Assigned Role
               </label>
               <select
+                id={roleId}
+                name="role"
                 value={role}
                 onChange={(e) => setRole(e.target.value as Role)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all cursor-pointer"

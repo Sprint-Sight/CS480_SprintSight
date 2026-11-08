@@ -784,7 +784,7 @@ export default function ArtifactViewerPageContent() {
                     <button
                       type="button"
                       onClick={() => handleDownloadDocument(doc.id, doc.fileName)}
-                      className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                      className="inline-flex min-h-11 items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
                     >
                       Download {doc.fileType}
                     </button>
@@ -793,7 +793,7 @@ export default function ArtifactViewerPageContent() {
                       onClick={() => documentDeletion.requestDelete(selectedProjectId, doc.id, doc.fileName)}
                       disabled={isDeleting}
                       aria-label={`Delete ${doc.fileName}`}
-                      className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex min-h-11 items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                       {isDeleting ? "Deleting..." : "Delete"}
