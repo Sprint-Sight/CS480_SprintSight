@@ -5,11 +5,14 @@ import { X, Shield, User, Mail } from "lucide-react";
 import { Role, UserAccount, EditUserData } from "@/features/admin/types";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { useAsyncAction } from "@/hooks/use-async-action";
 
 interface EditUserModalProps {
   user: UserAccount | null;
   onClose: () => void;
-  onSave: (user: UserAccount, data: EditUserData) => Promise<void>;
+  // Resolves to true when the save succeeded; the modal stays open on failure so edits are kept.
+  onSave: (user: UserAccount, data: EditUserData) => Promise<boolean>;
 }
 
 export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
@@ -17,7 +20,13 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
   const [email, setEmail] = useState<string>("");
   const [role, setRole] = useState<Role>("student");
   const [showConfirm, setShowConfirm] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { run: saveUser, isPending: isSubmitting } = useAsyncAction(async () => {
+    if (!user) return;
+    const saved = await onSave(user, { fullName, email, role });
+    setShowConfirm(false);
+    if (saved) onClose();
+  });
 
   useEffect(() => {
     if (user) {
@@ -34,16 +43,8 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
     setShowConfirm(true);
   };
 
-  const handleConfirmedSave = async () => {
-    setShowConfirm(false);
-    setIsSubmitting(true);
-    await onSave(user, {
-      fullName,
-      email,
-      role,
-    });
-    setIsSubmitting(false);
-    onClose();
+  const handleConfirmedSave = () => {
+    void saveUser().catch(() => undefined);
   };
 
   return (
@@ -123,13 +124,9 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
               >
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white transition-colors shadow-xs"
-              >
+              <Button type="submit" size="sm" isPending={isSubmitting} className="shadow-xs">
                 {isSubmitting ? "Updating..." : "Save Assignment"}
-              </button>
+              </Button>
             </div>
           </form>
         </DialogContent>

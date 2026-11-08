@@ -27,6 +27,8 @@ import { JiraBurndownChart, type JiraBurndownResponse } from "@/features/artifac
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { useArtifactProjectScope } from "@/features/artifacts/hooks/use-artifact-project-scope";
 import { useSession } from "@/lib/auth/session";
 
@@ -215,9 +217,9 @@ export default function ArtifactViewerPageContent() {
 
   const sourceRows = useMemo(() => {
     const sources = [];
-    if (gitMetrics) sources.push({ source: "GitHub", records: gitMetrics.pagination?.total ?? gitMetrics.commits.length, lastSyncedAt: new Date(gitMetrics.captured_at).toLocaleString(), parserStatus: "Healthy", evaluationUsage: "Code quality, ownership, delivery cadence" });
-    if (jiraSnapshot) sources.push({ source: "Jira", records: jiraSnapshot.tickets.length, lastSyncedAt: new Date(jiraSnapshot.captured_at).toLocaleString(), parserStatus: "Healthy", evaluationUsage: "Task completion, planning reliability" });
-    if (isUuid(selectedProjectId) && localDocuments.length > 0) sources.push({ source: "Documents", records: localDocuments.length, lastSyncedAt: "Available", parserStatus: "Healthy", evaluationUsage: "Evidence quality, documentation completeness" });
+    if (gitMetrics) sources.push({ source: "GitHub", records: gitMetrics.pagination?.total ?? gitMetrics.commits.length, lastSyncedAt: new Date(gitMetrics.captured_at).toLocaleString(), evaluationUsage: "Code quality, ownership, delivery cadence" });
+    if (jiraSnapshot) sources.push({ source: "Jira", records: jiraSnapshot.tickets.length, lastSyncedAt: new Date(jiraSnapshot.captured_at).toLocaleString(), evaluationUsage: "Task completion, planning reliability" });
+    if (isUuid(selectedProjectId) && localDocuments.length > 0) sources.push({ source: "Documents", records: localDocuments.length, lastSyncedAt: "Available", evaluationUsage: "Evidence quality, documentation completeness" });
     return sources;
   }, [gitMetrics, jiraSnapshot, localDocuments.length, selectedProjectId]);
 
@@ -753,15 +755,15 @@ export default function ArtifactViewerPageContent() {
                 accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 multiple
               />
-              <button
+              <Button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                disabled={!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectedProjectId)}
+                isPending={isUploading}
               >
-                <Upload className="h-4 w-4" />
+                {!isUploading && <Upload className="h-4 w-4" />}
                 {isUploading ? "Uploading..." : "Upload Document"}
-              </button>
+              </Button>
             </div>
             <p className="text-sm text-slate-500">Accepted formats: PDF, DOCX, and PPTX.</p>
 
@@ -804,7 +806,7 @@ export default function ArtifactViewerPageContent() {
               );
             })}
             
-            {localDocuments.length === 0 && (
+            {localDocuments.length === 0 && !isLoadingDocuments && (
               <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
                 <p className="text-sm text-slate-500">No documents uploaded yet. Click the upload button to add evidence.</p>
               </div>
@@ -813,17 +815,19 @@ export default function ArtifactViewerPageContent() {
         )}
 
         {role === "instructor" && displayedTab === "communication" && (
-          <>
-            <h2 className="text-3xl font-semibold text-blue-950">Communication Artifacts</h2>
-            <p className="text-sm text-slate-500">No communication artifacts are available for the selected project.</p>
-          </>
+          <EmptyState
+            title="Coming soon"
+            description="Communication artifacts are not connected to SprintSight yet."
+            className="rounded-xl border border-dashed border-slate-300 py-12"
+          />
         )}
 
         {role === "instructor" && displayedTab === "peer-evaluation" && (
-          <>
-            <h2 className="text-3xl font-semibold text-blue-950">Peer Evaluation Inputs</h2>
-            <p className="text-sm text-slate-500">No peer evaluation data is available for the selected project and sprint.</p>
-          </>
+          <EmptyState
+            title="Coming soon"
+            description="Peer evaluation inputs are not connected to SprintSight yet."
+            className="rounded-xl border border-dashed border-slate-300 py-12"
+          />
         )}
       </section>
 
@@ -838,22 +842,16 @@ export default function ArtifactViewerPageContent() {
                 <th className="py-2 pr-4">Source</th>
                 <th className="py-2 pr-4">Records</th>
                 <th className="py-2 pr-4">Last Sync</th>
-                <th className="py-2 pr-4">Parser Status</th>
                 <th className="py-2">Evaluation Usage</th>
               </tr>
             </thead>
             <tbody>
-              {sourceRows.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-sm text-slate-500">No structured ingestion inputs are available for the selected project and sprint.</td></tr>}
+              {sourceRows.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-sm text-slate-500">No structured ingestion inputs are available for the selected project and sprint.</td></tr>}
               {sourceRows.map((source) => (
                 <tr key={source.source} className="border-b border-slate-100 text-sm text-slate-700 last:border-b-0">
                   <td className="py-3 pr-4 font-semibold text-slate-900">{source.source}</td>
                   <td className="py-3 pr-4">{source.records}</td>
                   <td className="py-3 pr-4">{source.lastSyncedAt}</td>
-                  <td className="py-3 pr-4">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${source.parserStatus === "Healthy" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                      {source.parserStatus}
-                    </span>
-                  </td>
                   <td className="py-3">{source.evaluationUsage}</td>
                 </tr>
               ))}

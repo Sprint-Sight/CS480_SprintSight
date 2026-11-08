@@ -1,4 +1,3 @@
-import type { ProjectStatus } from "@/features/projects/types";
 import { getSessionUser } from "@/lib/auth/session";
 
 export function isUuid(value: string | undefined | null) {
@@ -38,10 +37,4 @@ export function toProjectPayload(form: ProjectFormValues, jiraEmail: string, mem
     ...optionalFields,
     member_ids: memberIds,
   };
-}
-
-export function getStatusStyles(status: ProjectStatus) {
-  if (status === "At Risk") return "bg-rose-50 text-rose-600 border-rose-200";
-  if (status === "Completed") return "bg-slate-100 text-slate-600 border-slate-200";
-  return "bg-emerald-50 text-emerald-600 border-emerald-200";
 }

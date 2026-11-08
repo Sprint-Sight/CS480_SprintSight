@@ -1,3 +1,5 @@
-import DashboardLoading from "@/components/ui/dashboard-loading";
+import { PageSkeleton } from "@/components/ui/page-skeleton";
 
-export default DashboardLoading;
+export default function Loading() {
+  return <PageSkeleton variant="form" />;
+}

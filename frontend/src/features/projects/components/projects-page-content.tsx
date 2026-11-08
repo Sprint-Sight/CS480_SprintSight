@@ -12,37 +12,26 @@ import { ProjectMembersModal } from "@/features/projects/components/project-memb
 import { ProjectModal } from "@/features/projects/components/project-modal";
 import { RosterModal, type StudentFormErrors } from "@/features/projects/components/roster-modal";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { EmptyState } from "@/components/ui/empty-state";
 import { getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
 import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { getSessionToken } from "@/lib/auth/session";
 import { invalidateProjectCaches } from "@/features/projects/course-projects-api";
-import type { Course, Project, ProjectStatus } from "@/features/projects/types";
+import type { Course, Project } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 import { useSession } from "@/lib/auth/session";
 
-const statusOptions: Array<"All statuses" | ProjectStatus> = ["All statuses", "Active", "At Risk", "Completed"];
 const sortOptions = [
   { value: "name-asc", label: "Name (A-Z)" },
   { value: "name-desc", label: "Name (Z-A)" },
-  { value: "score-desc", label: "Score (Highest first)" },
-  { value: "score-asc", label: "Score (Lowest first)" },
-  { value: "completion-desc", label: "Completion (Highest first)" },
-  { value: "completion-asc", label: "Completion (Lowest first)" },
-  { value: "status-priority", label: "Status (At Risk first)" },
 ] as const;
 
 const DEFAULT_FILTERS: ProjectFilters = {
   teamName: "",
-  status: "All statuses",
-  sprint: "All sprints",
   module: "All modules",
-  minScore: "",
-  maxScore: "",
-  minCompletion: "",
-  maxCompletion: "",
   sortBy: "name-asc",
 };
 
@@ -84,7 +73,6 @@ export default function ProjectsPageContent() {
   const canUseInstructorCredentials = Boolean(session?.user) && session?.user?.role !== "student";
   const jiraCredentials = useInstructorJiraCredentials(canUseInstructorCredentials);
   const moduleOptions = useMemo(() => ["All modules", ...Array.from(new Set(projects.map((project) => project.module).filter(Boolean)))], [projects]);
-  const sprintOptions = useMemo(() => ["All sprints", ...Array.from(new Set(projects.flatMap((project) => project.sprints.map((sprint) => sprint.name))))], [projects]);
 
   const [projectForm, setProjectForm] = useState<ProjectFormValues>({
     project_name: "",
@@ -202,11 +190,7 @@ export default function ProjectsPageContent() {
         project_name: project.project_name,
         team_name: project.team_name,
         description: project.description || undefined,
-        status: "Active",
-        score: 0,
-        completion: 0,
         module: project.course_code,
-        sprints: [],
         members: project.members,
         github_repo_url: project.github_repo_url || undefined,
         local_repo_path: project.local_repo_path || undefined,
@@ -236,11 +220,7 @@ export default function ProjectsPageContent() {
   const appliedFilterCount = useMemo(() => {
     let count = 0;
     if (appliedFilters.teamName.trim()) count += 1;
-    if (appliedFilters.status !== "All statuses") count += 1;
-    if (appliedFilters.sprint !== "All sprints") count += 1;
     if (appliedFilters.module !== "All modules") count += 1;
-    if (appliedFilters.minScore !== "" || appliedFilters.maxScore !== "") count += 1;
-    if (appliedFilters.minCompletion !== "" || appliedFilters.maxCompletion !== "") count += 1;
     if (appliedFilters.sortBy !== "name-asc") count += 1;
     return count;
   }, [appliedFilters]);
@@ -706,11 +686,29 @@ export default function ProjectsPageContent() {
         </div>
       </div>
 
-      {filteredProjects.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-          <h2 className="text-lg font-semibold text-slate-900">No projects matched your filters</h2>
-          <p className="mt-1 text-sm text-slate-500">Try broadening your search, sprint, or status selection.</p>
-        </div>
+      {projects.length === 0 ? (
+        <EmptyState
+          title="No projects yet"
+          description={selectedCourseId ? "Create the first project for this course to start tracking a team." : "Select or create a course first. New Project becomes available once a course is selected."}
+          action={selectedCourseId ? (
+            <button type="button" onClick={handleOpenCreateProject} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800">
+              <Plus className="h-4 w-4" />
+              New Project
+            </button>
+          ) : undefined}
+          className="rounded-2xl border border-dashed border-slate-300 bg-white p-10"
+        />
+      ) : filteredProjects.length === 0 ? (
+        <EmptyState
+          title="No projects match your filters"
+          description="Try a different team name or module, or clear the filters to see every project."
+          action={
+            <button type="button" onClick={() => { setSearchTerm(""); setAppliedFilters(DEFAULT_FILTERS); setDraftFilters(DEFAULT_FILTERS); }} className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+              Clear filters
+            </button>
+          }
+          className="rounded-2xl border border-dashed border-slate-300 bg-white p-10"
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           {filteredProjects.map((project) => (
@@ -862,9 +860,7 @@ export default function ProjectsPageContent() {
       <ProjectFilterModal
         isOpen={isFilterModalOpen}
         draftFilters={draftFilters}
-        statusOptions={statusOptions}
         moduleOptions={moduleOptions}
-        sprintOptions={sprintOptions}
         sortOptions={sortOptions}
         onDraftChange={updateDraftFilter}
         onClearForm={() => setDraftFilters(DEFAULT_FILTERS)}

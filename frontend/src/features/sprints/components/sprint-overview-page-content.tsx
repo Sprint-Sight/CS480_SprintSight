@@ -5,11 +5,12 @@ import { SprintTimeline } from "@/features/sprints/components/sprint-timeline";
 import { useSprintOverviewData } from "@/features/sprints/hooks/use-sprint-overview-data";
 import { useStudentProjectContext } from "@/features/student/hooks/use-student-project-context";
 import { useSession } from "@/lib/auth/session";
+import { PageSkeleton } from "@/components/ui/page-skeleton";
 
 export default function SprintOverviewPageContent() {
   const role = useSession()?.user?.role ?? null;
   if (role === "student") return <StudentSprintOverview />;
-  if (!role) return null;
+  if (!role) return <PageSkeleton variant="cards" />;
   return <InstructorSprintOverview />;
 }
 

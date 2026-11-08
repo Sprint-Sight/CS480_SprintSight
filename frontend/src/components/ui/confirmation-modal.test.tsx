@@ -1,7 +1,7 @@
 /// <reference types="vitest/globals" />
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "@/test-utils";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
@@ -122,5 +122,41 @@ describe("ConfirmationModal - UI Component", () => {
       />
     );
     expect(screen.getByText("Delete Project")).toHaveClass("bg-red-600");
+  });
+
+  it("keeps the confirm button pending and blocks repeat clicks until an async onConfirm settles", async () => {
+    let resolveConfirm: () => void = () => undefined;
+    const asyncConfirm = vi.fn(
+      () => new Promise<void>((resolve) => {
+        resolveConfirm = resolve;
+      }),
+    );
+    renderComponent(
+      <ConfirmationModal
+        isOpen={true}
+        onClose={mockOnClose}
+        onConfirm={asyncConfirm}
+        title="Delete"
+        message="Message"
+        confirmText="Delete User"
+        variant="danger"
+      />
+    );
+
+    const confirmButton = screen.getByText("Delete User").closest("button") as HTMLButtonElement;
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+
+    expect(asyncConfirm).toHaveBeenCalledOnce();
+    expect(confirmButton).toBeDisabled();
+    expect(confirmButton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Cancel")).toBeDisabled();
+
+    await act(async () => {
+      resolveConfirm();
+    });
+
+    expect(confirmButton).not.toBeDisabled();
+    expect(confirmButton).not.toHaveAttribute("aria-busy");
   });
 });
