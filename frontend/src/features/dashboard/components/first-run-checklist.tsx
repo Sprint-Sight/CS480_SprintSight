@@ -16,7 +16,7 @@ type ChecklistStep = {
 // Rendered only before any Git or Jira data is synced, so the last two steps are always open here.
 export function FirstRunChecklist({ hasCourse, hasProject }: FirstRunChecklistProps) {
   const steps: ChecklistStep[] = [
-    { label: "Create a course", description: "Add the course your teams belong to.", done: hasCourse },
+    { label: "Create a course", description: "Add the course your teams belong to.", done: hasCourse, href: "/projects?manageCourses=1" },
     { label: "Create a project", description: "Add one project per team.", done: hasProject, href: "/projects" },
     { label: "Connect Git and Jira, then sync", description: "Connect the repository and Jira board for the project, then run ingestion.", done: false, href: "/artifact-viewer" },
     { label: "Generate an assessment", description: "Create the sprint assessment report once data is synced.", done: false, href: "/assessment-report" },

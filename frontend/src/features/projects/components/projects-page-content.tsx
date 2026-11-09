@@ -14,13 +14,15 @@ import { RosterModal, type StudentFormErrors } from "@/features/projects/compone
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
-import { apiRequest, getErrorMessage } from "@/lib/api/client";
+import { ApiError, apiRequest, getErrorMessage } from "@/lib/api/client";
 import { getSessionToken } from "@/lib/auth/session";
 import { invalidateProjectCaches } from "@/features/projects/course-projects-api";
 import type { Course, Project } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
+import { useManageCoursesDeepLink } from "@/features/projects/hooks/use-manage-courses-deep-link";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
+import { useCourseRoster } from "@/features/projects/hooks/use-course-roster";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 import { useSession } from "@/lib/auth/session";
 
@@ -62,7 +64,14 @@ export default function ProjectsPageContent() {
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
-  const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
+  const {
+    courseStudents,
+    setCourseStudents,
+    otherSectionEnrollments,
+    rosterError,
+    isRosterReady,
+    reloadRoster,
+  } = useCourseRoster(selectedCourseId);
   const [allStudents, setAllStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
@@ -131,23 +140,6 @@ export default function ProjectsPageContent() {
     }
   }
 
-  const loadCourseStudents = useCallback(async () => {
-    if (!selectedCourseId || !isUuid(selectedCourseId)) {
-      setCourseStudents([]);
-      return;
-    }
-
-    try {
-      const students = await apiRequest<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>(
-        `/courses/${selectedCourseId}/students`
-      );
-      setCourseStudents(students);
-    } catch (error) {
-      console.error("Failed to load course students:", error);
-      setCourseStudents([]);
-    }
-  }, [selectedCourseId]);
-
   const loadAllStudents = useCallback(async () => {
     setIsLoadingStudents(true);
     setStudentDirectoryError("");
@@ -209,13 +201,15 @@ export default function ProjectsPageContent() {
   }, []);
 
   useEffect(() => {
-    loadCourseStudents();
     loadProjects();
-  }, [selectedCourseId, loadCourseStudents, loadProjects]);
+  }, [selectedCourseId, loadProjects]);
 
   useEffect(() => {
-    if (isRosterModalOpen) void loadAllStudents();
-  }, [isRosterModalOpen, loadAllStudents]);
+    if (!isRosterModalOpen) return;
+    void loadAllStudents();
+    void reloadRoster();
+  }, [isRosterModalOpen, loadAllStudents, reloadRoster]);
+
 
   const appliedFilterCount = useMemo(() => {
     let count = 0;
@@ -230,6 +224,8 @@ export default function ProjectsPageContent() {
     setCourseForm({ code: "", name: "", section: "", year: new Date().getFullYear(), term: "Fall" });
     setIsCourseModalOpen(true);
   }
+
+  useManageCoursesDeepLink(handleOpenCourseManagement);
 
   function handleOpenCreateProject() {
     setEditingProject(null);
@@ -386,6 +382,7 @@ export default function ProjectsPageContent() {
         toast.success("Course created.");
       }
 
+      invalidateProjectCaches(queryClient);
       setIsCourseModalOpen(false);
       setEditingCourse(null);
     } catch (error) {
@@ -485,10 +482,11 @@ export default function ProjectsPageContent() {
         `/courses/${selectedCourseId}/students/${userId}`,
         { method: "POST" },
       );
-      await loadCourseStudents();
+      await reloadRoster();
       toast.success(`${student.full_name} was enrolled in this course.`);
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to enroll student."));
+      if (error instanceof ApiError && error.status === 409) void reloadRoster();
     }
   }
 
@@ -516,7 +514,7 @@ export default function ProjectsPageContent() {
     }
     const project = projects.find((candidate) => candidate.id === projectId);
     if (!project) return;
-    await loadCourseStudents();
+    await reloadRoster();
     setSelectedProjectMemberIds([]);
     setProjectForMemberSelection(project);
   }
@@ -759,6 +757,10 @@ export default function ProjectsPageContent() {
         hasSelectedCourse={Boolean(selectedCourseId && isUuid(selectedCourseId))}
         courseStudents={courseStudents}
         allStudents={allStudents}
+        otherSectionEnrollments={otherSectionEnrollments}
+        isRosterReady={isRosterReady}
+        rosterError={rosterError}
+        courseCode={courses.find((course) => course.id === selectedCourseId)?.code ?? ""}
         studentSearchTerm={studentSearchTerm}
         isLoadingStudents={isLoadingStudents}
         studentDirectoryError={studentDirectoryError}
@@ -770,7 +772,10 @@ export default function ProjectsPageContent() {
         onCreateStudent={handleCreateStudent}
         onEnrollExisting={handleEnrollExistingStudent}
         onUnenroll={handleUnenrollStudent}
-        onRefreshStudents={() => void loadAllStudents()}
+        onRefreshStudents={() => {
+          void loadAllStudents();
+          void reloadRoster();
+        }}
         setStudentSearchTerm={setStudentSearchTerm}
         setStudentForm={setStudentForm}
       />
@@ -793,7 +798,7 @@ export default function ProjectsPageContent() {
         onSubmit={async () => {
           const result = await submitImport(selectedCourseId);
           await loadProjects();
-          await loadCourseStudents();
+          await reloadRoster();
           invalidateProjectCaches(queryClient);
           return result;
         }}
