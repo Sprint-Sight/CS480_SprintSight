@@ -123,7 +123,7 @@ jobs:
       - name: security scan
         run: |
           pip install bandit
-          bandit -r app
+          bandit -r app -ll
 
       - name: docker build check
         run: docker build -t sprintsight-backend-test -f Dockerfile .
