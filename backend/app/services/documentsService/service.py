@@ -1,7 +1,7 @@
 import io
 import logging
 import re
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 import zipfile
 from datetime import UTC, datetime
 from hashlib import sha256

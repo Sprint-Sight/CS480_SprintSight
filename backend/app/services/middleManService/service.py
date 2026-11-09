@@ -53,7 +53,7 @@ def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -
     try:
         # One-shot transport only. Do not retry and do not impose a fixed
         # client timeout that can prematurely force the job into failed state.
-        response = httpx.post(request_url, json=payload, timeout=None)
+        response = httpx.post(request_url, json=payload, timeout=None)  # nosec B113
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(
