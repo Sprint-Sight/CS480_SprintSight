@@ -85,7 +85,7 @@ def save_run_results(*, experiment_name: str, model_name: str, team_id: str, spr
     return raw_path, summary_path
 
 def save_judge_results(*, experiment_name: str, judge_model: str, group_name: str, run_id: str,
-                       result_df, trace_meta: dict[str, dict]) -> tuple[Path, Path]:
+                       result_df, trace_meta: dict[str, dict]) -> Path:
     """One row per judged trace. Call it INSIDE the judge's `with mlflow.start_run(...)`, so the
     files attach to the judge run. Never raises: judging has already succeeded by this point."""
     label = _slug(experiment_name)
