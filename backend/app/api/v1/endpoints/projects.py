@@ -849,7 +849,13 @@ def create_project(
         _validate_student_project_assignment(repository, course_id, member_id)
         members.append(member_id)
 
-    has_shared_jira_credentials = bool(instructor_jira_credentials.get_credentials(current_user.id))
+    shared_jira_credentials = instructor_jira_credentials.get_credentials(current_user.id)
+    has_shared_jira_credentials = bool(shared_jira_credentials)
+    jira_email = (
+        shared_jira_credentials.jira_email
+        if shared_jira_credentials and shared_jira_credentials.jira_email
+        else str(payload.jira_email)
+    )
     project = ProjectRecord(
         id=str(uuid4()),
         project_name=payload.project_name,
@@ -861,13 +867,7 @@ def create_project(
         local_repo_path=payload.local_repo_path,
         created_by=current_user.id,
         created_at=datetime.now(UTC),
-        jira_email=(
-            None
-            if has_shared_jira_credentials
-            else str(payload.jira_email)
-            if payload.jira_email
-            else None
-        ),
+        jira_email=jira_email,
         jira_domain=payload.jira_domain,
         jira_project_key=payload.jira_project_key,
         jira_api_token_encrypted=(

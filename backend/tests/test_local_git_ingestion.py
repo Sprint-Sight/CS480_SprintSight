@@ -83,6 +83,35 @@ def test_extract_local_commits_includes_file_evidence(tmp_path: Path) -> None:
     assert readme_change.diff_truncated is False
 
 
+def test_extract_local_commits_clones_without_checkout(tmp_path: Path, monkeypatch) -> None:
+    from app.services.gitlabGithub import service
+
+    repository = tmp_path / "student-repo"
+    repository.mkdir()
+    git(repository, "init")
+    git(repository, "config", "user.name", "Student One")
+    git(repository, "config", "user.email", "student@example.com")
+    (repository / "README.md").write_text("first line\n", encoding="utf-8")
+    git(repository, "add", "README.md")
+    git(repository, "commit", "-m", "Add README")
+
+    original_run = service.subprocess.run
+    clone_arguments: list[list[str]] = []
+    clone_environment: list[dict[str, str]] = []
+
+    def recording_run(arguments, *args, **kwargs):
+        if arguments[0] == "git" and "clone" in arguments:
+            clone_arguments.append(arguments)
+            clone_environment.append(kwargs["env"])
+        return original_run(arguments, *args, **kwargs)
+
+    monkeypatch.setattr(service.subprocess, "run", recording_run)
+
+    assert len(extract_local_commits(repository)) == 1
+    assert "--no-checkout" in clone_arguments[0]
+    assert clone_environment[0]["GIT_CONFIG_GLOBAL"].endswith("gitconfig")
+
+
 def test_link_commit_authors_only_to_active_project_students() -> None:
     timestamp = datetime.now(UTC)
     commits = [

@@ -111,7 +111,10 @@ services: # Separate containers to run
           condition: service_started
 
     mlflow_service:
-      image: ghcr.io/mlflow/mlflow:latest # Automatically pulls MLflow
+      build:
+        context: .
+        dockerfile: Dockerfile.mlflow
+      image: sprintsight-mlflow:local
       # --backend-store-uri points to the Postgres container
       command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql://user:pass@db:5432/sprintsight
       environment: 

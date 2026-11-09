@@ -73,19 +73,59 @@ _GENERATED_SUFFIXES = (".min.js", ".min.css", ".map", ".chunk.js", ".bundle.js")
 def extract_local_commits(repository_path: Path) -> list[CommitInfo]:
     with tempfile.TemporaryDirectory(prefix="sprintsight-git-") as temporary_dir:
         writable_repository = Path(temporary_dir) / repository_path.name
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--no-local",
-                "--quiet",
-                str(repository_path),
-                str(writable_repository),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        git_config = Path(temporary_dir) / "gitconfig"
+        try:
+            subprocess.run(
+                [
+                    "git",
+                    "config",
+                    "--file",
+                    str(git_config),
+                    "--add",
+                    "safe.directory",
+                    str(repository_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "config",
+                    "--file",
+                    str(git_config),
+                    "--add",
+                    "safe.directory",
+                    f"{repository_path}{os.sep}.git",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            git_environment = os.environ.copy()
+            git_environment["GIT_CONFIG_GLOBAL"] = str(git_config)
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--no-local",
+                    "--no-checkout",
+                    "--quiet",
+                    str(repository_path),
+                    str(writable_repository),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=git_environment,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip()
+            message = f"Could not create an isolated Git copy of {repository_path}."
+            if detail:
+                message = f"{message} Git: {detail}"
+            raise RuntimeError(message) from exc
         return _extract_commits_from_repository(writable_repository)
 
 
@@ -237,7 +277,7 @@ def _change_type(change_type: str) -> str:
 
 def _repository_head(repository_path: Path) -> str | None:
     result = subprocess.run(
-        ["git", "-C", str(repository_path), "rev-parse", "HEAD"],
+        _git_command(repository_path, "rev-parse", "HEAD"),
         check=True,
         capture_output=True,
         text=True,
@@ -304,7 +344,7 @@ def _line_count(text: str) -> int:
 
 def _git_output(repository_path: Path, *arguments: str) -> str:
     return subprocess.run(
-        ["git", "-C", str(repository_path), *arguments],
+        _git_command(repository_path, *arguments),
         check=True,
         capture_output=True,
         text=True,
@@ -318,7 +358,7 @@ def _read_blobs(repository_path: Path, object_ids: list[str]) -> dict[str, bytes
     if not object_ids:
         return {}
     output = subprocess.run(
-        ["git", "-C", str(repository_path), "cat-file", "--batch"],
+        _git_command(repository_path, "cat-file", "--batch"),
         input="\n".join(object_ids).encode() + b"\n",
         check=True,
         capture_output=True,
@@ -335,6 +375,17 @@ def _read_blobs(repository_path: Path, object_ids: list[str]) -> dict[str, bytes
         blobs[header[0].decode()] = output[position : position + size]
         position += size + 1
     return blobs
+
+
+def _git_command(repository_path: Path, *arguments: str) -> list[str]:
+    return [
+        "git",
+        "-c",
+        f"safe.directory={repository_path}",
+        "-C",
+        str(repository_path),
+        *arguments,
+    ]
 
 
 # ── Reading single artifacts for the in-app evidence viewer ───────────────
@@ -357,15 +408,13 @@ def resolve_commit(repository_path: Path, revision: str = "HEAD") -> str:
     if not _REVISION_PATTERN.match(revision):
         raise ArtifactNotFoundError(f"'{revision}' is not a commit SHA.")
     result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repository_path),
+        _git_command(
+            repository_path,
             "rev-parse",
             "--verify",
             "--quiet",
             f"{revision}^{{commit}}",
-        ],
+        ),
         capture_output=True,
         text=True,
     )
@@ -388,7 +437,7 @@ def read_file_at_revision(
     commit_sha = resolve_commit(repository_path, revision)
     normalized = normalize_repository_file_path(path)
     result = subprocess.run(
-        ["git", "-C", str(repository_path), "cat-file", "blob", f"{commit_sha}:{normalized}"],
+        _git_command(repository_path, "cat-file", "blob", f"{commit_sha}:{normalized}"),
         capture_output=True,
     )
     if result.returncode != 0:
@@ -399,7 +448,7 @@ def read_file_at_revision(
 def repository_remote_url(repository_path: Path, remote: str = "origin") -> str | None:
     """The URL the clone was taken from, or None if it has no such remote."""
     result = subprocess.run(
-        ["git", "-C", str(repository_path), "config", "--get", f"remote.{remote}.url"],
+        _git_command(repository_path, "config", "--get", f"remote.{remote}.url"),
         capture_output=True,
         text=True,
     )

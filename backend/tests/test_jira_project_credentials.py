@@ -3,7 +3,9 @@ import json
 import httpx
 from fastapi.testclient import TestClient
 
+from app.dependencies.auth import get_instructor_jira_credentials_repository
 from app.main import app
+from app.repositories.in_memory import InMemoryInstructorJiraCredentialsRepository
 
 client = TestClient(app)
 
@@ -61,6 +63,52 @@ def test_project_stores_jira_token_encrypted_and_omits_it_from_responses() -> No
     assert fetched.status_code == 200
     assert SECRET_TOKEN not in json.dumps(fetched.json())
     assert fetched.json()["jira_token_configured"] is True
+
+
+def test_project_with_shared_credentials_stores_shared_jira_email(monkeypatch) -> None:
+    shared_credentials_repository = InMemoryInstructorJiraCredentialsRepository()
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        get_instructor_jira_credentials_repository,
+        lambda: shared_credentials_repository,
+    )
+    instructor = headers(token("faculty@sprintsight.edu"))
+    credentials = client.put(
+        "/api/v1/settings/jira-credentials",
+        json={
+            "jira_email": "shared.owner@university.edu",
+            "jira_api_token": SECRET_TOKEN,
+        },
+        headers=instructor,
+    )
+    assert credentials.status_code == 200
+
+    course = client.post(
+        "/api/v1/courses",
+        json={
+            "code": "JIRASHARED",
+            "name": "Shared Jira Credentials",
+            "section": "001",
+            "year": 2026,
+            "term": "Fall",
+        },
+        headers=instructor,
+    ).json()
+    created = client.post(
+        f"/api/v1/courses/{course['id']}/projects",
+        json={
+            "project_name": "Shared Cred Project",
+            "team_name": "Shared Cred Team",
+            "jira_email": "form.value@university.edu",
+            "jira_domain": "team.atlassian.net",
+            "jira_project_key": "TEAM",
+        },
+        headers=instructor,
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["jira_email"] == "shared.owner@university.edu"
+    assert created.json()["jira_token_configured"] is False
 
 
 def test_patch_without_token_keeps_configured_flag_and_empty_token_clears_it() -> None:

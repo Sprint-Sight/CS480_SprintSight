@@ -1,0 +1,3 @@
+FROM ghcr.io/mlflow/mlflow:latest
+
+RUN python -m pip install --no-cache-dir "psycopg[binary]"
