@@ -1000,8 +1000,7 @@ class PostgresProjectRepository(ProjectRepository):
     def get_project(self, project_id: str) -> ProjectRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
-                f"""SELECT {_PROJECT_COLUMNS}"""  # nosec B608
-                """FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.project_id = %s""",
+                f"""SELECT {_PROJECT_COLUMNS} FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.project_id = %s""",  # nosec B608
                 (UUID(project_id),),
             ).fetchone()
         return self._project(row) if row else None
@@ -1009,8 +1008,7 @@ class PostgresProjectRepository(ProjectRepository):
     def list_projects(self, course_id: str) -> list[ProjectRecord]:
         with self._pool.connection() as connection:
             rows = connection.execute(
-                f"""SELECT {_PROJECT_COLUMNS}""" # nosec B608
-                """FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.course_id = %s ORDER BY p.project_name""",
+                f"""SELECT {_PROJECT_COLUMNS} FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.course_id = %s ORDER BY p.project_name""",  # nosec B608
                 (UUID(course_id),),
             ).fetchall()
         return [self._project(row) for row in rows]
