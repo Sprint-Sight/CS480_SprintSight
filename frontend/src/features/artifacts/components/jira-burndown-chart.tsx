@@ -92,7 +92,7 @@ export function JiraBurndownChart({ burndown }: JiraBurndownChartProps) {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
+              <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={24} />
               <YAxis allowDecimals={false} width={36} />
               <Tooltip />
               <Legend />

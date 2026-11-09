@@ -31,7 +31,7 @@ export default function PeerEvaluationPageContent() {
 
   if (!scope) {
     return (
-      <div className="space-y-5 p-8">
+      <div className="space-y-5 p-4 sm:p-6 lg:p-8">
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-6">
           <p className="text-center text-amber-900">Unable to load scope information.</p>
         </div>
@@ -41,9 +41,9 @@ export default function PeerEvaluationPageContent() {
 
   if (isStudent) {
     return (
-      <div className="space-y-5 p-8">
+      <div className="space-y-5 p-4 sm:p-6 lg:p-8">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Peer Evaluation</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">Peer Evaluation</h1>
           <p className="mt-1 text-sm text-slate-500">
             Evaluate your teammates on their contributions and collaboration.
           </p>
@@ -59,9 +59,9 @@ export default function PeerEvaluationPageContent() {
 
   if (isInstructor) {
     return (
-      <div className="space-y-5 p-8">
+      <div className="space-y-5 p-4 sm:p-6 lg:p-8">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Peer Evaluation</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">Peer Evaluation</h1>
           <p className="mt-1 text-sm text-slate-500">
             Manage evaluation windows and review all peer evaluations in your course.
           </p>
@@ -72,7 +72,7 @@ export default function PeerEvaluationPageContent() {
   }
 
   return (
-    <div className="space-y-5 p-8">
+    <div className="space-y-5 p-4 sm:p-6 lg:p-8">
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-6">
         <p className="text-center text-amber-900">You do not have access to peer evaluations.</p>
       </div>

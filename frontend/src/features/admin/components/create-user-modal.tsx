@@ -70,7 +70,7 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
 
           <form onSubmit={handleSubmit} onFocus={scrollFieldIntoView} className="mt-4 space-y-4">
             <div>
-              <label htmlFor={fullNameId} className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+              <label htmlFor={fullNameId} className="block text-sm font-semibold text-slate-700 mb-1">Full Name</label>
               <input
                 id={fullNameId}
                 name="fullName"
@@ -85,7 +85,7 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
             </div>
 
             <div>
-              <label htmlFor={emailId} className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+              <label htmlFor={emailId} className="block text-sm font-semibold text-slate-700 mb-1">Email Address</label>
               <input
                 id={emailId}
                 name="email"
@@ -100,7 +100,7 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
             </div>
 
             <div>
-              <label htmlFor={roleId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={roleId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-blue-600" />
                 Assigned Role
               </label>
@@ -127,7 +127,7 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
                   The student will receive an email with a secure link to set their
                   first password. No initial password is required.
                 </p>
-                <label htmlFor={passwordId} className="mt-3 block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <label htmlFor={passwordId} className="mt-3 block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                   <Key className="h-3.5 w-3.5 text-blue-600" />
                   Fallback Password <span className="font-normal text-slate-400">(optional)</span>
                 </label>
@@ -149,7 +149,7 @@ export function CreateUserModal({ isOpen, onClose, onCreate }: CreateUserModalPr
               </div>
             ) : (
               <div>
-                <label htmlFor={passwordId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                <label htmlFor={passwordId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                   <Key className="w-3.5 h-3.5 text-blue-600" />
                   Initial Password
                 </label>

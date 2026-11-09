@@ -48,4 +48,24 @@ describe("ProjectCard controls", () => {
 
     expect(screen.getByRole("button", { name: "Remove Grace Hopper from project" })).toBeInTheDocument();
   });
+
+  it("renders the title as a link without nesting buttons inside any link", () => {
+    renderComponent(
+      <ProjectCard
+        project={project}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onAddMember={vi.fn()}
+        onRemoveMember={vi.fn()}
+      />,
+    );
+
+    const titleLink = screen.getByRole("link", { name: "Sprint Alpha" });
+    expect(titleLink).toHaveAttribute("href", "/projects/p-1/sprints");
+    expect(titleLink.closest("article")).not.toBeNull();
+
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.closest("a")).toBeNull();
+    }
+  });
 });

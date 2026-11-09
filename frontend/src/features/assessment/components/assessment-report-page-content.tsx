@@ -1,6 +1,7 @@
 "use client";
 
 import { BrainCircuit, Download, Loader2, PencilLine, Play, Save, X } from "lucide-react";
+import { PageContainer } from "@/components/ui/page-layout";
 import { useState } from "react";
 import {
   AssessmentFeedbackSections,
@@ -69,14 +70,14 @@ export default function AssessmentReportPageContent() {
 
   if (assessment.role === "student") {
     const report = studentContext.report ? toSprintAssessmentReport(studentContext.report, studentContext.project?.team_name, studentContext.project?.project_name) : null;
-    return <div className="space-y-5 p-8"><StudentAssessmentReport report={report} projectLabel={studentContext.project ? `${studentContext.project.team_name} - ${studentContext.project.project_name}` : "My project"} isLoading={studentContext.isLoading} error={studentContext.error} /></div>;
+    return <PageContainer><StudentAssessmentReport report={report} projectLabel={studentContext.project ? `${studentContext.project.team_name} - ${studentContext.project.project_name}` : "My project"} isLoading={studentContext.isLoading} error={studentContext.error} /></PageContainer>;
   }
 
   return (
-    <div className="space-y-5 p-8">
+    <PageContainer>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">AI Assessment Report</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">AI Assessment Report</h1>
           <p className="mt-1 text-sm text-slate-500">
             {assessment.report.teamLabel} - {assessment.report.projectLabel} - {assessment.report.sprintLabel}
           </p>
@@ -196,6 +197,6 @@ export default function AssessmentReportPageContent() {
         onSummaryChange={editor.updateSummary}
       />
       <InstructorAiFeedbackModal isOpen={isFeedbackModalOpen} scope={scope} onClose={() => setIsFeedbackModalOpen(false)} />
-    </div>
+    </PageContainer>
   );
 }

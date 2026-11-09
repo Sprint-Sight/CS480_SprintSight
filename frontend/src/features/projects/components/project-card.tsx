@@ -13,20 +13,22 @@ type ProjectCardProps = {
 
 export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMember }: ProjectCardProps) {
   return (
-    <Link
-      href={`/projects/${project.id}/sprints`}
-      className="group relative flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
-    >
+    <article className="group relative flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
       <div>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold leading-tight text-blue-950 group-hover:text-blue-700">
-              {project.project_name}
+            <h2 className="text-2xl font-semibold leading-tight text-blue-950">
+              <Link
+                href={`/projects/${project.id}/sprints`}
+                className="rounded-md hover:text-blue-700 after:absolute after:inset-0 after:rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              >
+                {project.project_name}
+              </Link>
             </h2>
             <p className="mt-0.5 text-sm font-medium text-slate-500">{project.team_name}</p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="relative z-10 flex items-center gap-2">
             <button
               type="button"
               onClick={(event) => onEdit(project, event)}
@@ -51,7 +53,7 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
 
         <p className="mt-3 text-xs font-medium uppercase tracking-wider text-slate-400">{project.module}</p>
 
-        <div className="mt-4 flex items-center justify-between text-slate-500">
+        <div className="relative z-10 mt-4 flex items-center justify-between text-slate-500">
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-slate-400" />
             <div className="flex flex-wrap items-center gap-1.5">
@@ -85,6 +87,6 @@ export function ProjectCard({ project, onEdit, onDelete, onAddMember, onRemoveMe
           </button>
         </div>
       </div>
-    </Link>
+    </article>
   );
 }

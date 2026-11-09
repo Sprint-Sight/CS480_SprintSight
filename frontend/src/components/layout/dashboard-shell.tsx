@@ -437,7 +437,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                     >
                       <Bell className="h-4 w-4" />
                       {unreadCount > 0 && (
-                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
                           {unreadCount > 99 ? "99+" : unreadCount}
                         </span>
                       )}
@@ -469,7 +469,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                       </div>
                       <div className="hidden sm:flex flex-col text-right">
                         <span className="text-sm font-semibold text-slate-800">{profileUser.name}</span>
-                        <span className="text-[11px] text-slate-500">{profileUser.label}</span>
+                        <span className="text-xs text-slate-500">{profileUser.label}</span>
                       </div>
                     </button>
 

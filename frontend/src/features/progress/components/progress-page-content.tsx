@@ -1,5 +1,6 @@
 "use client";
 
+import { PageContainer, PageHeader } from "@/components/ui/page-layout";
 import { ProgressLiveSignals } from "@/features/progress/components/progress-live-signals";
 import { useProgressData } from "@/features/progress/hooks/use-progress-data";
 import { useSession } from "@/lib/auth/session";
@@ -13,9 +14,9 @@ export default function ProgressPageContent() {
 
 function InstructorProgressPage() {
   const { progressSignals, isSyncing, syncError } = useProgressData();
-  return <div className="space-y-5 p-8"><div><h1 className="text-4xl font-bold tracking-tight text-blue-950">Comparative Progress</h1><p className="mt-1 text-sm text-slate-500">Track captured project activity across all sprints.</p></div>{syncError && <p role="alert" className="text-sm text-rose-600">{syncError}</p>}{!progressSignals.hasData && isSyncing ? <p role="status" className="text-sm text-slate-500">Loading progress data...</p> : progressSignals.hasData ? <ProgressLiveSignals gitCommits={progressSignals.gitCommits} codeChurn={progressSignals.codeChurn} jiraTickets={progressSignals.jiraTickets} /> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-lg font-semibold text-slate-900">No progress data available</h2><p className="mt-2 text-sm text-slate-500">Sync Git or Jira data for the selected project to view real progress signals.</p></section>}</div>;
+  return <PageContainer><PageHeader title="Comparative Progress" description="Track captured project activity across all sprints." />{syncError && <p role="alert" className="text-sm text-rose-600">{syncError}</p>}{!progressSignals.hasData && isSyncing ? <p role="status" className="text-sm text-slate-500">Loading progress data...</p> : progressSignals.hasData ? <ProgressLiveSignals gitCommits={progressSignals.gitCommits} codeChurn={progressSignals.codeChurn} jiraTickets={progressSignals.jiraTickets} /> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-lg font-semibold text-slate-900">No progress data available</h2><p className="mt-2 text-sm text-slate-500">Sync Git or Jira data for the selected project to view real progress signals.</p></section>}</PageContainer>;
 }
 
 function StudentProgressUnavailable() {
-  return <div className="space-y-5 p-8"><div><h1 className="text-4xl font-bold tracking-tight text-blue-950">Comparative Progress</h1><p className="mt-1 text-sm text-slate-500">Project-wide activity analytics are not available to students.</p></div><section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-lg font-semibold text-slate-900">Progress analytics unavailable</h2><p className="mt-2 text-sm text-slate-500">Your published assessment reports provide the available progress information.</p></section></div>;
+  return <PageContainer><PageHeader title="Comparative Progress" description="Project-wide activity analytics are not available to students." /><section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-lg font-semibold text-slate-900">Progress analytics unavailable</h2><p className="mt-2 text-sm text-slate-500">Your published assessment reports provide the available progress information.</p></section></PageContainer>;
 }
