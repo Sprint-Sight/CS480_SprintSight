@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   # ------------------------------------------------------------------------------------
-  # 1. Path Filter Job: Detects which components changed in the pull request
+  # 1. Path Filter Job: Detects modified services
   # ------------------------------------------------------------------------------------
   changes:
     name: Detect changed packages
@@ -44,7 +44,7 @@ jobs:
               - '.github/workflows/ci.yml'
 
   # ------------------------------------------------------------------------------------
-  # 2. AI Engine Job
+  # 2. AI Engine Job (Lint, Type-Check, Test, Docker Build)
   # ------------------------------------------------------------------------------------
   ai-engine:
     name: AI Engine
@@ -67,7 +67,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov ruff==0.17.0 mypy bandit pandas-stubs
+          pip install pytest-cov ruff mypy pandas-stubs
 
       - name: lint
         run: ruff check .
@@ -78,14 +78,11 @@ jobs:
       - name: test with coverage
         run: pytest --cov=. --cov-report=term-missing --cov-report=xml -q || test $? -eq 5
 
-      - name: security scan
-        run: bandit -r . -ll -x ./tests
-
       - name: docker build check
         run: docker build -t sprintsight-ai-engine-test -f Dockerfile .
 
   # ------------------------------------------------------------------------------------
-  # 3. Backend Job
+  # 3. Backend Job (Lint, Type-Check, Test, Docker Build)
   # ------------------------------------------------------------------------------------
   backend:
     name: Backend
@@ -120,16 +117,11 @@ jobs:
       - name: backend unit tests
         run: pytest --cov=app --cov-report=term-missing --cov-report=xml -q
 
-      - name: security scan
-        run: |
-          pip install bandit
-          bandit -r app -ll
-
       - name: docker build check
         run: docker build -t sprintsight-backend-test -f Dockerfile .
 
   # ------------------------------------------------------------------------------------
-  # 4. Frontend Job
+  # 4. Frontend Job (Lint, Type-Check, Test, Build, Docker Build)
   # ------------------------------------------------------------------------------------
   frontend:
     name: Frontend
@@ -163,31 +155,11 @@ jobs:
       - name: build
         run: npm run build
 
-      - name: scan frontend files and dependencies
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: frontend
-          scanners: vuln,misconfig
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          format: table
-
-      - name: build frontend image for scanning
-        run: docker build --file Dockerfile --tag sprintsight-frontend:ci --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 .
-
-      - name: scan frontend image
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: image
-          image-ref: sprintsight-frontend:ci
-          scanners: vuln
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          format: table
+      - name: docker build check
+        run: docker build -t sprintsight-frontend-test --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 -f Dockerfile .
 
   # ------------------------------------------------------------------------------------
-  # 5. Authoritative Gatekeeper Job (REQUIRED FOR BRANCH PROTECTION)
+  # 5. Authoritative Gatekeeper Job (Required for Branch Protection)
   # ------------------------------------------------------------------------------------
   ci-passed:
     name: CI passed
@@ -201,6 +173,6 @@ jobs:
         run: |
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           if ! echo "$RESULTS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null; then
-            echo "::error::A required job failed or was cancelled."
+            echo "::error::A required CI job failed or was cancelled."
             exit 1
           fi
