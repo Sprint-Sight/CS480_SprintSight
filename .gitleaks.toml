@@ -1,0 +1,9 @@
+title = "Gitleaks Config"
+
+[allowlist]
+description = "Global allowlist for build artifacts and temporary files"
+paths = [
+  '''frontend/\.next''',
+  '''\.next''',
+  '''node_modules'''
+]
