@@ -55,7 +55,7 @@ async def run_trial(model_name: str, experiment_name: str = DEFAULT_EXPERIMENT_N
                 trace_ids = [] # fresh per run so a judge task only sees its own traces
                 try:
                     assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"  Error evaluating {bundle.team_id}: {e}")
                     continue
                 if not trace_ids:

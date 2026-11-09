@@ -1,14 +1,20 @@
-import json, logging, math, mlflow, re, threading
-from datetime import datetime, timezone
+import json
+import logging
+import math
+import re
+import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean
+
+import mlflow
 
 from prompts.dimension_criteria import DIMENSIONS
 
 log = logging.getLogger("sprintsight.save_results")
 
 RESULTS_DIRECTORY = Path(__file__).resolve().parent.parent / "results" 
-_SESSION_TS = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") # 1 file per run, so a judge can see the new traces and not be confused by old ones. The judge only looks at traces in the same experiment as the challenger prompt version.
+_SESSION_TS = datetime.now(UTC).strftime("%Y%m%dT%H%M%S") # 1 file per run, so a judge can see the new traces and not be confused by old ones. The judge only looks at traces in the same experiment as the challenger prompt version.
 _LOCK = threading.Lock()  # for concurrent writes to the same file
 
 def _slug(text: str):
@@ -37,8 +43,8 @@ def _summarize_raw_results(rows: list[dict], meta: dict) -> dict:
     return {**meta, "total_runs": len(rows), "teams": teams}
 
 # Summarize the judge's verdicts for a single trace, including per-dimension hallucination rates, a row per judged citation.
-def _summarize_judge(rows: list[dict], meta: dict) -> dict:
-    cols = sorted({c for r in rows for c, v in r['scores'].items() if isinstance(v, (int, float))})
+# def _summarize_judge(rows: list[dict], meta: dict) -> dict:
+#     cols = sorted({c for r in rows for c, v in r['scores'].items() if isinstance(v, (int, float))})
 
 # Append this run to the raw jsonl, rebuild the summary, and attach both to the ACTIVE MLflow run.
 # Call it inside `with mlflow.start_run(...)`. Never raises: results are a by-product of grading.
@@ -56,7 +62,7 @@ def save_run_results(*, experiment_name: str, model_name: str, team_id: str, spr
         "failed_dimensions": failed_dimensions,
         "prompt_versions": prompt_versions,
         "duration_seconds": round(duration_seconds, 2),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     try:
         with _LOCK: # concurrent writes to the same file
@@ -84,8 +90,8 @@ def save_judge_results(*, experiment_name: str, judge_model: str, group_name: st
     files attach to the judge run. Never raises: judging has already succeeded by this point."""
     label = _slug(experiment_name)
     raw_path = RESULTS_DIRECTORY / f"raw_judge_results_{label}_{_SESSION_TS}.jsonl"
-    summary_path = RESULTS_DIRECTORY / f"summary_judge_{label}_{_SESSION_TS}.json"
-    ts = datetime.now(timezone.utc).isoformat()
+    # summary_path = RESULTS_DIRECTORY / f"summary_judge_{label}_{_SESSION_TS}.json"
+    ts = datetime.now(UTC).isoformat()
     new_rows = []
     for _, df_row in result_df.iterrows():
         tid = df_row["trace_id"]

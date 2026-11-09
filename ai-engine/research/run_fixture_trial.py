@@ -10,16 +10,20 @@ Usage:
         docker compose exec sprintsight_ai python -m research.run_fixture_trial --model "$m"
     done
 """
-import argparse, asyncio, json, mlflow
+import argparse
+import asyncio
+import json
 from pathlib import Path
+
+import mlflow
 from fastapi import BackgroundTasks
 
-from schemas.artifact_bundle import ArtifactBundle
-from prompts.dimension_criteria import DIMENSIONS
-from services.evaluator import evaluate_sprint
 from judges.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
+from prompts.dimension_criteria import DIMENSIONS
 from research.fixtures import FIXTURES_TEAMS
+from schemas.artifact_bundle import ArtifactBundle
+from services.evaluator import evaluate_sprint
 
 DEFAULT_EXPERIMENT_NAME = "openai judges fixtures test 1"
 

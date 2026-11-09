@@ -1,9 +1,18 @@
-import json, logging, threading, mlflow
+import json
+import logging
+import threading
 from statistics import mean
+
+import mlflow
 from mlflow import MlflowClient, MlflowException
-from prompts.dimension_criteria import DIMENSIONS
+
 from judges.run_judges import run_judge_evaluation
-from llmops.prompt_registry import PRODUCTION_ALIAS, get_production_prompt, assign_prompt_alias
+from llmops.prompt_registry import (
+    PRODUCTION_ALIAS,
+    assign_prompt_alias,
+    get_production_prompt,
+)
+from prompts.dimension_criteria import DIMENSIONS
 
 JUDGE_RESULTS_TAG = "judge_results"       # JSON on each prompt version: {"team|sprint|model": {"abs_error": x, "hallucination": y}}
 PROMOTION_MAE_THRESHOLD = 2.0             # absolute gate: never promote a prompt whose per-dimension error is above this
@@ -76,7 +85,7 @@ def _determine_promotion(judge_result, trace_id, team_id, sprint_id, prompt_vers
 def _dimension_scores(metrics: dict, dimension: str) -> dict:
     found = {"abs_error": metrics.get(f"grade_abs_error_{dimension}/mean"), # absent when the trace had no gold
              "hallucination": metrics.get(f"citation_hallucination_rate_{dimension}/mean", metrics.get(HALLUCINATION_KEY)),
-             "citation_count": metrics.get(f"citation_count/mean")}
+             "citation_count": metrics.get("citation_count/mean")}
     return {n: float(v) for n, v in found.items() if v is not None}
 
 def _passes_criteria(scores: dict) -> bool:
