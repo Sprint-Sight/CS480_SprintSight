@@ -1,13 +1,14 @@
 import io
 import logging
 import re
-import xml.etree.ElementTree as ET
 import zipfile
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import PurePath
 from typing import Protocol
 from uuid import uuid4
+
+from defusedxml import ElementTree
 
 from app.core.config import Settings
 from app.repositories.interfaces import DocumentRecord, DocumentRepository
@@ -106,8 +107,8 @@ def _extract_docx_text(content: bytes) -> str:
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             with archive.open("word/document.xml") as document_xml:
-                tree = ET.parse(document_xml)
-    except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
+                tree = ElementTree.parse(document_xml)
+    except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as exc:
         log.warning("Failed to parse .docx for AI context: %s", exc)
         return ""
 

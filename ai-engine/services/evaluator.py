@@ -16,15 +16,13 @@ from prompts.dimension_criteria import (
     DIMENSIONS,
     SPRINT_FEEDBACK_PROMPT_NAME,
 )
+from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import remember_bundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
-from schemas.bundle_registry import remember_bundle
-from schemas.all_dimensions_failed_error import AllDimensionsFailedError
-from services.save_results import save_run_results
 from services.llm_client import (
     evaluate_dimension,
     find_loaded_model,
@@ -33,6 +31,7 @@ from services.llm_client import (
     select_run_num_ctx,
     snapshot_loaded_models,
 )
+from services.save_results import save_run_results
 
 '''
 Receives a bundle, evaluates each rubric dimension (serially unless
@@ -270,9 +269,9 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
         )
 
         mlflow.log_metric("overall_score", average_score)
-        for dim, score in scores_by_dim.items():
+        for dim_name, score in scores_by_dim.items():
             if not score.evaluation_failed:
-                mlflow.log_metric(f"{dim}_score", score.score)
+                mlflow.log_metric(f"{dim_name}_score", score.score)
         mlflow.log_metric("failed_dimensions_count", len(failed_dimensions))
         mlflow.log_metric("evaluation_duration_seconds", time.time() - start_time)
 
@@ -308,4 +307,5 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     
     log.info("Evaluation by model %s completed in %.2f seconds.", model_name, time.time() - start_time)
     print(f"Evaluation by model {model_name} completed in {time.time() - start_time:.2f} seconds.")
-    return final_assessment, prompt_versions_registered
+    prompt_versions_int: dict[str, int] = {k: int(v) for k, v in prompt_versions_registered.items()}
+    return final_assessment, prompt_versions_int

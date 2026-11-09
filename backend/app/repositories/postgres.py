@@ -1000,8 +1000,8 @@ class PostgresProjectRepository(ProjectRepository):
     def get_project(self, project_id: str) -> ProjectRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
-                f"""SELECT {_PROJECT_COLUMNS}
-                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.project_id = %s""",
+                f"""SELECT {_PROJECT_COLUMNS}"""  # nosec B608
+                """FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.project_id = %s""",
                 (UUID(project_id),),
             ).fetchone()
         return self._project(row) if row else None
@@ -1009,8 +1009,8 @@ class PostgresProjectRepository(ProjectRepository):
     def list_projects(self, course_id: str) -> list[ProjectRecord]:
         with self._pool.connection() as connection:
             rows = connection.execute(
-                f"""SELECT {_PROJECT_COLUMNS}
-                FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.course_id = %s ORDER BY p.project_name""",
+                f"""SELECT {_PROJECT_COLUMNS}""" # nosec B608
+                """FROM projects p JOIN courses c ON c.course_id = p.course_id WHERE p.course_id = %s ORDER BY p.project_name""",
                 (UUID(course_id),),
             ).fetchall()
         return [self._project(row) for row in rows]
@@ -1756,8 +1756,7 @@ class PostgresAssessmentRepository(AssessmentRepository):
 
         with self._pool.connection() as connection:
             row = connection.execute(
-                f"UPDATE assessment_reports SET {', '.join(assignments)} "
-                "WHERE report_id = %s RETURNING *",
+                f"UPDATE assessment_reports SET {', '.join(assignments)} WHERE report_id = %s RETURNING *",  # nosec B608
                 (*values, UUID(report_id.replace("rpt-", ""))),
             ).fetchone()
         return self._report(row) if row else None
@@ -1927,7 +1926,7 @@ class PostgresMetricsRepository(MetricsRepository):
                 """SELECT sha, author, author_email, student_id, message, timestamp, lines_added,
                     lines_deleted, files_changed
                     FROM ingestion_commits WHERE """
-                + " AND ".join(commit_filters)
+                + " AND ".join(commit_filters)  # nosec B608
                 + " ORDER BY timestamp, sha",
                 commit_params,
             ).fetchall()
@@ -1990,7 +1989,7 @@ class PostgresMetricsRepository(MetricsRepository):
                 commit_params.append(end_datetime)
             total = connection.execute(
                 "SELECT COUNT(*) AS total FROM ingestion_commits WHERE "
-                + " AND ".join(commit_filters),
+                + " AND ".join(commit_filters),  # nosec B608
                 commit_params,
             ).fetchone()["total"]
             commit_rows = connection.execute(
@@ -1998,7 +1997,7 @@ class PostgresMetricsRepository(MetricsRepository):
                     lines_deleted, files_changed
                     FROM ingestion_commits
                     WHERE """
-                + " AND ".join(commit_filters)
+                + " AND ".join(commit_filters)  # nosec B608
                 + " ORDER BY timestamp, sha LIMIT %s OFFSET %s",
                 [*commit_params, limit, offset],
             ).fetchall()

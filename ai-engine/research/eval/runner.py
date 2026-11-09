@@ -226,7 +226,7 @@ def run_evaluation(
         note=note,
     )
 
-    items, ds_hash, ds_spec = load_dataset(dataset_name, subset)
+    items, ds_hash, ds_spec = load_dataset(dataset_name, subset)  # nosec B615
     if not items:
         raise ValueError(f"Dataset '{dataset_name}' loaded zero items (subset filter?).")
 

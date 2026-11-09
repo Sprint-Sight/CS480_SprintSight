@@ -52,10 +52,10 @@ async def run_trial(model_name: str, experiment_name: str = DEFAULT_EXPERIMENT_N
             bundle = load_ab_bundle(ab_bundle_path)
             for i in range(repeats):
                 print(f"[{i + 1}/{repeats}] Evaluating '{model_name}' against {bundle.team_id}...")
-                trace_ids = [] # fresh per run so a judge task only sees its own traces
+                trace_ids: list[str] = [] # fresh per run so a judge task only sees its own traces
                 try:
                     assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"  Error evaluating {bundle.team_id}: {e}")
                     continue
                 if not trace_ids:

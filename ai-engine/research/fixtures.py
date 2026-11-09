@@ -24,7 +24,8 @@ Theta   5 3 3 4 1 4 -> 3.33   (solo effort, poor results)
 SGT = timezone(timedelta(hours=8))
 SPRINT_ID = "2026-08-10_to_2026-08-21"
 
-def _sha(team, n): return hashlib.sha1(f"{team}:{n}".encode()).hexdigest()
+def _sha(team, n):
+    return hashlib.sha1(f"{team}:{n}".encode(), usedforsecurity=False).hexdigest()
 def _ts(day, hh, mm, ss=0): return datetime(2026, 8, day, hh, mm, ss, tzinfo=SGT)
 def _file(name, change="modified", added=0, deleted=0): return FileDiff(filename=name, change_type=change, lines_added=added, lines_deleted=deleted)
 def _commit(team, n, author, message, ts, files):

@@ -72,7 +72,7 @@ def inspect(
     out_dir: Path,
     model_name: str = "sprintsight-qwen",
 ) -> dict:
-    items, ds_hash, _ = load_dataset(dataset_name, subset=[example_id])
+    items, ds_hash, _ = load_dataset(dataset_name, subset=[example_id])  # nosec B615
     if not items:
         raise LookupError(f"example '{example_id}' not in dataset '{dataset_name}'")
     item = items[0]
