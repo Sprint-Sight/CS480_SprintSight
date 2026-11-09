@@ -122,12 +122,7 @@ export function RosterModal({
                   return (
                     <div
                       key={student.id}
-                      className="flex items-center justify-between rounded-lg border border-slate-100 p-2.5 hover:bg-blue-50 cursor-pointer transition-colors"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => canEnroll && onEnrollExisting(student.id)}
-                      onKeyDown={(e) => e.key === "Enter" && canEnroll && onEnrollExisting(student.id)}
-                      aria-label={`Enroll ${student.full_name} in the course`}
+                      className="flex items-center justify-between rounded-lg border border-slate-100 p-2.5 transition-colors hover:bg-blue-50"
                     >
                       <div>
                         <div className="text-sm font-medium text-slate-900">{student.full_name}</div>
@@ -138,12 +133,12 @@ export function RosterModal({
                       </div>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           if (canEnroll) onEnrollExisting(student.id);
                         }}
                         disabled={!canEnroll}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                        aria-label={`Enroll ${student.full_name} in the course`}
+                        className="inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-400"
                       >
                         <UserPlus className="h-3.5 w-3.5" />
                         Enroll

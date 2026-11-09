@@ -14,11 +14,11 @@ export function ProfileDetails({ profile }: { profile: UserProfile }) {
     : "User";
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600">Profile</p>
-          <h1 className="mt-2 text-3xl font-bold text-slate-900">{profile.name}</h1>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">{profile.name}</h1>
         </div>
 
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-2xl font-bold text-blue-700">

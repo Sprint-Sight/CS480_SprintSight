@@ -50,10 +50,10 @@ export function AuditLogPage({
   const isAdmin = role === "admin";
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl space-y-6 bg-slate-50 p-6 text-slate-900 sm:p-8">
+    <main className="mx-auto min-h-screen max-w-7xl space-y-6 bg-slate-50 p-4 text-slate-900 sm:p-6 lg:p-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-blue-950">Audit Log</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">Audit Log</h1>
           <p className="mt-1 text-sm text-slate-500">Review recorded system actions and assessment score overrides.</p>
         </div>
         <div className="flex items-center gap-2">

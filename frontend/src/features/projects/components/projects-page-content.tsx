@@ -612,18 +612,18 @@ export default function ProjectsPageContent() {
   const filteredProjects = useProjectFilters(projects, searchTerm, appliedFilters);
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">Projects</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">Projects</h1>
           <p className="mt-1 text-base text-slate-500">Manage course sections, roster, and team project metrics</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100 h-11">
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100 min-h-11">
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-0">
               <BookOpen className="h-4 w-4 text-slate-400" />
-              <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="h-9 min-w-[220px] appearance-none bg-transparent pr-5 text-sm font-semibold text-slate-700 outline-none">
+              <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="min-h-9 min-w-[220px] appearance-none bg-transparent pr-5 text-sm font-semibold text-slate-700 outline-none">
                 {courses.length === 0 ? (
                   <option value="">No courses available</option>
                 ) : (

@@ -112,17 +112,17 @@ export function NotificationsDropdown({
                         {notification.title}
                       </h3>
                       <span
-                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                        className={`text-xs font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${
                           getEventTypeStyle(notification.event_type).bgColor
                         } ${getEventTypeStyle(notification.event_type).textColor}`}
                       >
                         {getEventTypeStyle(notification.event_type).label}
                       </span>
                     </div>
-                    <p className="text-[11px] leading-4 text-slate-600 line-clamp-2">
+                    <p className="text-sm leading-5 text-slate-600 line-clamp-2">
                       {notification.message}
                     </p>
-                    <span className="block text-[10px] text-slate-400 mt-1">
+                    <span className="block text-xs text-slate-400 mt-1">
                       {new Date(notification.created_at).toLocaleString()}
                     </span>
                   </button>

@@ -561,10 +561,10 @@ export default function ArtifactViewerPageContent() {
   };
 
   return (
-    <div className="space-y-5 p-8">
+    <div className="space-y-5 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-blue-950">
+          <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">
             {role === "student" ? "My Project Documents" : "Artifact Viewer"}
           </h1>
           <p className="mt-1 text-base text-slate-500">

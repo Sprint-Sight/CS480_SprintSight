@@ -70,7 +70,7 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
 
           <form onSubmit={handleSubmit} className="mt-4 space-y-4">
             <div>
-              <label htmlFor={fullNameId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={fullNameId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-blue-600" />
                 Full Name
               </label>
@@ -88,7 +88,7 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
             </div>
 
             <div>
-              <label htmlFor={emailId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={emailId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-blue-600" />
                 Email Address
               </label>
@@ -106,7 +106,7 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
             </div>
 
             <div>
-              <label htmlFor={roleId} className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label htmlFor={roleId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-blue-600" />
                 Assigned Role
               </label>

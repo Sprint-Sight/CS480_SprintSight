@@ -52,7 +52,7 @@ export default function SettingsPageContent() {
   const isRubricBlockingSave = rubricWeights.isLoading || (rubricWeights.hasUnsavedChanges && !rubricWeights.isValidTotal);
   const isSaveUnavailable = isModelSelectionUnavailable || jiraCredentials.isLoading || isRubricBlockingSave;
   return (
-    <div className="space-y-5 p-8">
+    <div className="space-y-5 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-wrap items-stretch justify-between gap-4">
         <SettingsHeader />
         <div className="flex flex-wrap items-stretch justify-end gap-3">

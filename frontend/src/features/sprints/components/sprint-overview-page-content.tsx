@@ -18,8 +18,8 @@ function InstructorSprintOverview() {
   const { payload, liveTotals, isSyncing, syncError } = useSprintOverviewData();
   if (!payload)
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold text-blue-950">Sprint Overview</h1>
+      <div className="p-4 sm:p-6 lg:p-8">
+        <h1 className="text-2xl font-bold text-blue-950 sm:text-3xl">Sprint Overview</h1>
         {isSyncing ? (
           <p role="status" className="mt-2 text-sm text-slate-500">
             Loading sprint data...
@@ -37,9 +37,9 @@ function InstructorSprintOverview() {
       </div>
     );
   return (
-    <div className="space-y-5 p-8">
+    <div className="space-y-5 p-4 sm:p-6 lg:p-8">
       <div>
-        <h1 className="text-4xl font-bold tracking-tight text-blue-950">Sprint Overview</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">Sprint Overview</h1>
         <p className="mt-1 text-base text-slate-500">
           Track sprint progress and milestones for{" "}
           <span className="font-semibold text-slate-700">{payload.project.name}</span>
@@ -75,9 +75,9 @@ function InstructorSprintOverview() {
 function StudentSprintOverview() {
   const { project, sprints, report, isLoading, error } = useStudentProjectContext(true);
   return (
-    <div className="space-y-5 p-8">
+    <div className="space-y-5 p-4 sm:p-6 lg:p-8">
       <div>
-        <h1 className="text-4xl font-bold tracking-tight text-blue-950">Sprint Overview</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">Sprint Overview</h1>
         <p className="mt-1 text-base text-slate-500">
           {project ? `${project.team_name} - ${project.project_name}` : "My project"}
         </p>

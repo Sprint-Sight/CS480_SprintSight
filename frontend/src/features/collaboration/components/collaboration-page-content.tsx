@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PageContainer, PageHeader } from "@/components/ui/page-layout";
 import { CollaborationCharts } from "@/features/collaboration/components/collaboration-charts";
 import { CollaborationHeader } from "@/features/collaboration/components/collaboration-header";
 import { CollaborationHeatmap } from "@/features/collaboration/components/collaboration-heatmap";
@@ -20,7 +21,7 @@ function InstructorCollaborationPage() {
   const { collaborationData, liveIngestion, isLoading, error, selectedProjectId } = useCollaborationData();
   const [comparisonMetric, setComparisonMetric] = useState<CollaborationMetric>("commits");
   return (
-    <div className="space-y-6 p-8">
+    <PageContainer>
       <CollaborationHeader data={collaborationData} />
       {isLoading && <p role="status" className="text-sm text-slate-600">Loading project collaboration data...</p>}
       {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</p>}
@@ -50,10 +51,10 @@ function InstructorCollaborationPage() {
         onComparisonMetricChange={setComparisonMetric}
       />
       <CollaborationHeatmap rows={collaborationData.participationHeatmap} />
-    </div>
+    </PageContainer>
   );
 }
 
 function StudentCollaborationUnavailable() {
-  return <div className="space-y-6 p-8"><div><h1 className="text-4xl font-bold tracking-tight text-blue-950">Collaboration</h1><p className="mt-1 text-sm text-slate-500">Individual Git and Jira activity is not available in the student view.</p></div><section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-lg font-semibold text-slate-900">Collaboration analytics unavailable</h2><p className="mt-2 text-sm text-slate-500">Review your published assessment report for instructor feedback.</p></section></div>;
+  return <PageContainer><PageHeader title="Collaboration" description="Individual Git and Jira activity is not available in the student view." /><section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><h2 className="text-lg font-semibold text-slate-900">Collaboration analytics unavailable</h2><p className="mt-2 text-sm text-slate-500">Review your published assessment report for instructor feedback.</p></section></PageContainer>;
 }
