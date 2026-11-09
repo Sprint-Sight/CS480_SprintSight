@@ -36,6 +36,8 @@ mlruns/
 # 3. Node.js / React (Frontend)
 # ==========================================
 node_modules/
+.next/
+frontend/.next/
 frontend/build/
 frontend/dist/
 frontend/.pnpm-debug.log*
@@ -90,7 +92,3 @@ ai-engine/research/validation_results/*
 # ==========================================
 repo/*
 !repo/README.md
-
-**/.next/*
-
-frontend/.next/
