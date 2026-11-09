@@ -3,6 +3,7 @@
 import { BrainCircuit, Download, Loader2, PencilLine, Play, Save, X } from "lucide-react";
 import { PageContainer } from "@/components/ui/page-layout";
 import { useState } from "react";
+import { AssessmentProgressBar } from "@/features/assessment/components/assessment-progress-bar";
 import {
   AssessmentFeedbackSections,
   AssessmentScoreVisuals,
@@ -14,6 +15,7 @@ import { ExportModal } from "@/features/assessment/components/export-modal";
 import { InstructorAiFeedbackModal } from "@/features/instructor-feedback/components/instructor-ai-feedback-modal";
 import { StudentAssessmentReport } from "@/features/assessment/components/student-assessment-report";
 import { useStudentProjectContext } from "@/features/student/hooks/use-student-project-context";
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 
 export default function AssessmentReportPageContent() {
   const assessment = useAssessmentReport();
@@ -67,6 +69,7 @@ export default function AssessmentReportPageContent() {
     backendReport: assessment.backendReport,
     onSaved: assessment.acceptSavedReport,
   });
+  useUnsavedChangesGuard(editor.isEditing && editor.hasChanges, "You have unsaved report changes. Leave this page without saving?");
 
   if (assessment.role === "student") {
     const report = studentContext.report ? toSprintAssessmentReport(studentContext.report, studentContext.project?.team_name, studentContext.project?.project_name) : null;
@@ -178,10 +181,7 @@ export default function AssessmentReportPageContent() {
       </section>
 
       {assessment.assessmentMessage && (assessment.isGenerating || assessment.assessmentProgress > 0) && (
-        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
-          <div className="flex justify-between"><span>{assessment.assessmentMessage}</span><span>{assessment.assessmentProgress}%</span></div>
-          <div className="mt-2 h-2 rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-800" style={{ width: `${assessment.assessmentProgress}%` }} /></div>
-        </div>
+        <AssessmentProgressBar message={assessment.assessmentMessage} progress={assessment.assessmentProgress} />
       )}
       {assessment.assessmentError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{assessment.assessmentError}</div>}
       {editor.isEditing && editor.hasChanges && (

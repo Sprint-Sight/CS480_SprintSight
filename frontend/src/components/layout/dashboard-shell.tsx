@@ -16,6 +16,7 @@ import {
   FolderOpen,
   GitCompare,
   LayoutDashboard,
+  LogOut,
   Menu,
   MessageSquare,
   Settings,
@@ -32,6 +33,7 @@ import { buildSprintOptions, semesterLabel } from "@/features/ingestion/scope-op
 import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
 import { isString, readPersistentState, usePersistentState } from "@/lib/storage/persistent-state";
 import { useNotifications } from "@/hooks/use-notifications";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { NotificationsDropdown } from "@/components/ui/notifications-modal";
 import { PageSkeleton } from "@/components/ui/page-skeleton";
 
@@ -121,6 +123,12 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const showsSprintScope = showsInstructorScope && !routesWithoutSprintScope.has(pathname);
   const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings" || pathname === "/audit-log";
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const menuToggleRef = useRef<HTMLButtonElement | null>(null);
+  const closeSidebarRef = useRef<HTMLButtonElement | null>(null);
+  const wasSidebarOpenRef = useRef(false);
+  const isDesktop = useMediaQuery("(min-width: 768px)");
 
   const session = useSession();
   const queryClient = useQueryClient();
@@ -135,7 +143,15 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Use notifications hook
-  const { notifications, unreadCount, isLoading: isLoadingNotifications, error: notificationError, markAsRead, markAllAsRead } = useNotifications();
+  const {
+    notifications,
+    unreadCount,
+    isLoading: isLoadingNotifications,
+    error: notificationError,
+    announcement,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications();
 
   // Dynamic scope states fetched from DB / API
   const [semesterOptions, setSemesterOptions] = useState<string[]>([]);
@@ -235,15 +251,56 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   }, [isAuthorized, role, queryClient, setSelectedSemester]);
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleClickOutside(event: PointerEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsProfileMenuOpen(false);
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsProfileMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsSidebarOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isSidebarOpen]);
+
+  // Keeps the closed drawer out of the tab order on phones and traps the page behind an open drawer.
+  // Declared before the focus effect so `inert` is cleared before focus moves back to the toggle.
+  useEffect(() => {
+    const isMobileDrawerClosed = !isSidebarOpen && !isDesktop;
+    const isMobileDrawerOpen = isSidebarOpen && !isDesktop;
+    if (sidebarRef.current) sidebarRef.current.inert = isMobileDrawerClosed;
+    if (mainRef.current) mainRef.current.inert = isMobileDrawerOpen;
+  }, [isSidebarOpen, isDesktop]);
+
+  useEffect(() => {
+    if (isSidebarOpen) {
+      closeSidebarRef.current?.focus();
+    } else if (wasSidebarOpenRef.current) {
+      menuToggleRef.current?.focus();
+    }
+    wasSidebarOpenRef.current = isSidebarOpen;
+  }, [isSidebarOpen]);
 
   useEffect(() => {
     if (isAuthorized && role === "student" && isProjectsRoot) {
@@ -351,13 +408,14 @@ export default function DashboardShell({ children }: DashboardShellProps) {
 
           {/* Sidebar */}
           <aside
+            ref={sidebarRef}
             className={`fixed inset-y-0 left-0 z-50 w-64 transform overflow-hidden border-r border-slate-200 bg-white transition-transform duration-300 md:static md:z-auto md:transform-none md:w-auto ${
               isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
             }`}
           >
             <div className="flex h-full flex-col">
               {/* Logo + Close Button */}
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="relative flex items-center justify-center border-b border-slate-200 px-4 py-3">
                 <Image
                   src="/logo.png"
                   alt="SprintSight Logo"
@@ -367,9 +425,10 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                   className="h-14 w-auto max-w-full object-contain"
                 />
                 <button
+                  ref={closeSidebarRef}
                   type="button"
                   onClick={() => setIsSidebarOpen(false)}
-                  className="md:hidden inline-flex h-11 w-11 items-center justify-center hover:bg-slate-100 rounded-lg text-slate-600"
+                  className="md:hidden absolute right-2 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center hover:bg-slate-100 rounded-lg text-slate-600"
                   aria-label="Close sidebar"
                 >
                   <X className="h-5 w-5" />
@@ -409,11 +468,12 @@ export default function DashboardShell({ children }: DashboardShellProps) {
             </div>
           </aside>
 
-          <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <section ref={mainRef} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
             <header className="min-w-0 shrink-0 border-b border-slate-200 bg-white px-3 py-3 sm:px-6">
               <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
                 {/* Mobile Menu Button */}
                 <button
+                  ref={menuToggleRef}
                   type="button"
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                   className="md:hidden inline-flex h-11 w-11 items-center justify-center hover:bg-slate-100 rounded-lg text-slate-600"
@@ -427,32 +487,31 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                 <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
                   {/* Notifications */}
                   <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setIsNotificationsModalOpen(!isNotificationsModalOpen)}
-                      className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
-                      aria-label="Notifications"
-                      title="Open notifications"
-                      aria-expanded={isNotificationsModalOpen}
-                    >
-                      <Bell className="h-4 w-4" />
-                      {unreadCount > 0 && (
-                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
-                          {unreadCount > 99 ? "99+" : unreadCount}
-                        </span>
-                      )}
-                    </button>
-
                     <NotificationsDropdown
                       isOpen={isNotificationsModalOpen}
-                      onClose={() => setIsNotificationsModalOpen(false)}
+                      onOpenChange={setIsNotificationsModalOpen}
                       notifications={notifications}
                       unreadCount={unreadCount}
                       isLoading={isLoadingNotifications}
                       error={notificationError}
+                      announcement={announcement}
                       onMarkAsRead={markAsRead}
                       onMarkAllAsRead={markAllAsRead}
-                    />
+                    >
+                      <button
+                        type="button"
+                        className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100"
+                        aria-label="Notifications"
+                        title="Open notifications"
+                      >
+                        <Bell className="h-4 w-4" />
+                        {unreadCount > 0 && (
+                          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
+                            {unreadCount > 99 ? "99+" : unreadCount}
+                          </span>
+                        )}
+                      </button>
+                    </NotificationsDropdown>
                   </div>
 
                   {/* Profile Menu */}
@@ -501,11 +560,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
                           onClick={handleLogout}
                           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100"
                         >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 text-slate-500">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M16 17l5-5-5-5" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M21 12H9" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
+                          <LogOut className="h-4 w-4 text-slate-500" />
                           Sign out
                         </button>
                       </div>

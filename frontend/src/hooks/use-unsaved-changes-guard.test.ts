@@ -6,7 +6,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
 }));
 
-import { useUnsavedChangesGuard } from "@/features/settings/hooks/use-unsaved-changes-guard";
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
+
+const MESSAGE = "You have unsaved changes. Leave this page without saving?";
 
 function dispatchBeforeUnload() {
   const event = new Event("beforeunload", { cancelable: true });
@@ -35,31 +37,31 @@ describe("useUnsavedChangesGuard", () => {
   });
 
   it("does not prompt on unload when nothing is unsaved", () => {
-    renderHook(() => useUnsavedChangesGuard(false));
+    renderHook(() => useUnsavedChangesGuard(false, MESSAGE));
 
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
   });
 
   it("prompts on unload when there are unsaved changes", () => {
-    renderHook(() => useUnsavedChangesGuard(true));
+    renderHook(() => useUnsavedChangesGuard(true, MESSAGE));
 
     expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
   });
 
-  it("navigates in-app when the user confirms leaving", () => {
+  it("shows the caller-supplied message before in-app navigation", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    renderHook(() => useUnsavedChangesGuard(true));
+    renderHook(() => useUnsavedChangesGuard(true, MESSAGE));
 
     const event = clickAnchor("/projects?course=1#top");
 
     expect(event.defaultPrevented).toBe(true);
-    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(window.confirm).toHaveBeenCalledWith(MESSAGE);
     expect(push).toHaveBeenCalledWith("/projects?course=1#top");
   });
 
   it("stays on the page when the user cancels leaving", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderHook(() => useUnsavedChangesGuard(true));
+    renderHook(() => useUnsavedChangesGuard(true, MESSAGE));
 
     const event = clickAnchor("/projects");
 
@@ -69,7 +71,7 @@ describe("useUnsavedChangesGuard", () => {
 
   it("ignores clicks when nothing is unsaved", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderHook(() => useUnsavedChangesGuard(false));
+    renderHook(() => useUnsavedChangesGuard(false, MESSAGE));
 
     const event = clickAnchor("/projects");
 
@@ -79,7 +81,7 @@ describe("useUnsavedChangesGuard", () => {
 
   it("lets modified clicks and external links through", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderHook(() => useUnsavedChangesGuard(true));
+    renderHook(() => useUnsavedChangesGuard(true, MESSAGE));
 
     expect(clickAnchor("/projects", { ctrlKey: true }).defaultPrevented).toBe(false);
     expect(clickAnchor("https://example.com/docs").defaultPrevented).toBe(false);

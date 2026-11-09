@@ -114,11 +114,14 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
       return;
     }
 
+    const controller = new AbortController();
+    const { signal } = controller;
+
     async function loadJiraSnapshot(): Promise<JiraSnapshot | null> {
-      const runs = await apiRequest<JiraRun[]>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}`);
+      const runs = await apiRequest<JiraRun[]>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}`, { signal });
       const completedRun = runs.find((run) => run.processing_status === "completed");
       if (!completedRun) return null;
-      return apiRequest<JiraSnapshot>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(completedRun.sprint_id)}/${completedRun.run_id}/cleaned`);
+      return apiRequest<JiraSnapshot>(`/jira-ingestion/runs/${projectId}/${encodeURIComponent(completedRun.sprint_id)}/${completedRun.run_id}/cleaned`, { signal });
     }
 
     async function loadDashboard() {
@@ -127,9 +130,10 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
       setGitMetrics(null);
       setJiraSnapshot(null);
       const [gitResult, jiraResult] = await Promise.allSettled([
-        apiRequest<GitMetrics>(`/repo-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}?course_id=${encodeURIComponent(courseId)}`),
+        apiRequest<GitMetrics>(`/repo-ingestion/runs/${projectId}/${encodeURIComponent(currentSprintId)}?course_id=${encodeURIComponent(courseId)}`, { signal }),
         loadJiraSnapshot(),
       ]);
+      if (signal.aborted) return;
       const errors: string[] = [];
       if (gitResult.status === "fulfilled") setGitMetrics(gitResult.value);
       else if (!isNotFound(gitResult.reason)) errors.push(getErrorMessage(gitResult.reason, "Unable to load Git data."));
@@ -139,6 +143,10 @@ export function useDashboardData(router: { replace: (path: string) => void }): D
       setIsLoading(false);
     }
     loadDashboard();
+    return () => {
+      controller.abort();
+      setIsLoading(false);
+    };
   }, [projects, role, selectedProjectId, sprintId]);
 
   return { role, fullName, mounted, projects, courseCount, selectedProjectId, sprintId, gitMetrics, jiraSnapshot, isLoading, loadError, setSelectedProjectId, setSprintId };

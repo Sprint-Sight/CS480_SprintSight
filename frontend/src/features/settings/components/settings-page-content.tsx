@@ -10,7 +10,7 @@ import { ApiConnectionsSettings } from "@/features/settings/components/api-conne
 import { useModelSelection } from "@/features/settings/hooks/use-model-selection";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 import { useRubricWeights } from "@/features/settings/hooks/use-rubric-weights";
-import { useUnsavedChangesGuard } from "@/features/settings/hooks/use-unsaved-changes-guard";
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 import { useSession } from "@/lib/auth/session";
 import { PageSkeleton } from "@/components/ui/page-skeleton";
 
@@ -23,7 +23,7 @@ export default function SettingsPageContent() {
   const modelSelection = useModelSelection(isAuthorized);
   const jiraCredentials = useInstructorJiraCredentials(isAuthorized);
   const rubricWeights = useRubricWeights(isAuthorized);
-  useUnsavedChangesGuard(rubricWeights.hasUnsavedChanges);
+  useUnsavedChangesGuard(rubricWeights.hasUnsavedChanges, "You have unsaved rubric changes. Leave this page without saving?");
 
   useEffect(() => {
     if (isStudent) router.replace("/");

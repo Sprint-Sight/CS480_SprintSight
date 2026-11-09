@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ChartWithTable, type ChartTableColumn } from "@/components/ui/chart-with-table";
+import {
+  describeMemberChart,
+  describeWorkloadChart,
+  getCategoryAxisWidth,
+} from "@/features/collaboration/chart-layout";
 import type { CollaborationMetric, MemberCommitMetric, WorkloadSlice } from "@/features/collaboration/types";
 
 type Props = {
@@ -33,6 +39,15 @@ export function CollaborationCharts({
     ? sortedMembers
     : sortedMembers.slice(0, DEFAULT_MEMBER_LIMIT);
   const chartHeight = Math.max(220, chartData.length * 38);
+  const axisWidth = getCategoryAxisWidth(chartData.map((row) => row.member));
+  const memberColumns: ChartTableColumn<MemberCommitMetric>[] = [
+    { header: "Member", cell: (row) => row.member },
+    { header: metricLabel, cell: (row) => row[comparisonMetric].toLocaleString() },
+  ];
+  const workloadColumns: ChartTableColumn<WorkloadSlice>[] = [
+    { header: "Member", cell: (slice) => slice.name },
+    { header: "Share", cell: (slice) => `${slice.value}%` },
+  ];
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -64,17 +79,30 @@ export function CollaborationCharts({
         </div>
         {sortedMembers.length > 0 ? (
           <div className="mt-3 max-h-[440px] overflow-y-auto">
-            <div style={{ height: chartHeight }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 20, bottom: 4, left: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 11 }} />
-                  <YAxis type="category" dataKey="member" width={120} axisLine={false} tickLine={false} tick={{ fill: "#475569", fontSize: 11 }} />
-                  <Tooltip formatter={(value: number) => [value.toLocaleString(), metricLabel]} />
-                  <Bar dataKey={comparisonMetric} name={metricLabel} barSize={20} radius={[0, 6, 6, 0]} fill="#2F5B85" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <ChartWithTable
+              summary={describeMemberChart(metricLabel, chartData, comparisonMetric)}
+              rows={chartData}
+              columns={memberColumns}
+            >
+              <div style={{ height: chartHeight }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart accessibilityLayer data={chartData} layout="vertical" margin={{ top: 4, right: 20, bottom: 4, left: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted))", fontSize: 11 }} />
+                    <YAxis
+                      type="category"
+                      dataKey="member"
+                      width={axisWidth}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "hsl(var(--muted))", fontSize: 11 }}
+                    />
+                    <Tooltip formatter={(value: number) => [value.toLocaleString(), metricLabel]} />
+                    <Bar dataKey={comparisonMetric} name={metricLabel} barSize={20} radius={[0, 6, 6, 0]} fill="hsl(var(--chart-bar))" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </ChartWithTable>
           </div>
         ) : (
           <div className="mt-3 flex h-[220px] items-center justify-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500" role="status">
@@ -101,18 +129,28 @@ export function CollaborationCharts({
       </section>
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-blue-950">Workload Distribution</h2>
-        <div className="mt-3 h-[240px]">
+        <div className="mt-3">
           {workloadDistribution.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={workloadDistribution} dataKey="value" nameKey="name" innerRadius={48} outerRadius={84} paddingAngle={2}>
-                  {workloadDistribution.map((slice) =>                   <Cell key={slice.id} fill={slice.color} />)}
-                </Pie>
-                <Tooltip formatter={(value: number) => `${value}%`} />
-              </PieChart>
-            </ResponsiveContainer>
+            <ChartWithTable
+              summary={describeWorkloadChart(workloadDistribution)}
+              rows={workloadDistribution}
+              columns={workloadColumns}
+            >
+              <div className="h-[240px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart accessibilityLayer>
+                    <Pie data={workloadDistribution} dataKey="value" nameKey="name" innerRadius={48} outerRadius={84} paddingAngle={2}>
+                      {workloadDistribution.map((slice) => (
+                        <Cell key={slice.id} fill={slice.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => `${value}%`} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </ChartWithTable>
           ) : (
-            <div className="flex h-full items-center justify-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500" role="status">
+            <div className="flex h-[240px] items-center justify-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500" role="status">
               No Jira ticket data is available for this project yet. Load a processed Jira snapshot to see workload distribution.
             </div>
           )}
@@ -120,8 +158,8 @@ export function CollaborationCharts({
         <div className="flex flex-wrap gap-3 text-xs text-slate-600">
           {workloadDistribution.map((slice) => (
             <span key={slice.id} className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
-              {slice.name}
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} aria-hidden="true" />
+              {slice.name} ({slice.value}%)
             </span>
           ))}
         </div>
