@@ -13,7 +13,7 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import mlflow
 import numpy as np
@@ -47,7 +47,10 @@ def load_runs(
     exp = mlflow.get_experiment_by_name(experiment)
     if exp is None:
         raise KeyError(f"MLflow experiment '{experiment}' not found.")
-    runs = mlflow.search_runs(experiment_ids=[exp.experiment_id], filter_string=filter_string)
+    runs = cast(
+        pd.DataFrame,
+        mlflow.search_runs(experiment_ids=[exp.experiment_id], filter_string=filter_string)
+    )
     if runs.empty:
         return pd.DataFrame()
 
