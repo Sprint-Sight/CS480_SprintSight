@@ -3,14 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-export const UNSAVED_CHANGES_MESSAGE = "You have unsaved rubric changes. Leave this page without saving?";
-
 /**
  * Warns before leaving the page while `hasUnsavedChanges` is true.
  * Covers closing or refreshing the tab (beforeunload) and same-origin link clicks inside the app.
  * Browser back/forward is not intercepted.
  */
-export function useUnsavedChangesGuard(hasUnsavedChanges: boolean) {
+export function useUnsavedChangesGuard(hasUnsavedChanges: boolean, message: string) {
   const router = useRouter();
 
   useEffect(() => {
@@ -40,7 +38,7 @@ export function useUnsavedChangesGuard(hasUnsavedChanges: boolean) {
       if (nextPath === currentPath && destination.hash) return;
 
       event.preventDefault();
-      if (window.confirm(UNSAVED_CHANGES_MESSAGE)) {
+      if (window.confirm(message)) {
         router.push(`${nextPath}${destination.hash}`);
       }
     };
@@ -51,5 +49,5 @@ export function useUnsavedChangesGuard(hasUnsavedChanges: boolean) {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("click", handleClick, true);
     };
-  }, [hasUnsavedChanges, router]);
+  }, [hasUnsavedChanges, message, router]);
 }

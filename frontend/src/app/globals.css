@@ -1,3 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --muted: 215 16% 47%;
+  --border: 214 32% 91%;
+  --primary: 224 64% 33%;
+  --danger: 347 77% 50%;
+  --chart-1: 224 64% 33%;
+  --chart-2: 206 51% 37%;
+  --chart-3: 204 50% 48%;
+  --chart-4: 206 70% 70%;
+  --chart-5: 202 80% 81%;
+  --chart-bar: 209 48% 35%;
+}

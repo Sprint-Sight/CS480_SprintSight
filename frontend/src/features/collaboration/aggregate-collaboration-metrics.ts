@@ -101,7 +101,7 @@ export function aggregateCollaborationMetrics(
   }
 
   const totalTickets = tickets.length || 1;
-  const palette = ["#1E3A8A", "#2F6690", "#3E87B8", "#7CB9E8", "#A7D8F5"];
+  const palette = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
   const workloadDistribution: WorkloadSlice[] = Array.from(
     ticketsByIdentity.entries(),
     ([id, slice], index) => ({
