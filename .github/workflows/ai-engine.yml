@@ -49,14 +49,11 @@ jobs:
       - name: test with coverage
         run: |
           pytest --cov=. --cov-report=term-missing --cov-report=xml -q || test $? -eq 5
-        continue-on-error: true
 
       - name: security scan
         run: |
           bandit -r .
-        continue-on-error: true
 
       - name: docker build check
         run: |
           docker build -t sprintsight-ai-engine-test -f Dockerfile .
-        continue-on-error: true
