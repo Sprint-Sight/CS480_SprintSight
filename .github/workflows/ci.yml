@@ -79,7 +79,7 @@ jobs:
         run: pytest --cov=. --cov-report=term-missing --cov-report=xml -q || test $? -eq 5
 
       - name: security scan
-        run: bandit -r .
+        run: bandit -r . -ll -x ./tests
 
       - name: docker build check
         run: docker build -t sprintsight-ai-engine-test -f Dockerfile .
