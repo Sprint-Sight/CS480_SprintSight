@@ -21,6 +21,7 @@ from app.dependencies.auth import (
 from app.repositories.interfaces import (
     ActionAuditRepository,
     AssessmentRepository,
+    CourseRecord,
     InstructorJiraCredentialsRepository,
     NotificationRepository,
     ProjectRecord,
@@ -105,21 +106,51 @@ def _encrypted_jira_token(
     return encrypt_secret(new_token)
 
 
+def course_section_label(course: CourseRecord) -> str:
+    """e.g. "CS111 · Section 2 (Fall 2026)"; matches the frontend's course label."""
+    return f"{course.code} · Section {course.section} ({course.term} {course.year})"
+
+
+def _same_code_courses(repository: ProjectRepository, course: CourseRecord) -> list[CourseRecord]:
+    """Every section of the course's code, across terms (the one-enrollment-per-code scope)."""
+    code = course.code.strip().lower()
+    return [
+        candidate
+        for candidate in repository.list_courses()
+        if candidate.code.strip().lower() == code
+    ]
+
+
 def _validate_student_course_enrollment(
-    repository: ProjectRepository, course_id: str, user_id: str
+    repository: ProjectRepository,
+    course_id: str,
+    user_id: str,
+    student_name: str = "Student",
 ):
-    """Enforce one enrollment per course code, independent of term or section."""
+    """Enforce one enrollment per course code, independent of term or section.
+
+    The 409 names the section that blocks the enrollment and says whether it is
+    this section or another one, so instructors know where to look.
+    """
     target_course = repository.get_course(course_id)
     if not target_course:
         return
 
-    for course in repository.list_courses():
-        if course.code.strip().lower() == target_course.code.strip().lower():
-            if repository.is_student_enrolled(course.id, user_id):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Student is already enrolled in a section of {target_course.code}.",
-                )
+    for course in _same_code_courses(repository, target_course):
+        if not repository.is_student_enrolled(course.id, user_id):
+            continue
+        if course.id == course_id:
+            detail = (
+                f"{student_name} is already enrolled in this section "
+                f"({course_section_label(course)})."
+            )
+        else:
+            detail = (
+                f"{student_name} is already enrolled in {course_section_label(course)}. "
+                f"A student can be in only one section of {target_course.code}; "
+                "unenroll them from that section first."
+            )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
 def _validate_student_project_assignment(
@@ -480,18 +511,53 @@ def list_course_students(
     current_user: Annotated[UserRecord, Depends(get_current_user)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    include_other_sections: Annotated[
+        bool,
+        Query(
+            description=(
+                "Also return students enrolled in another section of the same course "
+                "code (enrollment_status='other_section'). They cannot be enrolled here."
+            ),
+        ),
+    ] = False,
 ) -> list[CourseStudentResponse]:
-    _course_or_404(repository, course_id)
+    course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned instructor can view this roster.",
         )
-    return [
-        CourseStudentResponse.model_validate(user_response(user).model_dump())
+
+    def roster_entry(
+        user: UserRecord, section: CourseRecord, enrollment_status: str
+    ) -> CourseStudentResponse:
+        return CourseStudentResponse.model_validate(
+            {
+                **user_response(user).model_dump(),
+                "enrollment_status": enrollment_status,
+                "enrolled_course_id": section.id,
+                "enrolled_section_label": course_section_label(section),
+            }
+        )
+
+    students = [
+        roster_entry(user, course, "this_section")
         for user_id in repository.list_enrolled_student_ids(course_id)
         if (user := users.get_by_id(user_id))
     ]
+    if not include_other_sections:
+        return students
+
+    seen = {str(student.id) for student in students}
+    for sibling in _same_code_courses(repository, course):
+        if sibling.id == course.id:
+            continue
+        for user_id in repository.list_enrolled_student_ids(sibling.id):
+            if str(user_id) in seen or not (user := users.get_by_id(user_id)):
+                continue
+            seen.add(str(user_id))
+            students.append(roster_entry(user, sibling, "other_section"))
+    return students
 
 
 @router.post("/courses/{course_id}/students/import", response_model=StudentImportResult)
@@ -576,7 +642,7 @@ def enroll_course_student(
         )
 
     # Enforce 1 section per course rule
-    _validate_student_course_enrollment(repository, course_id, user_id)
+    _validate_student_course_enrollment(repository, course_id, user_id, user.full_name)
 
     try:
         if not repository.enroll_student(course_id, user_id):
@@ -764,7 +830,7 @@ def create_course_student(
     if repository.is_student_enrolled(course_id, student.id):
         return CourseStudentCreationResponse(**user_response(student).model_dump())
 
-    _validate_student_course_enrollment(repository, course_id, student.id)
+    _validate_student_course_enrollment(repository, course_id, student.id, student.full_name)
 
     if not repository.enroll_student(course_id, student.id):
         raise HTTPException(

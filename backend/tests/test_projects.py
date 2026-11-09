@@ -288,6 +288,11 @@ def test_course_student_endpoint_is_idempotent_for_duplicate_create_requests() -
             "is_active": True,
             "must_change_password": True,
             "student_number": None,
+            "enrollment_status": "this_section",
+            "enrolled_course_id": course["id"],
+            "enrolled_section_label": (
+                f"{course['code']} · Section {course['section']} ({course['term']} {course['year']})"
+            ),
         }
     ]
 
@@ -339,6 +344,11 @@ def test_course_student_endpoint_reuses_existing_student_account_for_enrollment(
             "is_active": True,
             "must_change_password": True,
             "student_number": None,
+            "enrollment_status": "this_section",
+            "enrolled_course_id": course["id"],
+            "enrolled_section_label": (
+                f"{course['code']} · Section {course['section']} ({course['term']} {course['year']})"
+            ),
         }
     ]
 
@@ -664,3 +674,84 @@ def test_team_name_is_unique_within_course_but_reusable_across_courses() -> None
     assert first_project.status_code == 201
     assert duplicate_project.status_code == 409
     assert other_course_project.status_code == 201
+
+
+def _create_course(instructor_headers: dict[str, str], code: str, section: str) -> dict:
+    return client.post(
+        "/api/v1/courses",
+        json={"code": code, "name": "Sections", "section": section, "year": 2026, "term": "Fall"},
+        headers=instructor_headers,
+    ).json()
+
+
+def _create_student(instructor_headers: dict[str, str], email: str, full_name: str) -> dict:
+    return client.post(
+        "/api/v1/users",
+        json={"email": email, "full_name": full_name, "password": "temporary123"},
+        headers=instructor_headers,
+    ).json()
+
+
+def test_enrollment_conflicts_name_the_blocking_section() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    section_one = _create_course(instructor_headers, "CS777", "1")
+    section_two = _create_course(instructor_headers, "CS777", "2")
+    student = _create_student(instructor_headers, "sibling.section@sprintsight.edu", "Sibling Section")
+
+    # Not enrolled anywhere: 200.
+    enrolled = client.post(
+        f"/api/v1/courses/{section_one['id']}/students/{student['id']}", headers=instructor_headers
+    )
+    assert enrolled.status_code == 200
+
+    # Same section again: 409 that says "this section".
+    same_section = client.post(
+        f"/api/v1/courses/{section_one['id']}/students/{student['id']}", headers=instructor_headers
+    )
+    assert same_section.status_code == 409
+    assert same_section.json()["error"]["message"] == (
+        "Sibling Section is already enrolled in this section (CS777 · Section 1 (Fall 2026))."
+    )
+
+    # Sibling section: 409 that names the section holding the enrollment.
+    sibling = client.post(
+        f"/api/v1/courses/{section_two['id']}/students/{student['id']}", headers=instructor_headers
+    )
+    assert sibling.status_code == 409
+    message = sibling.json()["error"]["message"]
+    assert message.startswith("Sibling Section is already enrolled in CS777 · Section 1 (Fall 2026).")
+    assert "only one section of CS777" in message
+
+
+def test_course_roster_can_include_students_from_other_sections() -> None:
+    instructor_headers = headers(token("faculty@sprintsight.edu"))
+    section_one = _create_course(instructor_headers, "CS778", "1")
+    section_two = _create_course(instructor_headers, "CS778", "2")
+    in_one = _create_student(instructor_headers, "in.section.one@sprintsight.edu", "In Section One")
+    in_two = _create_student(instructor_headers, "in.section.two@sprintsight.edu", "In Section Two")
+    for course, student in ((section_one, in_one), (section_two, in_two)):
+        assert (
+            client.post(
+                f"/api/v1/courses/{course['id']}/students/{student['id']}", headers=instructor_headers
+            ).status_code
+            == 200
+        )
+
+    # Default response is unchanged in shape and scope: only this section, now tagged.
+    default = client.get(f"/api/v1/courses/{section_two['id']}/students", headers=instructor_headers)
+    assert default.status_code == 200
+    assert [row["id"] for row in default.json()] == [in_two["id"]]
+    assert default.json()[0]["enrollment_status"] == "this_section"
+    assert default.json()[0]["enrolled_course_id"] == section_two["id"]
+
+    # Opt-in adds the sibling-section student, labelled with where they are enrolled.
+    with_siblings = client.get(
+        f"/api/v1/courses/{section_two['id']}/students",
+        params={"include_other_sections": "true"},
+        headers=instructor_headers,
+    )
+    rows = {row["id"]: row for row in with_siblings.json()}
+    assert rows[in_two["id"]]["enrollment_status"] == "this_section"
+    assert rows[in_one["id"]]["enrollment_status"] == "other_section"
+    assert rows[in_one["id"]]["enrolled_course_id"] == section_one["id"]
+    assert rows[in_one["id"]]["enrolled_section_label"] == "CS778 · Section 1 (Fall 2026)"

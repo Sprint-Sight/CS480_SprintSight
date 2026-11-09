@@ -10,6 +10,13 @@ type RosterModalProps = {
   hasSelectedCourse: boolean;
   courseStudents: Student[];
   allStudents: Student[];
+  /** Student id -> label of the other section of this course code they are enrolled in. */
+  otherSectionEnrollments?: Record<string, string>;
+  /** False while enrollments load or after they fail; Enroll stays disabled until true. */
+  isRosterReady?: boolean;
+  rosterError?: string;
+  /** Code of the selected course, used in the hidden-students note. */
+  courseCode?: string;
   studentSearchTerm: string;
   isLoadingStudents: boolean;
   studentDirectoryError: string;
@@ -31,6 +38,10 @@ export function RosterModal({
   hasSelectedCourse,
   courseStudents,
   allStudents,
+  otherSectionEnrollments = {},
+  isRosterReady = true,
+  rosterError = "",
+  courseCode = "",
   studentSearchTerm,
   isLoadingStudents,
   studentDirectoryError,
@@ -46,19 +57,39 @@ export function RosterModal({
 }: RosterModalProps) {
   if (!isOpen) return null;
   const enrolledIds = new Set(courseStudents.map((student) => student.id));
-  const availableStudents = allStudents.filter((student) => {
-    const search = studentSearchTerm.trim().toLowerCase();
-    return (
-      !enrolledIds.has(student.id) &&
-      (!search ||
-        student.full_name.toLowerCase().includes(search) ||
-        student.email.toLowerCase().includes(search))
-    );
-  });
+  // A student can be in only one section per course code, so students enrolled here or in
+  // another section are left out of the enroll list (this section's students are listed below).
+  const enrollableStudents = allStudents.filter(
+    (student) => !enrolledIds.has(student.id) && !otherSectionEnrollments[student.id],
+  );
+  const hiddenOtherSectionCount = allStudents.filter(
+    (student) => otherSectionEnrollments[student.id],
+  ).length;
+  const search = studentSearchTerm.trim().toLowerCase();
+  const availableStudents = enrollableStudents.filter(
+    (student) =>
+      !search ||
+      student.full_name.toLowerCase().includes(search) ||
+      student.email.toLowerCase().includes(search),
+  );
+  const emptyMessage =
+    allStudents.length === 0
+      ? "No student accounts found in the system."
+      : enrollableStudents.length === 0
+        ? "Every student is already enrolled in this course or another section of it."
+        : "No available students match your search.";
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent dismissOnOutsideClick={false} className="flex max-w-2xl flex-col rounded-2xl border border-slate-200 p-0">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        dismissOnOutsideClick={false}
+        className="flex max-w-2xl flex-col rounded-2xl border border-slate-200 p-0"
+      >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
           <div>
             <DialogTitle asChild>
@@ -68,7 +99,12 @@ export function RosterModal({
               Enroll existing students, or create new student accounts without a course.
             </p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close roster" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close roster"
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -79,7 +115,7 @@ export function RosterModal({
             <div className="mb-2">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-slate-800">
-                  All students ({allStudents.length})
+                  Available to enroll ({enrollableStudents.length})
                 </h3>
                 <button
                   type="button"
@@ -103,29 +139,41 @@ export function RosterModal({
               onChange={(event) => setStudentSearchTerm(event.target.value)}
               className="mb-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
+            {rosterError && (
+              <div
+                role="alert"
+                className="mb-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
+              >
+                Couldn&apos;t check who is already enrolled: {rosterError} Enrolling is paused until
+                this loads; press Refresh to try again.
+              </div>
+            )}
             <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
               {studentDirectoryError ? (
-                <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                <div
+                  role="alert"
+                  className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
+                >
                   {studentDirectoryError}
                 </div>
               ) : isLoadingStudents && allStudents.length === 0 ? (
                 <div className="p-4 text-sm text-slate-500">Loading student accounts...</div>
               ) : availableStudents.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                  {allStudents.length === 0
-                    ? "No student accounts found in the system."
-                    : "No unenrolled students match your search."}
+                  {emptyMessage}
                 </div>
               ) : (
                 availableStudents.map((student) => {
-                  const canEnroll = hasSelectedCourse && student.is_active;
+                  const canEnroll = hasSelectedCourse && isRosterReady && student.is_active;
                   return (
                     <div
                       key={student.id}
                       className="flex items-center justify-between rounded-lg border border-slate-100 p-2.5 transition-colors hover:bg-blue-50"
                     >
                       <div>
-                        <div className="text-sm font-medium text-slate-900">{student.full_name}</div>
+                        <div className="text-sm font-medium text-slate-900">
+                          {student.full_name}
+                        </div>
                         <div className="text-xs text-slate-500">{student.email}</div>
                         {!student.is_active && (
                           <div className="text-xs text-rose-600">Account disabled</div>
@@ -138,7 +186,7 @@ export function RosterModal({
                         }}
                         disabled={!canEnroll}
                         aria-label={`Enroll ${student.full_name} in the course`}
-                        className="inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                        className="inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
                       >
                         <UserPlus className="h-3.5 w-3.5" />
                         Enroll
@@ -148,6 +196,14 @@ export function RosterModal({
                 })
               )}
             </div>
+            {hiddenOtherSectionCount > 0 && (
+              <p className="mt-2 text-xs text-slate-500" role="status">
+                {hiddenOtherSectionCount === 1
+                  ? "1 student is hidden because they're"
+                  : `${hiddenOtherSectionCount} students are hidden because they're`}{" "}
+                enrolled in another section of {courseCode || "this course"}.
+              </p>
+            )}
           </section>
 
           {/* --- Create new student account (secondary) --- */}
@@ -165,10 +221,14 @@ export function RosterModal({
                   placeholder="Student Name"
                   aria-invalid={Boolean(studentFormErrors.name)}
                   value={studentForm.full_name}
-                  onChange={(event) => setStudentForm((current) => ({ ...current, full_name: event.target.value }))}
+                  onChange={(event) =>
+                    setStudentForm((current) => ({ ...current, full_name: event.target.value }))
+                  }
                   className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
-                {studentFormErrors.name && <p className="mt-1 text-xs text-red-600">{studentFormErrors.name}</p>}
+                {studentFormErrors.name && (
+                  <p className="mt-1 text-xs text-red-600">{studentFormErrors.name}</p>
+                )}
               </div>
               <div className="min-w-0">
                 <input
@@ -176,10 +236,14 @@ export function RosterModal({
                   placeholder="Student Email"
                   aria-invalid={Boolean(studentFormErrors.email)}
                   value={studentForm.email}
-                  onChange={(event) => setStudentForm((current) => ({ ...current, email: event.target.value }))}
+                  onChange={(event) =>
+                    setStudentForm((current) => ({ ...current, email: event.target.value }))
+                  }
                   className="h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
-                {studentFormErrors.email && <p className="mt-1 text-xs text-red-600">{studentFormErrors.email}</p>}
+                {studentFormErrors.email && (
+                  <p className="mt-1 text-xs text-red-600">{studentFormErrors.email}</p>
+                )}
               </div>
             </div>
             <input
@@ -187,13 +251,17 @@ export function RosterModal({
               placeholder="Fallback password (optional)"
               aria-invalid={Boolean(studentFormErrors.password)}
               value={studentForm.password}
-              onChange={(event) => setStudentForm((current) => ({ ...current, password: event.target.value }))}
+              onChange={(event) =>
+                setStudentForm((current) => ({ ...current, password: event.target.value }))
+              }
               className="mt-3 h-10 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
-            {studentFormErrors.password && <p className="mt-1 text-xs text-red-600">{studentFormErrors.password}</p>}
+            {studentFormErrors.password && (
+              <p className="mt-1 text-xs text-red-600">{studentFormErrors.password}</p>
+            )}
             <p className="mt-1.5 text-xs text-slate-500">
-              Only needed when the setup email cannot be delivered. The student can log
-              in with it once and is then forced to set their own password.
+              Only needed when the setup email cannot be delivered. The student can log in with it
+              once and is then forced to set their own password.
             </p>
             <div className="mt-3 flex justify-end">
               <button
@@ -212,35 +280,37 @@ export function RosterModal({
               Enrolled in this course ({courseStudents.length})
             </h3>
             <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
-            {courseStudents.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                {hasSelectedCourse
-                  ? "No students enrolled in this course yet."
-                  : "Select a course above to view or manage its roster."}
-              </div>
-            ) : (
-              courseStudents.map((student) => (
-                <div
-                  key={student.id}
-                  className="flex items-center justify-between rounded-lg border border-slate-100 p-2.5 hover:bg-slate-50"
-                >
-                  <div>
-                    <div className="text-sm font-medium text-slate-900">{student.full_name}</div>
-                    <div className="text-xs text-slate-500">{student.email}</div>
-                    {!student.is_active && <div className="text-xs text-rose-600">Account disabled</div>}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onUnenroll(student.id)}
-                    disabled={!hasSelectedCourse}
-                    className="text-slate-400 hover:text-rose-600"
-                    title="Unenroll student"
-                  >
-                    <UserMinus className="h-4 w-4" />
-                  </button>
+              {courseStudents.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  {hasSelectedCourse
+                    ? "No students enrolled in this course yet."
+                    : "Select a course above to view or manage its roster."}
                 </div>
-              ))
-            )}
+              ) : (
+                courseStudents.map((student) => (
+                  <div
+                    key={student.id}
+                    className="flex items-center justify-between rounded-lg border border-slate-100 p-2.5 hover:bg-slate-50"
+                  >
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">{student.full_name}</div>
+                      <div className="text-xs text-slate-500">{student.email}</div>
+                      {!student.is_active && (
+                        <div className="text-xs text-rose-600">Account disabled</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onUnenroll(student.id)}
+                      disabled={!hasSelectedCourse}
+                      className="text-slate-400 hover:text-rose-600"
+                      title="Unenroll student"
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </section>
         </div>

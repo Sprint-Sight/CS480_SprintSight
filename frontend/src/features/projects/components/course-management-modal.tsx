@@ -30,6 +30,11 @@ type CourseManagementModalProps = {
   setEditingCourse: React.Dispatch<React.SetStateAction<Course | null>>;
 };
 
+/** e.g. "CS111 · Section 2 (Fall 2026)", so sections of the same course are distinguishable. */
+export function formatCourseLabel(course: Pick<Course, "code" | "section" | "term" | "year">) {
+  return `${course.code} · Section ${course.section} (${course.term} ${course.year})`;
+}
+
 export function CourseManagementModal({
   isOpen,
   courses,
@@ -45,16 +50,31 @@ export function CourseManagementModal({
   if (!isOpen) return null;
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent dismissOnOutsideClick={false} className="max-w-4xl rounded-2xl border border-slate-200 p-0">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        dismissOnOutsideClick={false}
+        className="max-w-4xl rounded-2xl border border-slate-200 p-0"
+      >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <DialogTitle asChild>
               <h2 className="text-lg font-semibold text-slate-900">Course Management</h2>
             </DialogTitle>
-            <p className="text-sm text-slate-500">Manage all instructor-owned courses in one place.</p>
+            <p className="text-sm text-slate-500">
+              Manage all instructor-owned courses in one place.
+            </p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close course management" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close course management"
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -80,46 +100,62 @@ export function CourseManagementModal({
                       </td>
                     </tr>
                   ) : (
-                    courses.map((course) => (
-                      <tr key={course.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-slate-900">{course.code}</div>
-                          <div className="text-xs text-slate-500">{course.name}</div>
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">{course.section}</td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {course.term} {course.year}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">{userName || "Instructor"}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingCourse(course);
-                                setCourseForm({
-                                  code: course.code,
-                                  name: course.name,
-                                  section: course.section,
-                                  year: course.year,
-                                  term: course.term,
-                                });
-                              }}
-                              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onDelete(course.id)}
-                              className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    courses.map((course) => {
+                      // Match by id: two sections of the same course share code and name.
+                      const isEditing = editingCourse?.id === course.id;
+                      return (
+                        <tr
+                          key={course.id}
+                          data-editing={isEditing || undefined}
+                          className={isEditing ? "bg-blue-50" : "hover:bg-slate-50"}
+                        >
+                          <td
+                            className={`border-l-4 px-4 py-3 ${isEditing ? "border-l-blue-600" : "border-l-transparent"}`}
+                          >
+                            <div className="font-semibold text-slate-900">{course.code}</div>
+                            <div className="text-xs text-slate-500">{course.name}</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{course.section}</td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {course.term} {course.year}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{userName || "Instructor"}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCourse(course);
+                                  setCourseForm({
+                                    code: course.code,
+                                    name: course.name,
+                                    section: course.section,
+                                    year: course.year,
+                                    term: course.term,
+                                  });
+                                }}
+                                aria-pressed={isEditing}
+                                aria-label={`Edit ${formatCourseLabel(course)}`}
+                                className={
+                                  isEditing
+                                    ? "rounded-lg border border-blue-600 bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white"
+                                    : "rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                                }
+                              >
+                                {isEditing ? "Editing" : "Edit"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDelete(course.id)}
+                                className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -129,13 +165,19 @@ export function CourseManagementModal({
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
-                {editingCourse ? "Edit Course" : "New Course"}
+                {editingCourse ? `Editing ${formatCourseLabel(editingCourse)}` : "New Course"}
               </h3>
               <button
                 type="button"
                 onClick={() => {
                   setEditingCourse(null);
-                  setCourseForm({ code: "", name: "", section: "", year: new Date().getFullYear(), term: "Fall" });
+                  setCourseForm({
+                    code: "",
+                    name: "",
+                    section: "",
+                    year: new Date().getFullYear(),
+                    term: "Fall",
+                  });
                 }}
                 className="text-xs font-medium text-slate-500 hover:text-slate-700"
               >
@@ -149,7 +191,9 @@ export function CourseManagementModal({
                 <input
                   type="text"
                   value={courseForm.code}
-                  onChange={(event) => setCourseForm((current) => ({ ...current, code: event.target.value }))}
+                  onChange={(event) =>
+                    setCourseForm((current) => ({ ...current, code: event.target.value }))
+                  }
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500"
                   placeholder="CS480"
                 />
@@ -159,7 +203,9 @@ export function CourseManagementModal({
                 <input
                   type="text"
                   value={courseForm.section}
-                  onChange={(event) => setCourseForm((current) => ({ ...current, section: event.target.value }))}
+                  onChange={(event) =>
+                    setCourseForm((current) => ({ ...current, section: event.target.value }))
+                  }
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500"
                   placeholder="001"
                 />
@@ -170,7 +216,9 @@ export function CourseManagementModal({
                 <input
                   type="text"
                   value={courseForm.name}
-                  onChange={(event) => setCourseForm((current) => ({ ...current, name: event.target.value }))}
+                  onChange={(event) =>
+                    setCourseForm((current) => ({ ...current, name: event.target.value }))
+                  }
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500"
                   placeholder="Software Engineering"
                 />
@@ -184,7 +232,10 @@ export function CourseManagementModal({
                   max={2100}
                   value={courseForm.year}
                   onChange={(event) =>
-                    setCourseForm((current) => ({ ...current, year: Number(event.target.value || new Date().getFullYear()) }))
+                    setCourseForm((current) => ({
+                      ...current,
+                      year: Number(event.target.value || new Date().getFullYear()),
+                    }))
                   }
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500"
                 />
@@ -194,7 +245,9 @@ export function CourseManagementModal({
                 <span className="text-sm font-medium text-slate-700">Term</span>
                 <select
                   value={courseForm.term}
-                  onChange={(event) => setCourseForm((current) => ({ ...current, term: event.target.value }))}
+                  onChange={(event) =>
+                    setCourseForm((current) => ({ ...current, term: event.target.value }))
+                  }
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500"
                 >
                   <option value="Fall">Fall</option>

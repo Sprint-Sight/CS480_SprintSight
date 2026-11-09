@@ -62,6 +62,7 @@ def ensure_project_credential_schema(pool: ConnectionPool) -> None:
     statements = (
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_name VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_email VARCHAR(255)",
+        "ALTER TABLE projects ALTER COLUMN jira_email DROP NOT NULL",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_domain VARCHAR(255)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_project_key VARCHAR(50)",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_api_token_encrypted TEXT",
