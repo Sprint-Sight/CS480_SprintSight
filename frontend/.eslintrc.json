@@ -10,6 +10,20 @@
     "jsx-a11y/label-has-associated-control": "warn",
     "jsx-a11y/no-autofocus": "warn",
     "jsx-a11y/no-noninteractive-element-interactions": "warn",
-    "jsx-a11y/no-static-element-interactions": "warn"
+    "jsx-a11y/no-static-element-interactions": "warn",
+
+    // Colors must come from the semantic tokens in tailwind.config.ts / globals.css.
+    // Warning-level while the remaining feature folders are migrated.
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Use a semantic color token (e.g. hsl(var(--chart-1)) or bg-primary) instead of a hex color."
+      },
+      {
+        "selector": "TemplateElement[value.cooked=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Use a semantic color token (e.g. hsl(var(--chart-1)) or bg-primary) instead of a hex color."
+      }
+    ]
   }
 }

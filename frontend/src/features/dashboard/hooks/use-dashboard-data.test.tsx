@@ -99,4 +99,19 @@ describe("useDashboardData", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.loadError).toBe("Git down Jira down");
   });
+
+  it("aborts in-flight dashboard requests when the page unmounts", async () => {
+    const signals: AbortSignal[] = [];
+    vi.mocked(apiRequest).mockImplementation((path: string, options?: { signal?: AbortSignal }) => {
+      if (options?.signal) signals.push(options.signal);
+      return new Promise(() => undefined);
+    });
+
+    const { unmount } = renderHook(() => useDashboardData(router), { wrapper: createTestWrapper() });
+
+    await waitFor(() => expect(signals.length).toBeGreaterThan(0));
+    expect(signals.every((signal) => !signal.aborted)).toBe(true);
+    unmount();
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
 });

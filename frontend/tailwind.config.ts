@@ -7,7 +7,24 @@ const config: Config = {
     "./src/features/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        background: "hsl(var(--background) / <alpha-value>)",
+        foreground: "hsl(var(--foreground) / <alpha-value>)",
+        muted: "hsl(var(--muted) / <alpha-value>)",
+        border: "hsl(var(--border) / <alpha-value>)",
+        primary: "hsl(var(--primary) / <alpha-value>)",
+        danger: "hsl(var(--danger) / <alpha-value>)",
+        chart: {
+          1: "hsl(var(--chart-1) / <alpha-value>)",
+          2: "hsl(var(--chart-2) / <alpha-value>)",
+          3: "hsl(var(--chart-3) / <alpha-value>)",
+          4: "hsl(var(--chart-4) / <alpha-value>)",
+          5: "hsl(var(--chart-5) / <alpha-value>)",
+          bar: "hsl(var(--chart-bar) / <alpha-value>)",
+        },
+      },
+    },
   },
   plugins: [],
 };

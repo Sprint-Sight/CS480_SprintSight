@@ -25,6 +25,7 @@ import { GitIngestionRunsTable } from "@/features/artifacts/components/git-inges
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
 import { JiraBurndownChart, type JiraBurndownResponse } from "@/features/artifacts/components/jira-burndown-chart";
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
+import { downloadBlob } from "@/features/artifacts/download-blob";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -285,6 +286,7 @@ export default function ArtifactViewerPageContent() {
   }
 
   useEffect(() => {
+    const controller = new AbortController();
     async function loadDocuments() {
       setDocumentError("");
       if (!role || (role === "student" && isLoadingProjects)) {
@@ -298,20 +300,29 @@ export default function ArtifactViewerPageContent() {
 
       setIsLoadingDocuments(true);
       try {
-        const documents = await apiRequest<BackendDocument[]>(`/projects/${selectedProjectId}/documents`);
+        const documents = await apiRequest<BackendDocument[]>(`/projects/${selectedProjectId}/documents`, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
         setLocalDocuments(documents.map(toDocumentArtifact));
       } catch (error) {
+        if (controller.signal.aborted) return;
         setDocumentError(getErrorMessage(error, "Failed to load documents."));
         setLocalDocuments([]);
       } finally {
-        setIsLoadingDocuments(false);
+        if (!controller.signal.aborted) setIsLoadingDocuments(false);
       }
     }
 
     loadDocuments();
+    return () => {
+      controller.abort();
+      setIsLoadingDocuments(false);
+    };
   }, [role, selectedProjectId, isLoadingProjects]);
 
   useEffect(() => {
+    const controller = new AbortController();
     jiraBurndownRequestId.current += 1;
     setIsLoadingBurndown(false);
     if (role !== "instructor") {
@@ -337,25 +348,34 @@ export default function ArtifactViewerPageContent() {
       setJiraBurndown(null);
       setIsLoadingJira(true);
       try {
-        const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`);
+        const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
         setJiraRuns(runs);
         const selectedCompleted = [...runs]
           .filter((run) => run.processing_status === "completed")
           .sort((left, right) => right.captured_at.localeCompare(left.captured_at))[0];
         if (selectedCompleted) {
-          await loadCleanedRun(selectedCompleted);
+          await loadCleanedRun(selectedCompleted, controller.signal);
         } else {
           setJiraSnapshot(null);
         }
+        if (controller.signal.aborted) return;
         setSprintId(buildNextSprintId(runs.map((run) => run.sprint_id)));
       } catch (error) {
+        if (controller.signal.aborted) return;
         setJiraError(getErrorMessage(error, "Failed to load Jira ingestion runs."));
       } finally {
-        setIsLoadingJira(false);
+        if (!controller.signal.aborted) setIsLoadingJira(false);
       }
     }
 
     loadProjectRuns();
+    return () => {
+      controller.abort();
+      setIsLoadingJira(false);
+    };
   }, [role, selectedProjectId]);
 
   async function loadGitMetrics() {
@@ -384,33 +404,36 @@ export default function ArtifactViewerPageContent() {
     }
   }
 
-  async function loadCleanedRun(run: JiraIngestionRun) {
+  async function loadCleanedRun(run: JiraIngestionRun, signal?: AbortSignal) {
     const requestId = jiraBurndownRequestId.current + 1;
     jiraBurndownRequestId.current = requestId;
+    const isStale = () => signal?.aborted === true || requestId !== jiraBurndownRequestId.current;
     setJiraError("");
     setJiraBurndownError("");
     setJiraBurndown(null);
     setIsLoadingBurndown(true);
     try {
       const snapshot = await apiRequest<JiraCleanedSnapshot>(
-        `/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}/cleaned`
+        `/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}/cleaned`,
+        { signal }
       );
-      if (requestId !== jiraBurndownRequestId.current) return;
+      if (isStale()) return;
       setJiraSnapshot(snapshot);
       try {
         const burndown = await apiRequest<JiraBurndownResponse>(
-          `/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}/burndown`
+          `/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}/burndown`,
+          { signal }
         );
-        if (requestId === jiraBurndownRequestId.current) setJiraBurndown(burndown);
+        if (!isStale()) setJiraBurndown(burndown);
       } catch (error) {
-        if (requestId === jiraBurndownRequestId.current) {
+        if (!isStale()) {
           setJiraBurndownError(
             error instanceof Error ? error.message : "Failed to load the Jira burndown chart.",
           );
         }
       }
     } catch (error) {
-      if (requestId === jiraBurndownRequestId.current) {
+      if (!isStale()) {
         setJiraError(error instanceof Error ? error.message : "Failed to load Jira data.");
       }
     } finally {
@@ -549,12 +572,7 @@ export default function ArtifactViewerPageContent() {
         `/projects/${selectedProjectId}/documents/${documentId}`,
         { responseType: "blob" },
       );
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = fileName;
-      anchor.click();
-      URL.revokeObjectURL(objectUrl);
+      downloadBlob(blob, fileName);
     } catch (error) {
       setDocumentError(getErrorMessage(error, "Failed to download document."));
     }
