@@ -14,13 +14,16 @@ import { RosterModal, type StudentFormErrors } from "@/features/projects/compone
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDefaultJiraEmail, isUuid, toProjectPayload, type ProjectFormValues } from "@/features/projects/components/projects-api";
-import { apiRequest, getErrorMessage } from "@/lib/api/client";
+import { ApiError, apiRequest, getErrorMessage } from "@/lib/api/client";
 import { getSessionToken } from "@/lib/auth/session";
 import { invalidateProjectCaches } from "@/features/projects/course-projects-api";
 import type { Course, Project } from "@/features/projects/types";
 import { useProjectFilters, type ProjectFilters } from "@/features/projects/hooks/use-project-filters";
 import { CSVImportModal } from "@/features/projects/components/csv-import-modal";
+import { useManageCoursesDeepLink } from "@/features/projects/hooks/use-manage-courses-deep-link";
 import { useStudentImport } from "@/features/projects/hooks/use-student-import";
+import { useCourseRoster } from "@/features/projects/hooks/use-course-roster";
+import { useAsyncAction } from "@/hooks/use-async-action";
 import { useInstructorJiraCredentials } from "@/features/settings/hooks/use-instructor-jira-credentials";
 import { useSession } from "@/lib/auth/session";
 
@@ -62,7 +65,14 @@ export default function ProjectsPageContent() {
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
-  const [courseStudents, setCourseStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
+  const {
+    courseStudents,
+    setCourseStudents,
+    otherSectionEnrollments,
+    rosterError,
+    isRosterReady,
+    reloadRoster,
+  } = useCourseRoster(selectedCourseId);
   const [allStudents, setAllStudents] = useState<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>([]);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
@@ -131,23 +141,6 @@ export default function ProjectsPageContent() {
     }
   }
 
-  const loadCourseStudents = useCallback(async () => {
-    if (!selectedCourseId || !isUuid(selectedCourseId)) {
-      setCourseStudents([]);
-      return;
-    }
-
-    try {
-      const students = await apiRequest<Array<{ id: string; email: string; full_name: string; is_active: boolean }>>(
-        `/courses/${selectedCourseId}/students`
-      );
-      setCourseStudents(students);
-    } catch (error) {
-      console.error("Failed to load course students:", error);
-      setCourseStudents([]);
-    }
-  }, [selectedCourseId]);
-
   const loadAllStudents = useCallback(async () => {
     setIsLoadingStudents(true);
     setStudentDirectoryError("");
@@ -209,13 +202,15 @@ export default function ProjectsPageContent() {
   }, []);
 
   useEffect(() => {
-    loadCourseStudents();
     loadProjects();
-  }, [selectedCourseId, loadCourseStudents, loadProjects]);
+  }, [selectedCourseId, loadProjects]);
 
   useEffect(() => {
-    if (isRosterModalOpen) void loadAllStudents();
-  }, [isRosterModalOpen, loadAllStudents]);
+    if (!isRosterModalOpen) return;
+    void loadAllStudents();
+    void reloadRoster();
+  }, [isRosterModalOpen, loadAllStudents, reloadRoster]);
+
 
   const appliedFilterCount = useMemo(() => {
     let count = 0;
@@ -230,6 +225,8 @@ export default function ProjectsPageContent() {
     setCourseForm({ code: "", name: "", section: "", year: new Date().getFullYear(), term: "Fall" });
     setIsCourseModalOpen(true);
   }
+
+  useManageCoursesDeepLink(handleOpenCourseManagement);
 
   function handleOpenCreateProject() {
     setEditingProject(null);
@@ -386,6 +383,7 @@ export default function ProjectsPageContent() {
         toast.success("Course created.");
       }
 
+      invalidateProjectCaches(queryClient);
       setIsCourseModalOpen(false);
       setEditingCourse(null);
     } catch (error) {
@@ -485,10 +483,11 @@ export default function ProjectsPageContent() {
         `/courses/${selectedCourseId}/students/${userId}`,
         { method: "POST" },
       );
-      await loadCourseStudents();
+      await reloadRoster();
       toast.success(`${student.full_name} was enrolled in this course.`);
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to enroll student."));
+      if (error instanceof ApiError && error.status === 409) void reloadRoster();
     }
   }
 
@@ -516,7 +515,7 @@ export default function ProjectsPageContent() {
     }
     const project = projects.find((candidate) => candidate.id === projectId);
     if (!project) return;
-    await loadCourseStudents();
+    await reloadRoster();
     setSelectedProjectMemberIds([]);
     setProjectForMemberSelection(project);
   }
@@ -611,6 +610,21 @@ export default function ProjectsPageContent() {
 
   const filteredProjects = useProjectFilters(projects, searchTerm, appliedFilters);
 
+  // In-flight guards: a double-click or repeated Enter cannot send the same request twice.
+  const { run: saveCourse, isPending: isSavingCourse } = useAsyncAction(handleCreateOrUpdateCourse);
+  const { run: createStudent, isPending: isCreatingStudent } = useAsyncAction(handleCreateStudent);
+  const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
+  const trackStudent = (action: (userId: string) => Promise<void>) => async (userId: string) => {
+    setPendingStudentId(userId);
+    try {
+      await action(userId);
+    } finally {
+      setPendingStudentId(null);
+    }
+  };
+  const { run: enrollStudent } = useAsyncAction(trackStudent(handleEnrollExistingStudent));
+  const { run: unenrollStudent } = useAsyncAction(trackStudent(handleUnenrollStudent));
+
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -623,7 +637,7 @@ export default function ProjectsPageContent() {
           <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm ring-1 ring-slate-100 min-h-11">
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-0">
               <BookOpen className="h-4 w-4 text-slate-400" />
-              <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="min-h-9 min-w-[220px] appearance-none bg-transparent pr-5 text-sm font-semibold text-slate-700 outline-none">
+              <select value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="min-h-9 min-w-[220px] appearance-none rounded-md bg-transparent pr-5 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-blue-500 text-slate-700 outline-none">
                 {courses.length === 0 ? (
                   <option value="">No courses available</option>
                 ) : (
@@ -748,7 +762,8 @@ export default function ProjectsPageContent() {
         courseForm={courseForm}
         userName={session?.user?.fullName || "Instructor"}
         onClose={() => setIsCourseModalOpen(false)}
-        onSave={handleCreateOrUpdateCourse}
+        onSave={() => void saveCourse()}
+        isSaving={isSavingCourse}
         onDelete={handleDeleteCourse}
         setCourseForm={setCourseForm}
         setEditingCourse={setEditingCourse}
@@ -759,6 +774,10 @@ export default function ProjectsPageContent() {
         hasSelectedCourse={Boolean(selectedCourseId && isUuid(selectedCourseId))}
         courseStudents={courseStudents}
         allStudents={allStudents}
+        otherSectionEnrollments={otherSectionEnrollments}
+        isRosterReady={isRosterReady}
+        rosterError={rosterError}
+        courseCode={courses.find((course) => course.id === selectedCourseId)?.code ?? ""}
         studentSearchTerm={studentSearchTerm}
         isLoadingStudents={isLoadingStudents}
         studentDirectoryError={studentDirectoryError}
@@ -767,10 +786,15 @@ export default function ProjectsPageContent() {
         onClose={() => {
           setIsRosterModalOpen(false);
         }}
-        onCreateStudent={handleCreateStudent}
-        onEnrollExisting={handleEnrollExistingStudent}
-        onUnenroll={handleUnenrollStudent}
-        onRefreshStudents={() => void loadAllStudents()}
+        onCreateStudent={() => void createStudent()}
+        onEnrollExisting={(userId) => void enrollStudent(userId)}
+        onUnenroll={(userId) => void unenrollStudent(userId)}
+        isCreatingStudent={isCreatingStudent}
+        pendingStudentId={pendingStudentId}
+        onRefreshStudents={() => {
+          void loadAllStudents();
+          void reloadRoster();
+        }}
         setStudentSearchTerm={setStudentSearchTerm}
         setStudentForm={setStudentForm}
       />
@@ -793,7 +817,7 @@ export default function ProjectsPageContent() {
         onSubmit={async () => {
           const result = await submitImport(selectedCourseId);
           await loadProjects();
-          await loadCourseStudents();
+          await reloadRoster();
           invalidateProjectCaches(queryClient);
           return result;
         }}

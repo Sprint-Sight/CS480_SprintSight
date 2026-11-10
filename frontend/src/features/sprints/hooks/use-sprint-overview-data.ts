@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import { useIngestionScope } from "@/features/ingestion/hooks/use-ingestion-scope";
 import { useIngestionSync } from "@/features/ingestion/hooks/use-ingestion-sync";
+import { sprintLabel } from "@/features/ingestion/scope-options";
 import { summarizeIngestionRuns } from "@/features/ingestion/ingestion-query";
 import { useScopeProjects } from "@/features/projects/hooks/use-course-projects";
 import type { SprintOverviewPayload, SprintOverviewRow } from "@/features/sprints/types";
@@ -33,7 +34,10 @@ export function useSprintOverviewData() {
   const payload = useMemo<SprintOverviewPayload | null>(() => {
     if (!selectedProjectId) return null;
     const sprintIds = [
-      ...new Set([...gitRuns.map((run) => run.sprint_id), ...jiraSnapshots.map((snapshot) => snapshot.sprint_id)]),
+      ...new Set([
+        ...gitRuns.map((run) => run.sprint_id),
+        ...jiraSnapshots.map((snapshot) => snapshot.sprint_id),
+      ]),
     ];
     if (!sprintIds.length) return null;
 
@@ -48,7 +52,7 @@ export function useSprintOverviewData() {
         projectTeam,
         sprint: {
           id: sprintId,
-          name: sprintId,
+          name: sprintLabel(sprintId),
           status: isCompleted ? "Completed" : "On Track",
           completion,
           capturedAt: git?.captured_at || jira?.captured_at || "",
@@ -73,7 +77,10 @@ export function useSprintOverviewData() {
     };
   }, [selectedProjectId, gitRuns, jiraSnapshots, projectName, projectTeam]);
 
-  const liveTotals = useMemo(() => summarizeIngestionRuns(gitRuns, jiraSnapshots), [gitRuns, jiraSnapshots]);
+  const liveTotals = useMemo(
+    () => summarizeIngestionRuns(gitRuns, jiraSnapshots),
+    [gitRuns, jiraSnapshots],
+  );
 
   return { selectedProjectId, payload, liveTotals, isSyncing, syncError };
 }

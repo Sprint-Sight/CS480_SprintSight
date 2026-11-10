@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { downloadBlob } from "@/features/artifacts/download-blob";
+import { downloadBlob } from "@/lib/download-blob";
 
 describe("downloadBlob", () => {
   beforeEach(() => {
@@ -17,7 +17,9 @@ describe("downloadBlob", () => {
   it("clicks an attached download link and releases the URL only after a delay", async () => {
     let anchorAttachedDuringClick = false;
     let clickedHref = "";
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
       anchorAttachedDuringClick = document.body.contains(this);
       clickedHref = this.href;
       expect(this.download).toBe("report.pdf");

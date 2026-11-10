@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -229,6 +230,11 @@ class InstructorStudentCreate(BaseModel):
 
 class CourseStudentResponse(UserResponse):
     student_number: int | None = None
+    # Additive, defaulted fields: where the student is enrolled for this course code.
+    # "other_section" rows only appear when the roster asks for include_other_sections.
+    enrollment_status: Literal["this_section", "other_section"] = "this_section"
+    enrolled_course_id: UUID | None = None
+    enrolled_section_label: str | None = None
 
 
 class CourseStudentCreationResponse(CourseStudentResponse):

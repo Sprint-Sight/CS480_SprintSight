@@ -1,14 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { CHART_TICK } from "@/lib/chart-theme";
 import { ChartWithTable, type ChartTableColumn } from "@/components/ui/chart-with-table";
 import {
   describeMemberChart,
   describeWorkloadChart,
   getCategoryAxisWidth,
 } from "@/features/collaboration/chart-layout";
-import type { CollaborationMetric, MemberCommitMetric, WorkloadSlice } from "@/features/collaboration/types";
+import type {
+  CollaborationMetric,
+  MemberCommitMetric,
+  WorkloadSlice,
+} from "@/features/collaboration/types";
 
 type Props = {
   commitsByMember: MemberCommitMetric[];
@@ -35,9 +51,7 @@ export function CollaborationCharts({
   const sortedMembers = [...commitsByMember].sort(
     (left, right) => right[comparisonMetric] - left[comparisonMetric],
   );
-  const chartData = showAllMembers
-    ? sortedMembers
-    : sortedMembers.slice(0, DEFAULT_MEMBER_LIMIT);
+  const chartData = showAllMembers ? sortedMembers : sortedMembers.slice(0, DEFAULT_MEMBER_LIMIT);
   const chartHeight = Math.max(220, chartData.length * 38);
   const axisWidth = getCategoryAxisWidth(chartData.map((row) => row.member));
   const memberColumns: ChartTableColumn<MemberCommitMetric>[] = [
@@ -59,7 +73,10 @@ export function CollaborationCharts({
               Showing {chartData.length} of {sortedMembers.length} identified contributors
             </p>
           </div>
-          <div className="inline-flex rounded-lg border border-slate-200 p-1" aria-label="Contribution comparison metric">
+          <div
+            className="inline-flex rounded-lg border border-slate-200 p-1"
+            aria-label="Contribution comparison metric"
+          >
             {comparisonOptions.map((option) => (
               <button
                 key={option.value}
@@ -86,26 +103,44 @@ export function CollaborationCharts({
             >
               <div style={{ height: chartHeight }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart accessibilityLayer data={chartData} layout="vertical" margin={{ top: 4, right: 20, bottom: 4, left: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted))", fontSize: 11 }} />
+                  <BarChart
+                    accessibilityLayer
+                    data={chartData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 20, bottom: 4, left: 4 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      horizontal={false}
+                      stroke="hsl(var(--border))"
+                    />
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={CHART_TICK} />
                     <YAxis
                       type="category"
                       dataKey="member"
                       width={axisWidth}
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: "hsl(var(--muted))", fontSize: 11 }}
+                      tick={CHART_TICK}
                     />
                     <Tooltip formatter={(value: number) => [value.toLocaleString(), metricLabel]} />
-                    <Bar dataKey={comparisonMetric} name={metricLabel} barSize={20} radius={[0, 6, 6, 0]} fill="hsl(var(--chart-bar))" />
+                    <Bar
+                      dataKey={comparisonMetric}
+                      name={metricLabel}
+                      barSize={20}
+                      radius={[0, 6, 6, 0]}
+                      fill="hsl(var(--chart-bar))"
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </ChartWithTable>
           </div>
         ) : (
-          <div className="mt-3 flex h-[220px] items-center justify-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500" role="status">
+          <div
+            className="mt-3 flex h-[220px] items-center justify-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500"
+            role="status"
+          >
             No Git commits have been matched to project members yet.
           </div>
         )}
@@ -115,7 +150,9 @@ export function CollaborationCharts({
             className="mt-3 text-xs font-semibold text-blue-800 hover:text-blue-950"
             onClick={() => setShowAllMembers((showingAll) => !showingAll)}
           >
-            {showAllMembers ? `Show top ${DEFAULT_MEMBER_LIMIT}` : `Show all ${sortedMembers.length} contributors`}
+            {showAllMembers
+              ? `Show top ${DEFAULT_MEMBER_LIMIT}`
+              : `Show all ${sortedMembers.length} contributors`}
           </button>
         )}
         {sortedMembers.length > 0 && (
@@ -124,7 +161,9 @@ export function CollaborationCharts({
           </p>
         )}
         {comparisonMetric === "linesChanged" && (
-          <p className="mt-2 text-xs text-slate-500">Lines changed includes lines added and deleted.</p>
+          <p className="mt-2 text-xs text-slate-500">
+            Lines changed includes lines added and deleted.
+          </p>
         )}
       </section>
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -139,7 +178,14 @@ export function CollaborationCharts({
               <div className="h-[240px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart accessibilityLayer>
-                    <Pie data={workloadDistribution} dataKey="value" nameKey="name" innerRadius={48} outerRadius={84} paddingAngle={2}>
+                    <Pie
+                      data={workloadDistribution}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={48}
+                      outerRadius={84}
+                      paddingAngle={2}
+                    >
                       {workloadDistribution.map((slice) => (
                         <Cell key={slice.id} fill={slice.color} />
                       ))}
@@ -150,15 +196,23 @@ export function CollaborationCharts({
               </div>
             </ChartWithTable>
           ) : (
-            <div className="flex h-[240px] items-center justify-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500" role="status">
-              No Jira ticket data is available for this project yet. Load a processed Jira snapshot to see workload distribution.
+            <div
+              className="flex h-[240px] items-center justify-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500"
+              role="status"
+            >
+              No Jira ticket data is available for this project yet. Load a processed Jira snapshot
+              to see workload distribution.
             </div>
           )}
         </div>
         <div className="flex flex-wrap gap-3 text-xs text-slate-600">
           {workloadDistribution.map((slice) => (
             <span key={slice.id} className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} aria-hidden="true" />
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: slice.color }}
+                aria-hidden="true"
+              />
               {slice.name} ({slice.value}%)
             </span>
           ))}
