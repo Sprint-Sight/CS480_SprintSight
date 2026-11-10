@@ -61,6 +61,19 @@ How it works:
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")  # Ollama ignores this, but OpenAI client requires it
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
 OLLAMA_TIMEOUT  = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "1200"))
+# Connecting to a model server that is down should fail in seconds, not wait out the long
+# generation timeout above (which only makes sense for the *read* of a long answer).
+OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT_SECONDS", "10"))
+# OpenAI SDK-level retries, off by default for the local model. instructor already re-asks
+# when an answer fails validation, and the SDK's own default of 2 would silently re-send a
+# request that just spent OLLAMA_TIMEOUT seconds timing out, tripling the wait per attempt.
+# Worst case per call is (instructor max_retries + 1) x (length re-asks + 1) x (this + 1)
+# x OLLAMA_TIMEOUT_SECONDS, so raise this only knowing that product.
+OLLAMA_CLIENT_MAX_RETRIES = int(os.getenv("LLM_CLIENT_MAX_RETRIES", "0"))
+# The hosted judge (fixtures only) fails fast on 429/5xx, so the SDK's brief backoff retry is
+# worth keeping there; it is stated explicitly instead of inherited from the SDK default.
+OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "128"))
+OPENAI_CLIENT_MAX_RETRIES = int(os.getenv("OPENAI_CLIENT_MAX_RETRIES", "2"))
 
 # Single source of truth for decoding temperature across every LLM call in
 # the app (both grading dimensions and the judges import this). Default 0 =
@@ -87,17 +100,28 @@ _audit_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 )
 
 @contextmanager
-def audit_scope(*, team_id, sprint_id, dimension, model, prompt_version=None):
-    token = _audit_context.set({
+def audit_scope(*, team_id, sprint_id, dimension, model, prompt_version=None,
+                num_ctx=None, estimated_prompt_tokens=None):
+    """Audit/marker context for the calls made inside the block.
+
+    `num_ctx` and `estimated_prompt_tokens` are what `_prompt_truncated` compares the server's
+    reported prompt size against; without them the check can never fire. The context dict is
+    yielded so the caller can read `prompt_truncated` after the call.
+    """
+    context = {
         "request_id": str(uuid4()),
         "team_id": team_id,
         "sprint_id": sprint_id,
         "dimension": dimension,
         "model": model,
         "prompt_version": prompt_version,
-    })
+        "num_ctx": num_ctx,
+        "estimated_prompt_tokens": estimated_prompt_tokens,
+        "prompt_truncated": False,
+    }
+    token = _audit_context.set(context)
     try:
-        yield
+        yield context
     finally:
         _audit_context.reset(token)
 # Per-caller token accumulator. When a caller wants the token totals from a
@@ -663,6 +687,9 @@ async def _capture_response(response: httpx.Response) -> None:
             duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
             finished_utc = datetime.now(UTC).isoformat()
             raw_body = body.decode("utf-8", errors="replace")
+            truncated = _prompt_truncated(raw_body, context)
+            if truncated:
+                context["prompt_truncated"] = True  # sticky: any attempt of the call counts
             write_audit_record(
                 {
                     **context,
@@ -675,7 +702,7 @@ async def _capture_response(response: httpx.Response) -> None:
             )
             marker = _request_marker(
                 context, raw_body, response.status_code, duration_ms, finished_utc,
-                prompt_truncated=_prompt_truncated(raw_body, context),
+                prompt_truncated=truncated,
             )
             write_request_marker(marker)
             if marker["finish_reason"] == "length":
@@ -803,15 +830,24 @@ def create_llm_client(provider="ollama"):
         raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
             base_url=OLLAMA_BASE_URL,
             api_key=OLLAMA_API_KEY,
-            timeout=OLLAMA_TIMEOUT,
+            # Explicit on every axis: only the *read* of a long generation may take minutes.
+            # Connecting, sending the prompt and waiting for a pooled connection are quick
+            # unless the server is unreachable, which should be reported promptly.
+            timeout=httpx.Timeout(
+                connect=OLLAMA_CONNECT_TIMEOUT, read=OLLAMA_TIMEOUT, write=60.0, pool=30.0
+            ),
+            max_retries=OLLAMA_CLIENT_MAX_RETRIES,
             http_client=transport, # Use the custom transport to capture requests and responses
         )
-    if provider == "openai":
-        raw_client = AsyncOpenAI( # Create an OpenAI-compatible client pointing at Ollama
+    elif provider == "openai":
+        raw_client = AsyncOpenAI( # Hosted OpenAI client (fixture judge only)
             api_key=os.getenv('OPENAI_API_KEY'),
-            timeout=float(os.getenv('OPENAI_TIMEOUT_SECONDS', '128')),
+            timeout=OPENAI_TIMEOUT,
+            max_retries=OPENAI_CLIENT_MAX_RETRIES,
             http_client=transport, # Use the custom transport to capture requests and responses
         )
+    else:
+        raise ValueError(f"Unknown LLM provider {provider!r}; expected 'ollama' or 'openai'.")
 
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client, # The raw OpenAI-compatible client pointing at Ollama

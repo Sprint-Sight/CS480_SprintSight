@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import threading
 import time
 
 import mlflow
@@ -11,6 +12,7 @@ from llmops.prompt_registry import (
     register_sprint_feedback_prompt,
 )
 from llmops.review_queue import add_to_review_queue
+from llmops.run_tracking import TrackedRun, tracked_run
 from prompts.dimension_criteria import (
     DIMENSION_PROMPTS,
     DIMENSIONS,
@@ -19,10 +21,12 @@ from prompts.dimension_criteria import (
 from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import remember_bundle
+from schemas.failure_class import describe_failure
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
+from services.failures import classify_failure, failure_detail
 from services.llm_client import (
     evaluate_dimension,
     find_loaded_model,
@@ -80,18 +84,33 @@ async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_na
         print(f"Completed rubric dimension '{dim}' with score {result.score} in {time.perf_counter() - dimension_start:.2f} seconds. Justification: {result.justification} | Evidence: {result.evidence_citations}")
         return result
 
-async def _log_gpu_offload(model_name: str) -> None:
+_autolog_lock = threading.Lock()
+_autolog_enabled = False
+
+def _ensure_openai_autolog() -> None:
+    # openai autologging patches the SDK process-wide, so it is switched on once instead of on
+    # every request (a second request re-patching while another is mid-call is needless churn).
+    global _autolog_enabled
+    with _autolog_lock:
+        if not _autolog_enabled:
+            mlflow.openai.autolog()  # Logs everything, will create child AsyncCompletions span under LLM span
+            _autolog_enabled = True
+
+async def _log_gpu_offload(model_name: str, run: TrackedRun | None = None) -> None:
     # Records how much of the model Ollama holds in VRAM, right after the
     # dimension calls (when it is certainly loaded). Telemetry only: a failure
-    # here must never fail the assessment.
+    # here must never fail the assessment. With a TrackedRun it logs to that run by id;
+    # without one it falls back to the fluent API's active run.
     try:
         loaded = await snapshot_loaded_models()
-        mlflow.log_dict({"loaded_models": loaded}, "gpu/ollama_ps.json")
+        log_dict = run.log_dict if run is not None else mlflow.log_dict
+        log_metrics = run.log_metrics if run is not None else mlflow.log_metrics
+        log_dict({"loaded_models": loaded}, "gpu/ollama_ps.json")
         entry = find_loaded_model(loaded, model_name)
         if entry is None or entry["offload_ratio"] is None:
             log.warning("Model '%s' was not in Ollama's loaded models (/api/ps): %s", model_name, loaded)
             return
-        mlflow.log_metrics({
+        log_metrics({
             "gpu_offload_ratio": entry["offload_ratio"],
             "gpu_model_vram_bytes": entry["size_vram"],
             **({"gpu_context_length": entry["context_length"]} if entry.get("context_length") else {}),
@@ -121,9 +140,10 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     
     remember_bundle(bundle)  # Store the bundle in a global registry for later retrieval by the judge
 
-    # Start Mlflow experiment
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
-    mlflow.set_experiment(experiment_name)
+    # No mlflow.set_tracking_uri / set_experiment here: both are process-global, and this runs
+    # inside an async route where concurrent requests share one thread. tracked_run() below
+    # configures the tracking URI once and scopes the experiment to this request's context.
+    _ensure_openai_autolog()
 
     # Register all dimension prompts in MLflow prompt registry
     prompts = dimension_prompts or DIMENSION_PROMPTS
@@ -138,20 +158,18 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     # run_context tags every request marker with this MLflow run, so GPU
     # telemetry can be matched to the run it belongs to.
     run_name = f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}"
-    with mlflow.start_run(run_name=run_name, nested=True) as run, \
-            run_context(run_id=run.info.run_id, concurrency=DIMENSION_CONCURRENCY), \
+    with tracked_run(mlflow_client, experiment_name, run_name) as run, \
+            run_context(run_id=run.run_id, concurrency=DIMENSION_CONCURRENCY), \
             mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN) as root:
-        mlflow.log_param("dimension_concurrency", DIMENSION_CONCURRENCY)
+        run.link_current_trace()  # what the active run used to do implicitly
+        run.log_param("dimension_concurrency", DIMENSION_CONCURRENCY)
         start_time = time.time() # Start time for entire evaluation process
-        mlflow.openai.autolog() # Logs everything, will create child AsyncCompletions span under LLM span
-        mlflow.log_params({
+        run.log_params({
             "model_name": model_name,
             "num_ctx": run_num_ctx,
         })
-        mlflow.set_tags({
-            "team_id": bundle.team_id,
-            "sprint_id": bundle.sprint_id,
-        })
+        run.set_tag("team_id", bundle.team_id)
+        run.set_tag("sprint_id", bundle.sprint_id)
 
         trace_ids.append(root.trace_id)  # Add the root trace ID to the list of trace IDs for this evaluation
 
@@ -184,28 +202,34 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             #         rubric_scores.append(result)
 
             scores_by_dim: dict[str, RubricDimensionScore] = {}
-            failed_dimensions: dict[str, str] = {}
+            failed_dimensions: dict[str, str] = {}    # dimension -> "<failure_class>: <full error>"
+            failure_classes: dict[str, str] = {}      # dimension -> failure_class
 
             for dim, result in zip(DIMENSIONS, results):
                 if isinstance(result, BaseException):
-                    failed_dimensions[dim] = str(result)
-                    # Guarantee every dimension is present in the response: a
-                    # missing dimension is worse than a clearly-flagged failed one.
-                    # Truncated: `justification` now has max_length=500 (see
-                    # schemas/rubrics_dimension_score.py), and an unbounded
-                    # exception message could otherwise fail this fallback
-                    # construction itself while already handling a failure.
-                    error_summary = str(result)[:300]
+                    # Classified, not truncated: a transient infrastructure failure (timeout,
+                    # server down) and a schema failure call for different follow-up, and the
+                    # full text is kept in error_detail for whoever investigates.
+                    failure_class = classify_failure(result)
+                    detail = failure_detail(result)
+                    failure_classes[dim] = failure_class.value
+                    failed_dimensions[dim] = f"{failure_class.value}: {detail}"
+                    # Guarantee every dimension is present in the response: a missing
+                    # dimension is worse than a clearly-flagged failed one. `justification`
+                    # (max_length=500) gets only the short user-safe description; consumers
+                    # must read evaluation_failed, never the placeholder score.
                     scores_by_dim[dim] = RubricDimensionScore(
                         dimension=dim,
                         score=1,
                         justification=(
-                            "Automated evaluation failed for this dimension after "
-                            f"all retries and could not be scored: {error_summary}. "
-                            "Manual review required."
+                            f"Automated evaluation failed for this dimension: "
+                            f"{describe_failure(failure_class)}. It could not be scored "
+                            "and needs manual review."
                         ),
                         evidence_citations=[],
                         evaluation_failed=True,
+                        failure_class=failure_class.value,
+                        error_detail=detail,
                     )
                 else:
                     scores_by_dim[dim] = result
@@ -214,7 +238,7 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             # mlflow.set_tag("error", str(e))
             raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
 
-        await _log_gpu_offload(model_name)
+        await _log_gpu_offload(model_name, run)
 
         queue_name = f"review_queue_{bundle.team_id}_{bundle.sprint_id}" # Standby review queue for each team's sprint being evaluated in case trace needs to be flagged for review
 
@@ -224,13 +248,20 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
 
         summary_parts = []
         if failed_dimensions:
-            failure_details = "; ".join(
-                f"{dimension}: {error}" for dimension, error in failed_dimensions.items()
+            # Short and user-safe: this sentence becomes part of the report students may see.
+            # The full errors live on each dimension's error_detail and in the audit log.
+            failure_summary = "; ".join(
+                f"{dimension} ({describe_failure(failure_class)})"
+                for dimension, failure_class in failure_classes.items()
             )
             summary_parts.append(
-                f"The assessment is incomplete. Failed dimensions: {failure_details}"
+                f"The assessment is incomplete: {len(failed_dimensions)} of {len(DIMENSIONS)} "
+                f"dimensions could not be scored automatically and need manual review "
+                f"- {failure_summary}."
             )
-            mlflow.update_current_trace(tags={"Flagged for review": failure_details})
+            mlflow.update_current_trace(tags={
+                "Flagged for review": "; ".join(f"{d}={c}" for d, c in failure_classes.items()),
+            })
         else:
             summary_parts.append("All rubric dimensions were evaluated successfully.")
     
@@ -265,15 +296,15 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             weaknesses=weaknesses,
             key_recommendations=recommendations,
             prompt_version=str(sprint_feedback_prompt.version) if sprint_feedback_prompt else None,
-            # failed_dimensions=failed_dimensions,
+            trace_id=root.trace_id,  # the backend stores it so a report can be joined to its judge verdict
         )
 
-        mlflow.log_metric("overall_score", average_score)
+        run.log_metric("overall_score", average_score)
         for dim_name, score in scores_by_dim.items():
             if not score.evaluation_failed:
-                mlflow.log_metric(f"{dim_name}_score", score.score)
-        mlflow.log_metric("failed_dimensions_count", len(failed_dimensions))
-        mlflow.log_metric("evaluation_duration_seconds", time.time() - start_time)
+                run.log_metric(f"{dim_name}_score", score.score)
+        run.log_metric("failed_dimensions_count", len(failed_dimensions))
+        run.log_metric("evaluation_duration_seconds", time.time() - start_time)
 
         save_run_results(
             experiment_name=experiment_name,
@@ -281,10 +312,11 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
             team_id=bundle.team_id,
             sprint_id=bundle.sprint_id,
             trace_id=root.trace_id,
-            run_id=run.info.run_id,
+            run_id=run.run_id,
             overall_score=average_score,
             scores_by_dim=scores_by_dim,
             failed_dimensions=failed_dimensions,
+            failure_classes=failure_classes,
             prompt_versions=prompt_versions_registered,
             duration_seconds=time.time() - start_time,
         )
