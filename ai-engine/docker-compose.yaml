@@ -111,6 +111,9 @@ services: # Separate containers to run
           condition: service_started
 
     mlflow_service:
+      # The client (requirements.txt) is pinned to mlflow==3.16.1. Pin this image to the same
+      # release so server and client cannot drift apart; left on `latest` because the exact
+      # image tag could not be verified offline when this was written.
       image: ghcr.io/mlflow/mlflow:latest # Automatically pulls MLflow
       # --backend-store-uri points to the Postgres container
       command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql://user:pass@db:5432/sprintsight
