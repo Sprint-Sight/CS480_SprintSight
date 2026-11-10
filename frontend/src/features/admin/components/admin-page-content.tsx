@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -39,7 +40,10 @@ import {
   updateUser,
   type AdminCourseOption,
 } from "@/features/admin/admin-api";
-import { MIN_PASSWORD_LENGTH, ResetPasswordModal } from "@/features/admin/components/reset-password-modal";
+import {
+  MIN_PASSWORD_LENGTH,
+  ResetPasswordModal,
+} from "@/features/admin/components/reset-password-modal";
 
 export function AdminPageContent() {
   const router = useRouter();
@@ -68,7 +72,14 @@ export function AdminPageContent() {
   const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Student import hook
-  const { isLoading: isImporting, error: importError, parsedRows, validateAndPreview, submitImport, clearState: clearImportState } = useStudentImport();
+  const {
+    isLoading: isImporting,
+    error: importError,
+    parsedRows,
+    validateAndPreview,
+    submitImport,
+    clearState: clearImportState,
+  } = useStudentImport();
 
   const showNotification = (type: "success" | "error", message: string) => {
     if (type === "success") {
@@ -168,7 +179,12 @@ export function AdminPageContent() {
       setUsers((prev) =>
         prev.map((u) =>
           u.id === user.id
-            ? { ...u, fullName: updatedUser.fullName, email: updatedUser.email, role: updatedUser.role }
+            ? {
+                ...u,
+                fullName: updatedUser.fullName,
+                email: updatedUser.email,
+                role: updatedUser.role,
+              }
             : u,
         ),
       );
@@ -211,14 +227,20 @@ export function AdminPageContent() {
   const handleResetPassword = async () => {
     if (!userToResetPassword || isResettingPassword) return;
     if (resetPasswordInput.length < MIN_PASSWORD_LENGTH) {
-      showNotification("error", `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      showNotification(
+        "error",
+        `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+      );
       return;
     }
 
     setIsResettingPassword(true);
     try {
       await resetUserPassword(userToResetPassword.id, resetPasswordInput);
-      showNotification("success", `Password reset successfully for ${userToResetPassword.fullName}.`);
+      showNotification(
+        "success",
+        `Password reset successfully for ${userToResetPassword.fullName}.`,
+      );
       // Close only on success so a rejected password can be corrected in place.
       setUserToResetPassword(null);
       setResetPasswordInput("");
@@ -234,7 +256,12 @@ export function AdminPageContent() {
     router.replace("/login");
   };
 
-  const { filteredUsers, stats } = useAdminDirectory(users, searchQuery, selectedRoleFilter, selectedStatusFilter);
+  const { filteredUsers, stats } = useAdminDirectory(
+    users,
+    searchQuery,
+    selectedRoleFilter,
+    selectedStatusFilter,
+  );
 
   if (!mounted) return <PageSkeleton variant="table" />;
 
@@ -245,10 +272,12 @@ export function AdminPageContent() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">User & Project Directory</h1>
           <p className="text-slate-500 mt-1">
-            Welcome back, <span className="font-semibold text-slate-700">{adminName || "System Admin"}</span>. Provision and manage user accounts.
+            Welcome back,{" "}
+            <span className="font-semibold text-slate-700">{adminName || "System Admin"}</span>.
+            Provision and manage user accounts.
           </p>
         </div>
-        
+
         <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
           <Link
             href="/admin/audit-log"
@@ -271,7 +300,8 @@ export function AdminPageContent() {
               ))}
             </select>
           )}
-          <button
+          <Button
+            variant="secondary"
             onClick={() => {
               if (courses.length === 0) {
                 showNotification("error", "No courses available. Cannot import students.");
@@ -284,26 +314,18 @@ export function AdminPageContent() {
               setIsImportModalOpen(true);
             }}
             disabled={courses.length === 0 || !selectedCourseForImport}
-            className="inline-flex items-center gap-2 bg-white hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 border border-slate-300 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
           >
-            <Upload className="w-4 h-4 text-slate-500" />
+            <Upload className="w-4 h-4 text-slate-500" aria-hidden="true" />
             Import Students
-          </button>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
+          </Button>
+          <Button variant="primary" onClick={() => setIsCreateModalOpen(true)}>
+            <UserPlus className="w-4 h-4" aria-hidden="true" />
             Provision New User
-          </button>
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
-            title="Sign Out"
-          >
-            <LogOut className="w-4 h-4 text-slate-500" />
+          </Button>
+          <Button variant="secondary" onClick={handleLogout}>
+            <LogOut className="w-4 h-4 text-slate-500" aria-hidden="true" />
             Sign Out
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -384,7 +406,7 @@ export function AdminPageContent() {
             <select
               value={selectedRoleFilter}
               onChange={(e) => setSelectedRoleFilter(e.target.value)}
-              className="bg-transparent text-slate-900 font-semibold focus:outline-none cursor-pointer"
+              className="rounded bg-transparent text-slate-900 font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
             >
               <option value="all">All Roles</option>
               <option value="student">Student</option>
@@ -398,7 +420,7 @@ export function AdminPageContent() {
             <select
               value={selectedStatusFilter}
               onChange={(e) => setSelectedStatusFilter(e.target.value)}
-              className="bg-transparent text-slate-900 font-semibold focus:outline-none cursor-pointer"
+              className="rounded bg-transparent text-slate-900 font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
             >
               <option value="all">All Statuses</option>
               <option value="Active">Active</option>
@@ -436,7 +458,7 @@ export function AdminPageContent() {
                         <div className="font-semibold text-slate-900 flex items-center gap-2">
                           {user.fullName}
                           {isSelf && (
-                            <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                               YOU
                             </span>
                           )}
@@ -449,8 +471,8 @@ export function AdminPageContent() {
                             user.role === "admin"
                               ? "bg-purple-50 text-purple-700 border border-purple-200"
                               : user.role === "instructor"
-                              ? "bg-blue-50 text-blue-700 border border-blue-200"
-                              : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                : "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           }`}
                         >
                           {user.role.toUpperCase()}

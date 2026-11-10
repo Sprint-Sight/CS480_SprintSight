@@ -56,6 +56,14 @@ function mockBackend() {
 
 const rosterLoads = () =>
   vi.mocked(apiRequest).mock.calls.filter(([path]) => path === ROSTER_URL).length;
+const enrollPosts = () =>
+  vi
+    .mocked(apiRequest)
+    .mock.calls.filter(
+      ([path, options]) =>
+        path === `/courses/${COURSE_ID}/students/${freeStudent.id}` &&
+        (options as { method?: string } | undefined)?.method === "POST",
+    ).length;
 const directoryLoads = () =>
   vi.mocked(apiRequest).mock.calls.filter(([path]) => path === "/users").length;
 
@@ -109,5 +117,18 @@ describe("ProjectsPageContent roster refresh", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enroll Free Student in the course" }));
 
     await waitFor(() => expect(rosterLoads()).toBe(rosterBefore + 1));
+  });
+
+  it("sends a single enroll request when Enroll is double-clicked", async () => {
+    await openRoster();
+    const enroll = screen.getByRole("button", { name: "Enroll Free Student in the course" });
+
+    fireEvent.click(enroll);
+    fireEvent.click(enroll);
+
+    await waitFor(() => expect(enrollPosts()).toBe(1));
+    // Give any second request a chance to fire before asserting it never did.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(enrollPosts()).toBe(1);
   });
 });

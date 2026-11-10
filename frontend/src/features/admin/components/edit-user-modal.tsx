@@ -52,8 +52,16 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
 
   return (
     <>
-      <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-        <DialogContent dismissOnOutsideClick={false} className="max-w-md border border-slate-100 p-6">
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+      >
+        <DialogContent
+          dismissOnOutsideClick={false}
+          className="max-w-md border border-slate-100 p-6"
+        >
           <div className="flex justify-between items-center pb-3 border-b border-slate-100">
             <DialogTitle asChild>
               <h2 className="text-base font-bold text-slate-900">Modify Identity & Assignments</h2>
@@ -70,7 +78,10 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
 
           <form onSubmit={handleSubmit} className="mt-4 space-y-4">
             <div>
-              <label htmlFor={fullNameId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label
+                htmlFor={fullNameId}
+                className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5"
+              >
                 <User className="w-3.5 h-3.5 text-blue-600" />
                 Full Name
               </label>
@@ -88,7 +99,10 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
             </div>
 
             <div>
-              <label htmlFor={emailId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label
+                htmlFor={emailId}
+                className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5"
+              >
                 <Mail className="w-3.5 h-3.5 text-blue-600" />
                 Email Address
               </label>
@@ -106,7 +120,10 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
             </div>
 
             <div>
-              <label htmlFor={roleId} className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <label
+                htmlFor={roleId}
+                className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-1.5"
+              >
                 <Shield className="w-3.5 h-3.5 text-blue-600" />
                 Assigned Role
               </label>
@@ -130,13 +147,9 @@ export function EditUserModal({ user, onClose, onSave }: EditUserModalProps) {
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-              >
+              <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
                 Cancel
-              </button>
+              </Button>
               <Button type="submit" size="sm" isPending={isSubmitting} className="shadow-xs">
                 {isSubmitting ? "Updating..." : "Save Assignment"}
               </Button>

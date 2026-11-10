@@ -23,6 +23,15 @@ const config: Config = {
           5: "hsl(var(--chart-5) / <alpha-value>)",
           bar: "hsl(var(--chart-bar) / <alpha-value>)",
         },
+        brand: {
+          DEFAULT: "hsl(var(--brand) / <alpha-value>)",
+          hover: "hsl(var(--brand-hover) / <alpha-value>)",
+        },
+        score: {
+          high: "hsl(var(--score-high) / <alpha-value>)",
+          mid: "hsl(var(--score-mid) / <alpha-value>)",
+          low: "hsl(var(--score-low) / <alpha-value>)",
+        },
       },
     },
   },

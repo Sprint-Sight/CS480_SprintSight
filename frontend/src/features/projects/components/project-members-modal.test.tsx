@@ -40,6 +40,9 @@ describe("ProjectMembersModal", () => {
     expect(onToggleStudent).toHaveBeenCalledWith("student-1");
 
     rerender(<ProjectMembersModal {...props} selectedStudentIds={["student-1"]} />);
-    expect(screen.getByRole("button", { name: /Add 1 to Project/ })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("button", { name: /Add 1 to Project/ })).toHaveProperty(
+      "disabled",
+      false,
+    );
   });
 });

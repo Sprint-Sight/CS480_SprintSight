@@ -46,7 +46,9 @@ describe("ProjectCard controls", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Remove Grace Hopper from project" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove Grace Hopper from project" }),
+    ).toBeInTheDocument();
   });
 
   it("renders the title as a link without nesting buttons inside any link", () => {

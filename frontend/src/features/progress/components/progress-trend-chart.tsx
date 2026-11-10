@@ -1,10 +1,25 @@
 "use client";
 
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { ChartWithTable, type ChartTableColumn } from "@/components/ui/chart-with-table";
 import type { ProgressDataset } from "@/features/progress/types";
+import { CHART_GRID_STROKE, CHART_TICK, chartColor } from "@/lib/chart-theme";
 
-const trendLegend = [{ key: "requirements", label: "Requirements", color: "#1F3D6D" }, { key: "codeQuality", label: "Code Quality", color: "#2F5B85" }, { key: "testing", label: "Testing", color: "#3F7C9E" }, { key: "documentation", label: "Documentation", color: "#5C98BD" }, { key: "collaboration", label: "Collaboration", color: "#7DB6D9" }] as const;
+const trendLegend = [
+  { key: "requirements", label: "Requirements", color: chartColor("series-1") },
+  { key: "codeQuality", label: "Code Quality", color: chartColor("series-2") },
+  { key: "testing", label: "Testing", color: chartColor("series-3") },
+  { key: "documentation", label: "Documentation", color: chartColor("series-4") },
+  { key: "collaboration", label: "Collaboration", color: chartColor("series-5") },
+] as const;
 type TrendRow = ProgressDataset["categoryTrend"][number];
 
 const trendColumns: ChartTableColumn<TrendRow>[] = [
@@ -25,9 +40,9 @@ export function ProgressTrendChart({ data }: { data: ProgressDataset["categoryTr
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart accessibilityLayer data={data}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="sprint" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                <YAxis domain={[40, 100]} axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID_STROKE} />
+                <XAxis dataKey="sprint" axisLine={false} tickLine={false} tick={CHART_TICK} />
+                <YAxis domain={[40, 100]} axisLine={false} tickLine={false} tick={CHART_TICK} />
                 <Tooltip />
                 {trendLegend.map((line) => (
                   <Line
@@ -37,7 +52,7 @@ export function ProgressTrendChart({ data }: { data: ProgressDataset["categoryTr
                     name={line.label}
                     stroke={line.color}
                     strokeWidth={2}
-                    dot={{ r: 3, fill: "#fff", strokeWidth: 2 }}
+                    dot={{ r: 3, fill: chartColor("background"), strokeWidth: 2 }}
                   />
                 ))}
               </LineChart>
