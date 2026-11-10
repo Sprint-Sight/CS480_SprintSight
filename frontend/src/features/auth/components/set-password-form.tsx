@@ -40,7 +40,7 @@ export function SetPasswordForm({
             </p>
             <Link
               href="/login"
-              className="block w-full rounded-lg bg-[#0b2046] py-2.5 text-center font-medium text-white hover:bg-[#0f2c61]"
+              className="block w-full rounded-lg bg-brand py-2.5 text-center font-medium text-white hover:bg-brand-hover"
             >
               Go to sign in
             </Link>
@@ -84,7 +84,7 @@ export function SetPasswordForm({
             <button
               type="submit"
               disabled={isLoading || !token || !purpose}
-              className="w-full rounded-lg bg-[#0b2046] py-2.5 font-medium text-white disabled:opacity-50"
+              className="w-full rounded-lg bg-brand py-2.5 font-medium text-white disabled:opacity-50"
             >
               {isLoading ? "Updating password..." : "Set password"}
             </button>

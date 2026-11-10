@@ -29,6 +29,59 @@ type AssessmentProjectOption = {
 };
 type JobEvent = { status?: string; progress?: number; message?: string; error_message?: string };
 
+/**
+ * Parses one `data:` payload from the assessment event stream. Returns null for anything
+ * that is not a JSON object (half-sent chunks, error lines), so one bad event is skipped
+ * instead of stopping all progress updates.
+ */
+export function parseJobEvent(raw: string): JobEvent | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as JobEvent)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the assessment event stream until the job completes. Malformed events are skipped,
+ * a "failed" event throws, and the reader is always released (finish, failure, or abort).
+ */
+export async function readJobEvents(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: JobEvent) => void,
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+      for (const event of events) {
+        const line = event.split("\n").find((item) => item.startsWith("data: "));
+        if (!line) continue;
+        const data = parseJobEvent(line.slice(6));
+        if (!data) continue;
+        onEvent(data);
+        if (data.status === "failed") throw new Error(data.error_message || "Assessment failed.");
+        if (data.status === "completed") return;
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => undefined);
+  }
+}
+
+function isAbortError(error: unknown) {
+  return (error instanceof DOMException || error instanceof Error) && error.name === "AbortError";
+}
+
 // Checked structurally (ApiError.status) so tests can mock the client module freely.
 function isNotFound(error: unknown) {
   const status = (error as { status?: unknown } | null)?.status;
@@ -77,8 +130,7 @@ export const toSprintAssessmentReport = (
   projectLabel,
   generatedAt: new Date(data.generated_at).toLocaleString(),
   overallScore: Math.round(data.team_score.score),
-  overallGrade:
-    data.team_score.overall_grade || "—",
+  overallGrade: data.team_score.overall_grade || "—",
   overallSummary: data.team_score.rationale,
   rubricScores: Object.entries(data.rubric_scores || {}).map(([categoryKey, detail]) => {
     const dimension = getSupportedDimension(categoryKey);
@@ -107,6 +159,8 @@ export const toSprintAssessmentReport = (
 });
 
 export function useAssessmentReport() {
+  // Controller for the active progress stream, aborted on a new job or on unmount.
+  const streamControllerRef = useRef<AbortController | null>(null);
   const [projectOptions, setProjectOptions] = useState<AssessmentProjectOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedCourseId, setSelectedCourseId] = useState("");
@@ -120,7 +174,9 @@ export function useAssessmentReport() {
   const [assessmentError, setAssessmentError] = useState("");
   const session = useSession();
   const queryClient = useQueryClient();
-  const role: "student" | "instructor" | "admin" | null = session ? (session.user?.role ?? "student") : null;
+  const role: "student" | "instructor" | "admin" | null = session
+    ? (session.user?.role ?? "student")
+    : null;
 
   const clearLiveReport = (projectId: string, sprint: string) => {
     setBackendReport(null);
@@ -167,9 +223,7 @@ export function useAssessmentReport() {
     } catch (error) {
       clearLiveReport(scope.projectId, scope.sprintId);
       if (!isNotFound(error)) {
-        setAssessmentError(
-          getErrorMessage(error, "Failed to load the latest assessment."),
-        );
+        setAssessmentError(getErrorMessage(error, "Failed to load the latest assessment."));
       }
     } finally {
       setIsLoadingReport(false);
@@ -210,38 +264,38 @@ export function useAssessmentReport() {
       });
       await monitorJob(job);
     } catch (error) {
+      // Leaving the page aborts the stream: keep the stored job so it resumes on return.
+      if (isAbortError(error)) return;
       setAssessmentError(getErrorMessage(error, "Assessment generation failed."));
-    } finally {
-      clearActiveAssessmentJob();
-      setIsGenerating(false);
     }
+    clearActiveAssessmentJob();
+    setIsGenerating(false);
   }
 
   async function monitorJob(job: { job_id: string }) {
-    // Streamed (SSE) response, so it is read directly instead of through apiRequest.
-    const response = await fetch(`${API_BASE_URL}/assessments/jobs/${job.job_id}/events`, {
-      headers: buildAuthHeaders(),
-    });
-    if (!response.ok || !response.body) throw new Error("Could not monitor assessment progress.");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finished = false;
-    while (!finished) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
-      for (const event of events) {
-        const line = event.split("\n").find((item) => item.startsWith("data: "));
-        if (!line) continue;
-        const data = JSON.parse(line.slice(6)) as JobEvent;
+    // One stream at a time; a new job or leaving the page aborts the previous one.
+    streamControllerRef.current?.abort();
+    const controller = new AbortController();
+    streamControllerRef.current = controller;
+
+    try {
+      // Streamed (SSE) response, so it is read directly instead of through apiRequest.
+      const response = await fetch(`${API_BASE_URL}/assessments/jobs/${job.job_id}/events`, {
+        headers: buildAuthHeaders(),
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        throw new Error("Could not monitor assessment progress.");
+      }
+      await readJobEvents(response.body, (data) => {
         setAssessmentProgress(data.progress ?? 0);
         setAssessmentMessage(data.message || data.status || "Assessment in progress...");
-        if (data.status === "failed") throw new Error(data.error_message || "Assessment failed.");
-        if (data.status === "completed") finished = true;
-      }
+      });
+    } finally {
+      if (streamControllerRef.current === controller) streamControllerRef.current = null;
+    }
+    if (controller.signal.aborted) {
+      throw new DOMException("Assessment progress stream was cancelled.", "AbortError");
     }
     await loadLatestReport();
   }
@@ -253,13 +307,16 @@ export function useAssessmentReport() {
     try {
       await monitorJob({ job_id: stored.jobId });
     } catch (error) {
+      if (isAbortError(error)) return;
       const message = getErrorMessage(error, "Assessment generation failed.");
       if (!/Could not monitor/.test(message)) setAssessmentError(message);
-    } finally {
-      clearActiveAssessmentJob();
-      setIsGenerating(false);
     }
+    clearActiveAssessmentJob();
+    setIsGenerating(false);
   }
+
+  // Abort the progress stream when the page unmounts.
+  useEffect(() => () => streamControllerRef.current?.abort(), []);
 
   const resumedJobRef = useRef(false);
   useEffect(() => {
@@ -311,9 +368,7 @@ export function useAssessmentReport() {
         setProjectOptions(options);
       } catch (error) {
         setProjectOptions([]);
-        setAssessmentError(
-          getErrorMessage(error, "Could not load assessment projects."),
-        );
+        setAssessmentError(getErrorMessage(error, "Could not load assessment projects."));
       }
     }
     void loadProjects();

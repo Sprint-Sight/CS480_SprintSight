@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CHART_TICK, chartColor } from "@/lib/chart-theme";
 
 export type JiraBurndownResponse = {
   sprint_id: string | null;
@@ -32,9 +33,7 @@ export type JiraBurndownChartPoint = {
   ideal_remaining: number | null;
 };
 
-export function buildBurndownChartData(
-  burndown: JiraBurndownResponse,
-): JiraBurndownChartPoint[] {
+export function buildBurndownChartData(burndown: JiraBurndownResponse): JiraBurndownChartPoint[] {
   const actualByDate = new Map(
     burndown.daily_points.map((point) => [point.date, point.remaining_points]),
   );
@@ -60,13 +59,17 @@ export function JiraBurndownChart({ burndown }: JiraBurndownChartProps) {
   const data = buildBurndownChartData(burndown);
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4" aria-label="Sprint burndown">
+    <section
+      className="space-y-4 rounded-xl border border-slate-200 bg-white p-4"
+      aria-label="Sprint burndown"
+    >
       <div>
         <h3 className="text-lg font-semibold text-slate-900">
           {burndown.sprint_id || "Sprint"} burndown
         </h3>
         <p className="text-sm text-slate-500">
-          {burndown.start_date || "Start date unavailable"} to {burndown.end_date || "End date unavailable"}
+          {burndown.start_date || "Start date unavailable"} to{" "}
+          {burndown.end_date || "End date unavailable"}
         </p>
       </div>
 
@@ -88,11 +91,15 @@ export function JiraBurndownChart({ burndown }: JiraBurndownChartProps) {
       </div>
 
       {data.length > 0 ? (
-        <div className="h-72 w-full" role="img" aria-label="Chart comparing actual and ideal remaining story points by day">
+        <div
+          className="h-72 w-full"
+          role="img"
+          aria-label="Chart comparing actual and ideal remaining story points by day"
+        >
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} minTickGap={24} />
+              <XAxis dataKey="date" tick={CHART_TICK} minTickGap={24} />
               <YAxis allowDecimals={false} width={36} />
               <Tooltip />
               <Legend />
@@ -100,7 +107,7 @@ export function JiraBurndownChart({ burndown }: JiraBurndownChartProps) {
                 type="monotone"
                 dataKey="actual_remaining"
                 name="Actual remaining"
-                stroke="#2563eb"
+                stroke={chartColor("chart-accent")}
                 strokeWidth={2}
                 dot={false}
                 connectNulls
@@ -109,7 +116,7 @@ export function JiraBurndownChart({ burndown }: JiraBurndownChartProps) {
                 type="monotone"
                 dataKey="ideal_remaining"
                 name="Ideal remaining"
-                stroke="#64748b"
+                stroke={chartColor("muted")}
                 strokeDasharray="5 5"
                 dot={false}
               />
@@ -117,7 +124,9 @@ export function JiraBurndownChart({ burndown }: JiraBurndownChartProps) {
           </ResponsiveContainer>
         </div>
       ) : (
-        <p className="text-sm text-slate-500">No daily burndown points are available for this sprint.</p>
+        <p className="text-sm text-slate-500">
+          No daily burndown points are available for this sprint.
+        </p>
       )}
       <p className="text-xs text-slate-500">
         Actual remaining points are reconstructed from Jira status and story-point history.

@@ -1,4 +1,5 @@
 import { API_BASE_URL, ApiError, apiRequest } from "@/lib/api/client";
+import { downloadBlob } from "@/lib/download-blob";
 
 export type ExportPreviewData = {
   recordCount: number;
@@ -84,12 +85,6 @@ export const downloadExportedFile = async (
     }
     throw error;
   }
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+  // Shared helper releases the object URL after a delay, so Safari/Firefox don't cancel it.
+  downloadBlob(blob, fileName);
 };

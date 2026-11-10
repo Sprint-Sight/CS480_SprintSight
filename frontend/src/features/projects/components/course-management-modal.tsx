@@ -1,6 +1,8 @@
 import { X } from "lucide-react";
+import { useId } from "react";
 
 import type { Course } from "@/features/projects/types";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 type CourseManagementModalProps = {
@@ -17,6 +19,8 @@ type CourseManagementModalProps = {
   userName: string;
   onClose: () => void;
   onSave: () => void;
+  /** True while a save is in flight; disables Save so it cannot be sent twice. */
+  isSaving?: boolean;
   onDelete: (courseId: string) => void;
   setCourseForm: React.Dispatch<
     React.SetStateAction<{
@@ -43,10 +47,12 @@ export function CourseManagementModal({
   userName,
   onClose,
   onSave,
+  isSaving = false,
   onDelete,
   setCourseForm,
   setEditingCourse,
 }: CourseManagementModalProps) {
+  const courseFormId = useId();
   if (!isOpen) return null;
 
   return (
@@ -162,7 +168,14 @@ export function CourseManagementModal({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <form
+            id={courseFormId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!isSaving) onSave();
+            }}
+            className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+          >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
                 {editingCourse ? `Editing ${formatCourseLabel(editingCourse)}` : "New Course"}
@@ -256,7 +269,7 @@ export function CourseManagementModal({
                 </select>
               </label>
             </div>
-          </div>
+          </form>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
@@ -267,13 +280,9 @@ export function CourseManagementModal({
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={onSave}
-            className="h-10 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800"
-          >
+          <Button type="submit" form={courseFormId} isPending={isSaving}>
             {editingCourse ? "Save Changes" : "Create Course"}
-          </button>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

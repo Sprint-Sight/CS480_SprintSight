@@ -24,6 +24,10 @@ type RosterModalProps = {
   studentFormErrors?: StudentFormErrors;
   onClose: () => void;
   onCreateStudent: () => void;
+  /** True while a new student is being created. */
+  isCreatingStudent?: boolean;
+  /** Student whose enroll/unenroll request is in flight. */
+  pendingStudentId?: string | null;
   onEnrollExisting: (userId: string) => void;
   onUnenroll: (userId: string) => void;
   onRefreshStudents: () => void;
@@ -49,6 +53,8 @@ export function RosterModal({
   studentFormErrors = {},
   onClose,
   onCreateStudent,
+  isCreatingStudent = false,
+  pendingStudentId = null,
   onEnrollExisting,
   onUnenroll,
   onRefreshStudents,
@@ -164,7 +170,9 @@ export function RosterModal({
                 </div>
               ) : (
                 availableStudents.map((student) => {
-                  const canEnroll = hasSelectedCourse && isRosterReady && student.is_active;
+                  const isPending = pendingStudentId === student.id;
+                  const canEnroll =
+                    hasSelectedCourse && isRosterReady && student.is_active && !isPending;
                   return (
                     <div
                       key={student.id}
@@ -267,9 +275,11 @@ export function RosterModal({
               <button
                 type="button"
                 onClick={onCreateStudent}
-                className="h-10 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:ring-offset-1"
+                disabled={isCreatingStudent}
+                aria-busy={isCreatingStudent}
+                className="h-10 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Create Student & Email Setup Link
+                {isCreatingStudent ? "Creating..." : "Create Student & Email Setup Link"}
               </button>
             </div>
           </div>
@@ -302,8 +312,9 @@ export function RosterModal({
                     <button
                       type="button"
                       onClick={() => onUnenroll(student.id)}
-                      disabled={!hasSelectedCourse}
-                      className="text-slate-400 hover:text-rose-600"
+                      disabled={!hasSelectedCourse || pendingStudentId === student.id}
+                      aria-label={`Unenroll ${student.full_name}`}
+                      className="text-slate-400 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
                       title="Unenroll student"
                     >
                       <UserMinus className="h-4 w-4" />

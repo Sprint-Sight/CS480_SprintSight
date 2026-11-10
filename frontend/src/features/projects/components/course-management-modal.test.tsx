@@ -97,3 +97,57 @@ describe("CourseManagementModal editing highlight", () => {
     expect(screen.getByRole("heading", { name: "New Course" })).toBeTruthy();
   });
 });
+
+describe("CourseManagementModal saving", () => {
+  function renderModal(onSave: () => void, isSaving = false) {
+    render(
+      <CourseManagementModal
+        isOpen
+        courses={[sectionOne]}
+        editingCourse={null}
+        courseForm={{ ...emptyForm, code: "CS111" }}
+        userName="Prof"
+        onClose={vi.fn()}
+        onSave={onSave}
+        isSaving={isSaving}
+        onDelete={vi.fn()}
+        setCourseForm={vi.fn()}
+        setEditingCourse={vi.fn()}
+      />,
+    );
+  }
+
+  it("submits the course form once (Enter in a field submits the form)", () => {
+    const onSave = vi.fn();
+    renderModal(onSave);
+
+    const form = screen.getByPlaceholderText("CS480").closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits through the footer Save button, which belongs to the form", () => {
+    const onSave = vi.fn();
+    renderModal(onSave);
+
+    const save = screen.getByRole("button", { name: /Create Course/ }) as HTMLButtonElement;
+    expect(save.type).toBe("submit");
+    fireEvent.click(save);
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Save and ignores submits while a save is in flight", () => {
+    const onSave = vi.fn();
+    renderModal(onSave, true);
+
+    const save = screen.getByRole("button", { name: /Create Course/ }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(save.getAttribute("aria-busy")).toBe("true");
+    fireEvent.submit(screen.getByPlaceholderText("CS480").closest("form") as HTMLFormElement);
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});

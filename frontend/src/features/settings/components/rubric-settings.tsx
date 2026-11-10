@@ -98,7 +98,7 @@ export function RubricSettings({
                   value={item.value}
                   disabled={isDisabled}
                   onChange={(event) => onChange(item.id, Number(event.target.value))}
-                  className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-[#2F5B85] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-score-high disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <input
                   type="number"
