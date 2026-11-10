@@ -458,7 +458,7 @@ export function AdminPageContent() {
                         <div className="font-semibold text-slate-900 flex items-center gap-2">
                           {user.fullName}
                           {isSelf && (
-                            <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                               YOU
                             </span>
                           )}
