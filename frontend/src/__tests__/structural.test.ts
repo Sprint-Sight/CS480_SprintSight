@@ -186,4 +186,18 @@ describe("API client and session boundaries", () => {
       .map(toRepoPath);
     expect(offenders).toEqual([]);
   });
+
+  it("keeps text and chart ticks at 12px or larger", () => {
+    const offenders = sourceFiles
+      .filter((filePath) => /text-\[(?:[0-9]|1[01])px\]|fontSize:\s*(?:[0-9]|1[01])\b/.test(readFile(filePath)))
+      .map(toRepoPath);
+    expect(offenders).toEqual([]);
+  });
+
+  it("turns errors into messages with getErrorMessage, not ad-hoc instanceof checks", () => {
+    const offenders = sourceFiles
+      .filter((filePath) => /instanceof Error\s*\?/.test(readFile(filePath)))
+      .map(toRepoPath);
+    expect(offenders).toEqual([]);
+  });
 });

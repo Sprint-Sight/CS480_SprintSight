@@ -5,6 +5,12 @@ function sprintNumber(sprintId: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/** "sprint-3" -> "Sprint 3"; IDs without a trailing number are shown unchanged. */
+export function sprintLabel(sprintId: string): string {
+  const number = sprintNumber(sprintId);
+  return number === null ? sprintId : `Sprint ${number}`;
+}
+
 /** Builds dropdown options from real sprint IDs, numbered sprints first and labelled "Sprint N". */
 export function buildSprintOptions(sprintIds: string[]): SprintOption[] {
   return [...new Set(sprintIds)]
@@ -16,7 +22,7 @@ export function buildSprintOptions(sprintIds: string[]): SprintOption[] {
       }
       return a.number - b.number;
     })
-    .map(({ value, number }) => ({ value, label: number === null ? value : `Sprint ${number}` }));
+    .map(({ value }) => ({ value, label: sprintLabel(value) }));
 }
 
 export function semesterLabel(course: { term: string; year: number }): string {
