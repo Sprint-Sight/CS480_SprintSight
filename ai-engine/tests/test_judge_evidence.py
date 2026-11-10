@@ -107,7 +107,7 @@ def test_a_realistic_sprint_shrinks_from_hundreds_of_thousands_of_tokens_to_a_fi
     # 150 commits with 8 KB diffs, 200 repo files of 12 KB and a long brief: a few hundred thousand tokens
     # whole (a real sprint measured ~708K), which can never fit a 49K-token judge.
     commits = [
-        commit(hashlib.sha1(str(i).encode()).hexdigest(), f"src/module_{i % 50}.py", diff="d" * 8_000)
+        commit(hashlib.sha1(str(i).encode(), usedforsecurity=False).hexdigest(), f"src/module_{i % 50}.py", diff="d" * 8_000)
         for i in range(150)
     ]
     files = [SnapshotFile(path=f"src/module_{i}.py", size_bytes=12_000, line_count=300, content="c" * 12_000)

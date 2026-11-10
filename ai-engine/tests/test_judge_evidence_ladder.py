@@ -26,7 +26,7 @@ def sprint_like_your_data(
     """311 commits touching ~10 files each, 201 repository files, 14 tickets."""
     commits = []
     for i in range(n_commits):
-        sha = hashlib.sha1(str(i).encode()).hexdigest()
+        sha = hashlib.sha1(str(i).encode(), usedforsecurity=False).hexdigest()
         commits.append(CommitInfo(
             sha=sha, author=f"student{i % 4}", message=f"commit {i}: change the thing " * 3,
             timestamp=datetime(2026, 1, 1 + i % 28, tzinfo=UTC), lines_added=40, lines_deleted=5,
