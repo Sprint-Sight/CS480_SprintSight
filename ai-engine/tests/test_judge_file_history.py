@@ -18,7 +18,7 @@ START = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def sha_of(label: str) -> str:
-    return hashlib.sha1(label.encode()).hexdigest()
+    return hashlib.sha1(label.encode(), usedforsecurity=False).hexdigest()
 
 
 def commit(label: str, files: list[str], day: int, message: str | None = None, author: str = "alice",
