@@ -49,6 +49,8 @@ frontend/yarn-error.log*
 # 4. Databases & Local Storage
 # ==========================================
 *.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 *.db
 pgdata/
 uploads/

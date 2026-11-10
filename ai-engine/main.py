@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api import assessment
+from judges.scheduler import start_judge_worker, stop_judge_worker
 from llmops.mlflow_config import start_mlflow
 from llmops.prompt_registry import register_all_dimension_prompts
 from services.llm_client import (
@@ -101,9 +102,17 @@ Analyze the following sprint bundle and output a score:
     # 2. Setup your global LLM client here if desired (or rely on llm_client.py)
     # _llm_client = create_llm_client(model_name)
     
+    # The judge runs from a durable queue, not from request-scoped BackgroundTasks, so it
+    # survives restarts. Jobs left running by a previous process are re-queued by the worker.
+    try:
+        start_judge_worker()
+    except Exception:
+        log.exception("Judge worker failed to start; assessments will be queued but not judged.")
+
     # Code before yield runs on startup
     yield # The application runs while paused here
     # Code after yield runs on shutdown, clear memory, close connections, etc.
+    stop_judge_worker()
 
 app = FastAPI(
     title="SprintSight",
