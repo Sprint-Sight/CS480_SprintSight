@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
@@ -93,7 +94,7 @@ def faculty_token() -> str:
     return response.json()["access_token"]
 
 
-def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_timeout(
+def test_send_assessment_to_ai_engine_uses_single_transport_call_with_bounded_timeout(
     monkeypatch,
 ) -> None:
     called = {}
@@ -129,7 +130,9 @@ def test_send_assessment_to_ai_engine_uses_single_transport_call_without_fixed_t
         == "http://host.docker.internal:8001/assess/sprint/data?modelname=sprintsight-qwen"
     )
     assert called["json"] == {"sprint_context": {"project_id": "demo"}}
-    assert called["timeout"] is None
+    # Bounded: an unbounded wait leaves the job stuck in "ai_evaluating" when the engine hangs.
+    assert isinstance(called["timeout"], httpx.Timeout)
+    assert called["timeout"].read is not None and called["timeout"].read > 0
 
 
 def test_assess_and_override_writes_audit(

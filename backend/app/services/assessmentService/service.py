@@ -113,6 +113,22 @@ def _evidence_details(evidence: object) -> list[EvidenceDetail]:
     return details
 
 
+def _failed_dimension_names(
+    ai_result: dict, rubric_scores: dict[str, RubricDimensionScoreDetail]
+) -> list[str]:
+    """Rubric dimensions the AI engine could not score, in rubric order.
+
+    The engine never omits a failed dimension: it ships a placeholder with
+    `evaluation_failed: true` (and also lists it in `failed_dimensions`). Either signal
+    is enough, so an older engine that only sets the per-dimension flag still works.
+    """
+    reported = ai_result.get("failed_dimensions")
+    names = {str(name) for name in reported} if isinstance(reported, list) else set()
+    names |= {name for name, detail in rubric_scores.items() if detail.evaluation_failed}
+    order = {dimension: index for index, dimension in enumerate(RUBRIC_WEIGHTS)}
+    return sorted(names, key=lambda name: (order.get(name, len(order)), name))
+
+
 def convert_ai_result_to_assessment_report(
     payload: AssessRequest | dict,
     ai_result: dict,
@@ -167,17 +183,40 @@ def convert_ai_result_to_assessment_report(
                     or "AI-generated rubric justification.",
                     evidence_citations=_format_evidence_citations(evidence),
                     evidence_details=_evidence_details(evidence),
+                    evaluation_failed=bool(detail.get("evaluation_failed")),
+                    failure_class=detail.get("failure_class"),
                 )
 
     recommendations = list(ai_result.get("key_recommendations") or [])
     if not recommendations:
         recommendations = list(ai_result.get("recommendations") or [])
 
+    failed_dimensions = _failed_dimension_names(ai_result, rubric_scores)
+
     # Weight the actual per-dimension scores by effective_weights so a course's
     # custom weights change the team score, not just the displayed labels.
     # Falls back to the AI engine's own (unweighted) overall_score when
     # per-dimension detail isn't available (e.g. older/partial ai_result).
-    if rubric_scores and all(dimension in rubric_scores for dimension in effective_weights):
+    if failed_dimensions:
+        # A dimension whose retries were exhausted carries a placeholder score (1), not an
+        # assessment. Counting it would silently drag the team score down, so it is
+        # excluded and the remaining weights are renormalised. The report is flagged
+        # (evaluation_failed) so a person decides what to do about the gap.
+        assessed_weights = {
+            dimension: weight
+            for dimension, weight in effective_weights.items()
+            if dimension in rubric_scores and dimension not in failed_dimensions
+        }
+        total_weight = sum(assessed_weights.values())
+        if assessed_weights and total_weight > 0:
+            weighted_sum = sum(
+                rubric_scores[dimension].score * weight
+                for dimension, weight in assessed_weights.items()
+            )
+            team_score_value = round(weighted_sum / total_weight * 10, 2)
+        else:
+            team_score_value = 0.0
+    elif rubric_scores and all(dimension in rubric_scores for dimension in effective_weights):
         weighted_average = sum(
             rubric_scores[dimension].score * weight
             for dimension, weight in effective_weights.items()
@@ -187,6 +226,15 @@ def convert_ai_result_to_assessment_report(
         team_score_value = round(overall_score * 10, 2)
     else:
         team_score_value = 0.0
+
+    team_rationale = ai_result.get("executive_summary") or "AI assessment result."
+    if failed_dimensions:
+        verb = "is" if len(failed_dimensions) == 1 else "are"
+        team_rationale = (
+            f"Incomplete assessment: {', '.join(failed_dimensions)} could not be scored "
+            f"automatically and {verb} excluded from this score pending manual review. "
+            f"{team_rationale}"
+        )
 
     def deduplicate(values: list) -> list[str]:
         deduplicated = []
@@ -212,7 +260,7 @@ def convert_ai_result_to_assessment_report(
         rubric_weights=effective_weights,
         team_score=TeamScore(
             score=team_score_value,
-            rationale=ai_result.get("executive_summary") or "AI assessment result.",
+            rationale=team_rationale,
             overall_grade=score_to_grade(team_score_value),
         ),
         individual_scores=individual_scores,
@@ -220,6 +268,9 @@ def convert_ai_result_to_assessment_report(
         rubric_scores=rubric_scores,
         strengths=deduplicate(strengths),
         weaknesses=deduplicate(weaknesses),
+        trace_id=ai_result.get("trace_id") or None,
+        evaluation_failed=bool(failed_dimensions),
+        failed_dimensions=failed_dimensions,
     )
 
 
@@ -462,11 +513,23 @@ def run_assessment_job(
             current_stage="completed",
             report_id=report.report_id,
         )
-        job_repo.append_event(
-            job_id,
-            "completed",
-            {"status": "completed", "progress": 100, "report_id": report.report_id},
-        )
+        completed_event: dict[str, object] = {
+            "status": "completed",
+            "progress": 100,
+            "report_id": report.report_id,
+        }
+        if report.evaluation_failed:
+            # Explicit manual-review flag: the report exists, but some dimensions were not
+            # scored. Surfaced on the job so the UI does not present it as a clean success.
+            completed_event.update(
+                needs_manual_review=True,
+                failed_dimensions=report.failed_dimensions,
+                message=(
+                    "Report saved, but these dimensions need manual review: "
+                    f"{', '.join(report.failed_dimensions)}."
+                ),
+            )
+        job_repo.append_event(job_id, "completed", completed_event)
         if user_repository and project_repository and notification_service:
             _notify_instructors_report_completed(
                 report,
@@ -476,14 +539,24 @@ def run_assessment_job(
                 notification_service,
                 job_id,
             )
-            _notify_students_report_completed(
-                report,
-                project,
-                user_repository,
-                notification_service,
-                job_id,
-                project_repository,
-            )
+            if report.evaluation_failed:
+                # Students must not receive a score that silently omits dimensions.
+                job_repo.append_event(
+                    job_id,
+                    "notification_skipped",
+                    {
+                        "message": "Students were not notified: the report needs manual review first."  # noqa: E501
+                    },
+                )
+            else:
+                _notify_students_report_completed(
+                    report,
+                    project,
+                    user_repository,
+                    notification_service,
+                    job_id,
+                    project_repository,
+                )
     except Exception as exc:
         error_message = str(exc)
         job_repo.update_job(
@@ -500,6 +573,10 @@ def run_assessment_job(
                 "status": "failed",
                 "message": "The assessment failed.",
                 "error_message": error_message,
+                # Lets the UI offer "retry" for transient failures (timeout, engine
+                # unreachable) and "contact support" for the rest.
+                "transient": bool(getattr(exc, "transient", False)),
+                "error_kind": getattr(exc, "kind", None),
             },
         )
 
@@ -537,10 +614,19 @@ def _notify_instructors_report_completed(
         )
         return
 
-    subject = f"SprintSight assessment report completed: {project.project_name}"
+    if report.evaluation_failed:
+        subject = f"SprintSight assessment needs manual review: {project.project_name}"
+        intro = (
+            "The LLM assessment report was generated, but these rubric dimensions could not "
+            f"be scored automatically: {', '.join(report.failed_dimensions)}.\n"
+            "They are excluded from the team score below. Students have not been notified; "
+            "please review the report and score the missing dimensions manually.\n\n"
+        )
+    else:
+        subject = f"SprintSight assessment report completed: {project.project_name}"
+        intro = "The LLM assessment report has been completed.\n\n"
     body = (
-        "The LLM assessment report has been completed.\n\n"
-        f"Course: {report.course_id}\n"
+        intro + f"Course: {report.course_id}\n"
         f"Project: {project.project_name}\n"
         f"Sprint: {report.sprint_id}\n"
         f"Report ID: {report.report_id}\n"
