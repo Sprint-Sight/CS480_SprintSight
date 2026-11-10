@@ -1,5 +1,9 @@
 import { ProjectSprintPageContent } from "@/features/sprints/components/project-sprint-page-content";
 
-export default function ProjectSprintsPage({ params }: { params: { projectId: string } }) {
-  return <ProjectSprintPageContent projectId={params.projectId} />;
+type Props = { params: Promise<{ projectId: string }> };
+
+// Next 15: dynamic route params are a Promise.
+export default async function ProjectSprintsPage({ params }: Props) {
+  const { projectId } = await params;
+  return <ProjectSprintPageContent projectId={projectId} />;
 }
