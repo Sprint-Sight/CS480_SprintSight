@@ -131,6 +131,11 @@ class RubricDimensionScore(ModelOutput):
     # marks a synthesized placeholder used to guarantee all rubric dimensions are
     # always present, so callers can still distinguish it from a real score.
     evaluation_failed: bool = False
+    # Only set alongside evaluation_failed (see schemas/failure_class.py): which
+    # kind of failure exhausted the retries, and the full error text. The text is
+    # for operators; `justification` carries only the short user-safe description.
+    failure_class: str | None = None
+    error_detail: str | None = None
     citations_dropped: int = 0  # how many citations were dropped: ungrounded (fabricated) identifiers removed by code, set in services/llm_client.py
     # Human-curated only (e.g. schemas/benchmark.py's gold reference data) --
     # never asked of the model, same reasoning as ModelOutput's docstring above.
