@@ -378,7 +378,7 @@ EVERY TIME YOU WANT GPU ACCESS
 1. `ollama pull phi4:14b`
 2. `ollama create sprintsight-judge-phi -f models/Modelfile.phi`
 3. `bash hpc/hpc-dev.sh models`
-4. `curl -s http://localhost:11435/api/create -d '{"model":"sprintsight-judge-phi","from":"phi4:14b" "parameters":{"temperature":0.1,"num_ctx":49152}}'`
+4. `curl -s http://localhost:11435/api/create -d '{"model":"sprintsight-judge-phi","from":"phi4:14b" "parameters":{"temperature":0.1,"num_ctx":16384}}'`
 
 ## Running LLM judge and code-based scorer
 1. Start the Ollama GPU container on the cluster node (see above).
