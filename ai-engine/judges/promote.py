@@ -6,7 +6,7 @@ import mlflow
 import pandas as pd
 from mlflow import MlflowClient, MlflowException
 
-from judges.flagging import MAX_SEVERITY_WEIGHTED_RATE
+from judges.flagging import JUDGE_FAILURE_CLASS_COL, MAX_SEVERITY_WEIGHTED_RATE
 from judges.run_judges import run_judge_evaluation
 from llmops.prompt_registry import (
     PRODUCTION_ALIAS,
@@ -15,6 +15,7 @@ from llmops.prompt_registry import (
 )
 from prompts.dimension_criteria import DIMENSIONS
 from research.eval.analysis import paired_bootstrap_diff
+from schemas.failure_class import is_transient
 
 JUDGE_RESULTS_TAG = "judge_results"       # JSON on each prompt version: {"team|sprint|model": {"abs_error": x, "hallucination": y, "severity_weighted": z, "citation_count": n}}
 PROMOTION_MAE_THRESHOLD = 2.0             # absolute gate: never promote a prompt whose per-dimension error is above this
@@ -31,6 +32,21 @@ _JUDGE_LOCK = threading.Lock()  # one judge + promotion at a time: one shared Ol
 
 _input_key = lambda team_id, sprint_id, model, judge_model: f"{team_id}|{sprint_id}|{model}|{judge_model}"
 
+class JudgeTransientFailure(RuntimeError):
+    """The judge call failed for a reason that may pass (see schemas.failure_class)."""
+
+
+def judge_transient_failures(results) -> set[str]:
+    """Transient failure classes recorded by the judge scorer across `results`."""
+    found: set[str] = set()
+    for result in results:
+        frame = getattr(result, "result_df", None)
+        if frame is None or JUDGE_FAILURE_CLASS_COL not in frame.columns:
+            continue
+        found |= {str(value) for value in frame[JUDGE_FAILURE_CLASS_COL].dropna() if is_transient(value)}
+    return found
+
+
 def run_judge_and_promotion(experiment_name: str, trace_id: str, team_id: str, prompt_versions_registered: dict, client: MlflowClient, sprint_id: str | None = None):
     """Judge one trace, then evaluate prompt promotion. RAISES if judging fails, so the durable
     job queue (judges/scheduler.py) can retry it; a failure while deciding promotion is only
@@ -44,6 +60,12 @@ def run_judge_and_promotion(experiment_name: str, trace_id: str, team_id: str, p
             log.info("All dimensions failed for trace %s; skipping judge + promotion.", trace_id)
             return
         results = run_judge_evaluation(experiment_name, client, trace_ids=[trace_id], team_id=team_id, with_judge=True, run_name=f"judge_{trace_id}")
+        # MLflow swallows a scorer's error, so "the judge ran" does not mean "the judge worked".
+        # A transient failure (Ollama down, timeout) is worth another attempt from the queue; a
+        # permanent one (the prompt cannot fit) is not, and has already been flagged for review.
+        transient = judge_transient_failures(results)
+        if transient:
+            raise JudgeTransientFailure(f"judge failed for trace {trace_id}: {', '.join(sorted(transient))}")
         for result in results:
             try:
                 _determine_promotion(result, trace_id, team_id, sprint_id, prompt_versions_registered, client, failed)

@@ -28,6 +28,7 @@ Audience = Literal["production", "research"]
 # Column names in the evaluate() result frame: "<scorer feedback name>/value".
 GRADE_COL = "grade_penalised_mae/value"
 HALLUCINATION_COL = "citation_hallucination_rate/value"
+JUDGE_FAILURE_CLASS_COL = "citation_judge_failure_class/value"  # set only when the judge call failed
 SEVERITY_WEIGHTED_COL = "citation_severity_weighted_rate/value"
 SEVERITY_WEIGHTED_INCL_DROPPED_COL = "citation_severity_weighted_rate_incl_dropped/value"
 CITATION_COUNT_COL = "citation_count/value"
@@ -91,7 +92,9 @@ def evaluate_flags(values: Mapping[str, object], *, has_gold: bool, with_judge: 
     severity_incl_dropped = _value(values, SEVERITY_WEIGHTED_INCL_DROPPED_COL)
 
     if halluc is None:
-        reasons.append(FlagReason("JUDGE_NO_OUTPUT", "citation judge produced no output", "production"))  # e.g. the judge call errored
+        why = _value(values, JUDGE_FAILURE_CLASS_COL)  # e.g. "context_truncated", "timeout"
+        reasons.append(FlagReason(
+            "JUDGE_NO_OUTPUT", f"citation judge produced no output{f' ({why})' if why else ''}", "production"))
     elif halluc > MAX_HALLUCINATION:
         reasons.append(FlagReason(
             "JUDGE_HALLUCINATION", f"hallucination_rate={halluc} > {MAX_HALLUCINATION}", "production"))
