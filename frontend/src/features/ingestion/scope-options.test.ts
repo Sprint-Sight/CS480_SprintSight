@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSprintOptions, semesterLabel } from "@/features/ingestion/scope-options";
+import { buildSprintOptions, semesterLabel, sprintLabel } from "@/features/ingestion/scope-options";
 
 describe("buildSprintOptions", () => {
   it("labels numbered sprints as Sprint N and sorts them numerically", () => {
@@ -30,5 +30,16 @@ describe("buildSprintOptions", () => {
 describe("semesterLabel", () => {
   it("joins term and year", () => {
     expect(semesterLabel({ term: "Fall", year: 2025 })).toBe("Fall 2025");
+  });
+});
+
+describe("sprintLabel", () => {
+  it("turns a numbered sprint ID into 'Sprint N'", () => {
+    expect(sprintLabel("sprint-3")).toBe("Sprint 3");
+    expect(sprintLabel("sprint-12")).toBe("Sprint 12");
+  });
+
+  it("leaves IDs without a trailing number unchanged", () => {
+    expect(sprintLabel("final-demo")).toBe("final-demo");
   });
 });

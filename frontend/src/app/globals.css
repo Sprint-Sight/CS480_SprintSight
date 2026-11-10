@@ -17,3 +17,22 @@
   --chart-5: 202 80% 81%;
   --chart-bar: 209 48% 35%;
 }
+
+/*
+ * Keyboard focus fallback for controls that don't style their own focus yet (buttons and
+ * links still being migrated to <Button>). :where() has zero specificity, so any
+ * component's own focus or outline utility still wins.
+ */
+@layer base {
+  :where(
+      button,
+      a[href],
+      select,
+      summary,
+      [role="button"],
+      [tabindex]:not([tabindex="-1"])
+    ):focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+  }
+}
