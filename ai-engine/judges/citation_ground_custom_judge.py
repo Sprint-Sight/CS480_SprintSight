@@ -16,7 +16,7 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from judges.judge_config import configured_judge_model
 from judges.judge_evidence import fit_judge_bundle
@@ -39,6 +39,8 @@ from services.llm_client import (
 # V2 adds severity labels to partially_grounded and hallucinated, and clarifies that the judge should not grade the student, only check facts.
 log = logging.getLogger(__name__)
 
+_PREVIEW_CHARS = 900  # MLflow's trace table stores previews in a VARCHAR(1000)
+
 # MLflow gives a scorer 300 s by default, but judging a real sprint is several model calls on a
 # 14B model (each a long prefill) and takes minutes. The whole judge call is also bounded a
 # minute inside the scorer's limit, so a stuck call is cancelled by us (closing the connection, so
@@ -48,7 +50,11 @@ JUDGE_SCORER_TIMEOUT_SECONDS = float(os.getenv("JUDGE_SCORER_TIMEOUT_SECONDS", "
 JUDGE_CALL_DEADLINE_SECONDS = max(60.0, JUDGE_SCORER_TIMEOUT_SECONDS - 60.0)
 
 # V3: RAW_BUNDLE carries diffs and file contents only for what the claims mention (judges/judge_evidence.py).
-GROUNDING_PROMPT_VERSION = "grounding-v3"
+# V4: commits touching a cited file stay visible, with their messages, at every reduction level.
+# V5: those are the commit that CREATED the file plus its newest two (v4 showed only the newest, and the
+#     judge called true "this commit introduces X" claims fabricated), and unverifiable file-anchored
+#     claims are partially_grounded/minor_detail, not hallucinated.
+GROUNDING_PROMPT_VERSION = "grounding-v5"
 
 GROUNDING_SYSTEM_PROMPT = """You are a strict fact-checker. You do NOT grade the students.
 You check whether each CLAIM is supported by RAW_BUNDLE (real commits, Jira tickets, peer reviews).
@@ -73,7 +79,15 @@ RAW_BUNDLE includes diffs and file contents only for the commits and files the c
 sprint, commits and files that no claim mentions are shown in reduced form or only as totals (a "note"
 field says so). Anything missing about a record no claim mentions is not evidence against any claim.
 
-Return exactly one verdict for EVERY claim id given. Never skip or repeat one."""
+Some claims name a FILE but describe "the commit" that changed it ("This commit introduces the X class").
+For these you are shown only some of the file's commits: the one that created it (marked "adds") and its
+newest ones ("touches"), not all of them. Do not label such a claim hallucinated just because the newest
+commits are unrelated to it. If a listed commit supports the claim, it is grounded. If none of them supports
+or contradicts it, label it partially_grounded with severity minor_detail. Use hallucinated only when a listed
+commit or the file's contents clearly contradict the claim.
+
+Return exactly one verdict for EVERY claim id given. Never skip or repeat one. citation_id is only the id
+(for example "C4"), never the claim text."""
 
 BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
 JUDGE_MODEL = configured_judge_model()  # judges/judge_config.py: the one default for prod and research
@@ -113,8 +127,21 @@ class JudgeContextTruncated(PromptTruncatedError):
     sent). The verdicts were made on partial evidence, so real citations may be called
     fabricated; they are discarded rather than scored."""
 
+_LEADING_ID = re.compile(r"\s*[Cc](\d+)\b")
+
+
 class CitationVerdict(BaseModel):
     citation_id: str                       # "C3", the label WE gave it
+
+    @field_validator("citation_id", mode="before")
+    @classmethod
+    def _just_the_id(cls, value):
+        """The claims are shown as `C4 [code_quality]: 5e1526c | reason`, and the judge model sometimes
+        copies that whole line into this field instead of `C4`. Since decoding is deterministic, every
+        retry repeated the same mistake and the verdicts were thrown away. The id is the leading `C<n>`."""
+        if isinstance(value, str) and (found := _LEADING_ID.match(value)):
+            return f"C{found.group(1)}"
+        return value
     reasoning: str = Field(min_length=10)  # before the label on purpose: the model explains first, then decides
     label: Literal["grounded", "partially_grounded", "hallucinated"]
     severity: Severity
@@ -385,8 +412,11 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
                 judge_assessment_detailed(bundle, rubric, judge_model, judge_provider), JUDGE_CALL_DEADLINE_SECONDS))
         
         except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
-            print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
-            mlflow.update_current_trace(response_preview=f"Error: {e}")
+            # Bounded: instructor's exception text can run to tens of thousands of characters (every
+            # failed attempt), and MLflow's trace table rejects a preview over 1000 characters, which
+            # dropped the whole judge trace. The full text is kept on the assessment's rationale.
+            print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {failure_detail(e, 500)}", flush=True)
+            mlflow.update_current_trace(response_preview=f"Error: {failure_detail(e, 500)}")
             # MLflow swallows a scorer's error, so the caller only sees a missing metric. The class
             # travels as its own feedback so the job queue can retry what is transient (Ollama
             # down, a timeout) and leave what is not (the prompt cannot fit) alone.
@@ -395,7 +425,7 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
                     Feedback(name="citation_judge_failure_class", value=failure_class.value, source=source,
                              rationale=failure_detail(e))]
         
-        mlflow.update_current_trace(response_preview=f"Result: {result}")
+        mlflow.update_current_trace(response_preview=f"Result: {result}"[:_PREVIEW_CHARS])
         print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
         n, wsum = result["citation_count"], sum(verdict_weight(r["label"], r["severity"]) for r in rows)
         headline = round((wsum + CODE_DROP_WEIGHT * dropped) / (n + dropped), 4) if n + dropped else None

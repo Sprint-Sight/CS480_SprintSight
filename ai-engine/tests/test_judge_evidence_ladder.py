@@ -221,7 +221,10 @@ def test_fit_returns_the_most_reduced_view_and_its_sizes_when_nothing_fits() -> 
 
 def test_a_sprint_shaped_like_the_failing_one_fits_the_judge() -> None:
     bundle = sprint_like_your_data()
-    claims = many_claims(bundle)
+    # 40 claims in ONE call. Every cited file also keeps its three newest commits, so a call citing
+    # many files needs more room than before; beyond that the judge splits the claims into batches
+    # (tests/test_judge_batching.py).
+    claims = many_claims(bundle, n=40)
     budget = int(49_152 * 0.85 * 4) - 4_000 - len(claims) - 200  # judge context less instructions and claims
 
     whole = len(bundle.model_dump_json()) // 4

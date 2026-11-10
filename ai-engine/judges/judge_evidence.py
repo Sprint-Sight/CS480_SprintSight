@@ -24,7 +24,10 @@ level=n)` is that ladder and `fit_judge_bundle` walks it:
   1  uncited commits lose their per-file lists
   2  uncited commits shrink to sha, author, short message, date and line counts; only cited files
      are listed (with the file total)
-  3  uncited commits are replaced by per-author totals
+  3  uncited commits are replaced by per-author totals, except, for each cited file, the commit that
+     created it and its two newest commits, which stay as short entries with their messages (from
+     level 2 on, marked "adds" / "touches"): a claim anchored on a file often describes "the commit"
+     that changed it ("this commit introduces the X class"), and cannot be checked without it
   4  cited commits show diffs only for the files the claims mention (else their three largest
      changes), and cited files show only the lines the claims cite plus context
 
@@ -50,12 +53,19 @@ _LINE_RANGE = re.compile(r"([\w./-]+\.\w+):L(\d+)(?:-L?(\d+))?")
 
 MAX_LEVEL = 4
 _SHORT_MESSAGE_CHARS = 100
+_HISTORY_MESSAGE_CHARS = 300    # long enough to judge a claim about the quality of a commit message
+_RECENT_COMMITS = 2             # newest commits kept per cited file, besides the one that created it
 _LARGEST_CHANGES_KEPT = 3
 _EXCERPT_CONTEXT_LINES = 10
 
 _NOTE = (
     "To fit the context window, commits and files that no claim mentions are shown in reduced form "
     "or only as totals{narrowed}. Their absence is not evidence against any claim."
+)
+_HISTORY_NOTE = (
+    " For each file a claim names, the commit that created it and its newest commits are listed with their "
+    "messages (\"touches\" says which cited file they changed, \"adds\" which ones the commit created). "
+    "These are only some of the file's commits."
 )
 _NARROWED = (
     ", and for cited commits only the files the claims mention (else the largest changes) have diffs, "
@@ -94,6 +104,24 @@ def _excerpts(content: str, spans: list[tuple[int, int]]) -> list[dict[str, Any]
     return [{"from": low, "to": high, "text": "\n".join(lines[low - 1:high])} for low, high in windows if low <= high]
 
 
+def _short_commit(commit: Any, message_chars: int, touches: list[str] | None = None,
+                  adds: list[str] | None = None) -> dict[str, Any]:
+    message = commit.message if len(commit.message) <= message_chars else commit.message[:message_chars] + "..."
+    entry: dict[str, Any] = {
+        "sha": commit.sha[:12],
+        "author": commit.author,
+        "message": message,
+        "date": commit.timestamp.date().isoformat(),
+        "lines_added": commit.lines_added,
+        "lines_deleted": commit.lines_deleted,
+    }
+    if touches:
+        entry["touches"] = touches
+    if adds:
+        entry["adds"] = adds  # this commit created these files
+    return entry
+
+
 def build_judge_bundle(bundle: ArtifactBundle, claims_text: str, level: int = 0) -> dict[str, Any]:
     """The bundle reduced to what is needed to check `claims_text`, at reduction `level` (see
     the module docstring)."""
@@ -115,25 +143,50 @@ def build_judge_bundle(bundle: ArtifactBundle, claims_text: str, level: int = 0)
         # A file alone brings in a diff only if the snapshot cannot show the file itself.
         return commit_is_cited or (_mentions_path(filename, claims) and _posix(filename) not in snapshot_with_content)
 
+    # A claim often anchors on a FILE but describes "the commit" that touched it ("This commit
+    # introduces the X class... clear commit messaging"). The judge cannot check that without the
+    # commit, so for each cited file these stay visible (message and counts, no diff) even when
+    # everything else about uncited commits is reduced:
+    #   * the commit that CREATED the file, which is what "this commit introduces X" refers to
+    #     (the earliest commit that touched it if none is recorded as adding it), and
+    #   * its most recent commits.
+    # Showing only the latest commits made the judge call true claims fabricated: it compared "this
+    # commit introduces the class" with "Remove unused import statements".
+    recent: dict[str, dict[str, list[str]]] = {}  # commit sha -> {"touches": cited files, "adds": files it created}
+    if level >= 2:
+        touching: dict[str, list[tuple[Any, str]]] = defaultdict(list)  # file -> [(commit, change_type)]
+        for commit in bundle.commits:
+            for changed in commit.files_changed:
+                if _mentions_path(changed.filename, claims):
+                    touching[changed.filename].append((commit, changed.change_type))
+        for filename, history in touching.items():
+            history.sort(key=lambda item: item[0].timestamp)  # oldest first
+            creators = [c for c, kind in history if kind == "added"]
+            introducing = creators[0] if creators else history[0][0]
+            chosen = {introducing.sha: introducing}
+            for commit, _ in history[-_RECENT_COMMITS:]:
+                chosen.setdefault(commit.sha, commit)
+            for sha in chosen:
+                info = recent.setdefault(sha, {"touches": [], "adds": []})
+                info["touches"].append(filename)
+                if creators and sha == introducing.sha:
+                    info["adds"].append(filename)
+
     commits: list[dict[str, Any]] = []
     per_author: dict[str, dict[str, int]] = defaultdict(lambda: {"commits": 0, "lines_added": 0, "lines_deleted": 0})
     for commit in bundle.commits:
         cited = commit_cited(commit.sha)
-        if level >= 3 and not cited:
-            totals = per_author[commit.author]
-            totals["commits"] += 1
-            totals["lines_added"] += commit.lines_added
-            totals["lines_deleted"] += commit.lines_deleted
-            continue
         if level >= 2 and not cited:
-            commits.append({
-                "sha": commit.sha[:12],
-                "author": commit.author,
-                "message": commit.message if len(commit.message) <= _SHORT_MESSAGE_CHARS else commit.message[:_SHORT_MESSAGE_CHARS] + "...",
-                "date": commit.timestamp.date().isoformat(),
-                "lines_added": commit.lines_added,
-                "lines_deleted": commit.lines_deleted,
-            })
+            if commit.sha in recent:
+                commits.append(_short_commit(commit, _HISTORY_MESSAGE_CHARS, touches=recent[commit.sha]["touches"],
+                                             adds=recent[commit.sha]["adds"]))
+            elif level >= 3:
+                totals = per_author[commit.author]
+                totals["commits"] += 1
+                totals["lines_added"] += commit.lines_added
+                totals["lines_deleted"] += commit.lines_deleted
+            else:
+                commits.append(_short_commit(commit, _SHORT_MESSAGE_CHARS))
             continue
 
         with_diffs = [f for f in commit.files_changed if f.diff and diff_wanted(cited, f.filename)]
@@ -203,6 +256,8 @@ def build_judge_bundle(bundle: ArtifactBundle, claims_text: str, level: int = 0)
         judged["commits_total"] = len(bundle.commits)
     if level >= 1:
         judged["note"] = _NOTE.format(narrowed=_NARROWED if narrow else "")
+        if recent:
+            judged["note"] += _HISTORY_NOTE
     return judged
 
 

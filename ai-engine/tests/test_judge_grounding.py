@@ -204,13 +204,22 @@ def test_one_judge_model_default_for_production_and_research(monkeypatch) -> Non
     assert configured_judge_model() == "other-judge"
 
 
-def test_production_and_research_entry_points_agree_on_the_default(monkeypatch) -> None:
-    monkeypatch.delenv("SPRINTSIGHT_JUDGE_MODEL", raising=False)
-    import importlib
+def test_production_and_research_entry_points_agree_on_the_default() -> None:
+    # In a fresh interpreter with the variable unset. Reloading the modules inside the test run
+    # replaced their classes (JudgeContextTooSmall, ...) and made later tests depend on order.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
 
-    from judges import custom_llm_judge
-    from research.eval import mlflow_judge_eval
+    env = {key: value for key, value in os.environ.items() if key != "SPRINTSIGHT_JUDGE_MODEL"}
+    env["MLFLOW_DISABLE_AGENT_HINT"] = "1"
+    code = (
+        "from judges import citation_ground_custom_judge as a, custom_llm_judge as b;"
+        "from research.eval import mlflow_judge_eval as c;"
+        "print(a.JUDGE_MODEL, b.DEFAULT_JUDGE_MODEL, c.DEFAULT_JUDGE_MODEL)"
+    )
+    done = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parent.parent,
+                          env=env, capture_output=True, text=True, timeout=120, check=True)
 
-    for module in (judge, custom_llm_judge, mlflow_judge_eval):
-        importlib.reload(module)
-    assert judge.JUDGE_MODEL == custom_llm_judge.DEFAULT_JUDGE_MODEL == mlflow_judge_eval.DEFAULT_JUDGE_MODEL
+    assert done.stdout.split() == ["sprintsight-judge-phi"] * 3
