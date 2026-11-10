@@ -1,8 +1,12 @@
 import asyncio
+import logging
 import os
+import re
 import time
+from dataclasses import dataclass
 from typing import Literal
 
+import httpx
 import mlflow
 from mlflow.entities import (
     AssessmentSource,
@@ -12,8 +16,10 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from judges.judge_config import configured_judge_model
+from judges.judge_evidence import fit_judge_bundle
 from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
@@ -21,15 +27,34 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
+from services.failures import PromptTruncatedError, classify_failure, failure_detail
 from services.llm_client import (
     LLM_TEMPERATURE,
+    OLLAMA_BASE_URL,
     _request_extra_body,
     audit_scope,
     create_llm_client,
 )
 
 # V2 adds severity labels to partially_grounded and hallucinated, and clarifies that the judge should not grade the student, only check facts.
-GROUNDING_PROMPT_VERSION = "grounding-v2"
+log = logging.getLogger(__name__)
+
+_PREVIEW_CHARS = 900  # MLflow's trace table stores previews in a VARCHAR(1000)
+
+# MLflow gives a scorer 300 s by default, but judging a real sprint is several model calls on a
+# 14B model (each a long prefill) and takes minutes. The whole judge call is also bounded a
+# minute inside the scorer's limit, so a stuck call is cancelled by us (closing the connection, so
+# Ollama stops generating) with a classified timeout, instead of MLflow abandoning a thread that
+# keeps running.
+JUDGE_SCORER_TIMEOUT_SECONDS = float(os.getenv("JUDGE_SCORER_TIMEOUT_SECONDS", "3600"))
+JUDGE_CALL_DEADLINE_SECONDS = max(60.0, JUDGE_SCORER_TIMEOUT_SECONDS - 60.0)
+
+# V3: RAW_BUNDLE carries diffs and file contents only for what the claims mention (judges/judge_evidence.py).
+# V4: commits touching a cited file stay visible, with their messages, at every reduction level.
+# V5: those are the commit that CREATED the file plus its newest two (v4 showed only the newest, and the
+#     judge called true "this commit introduces X" claims fabricated), and unverifiable file-anchored
+#     claims are partially_grounded/minor_detail, not hallucinated.
+GROUNDING_PROMPT_VERSION = "grounding-v5"
 
 GROUNDING_SYSTEM_PROMPT = """You are a strict fact-checker. You do NOT grade the students.
 You check whether each CLAIM is supported by RAW_BUNDLE (real commits, Jira tickets, peer reviews).
@@ -50,27 +75,73 @@ Severity (required; it must fit the label):
   a feature the commit does not contain), or the claim contradicts the record.
 partially_grounded takes minor_detail or major_misattribution; hallucinated always takes major_misattribution.
 Citations to things that do not exist were already removed by code; you will not see them.
+RAW_BUNDLE includes diffs and file contents only for the commits and files the claims mention. On a large
+sprint, commits and files that no claim mentions are shown in reduced form or only as totals (a "note"
+field says so). Anything missing about a record no claim mentions is not evidence against any claim.
 
-Return exactly one verdict for EVERY claim id given. Never skip or repeat one."""
+Some claims name a FILE but describe "the commit" that changed it ("This commit introduces the X class").
+For these you are shown only some of the file's commits: the one that created it (marked "adds") and its
+newest ones ("touches"), not all of them. Do not label such a claim hallucinated just because the newest
+commits are unrelated to it. If a listed commit supports the claim, it is grounded. If none of them supports
+or contradicts it, label it partially_grounded with severity minor_detail. Use hallucinated only when a listed
+commit or the file's contents clearly contradict the claim.
+
+Return exactly one verdict for EVERY claim id given. Never skip or repeat one. citation_id is only the id
+(for example "C4"), never the claim text."""
 
 BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
-JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
+JUDGE_MODEL = configured_judge_model()  # judges/judge_config.py: the one default for prod and research
 
 FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
                   "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
 CODE_SOURCE = AssessmentSource(source_type=AssessmentSourceType.CODE, source_id="find_ungrounded_citations")
 
 Severity = Literal["none", "minor_detail", "major_misattribution"]
-SEVERITY_WEIGHT = {"none": 0.0, "minor_detail": 0.25, "major_misattribution": 0.6}
+# Harm of one judged citation, by (label, severity). The old table keyed on severity alone, so
+# `hallucinated` (the record contradicts the claim) and `partially_grounded/major_misattribution`
+# (right record, wrong author/status/file) both weighed 0.6 and the metric could not tell them
+# apart. The order is strict: grounded < minor slip < wrong attribution < contradiction < an
+# identifier that does not exist at all. A code-removed citation is certain; a judge
+# contradiction is a model's opinion, hence 0.8 and not 1.0.
+# UNCALIBRATED: these are ordinal judgements, not fitted weights. Validate them against
+# instructor-rated harm in the inter-annotator study before treating differences of a few
+# hundredths as meaningful.
+VERDICT_WEIGHT: dict[tuple[str, str], float] = {
+    ("grounded", "none"): 0.0,
+    ("partially_grounded", "minor_detail"): 0.2,
+    ("partially_grounded", "major_misattribution"): 0.5,
+    ("hallucinated", "major_misattribution"): 0.8,
+}
 CODE_DROP_WEIGHT = 1.0           # a citation code had to remove is a fabrication
 _ALLOWED_SEVERITY = {"grounded": {"none"}, "partially_grounded": {"minor_detail", "major_misattribution"},
                      "hallucinated": {"major_misattribution"}}
 
-class JudgeContextTooSmall(RuntimeError):
+def verdict_weight(label: str, severity: str) -> float:
+    return VERDICT_WEIGHT[(label, severity)]
+
+class JudgeContextTooSmall(PromptTruncatedError):
     """Prompt would not fit in the judge's context window; the row must be treated as invalid."""
+
+class JudgeContextTruncated(PromptTruncatedError):
+    """The server cut the judge's prompt (reported prompt size at num_ctx, or far below what was
+    sent). The verdicts were made on partial evidence, so real citations may be called
+    fabricated; they are discarded rather than scored."""
+
+_LEADING_ID = re.compile(r"\s*[Cc](\d+)\b")
+
 
 class CitationVerdict(BaseModel):
     citation_id: str                       # "C3", the label WE gave it
+
+    @field_validator("citation_id", mode="before")
+    @classmethod
+    def _just_the_id(cls, value):
+        """The claims are shown as `C4 [code_quality]: 5e1526c | reason`, and the judge model sometimes
+        copies that whole line into this field instead of `C4`. Since decoding is deterministic, every
+        retry repeated the same mistake and the verdicts were thrown away. The id is the leading `C<n>`."""
+        if isinstance(value, str) and (found := _LEADING_ID.match(value)):
+            return f"C{found.group(1)}"
+        return value
     reasoning: str = Field(min_length=10)  # before the label on purpose: the model explains first, then decides
     label: Literal["grounded", "partially_grounded", "hallucinated"]
     severity: Severity
@@ -123,33 +194,125 @@ def summarize_verdict(citations: dict, verdict: GroundingVerdict) -> dict:
         "coverage": round(n / len(citations), 4),
         "hallucination_rate": round(count("hallucinated") / n, 4) if n else None,
         "grounded_rate": round(count("grounded") / n, 4) if n else None,
-        "severity_weighted_rate": round(sum(SEVERITY_WEIGHT[v.severity] for v in judged.values()) / n, 4) if n else None,
+        "severity_weighted_rate": round(sum(verdict_weight(v.label, v.severity) for v in judged.values()) / n, 4) if n else None,
     }
 
-# Main entry point for the grounding judge, get the judge's verdict and the per-citation rows for logging.
-async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str, judge_provider: str = 'ollama') -> GroundingVerdict:
-    if judge_provider == 'ollama':
-        ctx = MODEL_NUM_CTX.get(judge_model)
-        if ctx is None:
-            raise ValueError(f"Add '{judge_model}' to MODEL_NUM_CTX so the judge never runs on Ollama's small default context.")
-        extra_body = _request_extra_body(ctx)
-        ctx_for_estimate = ctx
-    else:
-        extra_body = {}
-        ctx_for_estimate = 128_000 # gpt-4o-mini's context window
+# ---- how much context the judge really has ------------------------------------------------
 
-    claims_text = "\n".join(f'{cid} [{c["dimension"]}]: {c["text"]}' for cid, c in citations.items())
-    user_prompt = f"RAW_BUNDLE:\n{bundle.model_dump_json()}\n\nCLAIMS TO CHECK:\n{claims_text}"   # compact JSON
+# The window is shared by the prompt AND the verdicts the judge writes back (a sentence of
+# reasoning, a label and a severity per claim), so room is reserved for them.
+_OUTPUT_FIXED_TOKENS = 300
+_OUTPUT_TOKENS_PER_CLAIM = 100
+HOSTED_JUDGE_CONTEXT = 128_000  # gpt-4o-mini's context window
 
+_server_context: dict[str, int] = {}
+
+
+async def _server_context_limit(model: str) -> int | None:
+    """The context Ollama will really give `model`: the smaller of the Modelfile's num_ctx and
+    the model's trained maximum, or None if the server cannot be asked.
+
+    Ollama silently clamps num_ctx to the trained maximum. phi4:14b was trained for 16,384
+    tokens, so a Modelfile asking for 49,152 still runs at 16,384; the code believed it had
+    three times the room it did."""
+    if model in _server_context:
+        return _server_context[model]
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            response = await http.post(OLLAMA_BASE_URL.replace("/v1", "") + "/api/show", json={"model": model})
+            response.raise_for_status()
+            info = response.json()
+    except Exception:
+        log.warning("Could not ask Ollama for %s's context limit; using the configured value.", model, exc_info=True)
+        return None
+    limits = [value for key, value in (info.get("model_info") or {}).items()
+              if key.endswith(".context_length") and isinstance(value, int)]
+    configured = re.search(r"^num_ctx\s+(\d+)", info.get("parameters") or "", re.MULTILINE)
+    if configured:
+        limits.append(int(configured.group(1)))
+    if not limits:
+        return None
+    _server_context[model] = min(limits)
+    return _server_context[model]
+
+
+async def _judge_context(judge_model: str, judge_provider: str) -> int:
+    if judge_provider != 'ollama':
+        return HOSTED_JUDGE_CONTEXT
+    configured = MODEL_NUM_CTX.get(judge_model)
+    if configured is None:
+        raise ValueError(f"Add '{judge_model}' to MODEL_NUM_CTX so the judge never runs on Ollama's small default context.")
+    limit = await _server_context_limit(judge_model)
+    if limit is not None and limit < configured:
+        log.warning("%s is configured for a %d-token context but the server will only give it %d; "
+                    "using %d. Fix MODEL_NUM_CTX / the Modelfile.", judge_model, configured, limit, limit)
+        return limit
+    return configured
+
+
+# ---- splitting the claims so each call fits ------------------------------------------------
+
+@dataclass(frozen=True)
+class _Batch:
+    ids: list[str]
+    claims_text: str
+    bundle_json: str
+    evidence_level: int
+
+
+def _claims_text(citations: dict, ids: list[str]) -> str:
+    return "\n".join(f'{cid} [{citations[cid]["dimension"]}]: {citations[cid]["text"]}' for cid in ids)
+
+
+def _budget_chars(ctx: int, n_claims: int, claims_chars: int) -> int:
+    """Characters left for the evidence: 85% of the window less the verdicts to be written, the
+    instructions and the claims, at the ~4 characters per token used throughout."""
+    reserve_tokens = _OUTPUT_FIXED_TOKENS + _OUTPUT_TOKENS_PER_CLAIM * n_claims
+    return int((ctx * 0.85 - reserve_tokens) * 4) - len(GROUNDING_SYSTEM_PROMPT) - claims_chars - 200
+
+
+def plan_batches(bundle: ArtifactBundle, citations: dict, ctx: int, ids: list[str] | None = None) -> list[_Batch]:
+    """Split the claims into the fewest calls that each fit the window.
+
+    Each call gets evidence built for just its own claims (judges/judge_evidence.py), so a
+    smaller batch cites less and needs less. Claims stay in order, which groups them by
+    dimension and so by the evidence they share. A claim that cannot fit even alone raises
+    JudgeContextTooSmall: judging a subset would make every rate misleading."""
+    ids = list(citations) if ids is None else ids
+    claims_text = _claims_text(citations, ids)
+    budget = _budget_chars(ctx, len(ids), len(claims_text))
+    bundle_json, level, section_chars = fit_judge_bundle(bundle, claims_text, budget)
+    if len(bundle_json) <= budget:
+        return [_Batch(ids, claims_text, bundle_json, level)]
+    if len(ids) == 1:
+        sizes = ", ".join(f"{name}={chars // 4}" for name, chars in sorted(section_chars.items(), key=lambda kv: -kv[1])[:4])
+        raise JudgeContextTooSmall(
+            f"claim {ids[0]} needs ~{(len(bundle_json) + len(claims_text) + len(GROUNDING_SYSTEM_PROMPT)) // 4} tokens "
+            f"vs a {ctx}-token window even at the most reduced evidence view (level {level}); "
+            f"largest sections in tokens: {sizes}, claims={len(claims_text) // 4}"
+        )
+    middle = len(ids) // 2
+    return plan_batches(bundle, citations, ctx, ids[:middle]) + plan_batches(bundle, citations, ctx, ids[middle:])
+
+
+async def _judge_batch(bundle: ArtifactBundle, batch: _Batch, judge_model: str, judge_provider: str,
+                       ctx: int, extra_body: dict) -> GroundingVerdict:
+    user_prompt = f"RAW_BUNDLE:\n{batch.bundle_json}\n\nCLAIMS TO CHECK:\n{batch.claims_text}"   # compact JSON
     est_tokens = (len(GROUNDING_SYSTEM_PROMPT) + len(user_prompt)) // 4
-    if est_tokens > ctx_for_estimate * 0.85:
-        raise JudgeContextTooSmall(f"~{est_tokens} tokens vs num_ctx {ctx_for_estimate} for {judge_model}")
 
+    # num_ctx is what _prompt_truncated compares the server's reported prompt size with (Ollama
+    # cuts an over-long prompt to num_ctx without an error). Without it the check could never
+    # fire for the judge, and a prompt cut by the server would be judged as if the missing
+    # evidence did not exist. Only the ceiling check is enabled: its other fingerprint, "far
+    # fewer tokens than we sent", needs a tokenizer-accurate estimate, and chars // 4 on this
+    # JSON-heavy prompt is not one, so it could flag a healthy call.
+    on_ollama = judge_provider == 'ollama'
     with audit_scope(team_id=bundle.team_id, sprint_id=bundle.sprint_id, dimension="judge_grounding",
-                     model=judge_model, prompt_version=GROUNDING_PROMPT_VERSION):
-        return await create_llm_client(provider=judge_provider).chat.completions.create(
+                     model=judge_model, prompt_version=GROUNDING_PROMPT_VERSION,
+                     num_ctx=ctx if on_ollama else None) as audit:
+        verdict = await create_llm_client(provider=judge_provider).chat.completions.create(
             model=judge_model,
-            response_model=make_grounding_verdict_model(set(citations)),
+            response_model=make_grounding_verdict_model(set(batch.ids)),
             temperature=LLM_TEMPERATURE,
             max_retries=3,
             extra_body=extra_body,
@@ -158,6 +321,29 @@ async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_mod
                 {"role": "user", "content": user_prompt},
             ],
         )
+    if audit["prompt_truncated"]:
+        raise JudgeContextTruncated(
+            f"{judge_model} reported a prompt cut by the server (~{est_tokens} tokens sent, num_ctx {ctx}); "
+            "discarding its verdicts."
+        )
+    return verdict
+
+
+# Main entry point for the grounding judge, get the judge's verdict and the per-citation rows for logging.
+async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str, judge_provider: str = 'ollama') -> GroundingVerdict:
+    ctx = await _judge_context(judge_model, judge_provider)
+    extra_body = _request_extra_body(ctx) if judge_provider == 'ollama' else {}
+    batches = plan_batches(bundle, citations, ctx)
+    log.info("Judging %d claim(s) in %d call(s) with a %d-token window (evidence levels %s).",
+             len(citations), len(batches), ctx, [b.evidence_level for b in batches])
+
+    verdicts: list[CitationVerdict] = []
+    notes: list[str] = []
+    for batch in batches:  # one after another: the judge model gets one Ollama slot
+        result = await _judge_batch(bundle, batch, judge_model, judge_provider, ctx, extra_body)
+        verdicts.extend(result.citation_verdicts)
+        notes.append(result.judge_notes)
+    return GroundingVerdict(citation_verdicts=verdicts, judge_notes=" ".join(notes))
 
 async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str, judge_provider: str = 'ollama') -> dict:
     return (await judge_assessment_detailed(bundle, rubric_scores, judge_model, judge_provider))[0]
@@ -172,10 +358,18 @@ async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: Rubri
         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None,
                 "severity_weighted_rate": None, "citation_count": 0}, []
     verdict = await run_grounding_judge(bundle, citations, judge_model, judge_provider)
-    by_dim: dict[str, list[str]] = {}
-    for v in verdict.citation_verdicts: # Judge emit a rate per dimension
-        by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v.label)
-    per_dim = {f"hallucination_rate_{d}": round(l.count("hallucinated") / len(l), 4) for d, l in by_dim.items()}
+    by_dim: dict[str, list[CitationVerdict]] = {}
+    for v in verdict.citation_verdicts: # Judge emits rates and a citation count per dimension
+        by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v)
+    # Per-dimension counts matter: prompt promotion judges each dimension's prompt on its own
+    # citations, and a dimension that cited nothing has no evidence either way (it is absent
+    # here, never filled in from the overall rate).
+    per_dim: dict[str, float | int] = {}
+    for d, verdicts in by_dim.items():
+        n_dim = len(verdicts)
+        per_dim[f"hallucination_rate_{d}"] = round(sum(v.label == "hallucinated" for v in verdicts) / n_dim, 4)
+        per_dim[f"severity_weighted_rate_{d}"] = round(sum(verdict_weight(v.label, v.severity) for v in verdicts) / n_dim, 4)
+        per_dim[f"citation_count_{d}"] = n_dim
     rows = [{"citation_id": v.citation_id, "dimension": citations[v.citation_id]["dimension"],
              "claim": citations[v.citation_id]["text"], "label": v.label, "severity": v.severity,
              "reasoning": v.reasoning} for v in verdict.citation_verdicts]
@@ -184,7 +378,7 @@ async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: Rubri
 # Treat judge's verdict as set of metrics, 
 # so the caller can log them as Feedback objects with the judge's source. 
 # Each row is a judged citation, for later logging.
-@scorer(name="llm_judge_citation_grounding")
+@scorer(name="llm_judge_citation_grounding", timeout=JUDGE_SCORER_TIMEOUT_SECONDS)
 def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
     '''
     1. Determine if the trace is a fixture (uses OpenAI judge) or not (uses Ollama judge).
@@ -214,16 +408,26 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
         try:
             bundle = _bundle_of(trace, team)
             rubric, dropped = read_candidate(trace, bundle) # Get the candidate's rubric scores and any citations dropped by code
-            result, rows = asyncio.run(judge_assessment_detailed(bundle, rubric, judge_model, judge_provider)) # Run the judge on the candidate's rubric scores
+            result, rows = asyncio.run(asyncio.wait_for(  # Run the judge on the candidate's rubric scores
+                judge_assessment_detailed(bundle, rubric, judge_model, judge_provider), JUDGE_CALL_DEADLINE_SECONDS))
         
         except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
-            print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
-            mlflow.update_current_trace(response_preview=f"Error: {e}")
-            return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
+            # Bounded: instructor's exception text can run to tens of thousands of characters (every
+            # failed attempt), and MLflow's trace table rejects a preview over 1000 characters, which
+            # dropped the whole judge trace. The full text is kept on the assessment's rationale.
+            print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {failure_detail(e, 500)}", flush=True)
+            mlflow.update_current_trace(response_preview=f"Error: {failure_detail(e, 500)}")
+            # MLflow swallows a scorer's error, so the caller only sees a missing metric. The class
+            # travels as its own feedback so the job queue can retry what is transient (Ollama
+            # down, a timeout) and leave what is not (the prompt cannot fit) alone.
+            failure_class = classify_failure(e)
+            return [Feedback(name="citation_hallucination_rate", error=e, source=source),
+                    Feedback(name="citation_judge_failure_class", value=failure_class.value, source=source,
+                             rationale=failure_detail(e))]
         
-        mlflow.update_current_trace(response_preview=f"Result: {result}")
+        mlflow.update_current_trace(response_preview=f"Result: {result}"[:_PREVIEW_CHARS])
         print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
-        n, wsum = result["citation_count"], sum(SEVERITY_WEIGHT[r["severity"]] for r in rows)
+        n, wsum = result["citation_count"], sum(verdict_weight(r["label"], r["severity"]) for r in rows)
         headline = round((wsum + CODE_DROP_WEIGHT * dropped) / (n + dropped), 4) if n + dropped else None
         why = "\n".join(f'{r["citation_id"]} [{r["dimension"]}] {r["label"]}/{r["severity"]}: {r["reasoning"]}'
                         for r in rows if r["label"] != "grounded")[:2000] or "every judged citation was grounded"
@@ -256,5 +460,7 @@ def _bundle_of(trace: Trace, team: str | None) -> ArtifactBundle:
         raise KeyError(f"no bundle for team={team!r} sprint={inputs.get('sprint_id')!r}")
     return bundle
 
-def _feedback_name(key: str) -> str: # known keys keep their names
-    return FEEDBACK_NAMES.get(key, f'citation_{key}')
+def _feedback_name(key: str) -> str: # known keys keep their names; already-prefixed keys are not prefixed twice
+    if key in FEEDBACK_NAMES:
+        return FEEDBACK_NAMES[key]
+    return key if key.startswith("citation_") else f'citation_{key}'

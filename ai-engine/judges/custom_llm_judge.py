@@ -1,11 +1,11 @@
 import asyncio
-import os
 
 import mlflow
 from dotenv import load_dotenv
 from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, SpanType
 from mlflow.genai.scorers import scorer
 
+from judges.judge_config import configured_judge_model
 from judges.judge_verdict import JudgeVerdict
 from llmops.prompt_registry import register_prompt_if_changed
 from schemas.artifact_bundle import ArtifactBundle
@@ -22,7 +22,7 @@ AssessmentSourceType.LLM_JUDGE is used to indicate that the feedback comes from 
 
 load_dotenv()  # Load environment variables from .env file
 
-DEFAULT_JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
+DEFAULT_JUDGE_MODEL = configured_judge_model()  # judges/judge_config.py
 
 JUDGE_SYSTEM_PROMPT = """
 You are a strict, skeptical auditor of an AI teaching assistant's grading work.

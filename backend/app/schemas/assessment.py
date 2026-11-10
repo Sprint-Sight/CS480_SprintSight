@@ -185,6 +185,11 @@ class RubricDimensionScoreDetail(BaseModel):
     # Same citations as evidence_citations, in structured form so a client can
     # link straight to a file/line. Default [] keeps older rows valid.
     evidence_details: list[EvidenceDetail] = Field(default_factory=list)
+    # True when the AI engine exhausted its retries on this dimension. `score` is then a
+    # placeholder, not an assessment: clients must show "not assessed" and the backend
+    # excludes the dimension from the team score. Defaults keep older rows valid.
+    evaluation_failed: bool = False
+    failure_class: str | None = None
 
 
 class StudentScore(BaseModel):
@@ -215,6 +220,13 @@ class AssessmentReport(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     recommendations: list[str]
+    # MLflow trace of the AI engine's grading run: the join key to the judge verdict.
+    trace_id: str | None = None
+    # True when at least one rubric dimension could not be scored automatically. The
+    # report then needs manual review: team_score covers only the assessed dimensions
+    # and students are not notified until an instructor has looked at it.
+    evaluation_failed: bool = False
+    failed_dimensions: list[str] = Field(default_factory=list)
     override: bool = False
     requirements_score: float | None = Field(default=None, ge=0, le=100)
     code_quality_score: float | None = Field(default=None, ge=0, le=100)

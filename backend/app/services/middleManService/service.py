@@ -44,25 +44,87 @@ def build_assessment_payload(
     }
 
 
+# A full assessment is six sequential LLM calls (plus retries) on a local GPU model, so the
+# read timeout is long, but it is finite: an unbounded wait leaves the job stuck in
+# "ai_evaluating" forever when the engine hangs. Override with AI_ENGINE_TIMEOUT_SECONDS.
+DEFAULT_AI_ENGINE_READ_TIMEOUT_SECONDS = 3600.0
+_CONNECT_TIMEOUT_SECONDS = 10.0
+_WRITE_TIMEOUT_SECONDS = 60.0
+_POOL_TIMEOUT_SECONDS = 10.0
+_TRANSIENT_STATUS_CODES = frozenset({502, 503, 504})
+
+
+class AIEngineError(RuntimeError):
+    """The AI engine call failed. `kind` says how, `transient` whether retrying later may help.
+
+    kind: "timeout" and "unavailable" are transient infrastructure failures; "rejected"
+    (4xx), "engine_error" (5xx, e.g. every dimension failed) and "invalid_response" are
+    not expected to change on an identical retry.
+    """
+
+    def __init__(self, message: str, *, kind: str, transient: bool) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.transient = transient
+
+
+def _ai_engine_timeout(settings: object) -> httpx.Timeout:
+    configured = getattr(settings, "ai_engine_timeout_seconds", None)
+    try:
+        read_timeout = float(configured) if configured is not None else 0.0
+    except (TypeError, ValueError):
+        read_timeout = 0.0
+    if read_timeout <= 0:
+        read_timeout = DEFAULT_AI_ENGINE_READ_TIMEOUT_SECONDS
+    return httpx.Timeout(
+        connect=_CONNECT_TIMEOUT_SECONDS,
+        read=read_timeout,
+        write=_WRITE_TIMEOUT_SECONDS,
+        pool=_POOL_TIMEOUT_SECONDS,
+    )
+
+
 def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -> dict:
     settings = get_settings()
     base_url = settings.ai_engine_url.rstrip("/")
     selected_model = model_name or settings.default_model_name
     request_url = f"{base_url}/assess/sprint/data?modelname={selected_model}"
+    timeout = _ai_engine_timeout(settings)
 
     try:
-        # One-shot transport only. Do not retry and do not impose a fixed
-        # client timeout that can prematurely force the job into failed state.
-        response = httpx.post(request_url, json=payload, timeout=None)  # nosec B113
+        # One-shot transport: the engine already retries each dimension, and resending a
+        # whole assessment from here would only multiply GPU time. The timeout is bounded.
+        response = httpx.post(request_url, json=payload, timeout=timeout)  # nosec B113
         response.raise_for_status()
+    except httpx.TimeoutException as exc:
+        raise AIEngineError(
+            f"AI engine did not answer within {timeout.read:.0f}s: {exc!r}",
+            kind="timeout",
+            transient=True,
+        ) from exc
     except httpx.HTTPStatusError as exc:
-        raise RuntimeError(
-            f"AI engine rejected the assessment payload: {exc.response.text}"
+        status_code = exc.response.status_code
+        if status_code >= 500:
+            raise AIEngineError(
+                f"AI engine failed with HTTP {status_code}: {exc.response.text}",
+                kind="engine_error",
+                transient=status_code in _TRANSIENT_STATUS_CODES,
+            ) from exc
+        raise AIEngineError(
+            f"AI engine rejected the assessment payload: {exc.response.text}",
+            kind="rejected",
+            transient=False,
         ) from exc
     except httpx.HTTPError as exc:
-        raise RuntimeError(f"AI engine request failed: {exc}") from exc
+        raise AIEngineError(
+            f"AI engine request failed: {exc}", kind="unavailable", transient=True
+        ) from exc
 
     try:
         return response.json()
     except ValueError as exc:
-        raise RuntimeError("AI engine returned a non-JSON assessment response.") from exc
+        raise AIEngineError(
+            "AI engine returned a non-JSON assessment response.",
+            kind="invalid_response",
+            transient=False,
+        ) from exc

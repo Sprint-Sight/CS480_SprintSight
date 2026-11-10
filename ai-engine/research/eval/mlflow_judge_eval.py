@@ -163,6 +163,7 @@ from mlflow.metrics.genai import EvaluationExample, make_genai_metric
 from mlflow.metrics.genai.prompts.v1 import EvaluationModel
 
 from judges.code_based_scorer import numeric_grade_accuracy
+from judges.judge_config import configured_judge_model
 from llmops.mlflow_config import configure_mlflow, get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from research.eval.analysis import paired_bootstrap_diff
@@ -219,7 +220,11 @@ JUDGE_EXPERIMENT = os.getenv("SPRINTSIGHT_JUDGE_EXPERIMENT", "sprintsight-judge-
 #
 #   ollama pull phi4:14b          # ~9 GB, recommended
 #   ollama pull qwen2.5:14b-instruct   # alternative, also non-llama
-DEFAULT_JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "phi4:14b")
+# Shared with the production judge (judges/judge_config.py). The default used to differ
+# ("phi4:14b" here, "sprintsight-judge-phi" there) for the SAME environment variable, so an
+# unset variable meant a different judge per entry point. sprintsight-judge-phi IS phi4:14b,
+# built from models/Modelfile.phi.
+DEFAULT_JUDGE_MODEL = configured_judge_model()
 
 # Opt-out for the family rule. Exists because a reviewer may legitimately want
 # to MEASURE self-preference bias by deliberately judging within a family;
@@ -267,7 +272,7 @@ JUDGE_BUNDLE_CHAR_BUDGET = int(os.getenv("SPRINTSIGHT_JUDGE_BUNDLE_CHARS", "3200
 # token estimate). Keep it at or below the judge's real ceiling: phi4:14b is
 # 16k, qwen2.5:14b-instruct is 32k. Set SPRINTSIGHT_JUDGE_NUM_CTX to 16384
 # for a 16k judge, or 0 to omit the override entirely and let Ollama decide.
-JUDGE_NUM_CTX = int(os.getenv("SPRINTSIGHT_JUDGE_NUM_CTX", "32768"))
+JUDGE_NUM_CTX = int(os.getenv("SPRINTSIGHT_JUDGE_NUM_CTX", "16384"))  # phi4:14b (the default judge) was trained for 16384; Ollama clamps more
 
 
 def judge_parameters(temperature: float = 0.0, seed: int | None = None) -> dict[str, Any]:

@@ -17,6 +17,7 @@ import json
 
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
+from schemas.run_record import base_record, validity_fields
 from schemas.sprint_assessment import SprintAssessment
 from services.grounding import find_ungrounded_citations
 
@@ -29,23 +30,41 @@ def _bundle_corpus(bundle: ArtifactBundle) -> str:
     return json.dumps(bundle.model_dump(mode="json"), ensure_ascii=True)
 
 
+def citations_dropped(assessment: SprintAssessment) -> int:
+    """Citations the engine removed because their identifier was not in the evidence the model
+    was shown (services/llm_client.evaluate_dimension). Each one is a fabrication."""
+    return sum(
+        getattr(score, "citations_dropped", 0) or 0
+        for dim in DIMENSIONS
+        if (score := getattr(assessment.rubric_scores, dim, None)) is not None
+    )
+
+
 def groundedness_rate(bundle: ArtifactBundle, assessment: SprintAssessment) -> tuple[float, int, int]:
     """Return (rate, grounded, total). Rate is 1.0 if there are no
     citations — that is NOT "perfect grounding", it's "nothing to check";
     callers that want to count no-citations as a failure should look at
-    `total` directly."""
+    `total` directly.
+
+    `total` is every citation the model produced: the ones still on the assessment plus the
+    ones the engine dropped as fabricated. The engine filters with the same identifier check
+    this function applies, so looking only at what survived reports ~1.0 by construction and
+    hides exactly the failures this metric exists to show. A dropped citation counts as
+    ungrounded."""
     corpus = _bundle_corpus(bundle)
-    total = 0
+    surviving = 0
     ungrounded = 0
     for dim in DIMENSIONS:
         score = getattr(assessment.rubric_scores, dim, None)
         if score is None:
             continue
         citations = score.evidence_citations or []
-        total += len(citations)
+        surviving += len(citations)
         if citations:
             ungrounded += len(find_ungrounded_citations(corpus, citations))
-    grounded = total - ungrounded
+    dropped = citations_dropped(assessment)
+    total = surviving + dropped
+    grounded = surviving - ungrounded
     rate = (grounded / total) if total else 1.0
     return rate, grounded, total
 
@@ -58,27 +77,7 @@ def format_validity(assessment: SprintAssessment) -> dict[str, object]:
     example — that's deliberate; a partial assessment with one dimension
     missing isn't usable in production either.
     """
-    present = []
-    failed = []
-    missing = []
-    for dim in DIMENSIONS:
-        score = getattr(assessment.rubric_scores, dim, None)
-        if score is None:
-            missing.append(dim)
-            continue
-        if score.evaluation_failed:
-            failed.append(dim)
-        else:
-            present.append(dim)
-    return {
-        "dimensions_present": len(present),
-        "dimensions_failed": len(failed),
-        "dimensions_missing": len(missing),
-        "dimensions_total": len(DIMENSIONS),
-        "dimension_completion_rate": len(present) / len(DIMENSIONS),
-        "format_valid": len(present) == len(DIMENSIONS),
-        "failed_dimension_names": failed + missing,
-    }
+    return validity_fields({dim: getattr(assessment.rubric_scores, dim, None) for dim in DIMENSIONS})
 
 
 def score_summary(assessment: SprintAssessment) -> dict[str, float | None]:
@@ -122,33 +121,19 @@ def summarise_example(bundle: ArtifactBundle, assessment: SprintAssessment | Non
     None — the analysis layer treats None as a format failure, which is
     what it is.
     """
-    row: dict[str, object] = {
-        "format_valid": False,
-        "groundedness_rate": None,
-        "groundedness_citations_total": 0,
-        "groundedness_citations_grounded": 0,
-        "dimensions_present": 0,
-        "dimensions_failed": 0,
-        "dimensions_missing": len(DIMENSIONS),
-        "dimensions_total": len(DIMENSIONS),
-        "dimension_completion_rate": 0.0,
-        "failed_dimension_names": list(DIMENSIONS),
-        "overall_score": None,
-        "rubric_mean": None,
-        "rubric_min": None,
-        "rubric_max": None,
-        "raw_rubric_average": None,
-        "error": error,
-        # Judge slot — stays None until attach_judge_scores.py fills it in.
-        "judge_quality_score": None,
-        "judge_rationale": None,
-    }
+    # Same row shape the engine's raw_results rows use (schemas/run_record.py). The judge slot
+    # (judge_quality_score / judge_rationale) stays None until attach_judge_scores.py fills it.
+    row: dict[str, object] = base_record()
+    row["error"] = error
+    row["team_id"], row["sprint_id"] = bundle.team_id, bundle.sprint_id
     if assessment is not None:
         row.update(format_validity(assessment))
         rate, grounded, total = groundedness_rate(bundle, assessment)
         row["groundedness_rate"] = rate
         row["groundedness_citations_grounded"] = grounded
         row["groundedness_citations_total"] = total
+        row["citations_dropped"] = citations_dropped(assessment)
+        row["trace_id"] = getattr(assessment, "trace_id", None)
         row.update(score_summary(assessment))
-    row.update(per_dimension_scores(assessment) if assessment else {f"score_{d}": None for d in DIMENSIONS})
+        row.update(per_dimension_scores(assessment))
     return row

@@ -14,6 +14,12 @@ from judges.citation_ground_custom_judge import (
     llm_judge_citation_grounding,
 )
 from judges.code_based_scorer import numeric_grade_accuracy
+from judges.flagging import (
+    GRADE_COL,
+    evaluate_flags,
+    production_reasons,
+    research_reasons,
+)
 from judges.trace_adapters import read_candidate
 from llmops.review_queue import add_to_review_queue
 from prompts.dimension_criteria import DIMENSIONS
@@ -23,22 +29,10 @@ from services.save_results import save_judge_results
 
 load_dotenv()  # Load environment variables from .env file
 
-GRADE_COL = "grade_penalised_mae/value"
-MAE_COL = "grade_mae_scored_only/value"
-HALLUCINATION_COL = "citation_hallucination_rate/value"
-CITATION_COUNT_COL = "citation_count/value"
-GROUNDED_COL = "citation_grounded_rate/value"
-CRITICAL_COL = "citations_dropped_by_code/value" # was citation_critical_fabrication_count
-PEDAGOGY_HARSH_COL = "pedagogy_harsh/value"
-JUSTIFICATION_COL = "justification_hard_contradictions/value" # inert until judges/narrative_judge.py exists: an absent column reads as None
-NARRATIVE_COL = "narrative_contradiction_count/value"
-PEDAGOGY_COL = "pedagogy_score/value"
-MIN_PEDAGOGY_SCORE = 0.6
-
-MAX_PENALISED_MAE = 3
-MAX_HALLUCINATION = 0.1
-MIN_CITATIONS = 10
-MIN_GROUNDED_RATE = 0.5
+# Flagging rules, thresholds and result-frame column names live in judges/flagging.py.
+# Research-only reasons (comparison against a gold assessment) are kept apart from production
+# reasons there; only production reasons go to the review queue unless explicitly opted in.
+QUEUE_RESEARCH_FLAGS = os.getenv("JUDGE_QUEUE_RESEARCH_FLAGS", "0").strip().lower() in {"1", "true", "yes"}
 
 KEEP_ASSESSMENTS = {'gold'} # not produced by the judge
 
@@ -103,41 +97,17 @@ def _flag_for_review(result_df: pd.DataFrame, with_judge: bool):
     has_gold = GRADE_COL in result_df.columns # absent when the group had no gold (code-based scorer not run)
 
     for _, row in result_df.iterrows():
-        def val(col, row=row):
-            v = row.get(col)
-            return None if v is None or pd.isna(v) else v
+        trace_id = row["trace_id"]
+        reasons = evaluate_flags(row.to_dict(), has_gold=has_gold, with_judge=with_judge)
+        production, research = production_reasons(reasons), research_reasons(reasons)
 
-        trace_id, reasons = row["trace_id"], []
-        if has_gold:
-            mae = val(GRADE_COL)
-            if mae is None:
-                reasons.append("grade scorer produced no output")
-            elif mae > MAX_PENALISED_MAE:
-                reasons.append(f"grade_penalised_mae={mae} > {MAX_PENALISED_MAE}")
-        if with_judge:
-            halluc, count, grounded = val(HALLUCINATION_COL), val(CITATION_COUNT_COL), val(GROUNDED_COL)
-            if halluc is None:
-                reasons.append("citation judge produced no output") # e.g. the judge call errored
-            elif halluc > MAX_HALLUCINATION:
-                reasons.append(f"hallucination_rate={halluc} > {MAX_HALLUCINATION}")
-            if count is not None and count < MIN_CITATIONS:
-                reasons.append(f"citation_count={count} < {MIN_CITATIONS}")
-            if grounded is not None and grounded < MIN_GROUNDED_RATE:
-                reasons.append(f"grounded_rate={grounded} < {MIN_GROUNDED_RATE}")
-            if (dropped := val(CRITICAL_COL)):
-                reasons.append(f"{int(dropped)} fabricated citation(s) removed by code")
-            for col, label in ((JUSTIFICATION_COL, "justification_hard_contradictions"), (NARRATIVE_COL, "narrative_contradictions"),
-                               (PEDAGOGY_HARSH_COL, "harsh_tone")):
-                if val(col):
-                    reasons.append(f"{label}={int(val(col))}")
-            ped = val(PEDAGOGY_COL)
-            if ped is not None and ped < MIN_PEDAGOGY_SCORE:
-                reasons.append(f"pedagogy_score={ped} < {MIN_PEDAGOGY_SCORE}")
-
-        if reasons:
+        if research:
+            _log(f"Trace {trace_id} research flags (not queued): {', '.join(r.message for r in research)}")
+        if production or (research and QUEUE_RESEARCH_FLAGS):
+            queued = production + (research if QUEUE_RESEARCH_FLAGS else [])
             add_to_review_queue(f"review_queue_{trace_id}", [trace_id])
-            _log(f"Trace {trace_id} flagged for review: {', '.join(reasons)}")
-        else:
+            _log(f"Trace {trace_id} flagged for review: {', '.join(r.message for r in queued)}")
+        elif not research:
             _log(f"Trace {trace_id} passed all checks.")
 
 def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_ids=None, model=None, team_id=None, with_judge=True, run_name=None) -> list:

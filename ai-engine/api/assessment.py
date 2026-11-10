@@ -12,10 +12,11 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import mlflow
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from judges.promote import judge_and_promote_trace
+from api.disconnect import ClientDisconnected, run_unless_disconnected
+from judges.scheduler import get_arbiter, get_judge_queue
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
@@ -59,14 +60,29 @@ class BackendAssessmentPayload(BaseModel):
     repo_snapshot: RepoSnapshot | None = None
     instructor_expectations: str = "No instructor guidance provided."
 
+def _enqueue_judge(experiment_name: str, trace_id: str, bundle: ArtifactBundle, prompt_versions: dict) -> bool:
+    """Queue the judge for this trace. Judging is secondary to the assessment, so a queue
+    failure is logged and must never fail the response the backend is waiting on."""
+    try:
+        return get_judge_queue().enqueue(
+            trace_id=trace_id,
+            experiment_name=experiment_name,
+            team_id=bundle.team_id,
+            sprint_id=bundle.sprint_id,
+            prompt_versions=prompt_versions,
+        )
+    except Exception:
+        log.exception("Could not queue the judge for trace %s; this trace will not be judged.", trace_id)
+        return False
+
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
+    request: Request,
     payload: BackendAssessmentPayload,
     modelname: Annotated[
         ModelName,
         Query(description="Select the model to use for assessment"),
     ],
-    background_tasks: BackgroundTasks,
     experiment_name: str = "SprintSight Evaluations",
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
@@ -91,28 +107,33 @@ async def assess_backend_data_endpoint(
         mlflow_client = mlflow.MlflowClient()
 
         trace_ids: list[str] = []
-        assessment, prompt_versions_registered = await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
+
+        async def grade():
+            # Grading has priority for the single Ollama model slot; a judge job that is running
+            # is waited for (bounded), and queued judge jobs wait for grading to go quiet.
+            async with get_arbiter().grading():
+                return await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
+
+        # If the backend hangs up (its timeout), cancel the grading: otherwise Ollama keeps
+        # generating for a result nobody will read.
+        assessment, prompt_versions_registered = await run_unless_disconnected(request, grade())
 
         if not trace_ids:
             raise RuntimeError("Sprint evaluation completed without recording an MLflow trace.")
 
         trace_id = trace_ids[-1]
+        # The backend stores this next to the report: it is the join key to the judge verdict,
+        # which does not exist yet because the judge runs after this response.
+        assessment = assessment.model_copy(update={"trace_id": trace_id})
 
-        background_tasks.add_task(
-            judge_and_promote_trace, 
-            experiment_name, 
-            trace_id, 
-            bundle.team_id, 
-            prompt_versions_registered, 
-            mlflow_client, 
-            bundle.sprint_id
-        )
+        # Durable, not BackgroundTasks: the job is a row, so a restart does not lose it.
+        _enqueue_judge(experiment_name, trace_id, bundle, prompt_versions_registered)
 
-        if mlflow.active_run(): # Play safe and close any active run from previous call (if any)
-            mlflow.end_run()
-            print("Closed active MLflow run.")
         return assessment
-    
+
+    except ClientDisconnected:
+        # Nobody is listening for the answer. 499 is the conventional "client closed request".
+        raise HTTPException(status_code=499, detail="Client disconnected; assessment cancelled.") from None
     except Exception as exc:
         log.exception("AI-engine backend assessment failed.")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

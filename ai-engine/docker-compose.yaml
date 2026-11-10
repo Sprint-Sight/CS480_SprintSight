@@ -111,9 +111,14 @@ services: # Separate containers to run
           condition: service_started
 
     mlflow_service:
-      image: ghcr.io/mlflow/mlflow:latest # Automatically pulls MLflow
-      # --backend-store-uri points to the Postgres container
-      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql://user:pass@db:5432/sprintsight
+      # Built from ./mlflow-server: MLflow pinned to the client's version (requirements.txt) with
+      # the Postgres driver installed explicitly. `latest` is not used: it moved to a release whose
+      # image has no Postgres driver and the server would not start.
+      build: ./mlflow-server
+      image: sprintsight-mlflow:3.16.1
+      # --backend-store-uri points to the Postgres container; the driver is named so the dialect
+      # does not depend on the SQLAlchemy version's default for plain `postgresql://`.
+      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql+psycopg2://user:pass@db:5432/sprintsight
       environment: 
         - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}
       ports:
@@ -123,7 +128,8 @@ services: # Separate containers to run
         db:
           condition: service_healthy
       healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+        # python, not curl: the pinned MLflow image does not ship curl
+        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
         interval: 10s
         timeout: 5s
         retries: 5
