@@ -19,6 +19,9 @@ import mlflow
 import numpy as np
 import pandas as pd
 
+from research.eval.attach_judge_scores import load_judge_scores, merge_judge_scores
+from schemas.run_record import normalize_run_record
+
 log = logging.getLogger(__name__)
 
 
@@ -62,7 +65,7 @@ def load_runs(
             log.warning("Run %s has no per_example.jsonl artifact; skipping.", run_id)
             continue
         with local.open("r", encoding="utf-8") as f:
-            rows = [json.loads(line) for line in f if line.strip()]
+            rows = [normalize_run_record(json.loads(line)) for line in f if line.strip()]
         if not rows:
             continue
         df = pd.DataFrame(rows)
@@ -77,6 +80,32 @@ def load_runs(
         return pd.DataFrame()
     combined = pd.concat(frames, ignore_index=True)
     return combined
+
+
+def load_engine_results(
+    results_dir: str | Path = "results",
+    *,
+    judge: bool = True,
+) -> pd.DataFrame:
+    """Rows for assessments the engine itself ran (the API path), in the same shape as
+    `load_runs`, so production runs go through `comparison_table`, the bootstrap and the
+    consistency summary like benchmark runs do. Reads `raw_results_*.jsonl`, normalising rows
+    written before the unified schema, and (unless `judge=False`) attaches the judge verdicts
+    from `raw_judge_results_*.jsonl` by `trace_id`."""
+    root = Path(results_dir)
+    rows = [
+        normalize_run_record(json.loads(line))
+        for path in sorted(root.glob("raw_results_*.jsonl"))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    frame = pd.DataFrame(rows)
+    if frame.empty or not judge:
+        return frame
+    judge_files = sorted(root.glob("raw_judge_results_*.jsonl"))
+    if not judge_files:
+        return frame
+    return merge_judge_scores(frame, load_judge_scores(judge_files))
 
 
 # ---------- Comparison table ----------------------------------------------

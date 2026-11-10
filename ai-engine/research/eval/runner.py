@@ -140,13 +140,14 @@ async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) 
     t0 = time.perf_counter()
     error: str | None = None
     assessment = None
+    trace_ids: list[str] = []  # filled by evaluate_sprint even when it raises, so a failed run keeps its trace id
     try:
         assessment, _ = await evaluate_sprint(
             item.bundle,
             model,
             experiment_name,
             mlflow.MlflowClient(),
-            [],
+            trace_ids,
         )
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
@@ -157,6 +158,7 @@ async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) 
 
     row = summarise_example(item.bundle, assessment, error)
     row["example_id"] = item.id
+    row["trace_id"] = row.get("trace_id") or (trace_ids[0] if trace_ids else None)  # the key attach_judge_scores joins on
     row["latency_s"] = latency_s
     row["tokens_prompt"] = int(accumulator["prompt"]) or None
     row["tokens_completion"] = int(accumulator["completion"]) or None
