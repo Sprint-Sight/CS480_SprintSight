@@ -272,7 +272,7 @@ JUDGE_BUNDLE_CHAR_BUDGET = int(os.getenv("SPRINTSIGHT_JUDGE_BUNDLE_CHARS", "3200
 # token estimate). Keep it at or below the judge's real ceiling: phi4:14b is
 # 16k, qwen2.5:14b-instruct is 32k. Set SPRINTSIGHT_JUDGE_NUM_CTX to 16384
 # for a 16k judge, or 0 to omit the override entirely and let Ollama decide.
-JUDGE_NUM_CTX = int(os.getenv("SPRINTSIGHT_JUDGE_NUM_CTX", "32768"))
+JUDGE_NUM_CTX = int(os.getenv("SPRINTSIGHT_JUDGE_NUM_CTX", "16384"))  # phi4:14b (the default judge) was trained for 16384; Ollama clamps more
 
 
 def judge_parameters(temperature: float = 0.0, seed: int | None = None) -> dict[str, Any]:

@@ -19,6 +19,7 @@ from judges.citation_ground_custom_judge import (
     verdict_weight,
 )
 from judges.judge_config import DEFAULT_JUDGE_MODEL, configured_judge_model
+from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import (
     ResolvedEvidenceCitation,
     RubricDimensionScore,
@@ -163,7 +164,7 @@ def test_a_prompt_cut_by_the_server_is_discarded_not_judged(monkeypatch) -> None
     seen: list = []
     _stub_llm(monkeypatch, prompt_tokens=9_900, num_ctx_seen=seen)  # >= 98% of num_ctx: Ollama cut it
 
-    bundle = SimpleNamespace(team_id="t", sprint_id="s", model_dump_json=lambda: "{}")
+    bundle = ArtifactBundle(team_id="t", sprint_id="s")
     with pytest.raises(JudgeContextTruncated):
         asyncio.run(judge.run_grounding_judge(bundle, {"C1": {"dimension": "testing", "text": "a | b"}}, "judge-x"))
 
@@ -173,7 +174,7 @@ def test_a_prompt_cut_by_the_server_is_discarded_not_judged(monkeypatch) -> None
 def test_a_healthy_prompt_is_judged_normally(monkeypatch) -> None:
     _stub_llm(monkeypatch, prompt_tokens=2_000, num_ctx_seen=[])
 
-    bundle = SimpleNamespace(team_id="t", sprint_id="s", model_dump_json=lambda: "{}")
+    bundle = ArtifactBundle(team_id="t", sprint_id="s")
     verdict = asyncio.run(judge.run_grounding_judge(bundle, {"C1": {"dimension": "testing", "text": "a | b"}}, "judge-x"))
 
     assert verdict.citation_verdicts[0].label == "grounded"
@@ -183,7 +184,7 @@ def test_the_hosted_judge_is_never_flagged_as_truncated(monkeypatch) -> None:
     seen: list = []
     _stub_llm(monkeypatch, prompt_tokens=9_900, num_ctx_seen=seen)
 
-    bundle = SimpleNamespace(team_id="t", sprint_id="s", model_dump_json=lambda: "{}")
+    bundle = ArtifactBundle(team_id="t", sprint_id="s")
     asyncio.run(judge.run_grounding_judge(bundle, {"C1": {"dimension": "testing", "text": "a | b"}}, "gpt-4o-mini", "openai"))
 
     assert seen == [None]  # no Ollama num_ctx to compare against
