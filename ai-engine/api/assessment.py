@@ -12,9 +12,10 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import mlflow
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from api.disconnect import ClientDisconnected, run_unless_disconnected
 from judges.scheduler import get_arbiter, get_judge_queue
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
@@ -76,6 +77,7 @@ def _enqueue_judge(experiment_name: str, trace_id: str, bundle: ArtifactBundle, 
 
 @router.post("/sprint/data", response_model=SprintAssessment, status_code=status.HTTP_200_OK)
 async def assess_backend_data_endpoint(
+    request: Request,
     payload: BackendAssessmentPayload,
     modelname: Annotated[
         ModelName,
@@ -105,10 +107,16 @@ async def assess_backend_data_endpoint(
         mlflow_client = mlflow.MlflowClient()
 
         trace_ids: list[str] = []
-        # Grading has priority for the single Ollama model slot; a judge job that is running
-        # is waited for (bounded), and queued judge jobs wait for grading to go quiet.
-        async with get_arbiter().grading():
-            assessment, prompt_versions_registered = await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
+
+        async def grade():
+            # Grading has priority for the single Ollama model slot; a judge job that is running
+            # is waited for (bounded), and queued judge jobs wait for grading to go quiet.
+            async with get_arbiter().grading():
+                return await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
+
+        # If the backend hangs up (its timeout), cancel the grading: otherwise Ollama keeps
+        # generating for a result nobody will read.
+        assessment, prompt_versions_registered = await run_unless_disconnected(request, grade())
 
         if not trace_ids:
             raise RuntimeError("Sprint evaluation completed without recording an MLflow trace.")
@@ -123,6 +131,9 @@ async def assess_backend_data_endpoint(
 
         return assessment
 
+    except ClientDisconnected:
+        # Nobody is listening for the answer. 499 is the conventional "client closed request".
+        raise HTTPException(status_code=499, detail="Client disconnected; assessment cancelled.") from None
     except Exception as exc:
         log.exception("AI-engine backend assessment failed.")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
