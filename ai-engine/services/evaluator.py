@@ -3,9 +3,11 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import mlflow
-from mlflow.entities import SpanType
+from mlflow.entities import SpanEvent, SpanType
 
 from llmops.prompt_registry import (
     register_all_dimension_prompts,
@@ -84,6 +86,22 @@ async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_na
         print(f"Completed rubric dimension '{dim}' with score {result.score} in {time.perf_counter() - dimension_start:.2f} seconds. Justification: {result.justification} | Evidence: {result.evidence_citations}")
         return result
 
+@contextmanager
+def _error_on_cancel(span) -> Iterator[None]:
+    """Mark the span (and so the trace) as an error when the request is cancelled.
+
+    MLflow's span context manager records an error only for ordinary exceptions. A cancellation
+    (the backend gave up and hung up, see api/disconnect.py) is not one, so a cancelled
+    assessment's trace was left `OK` while its run was `FAILED`."""
+    try:
+        yield
+    except asyncio.CancelledError:
+        span.set_status("ERROR")
+        span.add_event(SpanEvent.from_exception(Exception("Assessment cancelled: the caller disconnected before it finished.")))
+        mlflow.update_current_trace(tags={"cancelled": "client_disconnected"})
+        raise
+
+
 _autolog_lock = threading.Lock()
 _autolog_enabled = False
 
@@ -160,7 +178,8 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
     run_name = f"Evaluate_Sprint_{bundle.team_id}_{bundle.sprint_id}_{model_name}"
     with tracked_run(mlflow_client, experiment_name, run_name) as run, \
             run_context(run_id=run.run_id, concurrency=DIMENSION_CONCURRENCY), \
-            mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN) as root:
+            mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN) as root, \
+            _error_on_cancel(root):
         run.link_current_trace()  # what the active run used to do implicitly
         run.log_param("dimension_concurrency", DIMENSION_CONCURRENCY)
         start_time = time.time() # Start time for entire evaluation process
@@ -259,9 +278,17 @@ async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_na
                 f"dimensions could not be scored automatically and need manual review "
                 f"- {failure_summary}."
             )
+            # One tag per failed dimension so the class is readable in the MLflow UI's tag list
+            # (the class otherwise sits inside the nested span output), on the trace and the run.
+            class_tags = {f"failure_class.{d}": c for d, c in failure_classes.items()}
             mlflow.update_current_trace(tags={
                 "Flagged for review": "; ".join(f"{d}={c}" for d, c in failure_classes.items()),
+                "failed_dimensions": ",".join(failure_classes),
+                **class_tags,
             })
+            run.set_tag("failed_dimensions", ",".join(failure_classes))
+            for tag, value in class_tags.items():
+                run.set_tag(tag, value)
         else:
             summary_parts.append("All rubric dimensions were evaluated successfully.")
     

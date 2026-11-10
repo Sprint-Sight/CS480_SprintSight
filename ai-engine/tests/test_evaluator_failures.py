@@ -52,9 +52,11 @@ def harness(tmp_path, monkeypatch):
     client = MlflowClient(tracking_uri=uri)
     experiment_id = client.create_experiment("exp", artifact_location=str(tmp_path / "art"))
 
-    state = SimpleNamespace(failures={}, queued=[], saved=[], client=client, experiment_id=experiment_id)
+    state = SimpleNamespace(failures={}, queued=[], saved=[], client=client, experiment_id=experiment_id, hang=False)
 
     async def fake_dimension(bundle, dimension, model, prompt, num_ctx=None):
+        if state.hang:
+            await asyncio.sleep(60)  # stands in for a long Ollama generation
         if dimension in state.failures:
             raise state.failures[dimension]
         return RubricDimensionScore(
@@ -120,6 +122,43 @@ def test_the_placeholder_score_does_not_distort_the_overall_score(harness) -> No
 
     assert assessment.rubric_scores.testing.score == 1  # placeholder, flagged evaluation_failed
     assert assessment.overall_score == 8.0  # mean of the five real scores, not (5*8+1)/6
+
+
+def test_a_cancelled_assessment_is_failed_in_mlflow_for_both_its_run_and_its_trace(harness) -> None:
+    # The backend hung up (see api/disconnect.py). The run was already marked FAILED, but the
+    # trace stayed OK because MLflow records an error only for ordinary exceptions.
+    harness.hang = True
+
+    async def scenario() -> None:
+        task = asyncio.ensure_future(
+            evaluator.evaluate_sprint(_bundle(), "sprintsight-qwen", "exp", harness.client, [])
+        )
+        await asyncio.sleep(2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    mlflow.flush_trace_async_logging()
+
+    (run,) = harness.client.search_runs([harness.experiment_id])
+    (trace,) = harness.client.search_traces(locations=[harness.experiment_id])
+    assert run.info.status == "FAILED"
+    assert trace.info.state.name == "ERROR"
+    assert trace.info.tags["cancelled"] == "client_disconnected"
+    assert trace.info.trace_metadata["mlflow.sourceRun"] == run.info.run_id
+    assert harness.queued == [] and harness.saved == []  # nothing was reported for the abandoned work
+
+
+def test_the_failure_class_is_visible_as_mlflow_tags(harness) -> None:
+    harness.failures = {"testing": openai.APITimeoutError(request=REQUEST), "cicd": _schema_failure()}
+
+    _evaluate(harness)
+
+    tags = harness.client.search_runs([harness.experiment_id])[0].data.tags
+    assert tags["failure_class.testing"] == "timeout"
+    assert tags["failure_class.cicd"] == "schema_validation"
+    assert set(tags["failed_dimensions"].split(",")) == {"testing", "cicd"}
 
 
 def test_a_partial_failure_is_queued_for_review_once(harness) -> None:
