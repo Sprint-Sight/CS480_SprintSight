@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from api.disconnect import ClientDisconnected, run_unless_disconnected
-from judges.scheduler import get_arbiter, get_judge_queue
+from evaluation.online.scheduler import get_arbiter, get_judge_queue
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket

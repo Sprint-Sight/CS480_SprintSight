@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from judges import citation_ground_custom_judge as judge
-from judges.citation_ground_custom_judge import (
+from evaluation.judges import citation_grounding as judge
+from evaluation.judges.citation_grounding import (
     _PREVIEW_CHARS,
     CitationVerdict,
     make_grounding_verdict_model,

@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from judges.job_queue import DEAD, DONE, QUEUED, JudgeJobQueue
-from judges.scheduler import JudgeWorker, ModelSlotArbiter
+from evaluation.online.job_queue import DEAD, DONE, QUEUED, JudgeJobQueue
+from evaluation.online.scheduler import JudgeWorker, ModelSlotArbiter
 
 
 def arbiter(**kwargs) -> ModelSlotArbiter:

@@ -10,7 +10,7 @@ Two kinds of reason used to be mixed in one list and sent to the same queue:
     about whether a real team's report is trustworthy. Queueing it for an instructor is noise.
 
 `evaluate_flags` is pure (a dict of metric values in, reasons out) so the rules can be tested
-without MLflow. judges/run_judges.py decides what to do with each audience.
+without MLflow. evaluation/online/run_judges.py decides what to do with each audience.
 
 Thresholds are starting points, not calibrated values: they should be revisited once the
 judge has been validated against human labels (see the inter-annotator test plan).
@@ -35,13 +35,13 @@ CITATION_COUNT_COL = "citation_count/value"
 GROUNDED_COL = "citation_grounded_rate/value"
 CRITICAL_COL = "citations_dropped_by_code/value"
 PEDAGOGY_HARSH_COL = "pedagogy_harsh/value"
-JUSTIFICATION_COL = "justification_hard_contradictions/value"  # inert until judges/narrative_judge.py exists: an absent column reads as None
+JUSTIFICATION_COL = "justification_hard_contradictions/value"  # inert until evaluation/judges/narrative_judge.py exists: an absent column reads as None
 NARRATIVE_COL = "narrative_contradiction_count/value"
 PEDAGOGY_COL = "pedagogy_score/value"
 
 MIN_PEDAGOGY_SCORE = 0.6
 MAX_HALLUCINATION = 0.1
-# Severity-weighted share of judged citations (judges/citation_ground_custom_judge.VERDICT_WEIGHT).
+# Severity-weighted share of judged citations (evaluation/judges/citation_grounding.VERDICT_WEIGHT).
 # Unlike the plain hallucination rate it separates a slip in a line count from a wrong author or
 # a contradicted record: 0.15 is, for example, one contradicted citation in six, or three wrong
 # attributions in ten. Uncalibrated.

@@ -6,9 +6,12 @@ import mlflow
 import pandas as pd
 from mlflow import MlflowClient, MlflowException
 
+from evaluation.judges.flagging import (
+    JUDGE_FAILURE_CLASS_COL,
+    MAX_SEVERITY_WEIGHTED_RATE,
+)
+from evaluation.online.run_judges import run_judge_evaluation
 from evaluation.stats import paired_bootstrap_diff
-from judges.flagging import JUDGE_FAILURE_CLASS_COL, MAX_SEVERITY_WEIGHTED_RATE
-from judges.run_judges import run_judge_evaluation
 from llmops.prompt_registry import (
     PRODUCTION_ALIAS,
     assign_prompt_alias,
@@ -49,7 +52,7 @@ def judge_transient_failures(results) -> set[str]:
 
 def run_judge_and_promotion(experiment_name: str, trace_id: str, team_id: str, prompt_versions_registered: dict, client: MlflowClient, sprint_id: str | None = None):
     """Judge one trace, then evaluate prompt promotion. RAISES if judging fails, so the durable
-    job queue (judges/scheduler.py) can retry it; a failure while deciding promotion is only
+    job queue (evaluation/online/scheduler.py) can retry it; a failure while deciding promotion is only
     logged, because re-running a minutes-long judge would not change that decision."""
     if not trace_id:
         return

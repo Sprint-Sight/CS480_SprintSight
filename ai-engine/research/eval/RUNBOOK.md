@@ -88,11 +88,11 @@ the `for entry in \` list in `hpc/ollama-entrypoint.sh`:
   "phi4:14b|phi4:14b|" \
 ```
 (or create a `models/Modelfile.judge-phi` and register it as a
-`sprintsight-judge-phi` alias, matching the default in `judges/judge_config.py`).
+`sprintsight-judge-phi` alias, matching the default in `evaluation/judges/config.py`).
 
 **Note:** `--llm-grounding` additionally needs the judge tag present in
 `MODEL_NUM_CTX` (`schemas/modelname.py`), or
-`judges/citation_ground_custom_judge.py` raises. Without it the enrichment
+`evaluation/judges/citation_grounding.py` raises. Without it the enrichment
 is skipped with a warning; everything else still runs.
 
 ---
@@ -118,7 +118,7 @@ python -m research.eval.cli list-datasets
 
 ```bash
 # Static checks
-python -m ruff check research/ judges/ schemas/ llmops/ services/
+python -m ruff check research/ evaluation/ schemas/ llmops/ services/
 python -m mypy research/eval/mlflow_judge_eval.py evaluation/benchmarks/synthetic_v1.py
 ```
 
@@ -200,7 +200,7 @@ Repeat per Phase-A run. Useful flags:
 | `--cot-mode inline` | half the calls, weaker reasoning guarantee. Do not mix the two in one comparison. |
 | `--no-llm` | deterministic metrics only. Free, and the fallback when the Slurm job gets pre-empted. |
 | `--metrics Code_Faithfulness Bug_Actionability` | restrict to named rubrics. |
-| `--llm-grounding` | adds per-claim grounding from `judges/citation_ground_custom_judge.py`. |
+| `--llm-grounding` | adds per-claim grounding from `evaluation/judges/citation_grounding.py`. |
 | `--human-annotations <csv>` | enables the meta-evaluation (§7). |
 
 Call budget, two-stage: `rows × 5 metrics × 2`. Three models × three real
@@ -304,15 +304,15 @@ For assessments produced by the live FastAPI service:
 
 ```python
 from research.eval.mlflow_judge_eval import build_trace_scorers
-from judges.run_judges import grade_accuracy_from_trace
+from evaluation.online.run_judges import grade_accuracy_from_trace
 scorers = [grade_accuracy_from_trace, *build_trace_scorers()]
 ```
 
 ```bash
-MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m judges.run_judges
+MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
 ```
 
-`judges/run_judges.py` hardcodes trace IDs in `__main__` — edit them first.
+`evaluation/online/run_judges.py` hardcodes trace IDs in `__main__` — edit them first.
 
 ---
 
@@ -325,8 +325,8 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m judges.run_judges
    assessments for them — this is the single biggest gap.
 2. **`d1_fixtures` is smoke-test only**, per its own description. It must not
    back a report claim.
-3. **`schemas/cs203_groundtruth.py` is missing**, so `judges/run_judges.py`
-   and `judges/citation_ground_custom_judge.py` are not importable
+3. **`schemas/cs203_groundtruth.py` is missing**, so `evaluation/online/run_judges.py`
+   and `evaluation/judges/citation_grounding.py` are not importable
    (documented in `pyproject.toml`). §8 is blocked until it lands;
    `load_records_from_traces` falls back to a local trace filter.
 4. **`cicd` has no variance.** All five golds score it 1 because no fixture

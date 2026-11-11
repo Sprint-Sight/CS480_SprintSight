@@ -9,7 +9,7 @@ mypy_path = "."
 # Re-enable type-checking by removing this override once those exist.
 # (research.judge_canary was taken off this list once its import was fixed; it type-checks.)
 [[tool.mypy.overrides]]
-module = ["judges.citation_ground_custom_judge", "judges.run_judges"]
+module = ["evaluation.judges.citation_grounding", "evaluation.online.run_judges"]
 ignore_errors = true
 
 [tool.pytest.ini_options]

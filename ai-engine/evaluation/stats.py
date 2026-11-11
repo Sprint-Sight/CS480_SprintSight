@@ -1,6 +1,6 @@
 """Paired bootstrap statistics shared by the online prompt promotion and the offline analysis.
 
-judges/promote.py uses paired_bootstrap_diff to decide whether a challenger prompt beats
+evaluation/online/promote.py uses paired_bootstrap_diff to decide whether a challenger prompt beats
 production; research/eval/analysis.py, plots.py and the judge study use it (and
 pairwise_ci_table) for model comparisons. Pure numpy/pandas: no MLflow.
 """

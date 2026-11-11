@@ -18,9 +18,9 @@ from mlflow.entities import (
 from mlflow.genai.scorers import scorer
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from judges.judge_config import configured_judge_model
-from judges.judge_evidence import fit_judge_bundle
-from judges.trace_adapters import read_candidate
+from evaluation.judges.config import configured_judge_model
+from evaluation.judges.evidence import fit_judge_bundle
+from evaluation.judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
@@ -48,7 +48,7 @@ _PREVIEW_CHARS = 900  # MLflow's trace table stores previews in a VARCHAR(1000)
 JUDGE_SCORER_TIMEOUT_SECONDS = float(os.getenv("JUDGE_SCORER_TIMEOUT_SECONDS", "3600"))
 JUDGE_CALL_DEADLINE_SECONDS = max(60.0, JUDGE_SCORER_TIMEOUT_SECONDS - 60.0)
 
-# V3: RAW_BUNDLE carries diffs and file contents only for what the claims mention (judges/judge_evidence.py).
+# V3: RAW_BUNDLE carries diffs and file contents only for what the claims mention (evaluation/judges/evidence.py).
 # V4: commits touching a cited file stay visible, with their messages, at every reduction level.
 # V5: those are the commit that CREATED the file plus its newest two (v4 showed only the newest, and the
 #     judge called true "this commit introduces X" claims fabricated), and unverifiable file-anchored
@@ -88,7 +88,7 @@ commit or the file's contents clearly contradict the claim.
 Return exactly one verdict for EVERY claim id given. Never skip or repeat one. citation_id is only the id
 (for example "C4"), never the claim text."""
 
-JUDGE_MODEL = configured_judge_model()  # judges/judge_config.py: the one default for prod and research
+JUDGE_MODEL = configured_judge_model()  # evaluation/judges/config.py: the one default for prod and research
 
 FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
                   "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
@@ -272,7 +272,7 @@ def _budget_chars(ctx: int, n_claims: int, claims_chars: int) -> int:
 def plan_batches(bundle: ArtifactBundle, citations: dict, ctx: int, ids: list[str] | None = None) -> list[_Batch]:
     """Split the claims into the fewest calls that each fit the window.
 
-    Each call gets evidence built for just its own claims (judges/judge_evidence.py), so a
+    Each call gets evidence built for just its own claims (evaluation/judges/evidence.py), so a
     smaller batch cites less and needs less. Claims stay in order, which groups them by
     dimension and so by the evidence they share. A claim that cannot fit even alone raises
     JudgeContextTooSmall: judging a subset would make every rate misleading."""

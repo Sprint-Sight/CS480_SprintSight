@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from judges import citation_ground_custom_judge as judge
-from judges.citation_ground_custom_judge import (
+from evaluation.judges import citation_grounding as judge
+from evaluation.judges.citation_grounding import (
     CODE_DROP_WEIGHT,
     VERDICT_WEIGHT,
     CitationVerdict,
@@ -18,7 +18,7 @@ from judges.citation_ground_custom_judge import (
     summarize_verdict,
     verdict_weight,
 )
-from judges.judge_config import DEFAULT_JUDGE_MODEL, configured_judge_model
+from evaluation.judges.config import DEFAULT_JUDGE_MODEL, configured_judge_model
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import (
     ResolvedEvidenceCitation,
@@ -215,7 +215,7 @@ def test_production_and_research_entry_points_agree_on_the_default() -> None:
     env = {key: value for key, value in os.environ.items() if key != "SPRINTSIGHT_JUDGE_MODEL"}
     env["MLFLOW_DISABLE_AGENT_HINT"] = "1"
     code = (
-        "from judges import citation_ground_custom_judge as a;"
+        "from evaluation.judges import citation_grounding as a;"
         "from research.eval import mlflow_judge_eval as c;"
         "print(a.JUDGE_MODEL, c.DEFAULT_JUDGE_MODEL)"
     )

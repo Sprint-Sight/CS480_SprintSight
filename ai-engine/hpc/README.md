@@ -428,7 +428,7 @@ global, though: prompt aliases are shared by every experiment.
   `production` and a `judge_results` tag (running means per `team|sprint|model`).
 - Raw prompts and responses: `ai-engine/audit_logs/`.
 
-### Promotion rules (`judges/promote.py`)
+### Promotion rules (`evaluation/online/promote.py`)
 
 | Rule | Value |
 |---|---|

@@ -299,9 +299,9 @@ retries knowing that product. The backend bounds its own wait on the engine with
 `AI_ENGINE_TIMEOUT_SECONDS` (default 3600).
 
 The judge no longer runs from FastAPI `BackgroundTasks`. After an assessment the
-trace is written to a SQLite-backed queue (`judges/job_queue.py`) and a worker
+trace is written to a SQLite-backed queue (`evaluation/online/job_queue.py`) and a worker
 thread judges it when no grading request is using the single Ollama model slot
-(`judges/scheduler.py`), so a restart does not lose pending judgments and the
+(`evaluation/online/scheduler.py`), so a restart does not lose pending judgments and the
 judge model and the grading model do not evict each other. The queue is
 single-node: run one engine process per queue file.
 
@@ -384,4 +384,4 @@ EVERY TIME YOU WANT GPU ACCESS
 1. Start the Ollama GPU container on the cluster node (see above).
 2. On another terminal, `cd ai-engine`
 3. run `bash hpc/hpc-dev.sh`
-4. run `docker compose exec sprintsight_ai python -m judges.run_judges`
+4. run `docker compose exec sprintsight_ai python -m evaluation.online.run_judges`

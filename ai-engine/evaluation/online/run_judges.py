@@ -10,25 +10,25 @@ from mlflow.exceptions import RestException
 from mlflow.genai.scorers import scorer
 
 from evaluation.benchmarks import online_gold
-from judges.citation_ground_custom_judge import (
+from evaluation.judges.citation_grounding import (
     JUDGE_MODEL,
     llm_judge_citation_grounding,
 )
-from judges.code_based_scorer import numeric_grade_accuracy
-from judges.flagging import (
+from evaluation.judges.flagging import (
     GRADE_COL,
     evaluate_flags,
     production_reasons,
     research_reasons,
 )
-from judges.trace_adapters import read_candidate
+from evaluation.judges.grade_accuracy import numeric_grade_accuracy
+from evaluation.judges.trace_adapters import read_candidate
 from llmops.review_queue import add_to_review_queue
 from prompts.dimension_criteria import DIMENSIONS
 from services.save_results import save_judge_results
 
 load_dotenv()  # Load environment variables from .env file
 
-# Flagging rules, thresholds and result-frame column names live in judges/flagging.py.
+# Flagging rules, thresholds and result-frame column names live in evaluation/judges/flagging.py.
 # Research-only reasons (comparison against a gold assessment) are kept apart from production
 # reasons there; only production reasons go to the review queue unless explicitly opted in.
 QUEUE_RESEARCH_FLAGS = os.getenv("JUDGE_QUEUE_RESEARCH_FLAGS", "0").strip().lower() in {"1", "true", "yes"}

@@ -63,11 +63,11 @@ What this adds to the existing implementation
 This module EXTENDS the two judge/eval pipelines already in the repo; it does
 not replace either. Part 11 holds the seams. Reused as-is, never reimplemented:
 ``research.eval.metrics.summarise_example`` (base row), ``evaluation.stats
-.paired_bootstrap_diff`` (CI), ``judges.code_based_scorer
-.numeric_grade_accuracy`` (grade error), ``judges.trace_adapters
+.paired_bootstrap_diff`` (CI), ``evaluation.judges.grade_accuracy
+.numeric_grade_accuracy`` (grade error), ``evaluation.judges.trace_adapters
 .read_candidate`` (trace reading), ``llmops.mlflow_config`` (tracking),
 ``llmops.prompt_registry`` (rubric versioning), and
-``judges.citation_ground_custom_judge`` (per-claim LLM grounding).
+``evaluation.judges.citation_grounding`` (per-claim LLM grounding).
 
 Gaps in the current implementation that this closes:
 
@@ -121,7 +121,7 @@ Two defects found while integrating, fixed outside this file:
     already-valid ``EvidenceCitation``, dropping ``reason`` and making
     the gold reference data (now ``evaluation/benchmarks/synthetic_v1.py``) raise on import.
     Nothing imported it, so it had been dead.
-  * ``judges/run_judges.py`` hardcodes trace ids in ``__main__``, which are
+  * ``evaluation/online/run_judges.py`` hardcodes trace ids in ``__main__``, which are
     not valid in this checkout.
 
 Usage
@@ -161,9 +161,9 @@ from mlflow.metrics.base import MetricValue
 from mlflow.metrics.genai import EvaluationExample, make_genai_metric
 from mlflow.metrics.genai.prompts.v1 import EvaluationModel
 
+from evaluation.judges.config import configured_judge_model
+from evaluation.judges.grade_accuracy import numeric_grade_accuracy
 from evaluation.stats import paired_bootstrap_diff
-from judges.code_based_scorer import numeric_grade_accuracy
-from judges.judge_config import configured_judge_model
 from llmops.mlflow_config import configure_mlflow, get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from research.eval.metrics import summarise_example
@@ -213,13 +213,13 @@ JUDGE_EXPERIMENT = os.getenv("SPRINTSIGHT_JUDGE_EXPERIMENT", "sprintsight-judge-
 #
 # phi4:14b is the default because the existing judge code already reaches for
 # the phi family (`SPRINTSIGHT_JUDGE_MODEL` defaults to "sprintsight-judge-phi"
-# in judges/judge_config.py), it is not a llama derivative, and at Q4 it
+# in evaluation/judges/config.py), it is not a llama derivative, and at Q4 it
 # fits alongside a 3B candidate on a 24 GB card. `assert_judge_independence`
 # enforces the family rule at run time rather than trusting this default.
 #
 #   ollama pull phi4:14b          # ~9 GB, recommended
 #   ollama pull qwen2.5:14b-instruct   # alternative, also non-llama
-# Shared with the production judge (judges/judge_config.py). The default used to differ
+# Shared with the production judge (evaluation/judges/config.py). The default used to differ
 # ("phi4:14b" here, "sprintsight-judge-phi" there) for the SAME environment variable, so an
 # unset variable meant a different judge per entry point. sprintsight-judge-phi IS phi4:14b,
 # built from models/Modelfile.phi.
@@ -1458,8 +1458,8 @@ def numeric_grade_errors(
 ) -> dict[str, float | None]:
     """Per-dimension and overall absolute error against the gold assessment.
 
-    Delegates to ``judges.code_based_scorer.numeric_grade_accuracy``, the
-    scorer the trace-based pipeline in ``judges/run_judges.py`` already uses,
+    Delegates to ``evaluation.judges.grade_accuracy.numeric_grade_accuracy``, the
+    scorer the trace-based pipeline in ``evaluation/online/run_judges.py`` already uses,
     rather than recomputing the same subtraction with its own conventions.
     That keeps ONE definition of grade error in the codebase: if the team
     changes how a failed dimension is treated, both pipelines change
@@ -1488,7 +1488,7 @@ def numeric_grade_errors(
         out["grade_signed_error_overall"] = None
         return out
 
-    # Same outputs shape judges/run_judges.py builds for this scorer: a
+    # Same outputs shape evaluation/online/run_judges.py builds for this scorer: a
     # dimension the model never produced is present as None, which is what
     # lets the scorer distinguish "wrong score" from "no score".
     rubric_scores: dict[str, dict | None] = {}
@@ -1888,7 +1888,7 @@ def build_eval_frame(records: Sequence[JudgeRecord]) -> pd.DataFrame:
       lint_warning_count rule-based defects
       rouge_l_vs_gold    leakage check against the gold narrative
       schema_valid       Pydantic re-validation of the raw output
-      grade_*            delegated to judges.code_based_scorer
+      grade_*            delegated to evaluation.judges.grade_accuracy
       human_<metric>     optional human annotations for Part 5
     """
     if not records:
@@ -2048,7 +2048,7 @@ DETERMINISTIC_METRIC_COLUMNS: tuple[tuple[str, bool], ...] = (
     ("python_syntax_valid", True),
     ("rouge_l_vs_gold", True),
     ("token_overlap_vs_gold", True),
-    # --- delegated to judges.code_based_scorer.numeric_grade_accuracy ---
+    # --- delegated to evaluation.judges.grade_accuracy.numeric_grade_accuracy ---
     ("grade_mae_per_dimension", False),
     ("grade_abs_error_overall", False),
     # Signed error is "greater is better" only in the sense that the MLflow UI
@@ -2285,7 +2285,7 @@ def run_judge_evaluation(
         raise RuntimeError("No metrics could be built for this frame.")
 
     # Tracking URI and experiment creation go through llmops.mlflow_config,
-    # the same path services/ and judges/ use, rather than a second
+    # the same path services/ and evaluation/ use, rather than a second
     # mlflow.set_experiment call with its own defaults. That matters in this
     # repo specifically: mlflow_config falls back to http://localhost:5000 and
     # caches experiment ids behind a lock, so a judge run started from a
@@ -4390,11 +4390,12 @@ def synthetic_records(
 #                             gets filled and `cli.py analyze
 #                             --pairwise-metric judge_quality_score` works.
 #
-#   evaluation/stats.py paired_bootstrap_diff is called, not
+#   evaluation/stats.py     paired_bootstrap_diff is called, not
 #                             reimplemented (see paired_model_comparison).
 #     metrics.py              summarise_example is the base layer of every row.
 #
-#   judges/run_judges.py      judges TRACES rather than stored assessments.
+#   evaluation/online/run_judges.py
+#                             judges TRACES rather than stored assessments.
 #                             `build_trace_scorers` wraps each rubric as an
 #                             mlflow.genai.scorers scorer using the existing
 #                             trace_adapters.read_candidate, so that pipeline
@@ -4590,7 +4591,7 @@ def attach_llm_grounding(
 ) -> pd.DataFrame:
     """Add the existing citation-grounding judge's verdict as extra columns.
 
-    ``judges/citation_ground_custom_judge.py`` already implements a careful
+    ``evaluation/judges/citation_grounding.py`` already implements a careful
     per-claim grounding judge with a closure-validated response model that
     forces exactly one verdict per citation id. Rather than fold that
     behaviour into a rubric dimension and lose its per-claim resolution, its
@@ -4609,7 +4610,7 @@ def attach_llm_grounding(
     try:
         import asyncio
 
-        from judges.citation_ground_custom_judge import judge_assessment
+        from evaluation.judges.citation_grounding import judge_assessment
     except Exception:
         log.warning("citation_ground_custom_judge unavailable; skipping.", exc_info=True)
         return frame
@@ -4650,7 +4651,7 @@ def attach_llm_grounding(
     return enriched
 
 
-# -- 11c. Bridge to the trace-based pipeline in judges/ ----------------------
+# -- 11c. Bridge to the trace-based pipeline in evaluation/online/ ------------
 
 def build_trace_scorers(
     *,
@@ -4660,7 +4661,7 @@ def build_trace_scorers(
     gold_by_team: Mapping[str, SprintAssessment] | None = None,
     cot_mode: Literal["two_stage", "inline"] = "two_stage",
 ) -> list[Any]:
-    """Expose these rubrics as ``mlflow.genai.scorers`` for judges/run_judges.py.
+    """Expose these rubrics as ``mlflow.genai.scorers`` for evaluation/online/run_judges.py.
 
     That pipeline judges logged TRACES, not stored assessment files, and it
     reads the candidate back with ``trace_adapters.read_candidate``. Rather
@@ -4684,7 +4685,7 @@ def build_trace_scorers(
     from mlflow.metrics.genai.genai_metric import _extract_score_and_justification
 
     from evaluation.benchmarks.synthetic_v1 import FIXTURES
-    from judges.trace_adapters import read_candidate
+    from evaluation.judges.trace_adapters import read_candidate
 
     bundles = dict(bundle_by_team or {b.team_id: b for b in FIXTURES.values()})
     golds = dict(gold_by_team or {g.team_id: g for g in gold_by_fixture().values()})
@@ -4776,7 +4777,7 @@ def load_records_from_traces(
     bundle_by_team: Mapping[str, ArtifactBundle] | None = None,
     gold_by_team: Mapping[str, SprintAssessment] | None = None,
 ) -> list[JudgeRecord]:
-    """Build JudgeRecords from logged traces, reusing judges/run_judges.py's
+    """Build JudgeRecords from logged traces, reusing evaluation/online/run_judges.py's
     own trace selection and candidate-reading logic.
 
     This is the other direction of the bridge in ``build_trace_scorers``: it
@@ -4788,22 +4789,22 @@ def load_records_from_traces(
     from mlflow import MlflowClient
 
     from evaluation.benchmarks.synthetic_v1 import FIXTURES
-    from judges.trace_adapters import read_candidate
+    from evaluation.judges.trace_adapters import read_candidate
 
-    # Prefer judges/run_judges.py's own trace selection so both pipelines
+    # Prefer evaluation/online/run_judges.py's own trace selection so both pipelines
     # select traces by identical criteria. That module is currently blocked on
     # the not-yet-added schemas/cs203_groundtruth (see the mypy override in
     # pyproject.toml), so importing it can raise ImportError through no fault
     # of ours -- hence the equivalent local fallback rather than a hard
     # dependency on a WIP module. Delete the fallback once that file lands.
     try:
-        from judges.run_judges import select_traces
+        from evaluation.online.run_judges import select_traces
     except ImportError as import_error:
         # Named import_error, not error: Python unbinds an `except ... as`
         # target when the block exits, so reusing `error` for the per-trace
         # failure below would be reading a deleted variable.
         log.warning(
-            "judges.run_judges is not importable (%s); using the equivalent "
+            "evaluation.online.run_judges is not importable (%s); using the equivalent "
             "local trace filter. Selection criteria are the same.", import_error,
         )
 
@@ -4955,7 +4956,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--llm-grounding",
         action="store_true",
         help=(
-            "Also run judges/citation_ground_custom_judge.py and attach its "
+            "Also run evaluation/judges/citation_grounding.py and attach its "
             "per-claim grounding verdict as extra columns"
         ),
     )

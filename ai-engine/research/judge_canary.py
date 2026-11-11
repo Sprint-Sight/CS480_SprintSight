@@ -23,8 +23,8 @@ import re
 import sys
 
 from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203G6_GOLD
-from judges.citation_ground_custom_judge import collect_citations, run_grounding_judge
-from judges.judge_config import configured_judge_model
+from evaluation.judges.citation_grounding import collect_citations, run_grounding_judge
+from evaluation.judges.config import configured_judge_model
 
 _SHA = re.compile(r"[0-9a-f]{40}")
 

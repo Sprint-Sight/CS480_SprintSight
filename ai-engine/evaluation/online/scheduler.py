@@ -12,7 +12,7 @@ dimension" or a failed judge that has nothing to do with answer quality.
   * a grading request that arrives while a judge job runs waits for it, but only up to
     `grader_max_wait_seconds`, so a stuck judge can never block grading indefinitely.
 
-`JudgeWorker` drains the durable queue (judges/job_queue.py) through the arbiter.
+`JudgeWorker` drains the durable queue (evaluation/online/job_queue.py) through the arbiter.
 
 The arbiter lives in one process. It coordinates the request handlers and the worker thread
 of a single engine; it does not coordinate separate engine replicas.
@@ -29,7 +29,7 @@ import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 
-from judges.job_queue import JudgeJob, JudgeJobQueue
+from evaluation.online.job_queue import JudgeJob, JudgeJobQueue
 from services.failures import classify_failure, failure_detail
 
 log = logging.getLogger("sprintsight.judges.scheduler")
@@ -202,7 +202,7 @@ def run_judge_job(job: JudgeJob) -> None:
     """The production runner: judge the trace, then evaluate prompt promotion."""
     from mlflow import MlflowClient
 
-    from judges.promote import (
+    from evaluation.online.promote import (
         run_judge_and_promotion,  # lazy: pulls in mlflow.genai and the scorers
     )
 

@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api import assessment
-from judges.scheduler import start_judge_worker, stop_judge_worker
+from evaluation.online.scheduler import start_judge_worker, stop_judge_worker
 from llmops.mlflow_config import start_mlflow
 from llmops.prompt_registry import register_all_dimension_prompts
 from services.llm_client import (

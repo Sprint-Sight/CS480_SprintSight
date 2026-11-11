@@ -27,7 +27,7 @@ from pathlib import Path
 
 log = logging.getLogger("sprintsight.judges.queue")
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "judge_jobs.sqlite3"
+DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "judge_jobs.sqlite3"  # ai-engine/data/
 MAX_ATTEMPTS = int(os.getenv("JUDGE_JOB_MAX_ATTEMPTS", "3"))
 # A running job whose lease expired is presumed orphaned (its worker died). Longer than the
 # slowest judge run, short enough to recover within the hour.

@@ -32,10 +32,10 @@ model-comparison harness and feeds the final report.
 
 ## The judge layer (`mlflow_judge_eval.py`)
 
-Built **on top of** this package and `judges/`, not beside it. It reuses
+Built **on top of** this package and `evaluation/`, not beside it. It reuses
 `metrics.summarise_example` for every per-example row, `evaluation.stats.paired_bootstrap_diff`
-for confidence intervals, `judges.code_based_scorer.numeric_grade_accuracy` for grade
-error, `judges.trace_adapters.read_candidate` for trace reading, and
+for confidence intervals, `evaluation.judges.grade_accuracy.numeric_grade_accuracy` for grade
+error, `evaluation.judges.trace_adapters.read_candidate` for trace reading, and
 `llmops.mlflow_config` / `llmops.prompt_registry` for tracking and rubric versioning.
 See the module docstring for the full list and for what it adds.
 
@@ -54,7 +54,7 @@ python -m research.eval.attach_judge_scores \
     --judge-file research/judge_eval_report/judge_scores_for_attach.csv \
     --run-id <same run id>
 
-# B. Give the trace-based pipeline in judges/ the same five rubrics:
+# B. Give the trace-based pipeline in evaluation/online/ the same five rubrics:
 #    from research.eval.mlflow_judge_eval import build_trace_scorers
 #    scorers = [grade_accuracy_from_trace, *build_trace_scorers()]
 ```

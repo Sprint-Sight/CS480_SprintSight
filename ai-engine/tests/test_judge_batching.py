@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 from test_judge_evidence_ladder import sprint_like_your_data
 
-from judges import citation_ground_custom_judge as judge
-from judges.citation_ground_custom_judge import (
+from evaluation.judges import citation_grounding as judge
+from evaluation.judges.citation_grounding import (
     GROUNDING_SYSTEM_PROMPT,
     HOSTED_JUDGE_CONTEXT,
     JUDGE_CALL_DEADLINE_SECONDS,
@@ -19,7 +19,7 @@ from judges.citation_ground_custom_judge import (
     _judge_context,
     plan_batches,
 )
-from judges.citation_ground_custom_judge import (
+from evaluation.judges.citation_grounding import (
     _server_context_limit as real_server_context_limit,
 )
 
