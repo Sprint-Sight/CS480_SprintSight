@@ -2,6 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -33,7 +34,7 @@ WRONG_ATTRIBUTION = ("partially_grounded", "major_misattribution")
 CONTRADICTED = ("hallucinated", "major_misattribution")
 
 
-def _verdict(cid: str, kind: tuple[str, str]) -> CitationVerdict:
+def _verdict(cid: str, kind: tuple[Any, Any]) -> CitationVerdict:
     return CitationVerdict(citation_id=cid, reasoning="Because the record says so.", label=kind[0], severity=kind[1])
 
 
@@ -97,7 +98,7 @@ def _rubric(**dimension_citations: int) -> RubricsScore:
     for name, n in dimension_citations.items():
         citations = [ResolvedEvidenceCitation(identifier=f"id-{i}", reason="Because of this evidence.") for i in range(n)]
         scores[name] = RubricDimensionScore(
-            dimension=name, score=7, justification="A justification.", evidence_citations=citations
+            dimension=cast(Any, name), score=7, justification="A justification.", evidence_citations=citations
         )
     return RubricsScore(**scores)
 
@@ -105,7 +106,7 @@ def _rubric(**dimension_citations: int) -> RubricsScore:
 def test_per_dimension_counts_and_rates_are_reported(monkeypatch) -> None:
     rubric = _rubric(testing=2, cicd=1)  # C1, C2 = testing (in DIMENSIONS order they come out C?, see ids)
     citations = judge.collect_citations(rubric)
-    ids_by_dim = {}
+    ids_by_dim: dict[str, list[str]] = {}
     for cid, c in citations.items():
         ids_by_dim.setdefault(c["dimension"], []).append(cid)
     kinds = {ids_by_dim["testing"][0]: GROUNDED, ids_by_dim["testing"][1]: CONTRADICTED, ids_by_dim["cicd"][0]: MINOR}
@@ -117,7 +118,7 @@ def test_per_dimension_counts_and_rates_are_reported(monkeypatch) -> None:
 
     monkeypatch.setattr(judge, "run_grounding_judge", fake_judge)
 
-    metrics, rows = asyncio.run(judge_assessment_detailed(SimpleNamespace(), rubric, "m"))
+    metrics, rows = asyncio.run(judge_assessment_detailed(ArtifactBundle(team_id="t", sprint_id="s"), rubric, "m"))
 
     assert metrics["citation_count"] == 3
     assert metrics["citation_count_testing"] == 2 and metrics["citation_count_cicd"] == 1

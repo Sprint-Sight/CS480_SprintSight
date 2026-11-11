@@ -2,6 +2,7 @@
 
 import json
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -178,7 +179,7 @@ def test_a_dimension_that_cited_nothing_is_neither_recorded_nor_promoted(monkeyp
     })
 
     promote._determine_promotion(
-        judge_result, "tr-1", "team", "s1", {"Evaluate_testing": 3, "Evaluate_cicd": 2}, client,
+        judge_result, "tr-1", "team", "s1", {"Evaluate_testing": 3, "Evaluate_cicd": 2}, cast(Any, client),
     )
 
     assert recorded == ["Evaluate_testing"]  # cicd had no citations of its own: nothing to record

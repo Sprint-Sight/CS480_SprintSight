@@ -2,6 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import mlflow
@@ -18,7 +19,8 @@ from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import ModelOutput, RubricDimensionScore
 from services import evaluator
 
-REQUEST = httpx.Request("POST", "http://ollama:11434/v1/chat/completions")
+# Typed Any, see tests/test_failures.py.
+REQUEST: Any = httpx.Request("POST", "http://ollama:11434/v1/chat/completions")
 LONG_DETAIL = "x" * 900  # the old code cut error text at 300 characters
 
 
@@ -93,7 +95,8 @@ def test_exhausted_retries_are_classified_and_flagged(harness) -> None:
         "cicd": _schema_failure(),
     }
 
-    assessment, _ = _evaluate(harness, trace_ids := [])
+    trace_ids: list[str] = []
+    assessment, _ = _evaluate(harness, trace_ids)
 
     assert set(assessment.failed_dimensions) == {"testing", "cicd"}
     assert assessment.evaluation_failed is True

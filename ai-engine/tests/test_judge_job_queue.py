@@ -59,13 +59,16 @@ def test_jobs_are_claimed_oldest_first_and_only_once(tmp_path, clock) -> None:
 
     first, second, third = queue.claim_next(), queue.claim_next(), queue.claim_next()
 
+    assert first is not None and second is not None
     assert (first.trace_id, second.trace_id, third) == ("tr-1", "tr-2", None)
 
 
 def test_completed_jobs_are_not_run_again(tmp_path, clock) -> None:
     queue = make_queue(tmp_path, clock)
     enqueue(queue)
-    queue.complete(queue.claim_next().job_id)
+    job = queue.claim_next()
+    assert job is not None
+    queue.complete(job.job_id)
 
     assert queue.claim_next() is None
     assert queue.stats()[DONE] == 1
@@ -75,6 +78,7 @@ def test_a_failed_job_waits_out_its_retry_delay(tmp_path, clock) -> None:
     queue = make_queue(tmp_path, clock)
     enqueue(queue)
     job = queue.claim_next()
+    assert job is not None
 
     assert queue.fail(job.job_id, "timeout: slow", retry_delay=300) == QUEUED
     assert queue.claim_next() is None  # not due yet
@@ -90,8 +94,10 @@ def test_a_job_that_keeps_failing_ends_up_dead_not_retried_forever(tmp_path, clo
     enqueue(queue)
 
     first = queue.claim_next()
+    assert first is not None
     assert queue.fail(first.job_id, "boom", retry_delay=0) == QUEUED
     second = queue.claim_next()
+    assert second is not None
     assert queue.fail(second.job_id, "boom again", retry_delay=0) == DEAD
 
     assert queue.claim_next() is None
@@ -129,4 +135,5 @@ def test_startup_gives_orphaned_running_jobs_back(tmp_path, clock) -> None:
 
     assert make_queue(tmp_path, clock).requeue_running() == 1
     assert queue.stats()[QUEUED] == 1
-    assert queue.claim_next().attempts == 2  # the crashed attempt still counts
+    resumed = queue.claim_next()
+    assert resumed is not None and resumed.attempts == 2  # the crashed attempt still counts

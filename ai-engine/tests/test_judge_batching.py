@@ -6,7 +6,6 @@ import re
 from types import SimpleNamespace
 
 import pytest
-from test_judge_evidence_ladder import sprint_like_your_data
 
 from evaluation.judges import citation_grounding as judge
 from evaluation.judges.citation_grounding import (
@@ -22,6 +21,7 @@ from evaluation.judges.citation_grounding import (
 from evaluation.judges.citation_grounding import (
     _server_context_limit as real_server_context_limit,
 )
+from tests.sprint_fixtures import sprint_like_your_data
 
 PHI_WINDOW = 16_384  # what phi4:14b really has
 
