@@ -76,7 +76,7 @@ from evaluation.benchmarks.expected_orders import (
     check_order,
 )
 from llmops import experiments
-from llmops.mlflow_config import start_mlflow
+from llmops.mlflow_config import get_experiment_id
 from schemas.artifact_bundle import ArtifactBundle
 from services.evaluator import evaluate_sprint
 
@@ -372,12 +372,14 @@ def main() -> None:
         "For a first smoke test, try --repeats 1 with a single model before committing to the full grid.\n"
     )
  
-    start_mlflow(experiment_name=experiments.VALIDATION_HARNESS)
+    # Open the run in VALIDATION_HARNESS by id. start_run without experiment_id
+    # uses MLflow's default experiment (MLFLOW_EXPERIMENT_NAME, or "Default").
+    experiment_id = get_experiment_id(experiments.VALIDATION_HARNESS)
  
     if mlflow.active_run():
         mlflow.end_run()  # Close any active run left open from a previous call
  
-    with mlflow.start_run(run_name=f"Harness_Run_{ts}"):
+    with mlflow.start_run(experiment_id=experiment_id, run_name=f"Harness_Run_{ts}"):
         mlflow.log_param("models_tested", args.models)
         mlflow.log_param("repeats", args.repeats)
         mlflow.log_param("total_evaluations", total)

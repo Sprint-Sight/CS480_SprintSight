@@ -45,7 +45,7 @@ import pandas as pd
 from evaluation.offline.datasets import DatasetItem, load_dataset
 from evaluation.offline.metrics import summarise_example
 from llmops import experiments
-from llmops.mlflow_config import start_mlflow
+from llmops.mlflow_config import get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS
 from prompts.templates import render_dimension_prompt
 from services.evaluator import evaluate_sprint
@@ -233,14 +233,14 @@ def run_evaluation(
     if not items:
         raise ValueError(f"Dataset '{dataset_name}' loaded zero items (subset filter?).")
 
-    start_mlflow(experiment_name=experiment)
-    # start_mlflow only sets the tracking URI: it neither selects `experiment`
-    # nor enables autologging (see llmops/experiments.py). The run below opens
-    # in MLflow's active/default experiment; evaluate_sprint's own tracked runs
-    # are created in `experiment`.
+    # Pass the experiment explicitly: start_run without experiment_id opens in
+    # MLflow's default experiment (MLFLOW_EXPERIMENT_NAME, or "Default"), where
+    # `cli analyze` never looks. Not mlflow.set_experiment: it is process-global
+    # (see llmops/run_tracking.py).
+    experiment_id = get_experiment_id(experiment)
 
     run_name = f"{model}__{dataset_name}__{prompt_version}__seed-{seed}"
-    with mlflow.start_run(run_name=run_name) as run:
+    with mlflow.start_run(experiment_id=experiment_id, run_name=run_name) as run:
         mlflow.log_params({
             "model_name": model,
             "model_digest": _model_digest(model),

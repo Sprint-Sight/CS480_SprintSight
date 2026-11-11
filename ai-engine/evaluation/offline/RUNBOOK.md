@@ -348,6 +348,27 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
 7. **Gold `overall_score` changed** when cicd was added (e.g. 9.0 → 7.5).
    Any `grade_abs_error_overall` from before that is not comparable; tag new
    sweeps with a fresh `--phase`.
+8. **Older model-comparison runs are in the wrong experiment.** Until the
+   runner passed `experiment_id` to `start_run`, its run (params, metrics,
+   `per_example.jsonl`) opened in MLflow's default experiment:
+   `MLFLOW_EXPERIMENT_NAME` (`sprintsight_experiment` under compose), else
+   `Default`. Only the child runs and traces reached `--experiment`, so
+   `analyze` never saw them. On the local server these are five
+   `d_real_sprints` runs from 9–10 Oct (llama31 ×2, coder-32b, r1-32b,
+   qwen25-32b). Analyse them on their own with:
+   ```bash
+   python -m evaluation.offline.cli analyze --experiment sprintsight_experiment        --filter 'tags.run_type = "model_comparison"' --out-dir research/eval_report_misplaced
+   ```
+   MLflow cannot move a run, so putting them next to newer runs means
+   re-logging each one as a new run (new run id). **As of 11 Nov their
+   artifacts are gone (see 9):** `analyze` skips all five with "no
+   per_example.jsonl artifact", and only their run-level params and metrics
+   remain. Re-run those conditions if the report needs per-example data.
+9. **The compose MLflow service does not keep artifacts.** `mlflow server`
+   runs without `--artifacts-destination` or a volume, so artifacts are
+   written to `/mlartifacts` inside the container and are lost when it is
+   recreated. Run metadata survives in Postgres. No model-comparison run
+   logged before the container was recreated on 10 Nov has artifacts left.
 
 ---
 
