@@ -46,6 +46,26 @@ async def _request(client, experiment, label, delay):
     return run.run_id, trace_id
 
 
+def _eventually(fetch, what: str, timeout: float = 60.0):
+    """Return fetch() once it is truthy, flushing MLflow's async trace export between tries.
+
+    Traces are exported on background threads, so one flush followed by one search is not
+    guaranteed to see them: it passed locally and failed on a slower CI runner. Polling for a
+    bounded time makes the test wait for what it needs and still fail, with a clear message,
+    if the trace never arrives."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        mlflow.flush_trace_async_logging()
+        found = fetch()
+        if found:
+            return found
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"{what} did not appear within {timeout:.0f}s")
+        time.sleep(0.5)
+
+
 def test_concurrent_requests_do_not_share_runs_or_experiments(store) -> None:
     client, ids = store
 
@@ -55,7 +75,16 @@ def test_concurrent_requests_do_not_share_runs_or_experiments(store) -> None:
         )
 
     (run_a, trace_a), (run_b, trace_b) = asyncio.run(scenario())
-    mlflow.flush_trace_async_logging()
+    expected = {ids["exp-a"]: trace_a, ids["exp-b"]: trace_b}
+
+    def both_traces_are_stored_and_linked() -> bool:
+        for experiment_id, trace_id in expected.items():
+            stored = {t.info.trace_id: t for t in client.search_traces(locations=[experiment_id])}
+            if trace_id not in stored or "mlflow.sourceRun" not in stored[trace_id].info.trace_metadata:
+                return False
+        return True
+
+    _eventually(both_traces_are_stored_and_linked, "both requests' traces")
 
     for run_id, trace_id, label, own, other in (
         (run_a, trace_a, "A", ids["exp-a"], ids["exp-b"]),
@@ -96,3 +125,12 @@ def test_a_run_started_by_the_caller_becomes_the_parent(store) -> None:
     with mlflow.start_run(experiment_id=store[1]["exp-a"]) as outer, tracked_run(client, "exp-a", "child") as child:
         pass
     assert client.get_run(child.run_id).data.tags[MLFLOW_PARENT_RUN_ID] == outer.info.run_id
+
+
+def test_eventually_waits_for_a_late_result_and_otherwise_fails_clearly(monkeypatch) -> None:
+    monkeypatch.setattr(mlflow, "flush_trace_async_logging", lambda: None)
+    answers = iter([None, None, "ready"])  # the trace shows up on the third look
+
+    assert _eventually(lambda: next(answers), "the trace") == "ready"
+    with pytest.raises(AssertionError, match="the trace did not appear within 1s"):
+        _eventually(lambda: None, "the trace", timeout=1.0)

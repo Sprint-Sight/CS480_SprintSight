@@ -127,6 +127,26 @@ def test_the_placeholder_score_does_not_distort_the_overall_score(harness) -> No
     assert assessment.overall_score == 8.0  # mean of the five real scores, not (5*8+1)/6
 
 
+def _eventually(fetch, what: str, timeout: float = 60.0):
+    """Return fetch() once it is truthy, flushing MLflow's async trace export between tries.
+
+    Traces are exported on background threads, so one flush followed by one search is not
+    guaranteed to see them: it passed locally and failed on a slower CI runner. Polling for a
+    bounded time makes the test wait for what it needs and still fail, with a clear message,
+    if the trace never arrives."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        mlflow.flush_trace_async_logging()
+        found = fetch()
+        if found:
+            return found
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"{what} did not appear within {timeout:.0f}s")
+        time.sleep(0.5)
+
+
 def test_a_cancelled_assessment_is_failed_in_mlflow_for_both_its_run_and_its_trace(harness) -> None:
     # The backend hung up (see api/disconnect.py). The run was already marked FAILED, but the
     # trace stayed OK because MLflow records an error only for ordinary exceptions.
@@ -142,10 +162,15 @@ def test_a_cancelled_assessment_is_failed_in_mlflow_for_both_its_run_and_its_tra
             await task
 
     asyncio.run(scenario())
-    mlflow.flush_trace_async_logging()
 
+    def the_finished_trace():
+        # it first shows up in progress and only becomes ERROR when the root span ends
+        traces = harness.client.search_traces(locations=[harness.experiment_id])
+        done = len(traces) == 1 and traces[0].info.state.name != "IN_PROGRESS"
+        return traces[0] if done and "mlflow.sourceRun" in traces[0].info.trace_metadata else None
+
+    trace = _eventually(the_finished_trace, "the cancelled assessment's finished trace")
     (run,) = harness.client.search_runs([harness.experiment_id])
-    (trace,) = harness.client.search_traces(locations=[harness.experiment_id])
     assert run.info.status == "FAILED"
     assert trace.info.state.name == "ERROR"
     assert trace.info.tags["cancelled"] == "client_disconnected"
