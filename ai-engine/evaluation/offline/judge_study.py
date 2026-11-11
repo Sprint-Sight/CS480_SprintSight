@@ -165,6 +165,7 @@ from evaluation.judges.config import configured_judge_model
 from evaluation.judges.grade_accuracy import numeric_grade_accuracy
 from evaluation.offline.metrics import summarise_example
 from evaluation.stats import paired_bootstrap_diff
+from llmops import experiments
 from llmops.mlflow_config import configure_mlflow, get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
@@ -203,7 +204,7 @@ __all__ = [
 RUBRIC_MIN = 1
 RUBRIC_MAX = 5
 
-JUDGE_EXPERIMENT = os.getenv("SPRINTSIGHT_JUDGE_EXPERIMENT", "sprintsight-judge-eval")
+JUDGE_EXPERIMENT = os.getenv("SPRINTSIGHT_JUDGE_EXPERIMENT", experiments.JUDGE_STUDY)
 
 # The judge MUST come from a different model family than the candidates
 # under test (models/Modelfile.*, schemas/modelname.py); otherwise a judge

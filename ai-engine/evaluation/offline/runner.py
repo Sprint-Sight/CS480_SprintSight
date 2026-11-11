@@ -44,6 +44,7 @@ import pandas as pd
 
 from evaluation.offline.datasets import DatasetItem, load_dataset
 from evaluation.offline.metrics import summarise_example
+from llmops import experiments
 from llmops.mlflow_config import start_mlflow
 from prompts.dimension_criteria import DIMENSION_PROMPTS
 from prompts.templates import render_dimension_prompt
@@ -52,7 +53,7 @@ from services.llm_client import _token_accumulator, new_token_accumulator
 
 log = logging.getLogger(__name__)
 
-DEFAULT_EXPERIMENT = "sprintsight-model-comparison"
+DEFAULT_EXPERIMENT = experiments.MODEL_COMPARISON
 
 
 # ---------- Reproducibility helpers ----------------------------------------
@@ -233,8 +234,10 @@ def run_evaluation(
         raise ValueError(f"Dataset '{dataset_name}' loaded zero items (subset filter?).")
 
     start_mlflow(experiment_name=experiment)
-    # start_mlflow calls mlflow.openai.autolog, so every underlying Ollama
-    # chat completion will be traced as a child span under this run.
+    # start_mlflow only sets the tracking URI: it neither selects `experiment`
+    # nor enables autologging (see llmops/experiments.py). The run below opens
+    # in MLflow's active/default experiment; evaluate_sprint's own tracked runs
+    # are created in `experiment`.
 
     run_name = f"{model}__{dataset_name}__{prompt_version}__seed-{seed}"
     with mlflow.start_run(run_name=run_name) as run:

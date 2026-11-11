@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 
 from api import assessment
 from evaluation.online.scheduler import start_judge_worker, stop_judge_worker
+from llmops import experiments
 from llmops.mlflow_config import start_mlflow
 from llmops.prompt_registry import register_all_dimension_prompts
 from services.llm_client import (
@@ -59,7 +60,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager # Allows us to define startup and shutdown logic for the FastAPI app
 async def lifespan(app: FastAPI): # Initialise things that should exist for the app's entire lifetime
     start_mlflow(
-        experiment_name="Sprintsight evaluation",
+        experiment_name=experiments.STARTUP,
         name="sprint_assessment_prompt", 
         template="""\
 You are an expert agile coach evaluating team performance.

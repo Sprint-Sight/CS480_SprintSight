@@ -351,10 +351,11 @@ def _log_to_mlflow(
 ) -> None:
     import mlflow
 
+    from llmops import experiments
     from llmops.mlflow_config import configure_mlflow
 
     configure_mlflow()
-    mlflow.set_experiment("sprintsight_gpu_utilisation")
+    mlflow.set_experiment(experiments.GPU_UTILISATION)
     with mlflow.start_run(run_name="gpu_" + "_".join(str(v) for v in labels.values())):
         mlflow.log_params({**labels, **{k: v for k, v in gpu_info.items() if v is not None}, "clock_offset_s": clock_offset})
         mlflow.log_metrics({k: float(v) for k, v in metrics.items() if isinstance(v, (int, float)) and not pd.isna(v)})

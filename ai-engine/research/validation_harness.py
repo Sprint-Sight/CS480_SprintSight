@@ -75,6 +75,7 @@ from evaluation.benchmarks.expected_orders import (
     GENERAL_ORDER,
     check_order,
 )
+from llmops import experiments
 from llmops.mlflow_config import start_mlflow
 from schemas.artifact_bundle import ArtifactBundle
 from services.evaluator import evaluate_sprint
@@ -131,7 +132,7 @@ async def run_single(model: str, fixture_name: str, repeat_index: int) -> RunRes
         assessment, _ = await evaluate_sprint(
             bundle,
             model,
-            "SprintSight-Research",
+            experiments.VALIDATION_HARNESS,
             mlflow.MlflowClient(),
             [],
         )
@@ -371,7 +372,7 @@ def main() -> None:
         "For a first smoke test, try --repeats 1 with a single model before committing to the full grid.\n"
     )
  
-    start_mlflow(experiment_name="SprintSight-Research")
+    start_mlflow(experiment_name=experiments.VALIDATION_HARNESS)
  
     if mlflow.active_run():
         mlflow.end_run()  # Close any active run left open from a previous call
