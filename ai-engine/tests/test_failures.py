@@ -1,5 +1,7 @@
 """Failure classification: transient infrastructure vs schema vs length vs truncation."""
 
+from typing import Any
+
 import httpx
 import openai
 import pytest
@@ -18,7 +20,9 @@ from services.failures import (
     failure_detail,
 )
 
-_REQUEST = httpx.Request("POST", "http://ollama:11434/v1/chat/completions")
+# Typed Any: the installed openai SDK annotates `request` with a differently named httpx module than
+# the one it works with at runtime, so the real class would trip the type checker in some installs.
+_REQUEST: Any = httpx.Request("POST", "http://ollama:11434/v1/chat/completions")
 
 
 def _exhausted_after(cause: BaseException) -> InstructorRetryException:

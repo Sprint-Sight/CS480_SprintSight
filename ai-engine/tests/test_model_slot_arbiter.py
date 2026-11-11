@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from judges.job_queue import DEAD, DONE, QUEUED, JudgeJobQueue
-from judges.scheduler import JudgeWorker, ModelSlotArbiter
+from evaluation.online.job_queue import DEAD, DONE, QUEUED, JudgeJobQueue
+from evaluation.online.scheduler import JudgeWorker, ModelSlotArbiter
 
 
 def arbiter(**kwargs) -> ModelSlotArbiter:
@@ -188,7 +188,8 @@ def test_worker_does_not_spend_an_attempt_while_grading_has_the_slot(tmp_path) -
 
     assert asyncio.run(scenario()) is False
     assert ran == []
-    assert queue.claim_next().attempts == 1  # the blocked poll cost nothing
+    job = queue.claim_next()
+    assert job is not None and job.attempts == 1  # the blocked poll cost nothing
 
 
 def test_worker_loop_recovers_jobs_orphaned_by_a_crash_and_stops_cleanly(tmp_path) -> None:

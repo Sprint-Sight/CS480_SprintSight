@@ -3,13 +3,13 @@
 import random
 from types import SimpleNamespace
 
-from research import judge_canary
-from research.cs203_groundtruth import CS203G6_GOLD
-from research.judge_canary import build_canary_claims, main, mutate
+from evaluation.benchmarks.cs203 import CS203G6_GOLD
+from evaluation.offline import judge_canary
+from evaluation.offline.judge_canary import build_canary_claims, main, mutate
 
 
 def test_the_canary_module_imports() -> None:
-    # It used to import schemas.cs203_groundtruth, which does not exist (the module is under research/).
+    # It once imported schemas.cs203_groundtruth, which never existed (the module is evaluation.benchmarks.cs203).
     assert callable(judge_canary.main)
 
 

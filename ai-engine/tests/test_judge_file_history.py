@@ -3,12 +3,13 @@
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
-from judges.citation_ground_custom_judge import (
+from evaluation.judges.citation_grounding import (
     GROUNDING_PROMPT_VERSION,
     GROUNDING_SYSTEM_PROMPT,
 )
-from judges.judge_evidence import MAX_LEVEL, build_judge_bundle, judge_bundle_json
+from evaluation.judges.evidence import MAX_LEVEL, build_judge_bundle, judge_bundle_json
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo, FileDiff
 
@@ -22,7 +23,7 @@ def sha_of(label: str) -> str:
 
 
 def commit(label: str, files: list[str], day: int, message: str | None = None, author: str = "alice",
-           change: str = "modified") -> CommitInfo:
+           change: Literal["added", "modified", "deleted", "renamed"] = "modified") -> CommitInfo:
     return CommitInfo(
         sha=sha_of(label), author=author, message=message or f"message of {label}",
         timestamp=START + timedelta(days=day), lines_added=10, lines_deleted=2,

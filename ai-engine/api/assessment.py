@@ -16,7 +16,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from api.disconnect import ClientDisconnected, run_unless_disconnected
-from judges.scheduler import get_arbiter, get_judge_queue
+from evaluation.online.scheduler import get_arbiter, get_judge_queue
+from llmops import experiments
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
@@ -83,7 +84,7 @@ async def assess_backend_data_endpoint(
         ModelName,
         Query(description="Select the model to use for assessment"),
     ],
-    experiment_name: str = "SprintSight Evaluations",
+    experiment_name: str = experiments.PRODUCTION,
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
     try:

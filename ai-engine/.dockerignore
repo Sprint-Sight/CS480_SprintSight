@@ -1,10 +1,38 @@
+# Patterns are relative to ai-engine/ (the build context); `data/` below is ai-engine/data only,
+# so evaluation/benchmarks/data stays in the image.
+
+# Secrets and local environment files (compose passes the environment at run time)
 .env
+.env.*
+.env example
 .git
 .gitignore
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+
+# Python environments and caches
+.venv/
 venv/
 env/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.eval_cache/
+
+# Runtime output, created on demand (compose bind-mounts the project at run time)
+audit_logs/
+gpu_logs/
+results/
+data/
+mlruns/
+mlflow.db
+research/eval_report/
+research/eval_inspection/
+research/judge_eval_report/
+research/validation_results/
+
 tests/fixtures/

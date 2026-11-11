@@ -56,7 +56,32 @@ Ollama (port 11434)
 
 MLflow (port 5000) receives traces, metrics, and prompt-registry data.
 PostgreSQL (port 5432) is used as MLflow's backend store.
+After each assessment its trace is queued for the judge (evaluation/online/),
+which runs while no grading request is in flight.
 ```
+
+## Layout
+
+```text
+ai-engine/
+├── main.py, api/          FastAPI app and the assessment route
+├── services/              grading: evaluator, LLM client, evidence packing, grounding, audit logs
+├── prompts/               rubric criteria and prompt templates
+├── schemas/               API and domain models
+├── llmops/                MLflow: tracking setup, experiment names, prompt registry, review queue
+├── evaluation/            everything that measures grading quality
+│   ├── judges/            citation-grounding judge, grade scorer, judge evidence, flagging
+│   ├── online/            production judging: durable queue, worker, judge run, prompt promotion
+│   ├── benchmarks/        benchmark bundles + gold (synthetic v1/v2, CS203, real sprints)
+│   ├── offline/           model-comparison pipeline, judge study, judge canary (RUNBOOK.md)
+│   └── stats.py           paired bootstrap shared by promotion and analysis
+├── research/              experiment scratchpad: GPU benchmarks, trials (README.md)
+├── hpc/                   Ollama on the Origami Slurm GPU cluster (README.md)
+├── models/                Ollama Modelfiles
+└── tests/
+```
+
+Nothing under `services/`, `api/` or `evaluation/` imports `research/`.
 
 ## Setup
 
@@ -214,7 +239,7 @@ answer reserve:
 Every file and diff block carries a `cite as path:Lx-Ly[@sha7]` anchor, and the
 resolved citation (kind, file_path, line_start, line_end, commit_sha) is
 returned in `evidence_citations`. Inspect what any dataset example would send
-with `python -m research.eval.inspect_bundle --example <id>`.
+with `python -m evaluation.offline.inspect_bundle --example <id>`.
 
 ## Audit records
 
@@ -234,14 +259,14 @@ agreement. It writes raw runs and an aggregated summary to
 Smoke-test one model first:
 
 ```powershell
-docker compose exec sprintsight_ai python -m research.validation_harness `
+docker compose exec sprintsight_ai python -m research.trials.validation_harness `
     --models sprintsight-qwen --repeats 1
 ```
 
 Run a broader comparison:
 
 ```powershell
-docker compose exec sprintsight_ai python -m research.validation_harness `
+docker compose exec sprintsight_ai python -m research.trials.validation_harness `
     --models sprintsight-qwen sprintsight-mistral sprintsight-gemma `
     --repeats 5
 ```
@@ -258,9 +283,15 @@ considerable time on local hardware.
 | `services/evaluator.py` | Dimension orchestration and score aggregation |
 | `services/llm_client.py` | Ollama client, structured output, retries, and health checks |
 | `services/audit_logger.py` | Human-readable LLM request/response records |
-| `schemas/fixtures.py` | Synthetic artifact bundles |
-| `schemas/rubrics_score.py` | Rubric dimensions and grading prompts |
-| `research/validation_harness.py` | Multi-model validation experiments |
+| `prompts/dimension_criteria.py`, `prompts/templates.py` | Rubric dimensions and grading prompts |
+| `llmops/mlflow_config.py`, `llmops/run_tracking.py` | MLflow tracking setup and concurrency-safe runs |
+| `llmops/experiments.py` | Every MLflow experiment name |
+| `llmops/prompt_registry.py` | Prompt versions and the production/challenger aliases |
+| `evaluation/online/scheduler.py`, `job_queue.py` | Durable judge queue and the worker that keeps judging away from grading |
+| `evaluation/judges/citation_grounding.py` | LLM judge that checks each citation against the evidence |
+| `evaluation/benchmarks/` | Benchmark bundles and gold assessments (synthetic v1/v2, CS203, real sprints) |
+| `evaluation/offline/RUNBOOK.md` | Model comparison and judge-study commands, in order |
+| `research/README.md` | GPU benchmark, figure and trial scripts |
 | `docker-compose.yaml` | Ollama, FastAPI, MLflow, and PostgreSQL services |
 
 ## Configuration
@@ -299,9 +330,9 @@ retries knowing that product. The backend bounds its own wait on the engine with
 `AI_ENGINE_TIMEOUT_SECONDS` (default 3600).
 
 The judge no longer runs from FastAPI `BackgroundTasks`. After an assessment the
-trace is written to a SQLite-backed queue (`judges/job_queue.py`) and a worker
+trace is written to a SQLite-backed queue (`evaluation/online/job_queue.py`) and a worker
 thread judges it when no grading request is using the single Ollama model slot
-(`judges/scheduler.py`), so a restart does not lose pending judgments and the
+(`evaluation/online/scheduler.py`), so a restart does not lose pending judgments and the
 judge model and the grading model do not evict each other. The queue is
 single-node: run one engine process per queue file.
 
@@ -384,4 +415,4 @@ EVERY TIME YOU WANT GPU ACCESS
 1. Start the Ollama GPU container on the cluster node (see above).
 2. On another terminal, `cd ai-engine`
 3. run `bash hpc/hpc-dev.sh`
-4. run `docker compose exec sprintsight_ai python -m judges.run_judges`
+4. run `docker compose exec sprintsight_ai python -m evaluation.online.run_judges`

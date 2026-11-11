@@ -47,7 +47,7 @@ class ResolvedEvidenceCitation(EvidenceCitation):
 
 def _normalize_citation(item: object) -> dict:
     # Already a well-formed citation (e.g. hand-authored gold data in
-    # schemas/benchmark.py, or a re-validated model). Without this, the
+    # evaluation/benchmarks/, or a re-validated model). Without this, the
     # positional-guessing branch below falls through to str(item) and the
     # whole EvidenceCitation repr lands in `identifier` with an empty
     # `reason`, which then fails reason's min_length=15 at validation.
@@ -137,7 +137,7 @@ class RubricDimensionScore(ModelOutput):
     failure_class: str | None = None
     error_detail: str | None = None
     citations_dropped: int = 0  # how many citations were dropped: ungrounded (fabricated) identifiers removed by code, set in services/llm_client.py
-    # Human-curated only (e.g. schemas/benchmark.py's gold reference data) --
+    # Human-curated only (e.g. evaluation/benchmarks/ gold reference data) --
     # never asked of the model, same reasoning as ModelOutput's docstring above.
     strengths: list[str] = Field(default_factory=list)
     areas_for_improvement: list[str] = Field(default_factory=list)

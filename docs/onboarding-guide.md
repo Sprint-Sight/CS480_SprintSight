@@ -65,7 +65,7 @@ Your laptop (Docker)                         Origami GPU cluster
 | Free disk | ~15 GB | Docker images and volumes; no model weights are stored locally in HPC mode |
 | Git | any recent | Also used to clone student repos |
 | SSH client, `curl` | bundled with Git Bash / macOS / Linux | |
-| Python 3.12+ | only for research/eval scripts | The containers bring their own Python (3.13 AI engine, 3.12 backend) |
+| Python 3.12+ | only for evaluation/offline scripts | The containers bring their own Python (3.13 AI engine, 3.12 backend) |
 | Local GPU / CUDA | **Not required** | All inference runs on the cluster |
 
 ### 2.3 GPU, VRAM and CUDA
@@ -244,7 +244,7 @@ shared GPU until its 8-hour limit runs out, so cancel it when you finish.
 
 - Cluster docs: https://violet.scis.dev/docs (containers, monitoring GPU metrics)
 - `ai-engine/hpc/README.md`: cluster commands, `num_ctx` tuning
-- `ai-engine/research/eval/RUNBOOK.md`: evaluation and research runs
+- `ai-engine/evaluation/offline/RUNBOOK.md`: evaluation and research runs
 - `backend/README.md`: email, audit retention, API testing
 
 ---

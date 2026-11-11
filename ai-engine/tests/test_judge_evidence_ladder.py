@@ -1,14 +1,13 @@
 """The judge's evidence shrinks step by step until it fits, keeping what the claims cite."""
 
 import asyncio
-import hashlib
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
-from judges import citation_ground_custom_judge as judge
-from judges.judge_evidence import (
+from evaluation.judges import citation_grounding as judge
+from evaluation.judges.evidence import (
     MAX_LEVEL,
     build_judge_bundle,
     fit_judge_bundle,
@@ -16,41 +15,8 @@ from judges.judge_evidence import (
 )
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo, FileDiff
-from schemas.jira import JiraTicket
 from schemas.repo_snapshot import RepoSnapshot, SnapshotFile
-
-
-def sprint_like_your_data(
-    n_commits: int = 311, files_per_commit: int = 10, n_files: int = 201, diff_lines: int = 20
-) -> ArtifactBundle:
-    """311 commits touching ~10 files each, 201 repository files, 14 tickets."""
-    commits = []
-    for i in range(n_commits):
-        sha = hashlib.sha1(str(i).encode(), usedforsecurity=False).hexdigest()
-        commits.append(CommitInfo(
-            sha=sha, author=f"student{i % 4}", message=f"commit {i}: change the thing " * 3,
-            timestamp=datetime(2026, 1, 1 + i % 28, tzinfo=UTC), lines_added=40, lines_deleted=5,
-            files_changed=[
-                FileDiff(filename=f"src/pkg{(i + j) % 40}/file_{(i * 7 + j) % 120}.py", lines_added=4, lines_deleted=1,
-                         diff="@@ -1,4 +1,5 @@\n" + "+changed line of code here\n" * diff_lines)
-                for j in range(files_per_commit)
-            ],
-        ))
-    return ArtifactBundle(
-        team_id="t", sprint_id="s", commits=commits,
-        jira_tickets=[JiraTicket(ticket_id=f"ENG-{i}", summary="A ticket", status="Done", issue_type="Task") for i in range(14)],
-        repo_snapshot=RepoSnapshot(head_sha=commits[0].sha, files=[
-            SnapshotFile(path=f"src/pkg{i % 40}/file_{i}.py", size_bytes=5_000, line_count=120, content="code line\n" * 500)
-            for i in range(n_files)
-        ]),
-    )
-
-
-def many_claims(bundle: ArtifactBundle, n: int = 60) -> str:
-    """Claims citing a spread of files and commits, like six dimensions with ~10 citations each."""
-    lines = [f"C{i} [testing]: {bundle.repo_snapshot.files[i * 3].path}:L1-L9 | covers the module" for i in range(n // 2)]
-    lines += [f"C{n // 2 + i} [cicd]: {bundle.commits[i * 5].sha[:9]} | added a step" for i in range(n // 2)]
-    return "\n".join(lines)
+from tests.sprint_fixtures import many_claims, sprint_like_your_data
 
 
 def test_level_zero_is_the_default() -> None:
@@ -72,6 +38,7 @@ def test_each_level_is_no_larger_than_the_one_before() -> None:
 def test_cited_records_are_kept_in_full_at_every_level_that_does_not_truncate() -> None:
     bundle = sprint_like_your_data()
     claims = many_claims(bundle)
+    assert bundle.repo_snapshot is not None
     cited_commit, cited_file = bundle.commits[5], bundle.repo_snapshot.files[3]
 
     for level in range(MAX_LEVEL):

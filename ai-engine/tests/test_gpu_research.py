@@ -4,7 +4,8 @@ import sys
 import pandas as pd
 import pytest
 
-from research import gpu_bench, gpu_report
+from research.gpu import bench as gpu_bench
+from research.gpu import report as gpu_report
 from services import audit_logger
 
 GPU_CSV = "\n".join(
@@ -36,7 +37,7 @@ def _marker(start: int, end: int, **extra) -> dict:
     }
 
 
-# ── research/gpu_bench.py ────────────────────────────────────────────────────
+# ── research/gpu/bench.py ────────────────────────────────────────────────────
 
 def test_load_prompts_replays_audit_records(tmp_path, monkeypatch):
     monkeypatch.setattr(audit_logger, "AUDIT_LOG_DIR", tmp_path)
@@ -83,7 +84,7 @@ def test_timing_fields_converts_ollama_durations():
     assert gpu_bench.timing_fields({}, None)["decode_tok_s"] is None
 
 
-# ── research/gpu_report.py ───────────────────────────────────────────────────
+# ── research/gpu/report.py ───────────────────────────────────────────────────
 
 def test_gpu_report_separates_busy_time_from_idle_gaps(tmp_path):
     (tmp_path / "1.gpu.csv").write_text(GPU_CSV)

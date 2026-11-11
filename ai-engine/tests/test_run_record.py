@@ -1,6 +1,7 @@
 """One row shape for the research runner and the engine, and upgrading rows from before it."""
 
 from types import SimpleNamespace
+from typing import Any
 
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.run_record import (
@@ -32,7 +33,7 @@ def test_base_records_do_not_share_mutable_state() -> None:
 
 
 def test_validity_counts_present_failed_and_missing_dimensions() -> None:
-    scores = {name: _score(8) for name in DIMENSIONS}
+    scores: dict[str, Any] = {name: _score(8) for name in DIMENSIONS}
     scores["testing"] = _score(1, failed=True)
     scores["cicd"] = None
 
@@ -45,7 +46,7 @@ def test_validity_counts_present_failed_and_missing_dimensions() -> None:
 
 
 def test_score_fields_never_include_a_failed_dimensions_placeholder() -> None:
-    scores = {name: _score(8) for name in DIMENSIONS}
+    scores: dict[str, Any] = {name: _score(8) for name in DIMENSIONS}
     scores["testing"] = _score(1, failed=True)
 
     fields = score_fields(scores)

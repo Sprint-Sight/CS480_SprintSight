@@ -29,7 +29,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api import assessment
-from judges.scheduler import start_judge_worker, stop_judge_worker
+from evaluation.online.scheduler import start_judge_worker, stop_judge_worker
+from llmops import experiments
 from llmops.mlflow_config import start_mlflow
 from llmops.prompt_registry import register_all_dimension_prompts
 from services.llm_client import (
@@ -59,7 +60,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager # Allows us to define startup and shutdown logic for the FastAPI app
 async def lifespan(app: FastAPI): # Initialise things that should exist for the app's entire lifetime
     start_mlflow(
-        experiment_name="Sprintsight evaluation",
+        experiment_name=experiments.STARTUP,
         name="sprint_assessment_prompt", 
         template="""\
 You are an expert agile coach evaluating team performance.
@@ -85,23 +86,6 @@ Analyze the following sprint bundle and output a score:
     # Create the Ollama client once — reused across all requests
     _llm_client = create_llm_client()
  
-    # # Attempt to pull the model if not already downloaded.
-    # # This blocks startup until the model is ready.
-    # # On first run this may take several minutes — that is expected.
-    # try:
-    #     await pull_model_if_missing()
-    #     log.info("Model is ready.")
-    # except Exception as e:
-    #     log.error(
-    #         "Could not ensure model  is available: %s. "
-    #         "The service will start but assessments may fail until "
-    #         "the model is manually pulled.",
-    #         e
-    #     )
-    
-    # 2. Setup your global LLM client here if desired (or rely on llm_client.py)
-    # _llm_client = create_llm_client(model_name)
-    
     # The judge runs from a durable queue, not from request-scoped BackgroundTasks, so it
     # survives restarts. Jobs left running by a previous process are re-queued by the worker.
     try:

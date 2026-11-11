@@ -535,7 +535,7 @@ watch_gpu() {
 fetch_gpu_logs() {
     # Copies the per-job nvidia-smi telemetry that ollama_gpu.sbatch writes to
     # ~/sprintsight/gpu-logs on the cluster into ai-engine/gpu_logs/, for
-    # research/gpu_report.py. Defaults to the running job; pass a job ID for
+    # research/gpu/report.py. Defaults to the running job; pass a job ID for
     # an older one.
     check_vpn || return 1
     local jobid="${1:-}"

@@ -5,13 +5,13 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from judges import promote
-from judges.flagging import (
+from evaluation.judges.flagging import (
     HALLUCINATION_COL,
     JUDGE_FAILURE_CLASS_COL,
     evaluate_flags,
 )
-from judges.promote import (
+from evaluation.online import promote
+from evaluation.online.promote import (
     JudgeTransientFailure,
     judge_transient_failures,
     run_judge_and_promotion,

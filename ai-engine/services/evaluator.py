@@ -14,7 +14,7 @@ from llmops.prompt_registry import (
     register_sprint_feedback_prompt,
 )
 from llmops.review_queue import add_to_review_queue
-from llmops.run_tracking import TrackedRun, tracked_run
+from llmops.run_tracking import TrackedRun, exclusive_trace_destination, tracked_run
 from prompts.dimension_criteria import (
     DIMENSION_PROMPTS,
     DIMENSIONS,
@@ -44,8 +44,6 @@ Receives a bundle, evaluates each rubric dimension (serially unless
 LLM_DIMENSION_CONCURRENCY is raised), generates general
 sprint feedback, and returns a SprintAssessment.
 '''
-MAX_CONCURRENCY = 6  # Limit the number of concurrent calls to the LLM service to avoid overwhelming it. Adjust as needed based on your system's capabilities.
-#start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
 log = logging.getLogger("sprintsight.evaluator")
 
 # How many rubric dimensions call Ollama at once. 1 (default) runs them one
@@ -150,8 +148,18 @@ async def _log_gpu_offload(model_name: str, run: TrackedRun | None = None) -> No
     except Exception:  # telemetry must not break grading
         log.warning("Could not record GPU offload for model '%s'.", model_name, exc_info=True)
 
-# Evaluates each rubric dimension, then generates project-level sprint feedback.
 async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient, trace_ids: list[str] | None = None, dimension_prompts=None) -> tuple[SprintAssessment, dict[str, int]]:
+    """Grade one sprint. Assessments run one at a time here, because MLflow's tracer provider is a
+    single shared object that cannot be re-pointed at an experiment while another assessment's spans
+    are still in flight (see llmops/run_tracking.py); a second request waits its turn. The model
+    server serves one generation at a time anyway, so little is lost."""
+    async with exclusive_trace_destination(experiment_name):
+        return await _evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, dimension_prompts)
+
+
+# Evaluates each rubric dimension, then generates project-level sprint feedback. Call evaluate_sprint,
+# which holds the trace destination for the duration.
+async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient, trace_ids: list[str] | None = None, dimension_prompts=None) -> tuple[SprintAssessment, dict[str, int]]:
 
     if trace_ids is None:
         trace_ids = []
