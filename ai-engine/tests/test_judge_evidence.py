@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
-from judges.judge_evidence import build_judge_bundle, judge_bundle_json
+from evaluation.judges.evidence import build_judge_bundle, judge_bundle_json
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo, FileDiff
 from schemas.jira import JiraTicket

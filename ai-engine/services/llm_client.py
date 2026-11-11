@@ -143,7 +143,7 @@ def new_token_accumulator() -> dict:
 
 
 # Per-assessment-run tags (run_id, concurrency) copied onto every request
-# marker, so research/gpu_report.py can group GPU samples by run and by
+# marker, so research/gpu/report.py can group GPU samples by run and by
 # concurrency setting. Set once in evaluator.evaluate_sprint; the dimension
 # tasks asyncio.gather creates inherit it.
 _run_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
@@ -545,7 +545,7 @@ def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> in
 
 class DimensionPrompt:
     """Everything evaluate_dimension sends for one dimension, built without
-    calling the model, so research/eval/inspect_bundle.py can show exactly
+    calling the model, so evaluation/offline/inspect_bundle.py can show exactly
     the same thing."""
 
     def __init__(self, prompt: str, bundle_data: str, index: EvidenceIndex | None, stats: dict[str, Any]):
@@ -976,7 +976,7 @@ async def evaluate_dimension(
                     citation for citation in (result.evidence_citations or []) if citation not in ungrounded
                 ]
 
-            result.citations_dropped = len(ungrounded) # read back by judges/trace_adapters.read_candidate
+            result.citations_dropped = len(ungrounded) # read back by evaluation/judges/trace_adapters.read_candidate
 
             if ungrounded or downgraded:
                 log.warning(
@@ -1107,30 +1107,6 @@ async def check_ollama_health(model_name: str) -> dict:
             "model":  model_name,
             "error":  str(e),
         }
-
-async def pull_model_if_missing(model_name: str) -> None:
-    """
-    Triggers an Ollama model pull if the model is not already downloaded.
-    Called once at service startup. This can take several minutes for large
-    models — that is expected and normal.
-    """
-    health = await check_ollama_health(model_name)
-    if health.get("available"):
-        log.info("Model '%s' already available in Ollama.", model_name)
-        return
-
-    pull_url = OLLAMA_BASE_URL.replace("/v1", "") + "/api/pull"
-    log.info("Pulling model '%s' — this may take several minutes...", model_name)
-
-    try:
-        async with httpx.AsyncClient(timeout=1800.0) as client, client.stream("POST", pull_url, json={"name": model_name}) as resp:   # 30 min timeout
-            async for line in resp.aiter_lines():
-                if line:
-                    log.debug("Pull progress: %s", line)
-        log.info("Model '%s' downloaded successfully.", model_name)
-    except Exception as e:
-        log.error("Failed to pull model '%s': %s", model_name, e)
-        raise
 
 def _with_default_tag(name: str) -> str:
     return name if ":" in name else f"{name}:latest"

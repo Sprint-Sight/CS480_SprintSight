@@ -2,7 +2,7 @@
 
 Two producers wrote rows of different shapes for the same thing:
 
-  * the research runner's `per_example.jsonl` (research/eval): flat `score_<dim>`,
+  * the research runner's `per_example.jsonl` (evaluation/offline): flat `score_<dim>`,
     `failed_dimension_names`, `latency_s`, keyed by `example_id` / `repeat_index` / `model`;
   * the engine's `raw_results_*.jsonl` (services/save_results): a nested `dimension_scores`
     dict, `failed_dimensions` as {dimension: error text}, `duration_seconds`, keyed by
@@ -56,7 +56,7 @@ def base_record() -> dict[str, Any]:
         "rubric_min": None,
         "rubric_max": None,
         "raw_rubric_average": None,
-        # grounding (code-level): dropped citations count as ungrounded, see research/eval/metrics
+        # grounding (code-level): dropped citations count as ungrounded, see evaluation/offline/metrics
         "groundedness_rate": None,
         "groundedness_citations_total": 0,
         "groundedness_citations_grounded": 0,
@@ -65,7 +65,7 @@ def base_record() -> dict[str, Any]:
         "latency_s": None,
         "prompt_versions": {},
         "error": None,
-        # judge slot: filled by research/eval/attach_judge_scores.py
+        # judge slot: filled by evaluation/offline/attach_judge_scores.py
         "judge_quality_score": None,
         "judge_rationale": None,
     }

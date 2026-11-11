@@ -44,8 +44,6 @@ Receives a bundle, evaluates each rubric dimension (serially unless
 LLM_DIMENSION_CONCURRENCY is raised), generates general
 sprint feedback, and returns a SprintAssessment.
 '''
-MAX_CONCURRENCY = 6  # Limit the number of concurrent calls to the LLM service to avoid overwhelming it. Adjust as needed based on your system's capabilities.
-#start_mlflow(experiment_name="Sprintsight evaluation")  # Initialize MLflow tracking and prompt registry
 log = logging.getLogger("sprintsight.evaluator")
 
 # How many rubric dimensions call Ollama at once. 1 (default) runs them one

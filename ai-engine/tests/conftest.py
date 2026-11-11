@@ -7,7 +7,7 @@ def no_ollama_context_lookup(monkeypatch):
     model. Tests must never reach for a real server (or wait on a DNS lookup of 'ollama'), so by
     default the answer is 'unknown' and the configured MODEL_NUM_CTX is used. Tests of the lookup
     itself import the real function at module level, before this patch applies."""
-    from judges import citation_ground_custom_judge as judge
+    from evaluation.judges import citation_grounding as judge
 
     async def unknown(model: str) -> None:
         return None

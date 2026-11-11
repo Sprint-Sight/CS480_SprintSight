@@ -14,7 +14,7 @@ Nothing here touches either. A run is created through `MlflowClient` and every l
 names its `run_id`; the experiment for the traces is set per request through a
 context-local trace destination (a ContextVar, so each request task has its own).
 
-The judge worker (`judges/scheduler.py`) still uses the fluent API, which is fine: it runs
+The judge worker (`evaluation/online/scheduler.py`) still uses the fluent API, which is fine: it runs
 on its own thread, where the thread-local run stack is its own.
 """
 

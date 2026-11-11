@@ -5,8 +5,8 @@ import json
 import pandas as pd
 import pytest
 
-from research.eval.analysis import load_engine_results
-from research.eval.attach_judge_scores import (
+from evaluation.offline.analysis import load_engine_results
+from evaluation.offline.attach_judge_scores import (
     judge_quality_score,
     load_judge_scores,
     merge_judge_scores,

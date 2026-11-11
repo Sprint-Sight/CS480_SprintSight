@@ -6,8 +6,8 @@ from typing import Any, cast
 
 import pytest
 
-from judges import promote
-from judges.promote import (
+from evaluation.online import promote
+from evaluation.online.promote import (
     JUDGE_RESULTS_TAG,
     MIN_CITATIONS_FOR_PROMOTION,
     PROMOTION_HALLUCINATION_THRESHOLD,

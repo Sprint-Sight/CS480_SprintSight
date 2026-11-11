@@ -5,11 +5,11 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from judges.citation_ground_custom_judge import (
+from evaluation.judges.citation_grounding import (
     GROUNDING_PROMPT_VERSION,
     GROUNDING_SYSTEM_PROMPT,
 )
-from judges.judge_evidence import MAX_LEVEL, build_judge_bundle, judge_bundle_json
+from evaluation.judges.evidence import MAX_LEVEL, build_judge_bundle, judge_bundle_json
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo, FileDiff
 

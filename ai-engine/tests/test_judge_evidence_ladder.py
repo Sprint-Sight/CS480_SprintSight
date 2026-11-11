@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from judges import citation_ground_custom_judge as judge
-from judges.judge_evidence import (
+from evaluation.judges import citation_grounding as judge
+from evaluation.judges.evidence import (
     MAX_LEVEL,
     build_judge_bundle,
     fit_judge_bundle,

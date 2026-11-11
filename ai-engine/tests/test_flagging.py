@@ -5,8 +5,7 @@ import math
 import pandas as pd
 import pytest
 
-from judges import run_judges
-from judges.flagging import (
+from evaluation.judges.flagging import (
     CITATION_COUNT_COL,
     CRITICAL_COL,
     GRADE_COL,
@@ -19,6 +18,7 @@ from judges.flagging import (
     production_reasons,
     research_reasons,
 )
+from evaluation.online import run_judges
 
 HEALTHY = {
     HALLUCINATION_COL: 0.0,

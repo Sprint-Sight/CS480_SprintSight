@@ -2,7 +2,7 @@
 
 import pytest
 
-from judges.job_queue import DEAD, DONE, QUEUED, RUNNING, JudgeJobQueue
+from evaluation.online.job_queue import DEAD, DONE, QUEUED, RUNNING, JudgeJobQueue
 
 
 class Clock:
