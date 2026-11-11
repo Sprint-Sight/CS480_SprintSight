@@ -1,7 +1,5 @@
 """groundedness_rate must count citations the engine dropped as fabricated."""
 
-from types import SimpleNamespace
-
 import pytest
 
 from prompts.dimension_criteria import DIMENSIONS
@@ -11,6 +9,7 @@ from research.eval.metrics import (
     groundedness_rate,
     summarise_example,
 )
+from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import (
     ResolvedEvidenceCitation,
     RubricDimensionScore,
@@ -45,7 +44,7 @@ def _assessment(surviving: dict[str, list[str]] | None = None, dropped: dict[str
     )
 
 
-BUNDLE = SimpleNamespace(team_id="t", sprint_id="s1")
+BUNDLE = ArtifactBundle(team_id="t", sprint_id="s1")
 
 
 def test_all_surviving_citations_grounded_and_none_dropped() -> None:

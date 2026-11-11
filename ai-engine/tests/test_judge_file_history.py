@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from judges.citation_ground_custom_judge import (
     GROUNDING_PROMPT_VERSION,
@@ -22,7 +23,7 @@ def sha_of(label: str) -> str:
 
 
 def commit(label: str, files: list[str], day: int, message: str | None = None, author: str = "alice",
-           change: str = "modified") -> CommitInfo:
+           change: Literal["added", "modified", "deleted", "renamed"] = "modified") -> CommitInfo:
     return CommitInfo(
         sha=sha_of(label), author=author, message=message or f"message of {label}",
         timestamp=START + timedelta(days=day), lines_added=10, lines_deleted=2,
