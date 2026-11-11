@@ -325,10 +325,10 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
    assessments for them — this is the single biggest gap.
 2. **`d1_fixtures` is smoke-test only**, per its own description. It must not
    back a report claim.
-3. **`schemas/cs203_groundtruth.py` is missing**, so `evaluation/online/run_judges.py`
-   and `evaluation/judges/citation_grounding.py` are not importable
-   (documented in `pyproject.toml`). §8 is blocked until it lands;
-   `load_records_from_traces` falls back to a local trace filter.
+3. ~~**The CS203 ground truth is missing.**~~ **FIXED.** It lives in
+   `evaluation/benchmarks/cs203.py`, and `evaluation/online/run_judges.py` and
+   `evaluation/judges/citation_grounding.py` import cleanly, so §8 is not
+   blocked.
 4. **`cicd` has no variance.** All five golds score it 1 because no fixture
    has any CI artifact, so cicd cannot discriminate between models and will
    always be the "weakest dimension" that `Bug_Actionability` rewards

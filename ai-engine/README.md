@@ -56,7 +56,32 @@ Ollama (port 11434)
 
 MLflow (port 5000) receives traces, metrics, and prompt-registry data.
 PostgreSQL (port 5432) is used as MLflow's backend store.
+After each assessment its trace is queued for the judge (evaluation/online/),
+which runs while no grading request is in flight.
 ```
+
+## Layout
+
+```text
+ai-engine/
+├── main.py, api/          FastAPI app and the assessment route
+├── services/              grading: evaluator, LLM client, evidence packing, grounding, audit logs
+├── prompts/               rubric criteria and prompt templates
+├── schemas/               API and domain models
+├── llmops/                MLflow: tracking setup, experiment names, prompt registry, review queue
+├── evaluation/            everything that measures grading quality
+│   ├── judges/            citation-grounding judge, grade scorer, judge evidence, flagging
+│   ├── online/            production judging: durable queue, worker, judge run, prompt promotion
+│   ├── benchmarks/        benchmark bundles + gold (synthetic v1/v2, CS203, real sprints)
+│   ├── offline/           model-comparison pipeline, judge study, judge canary (RUNBOOK.md)
+│   └── stats.py           paired bootstrap shared by promotion and analysis
+├── research/              experiment scratchpad: GPU benchmarks, trials (README.md)
+├── hpc/                   Ollama on the Origami Slurm GPU cluster (README.md)
+├── models/                Ollama Modelfiles
+└── tests/
+```
+
+Nothing under `services/`, `api/` or `evaluation/` imports `research/`.
 
 ## Setup
 
@@ -258,9 +283,15 @@ considerable time on local hardware.
 | `services/evaluator.py` | Dimension orchestration and score aggregation |
 | `services/llm_client.py` | Ollama client, structured output, retries, and health checks |
 | `services/audit_logger.py` | Human-readable LLM request/response records |
+| `prompts/dimension_criteria.py`, `prompts/templates.py` | Rubric dimensions and grading prompts |
+| `llmops/mlflow_config.py`, `llmops/run_tracking.py` | MLflow tracking setup and concurrency-safe runs |
+| `llmops/experiments.py` | Every MLflow experiment name |
+| `llmops/prompt_registry.py` | Prompt versions and the production/challenger aliases |
+| `evaluation/online/scheduler.py`, `job_queue.py` | Durable judge queue and the worker that keeps judging away from grading |
+| `evaluation/judges/citation_grounding.py` | LLM judge that checks each citation against the evidence |
 | `evaluation/benchmarks/` | Benchmark bundles and gold assessments (synthetic v1/v2, CS203, real sprints) |
-| `schemas/rubrics_score.py` | Rubric dimensions and grading prompts |
-| `research/trials/validation_harness.py` | Multi-model validation experiments |
+| `evaluation/offline/RUNBOOK.md` | Model comparison and judge-study commands, in order |
+| `research/README.md` | GPU benchmark, figure and trial scripts |
 | `docker-compose.yaml` | Ollama, FastAPI, MLflow, and PostgreSQL services |
 
 ## Configuration
