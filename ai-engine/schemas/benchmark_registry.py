@@ -2,9 +2,9 @@
 schemas/benchmark_registry.py
 
 Maps each benchmark fixture's key to its ArtifactBundle, so callers (e.g.
-judges/custom_llm_judge.py's scorer, which only receives plain JSON-able
-inputs from MLflow) can look up "which bundle produced this assessment" by
-fixture_key instead of importing schemas.fixtures directly. Keys match
+an MLflow scorer, which only receives plain JSON-able inputs) can look up
+"which bundle produced this assessment" by fixture_key instead of importing
+schemas.fixtures directly. Keys match
 research/validation_harness.py's FIXTURE_CANDIDATES and schemas/benchmark.py's
 gold fixtures.
 """

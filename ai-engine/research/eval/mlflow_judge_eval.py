@@ -71,7 +71,7 @@ not replace either. Part 11 holds the seams. Reused as-is, never reimplemented:
 
 Gaps in the current implementation that this closes:
 
-1. One judge dimension became five. ``custom_llm_judge`` emits
+1. One judge dimension became five. The old single-call judge (since removed) emitted
    ``citation_hallucination_rate`` and ``actionable_and_targeted_rate`` --
    both binary-derived rates with no written scale. A model can be perfectly
    grounded and still give useless advice, or reason invalidly from real
@@ -121,9 +121,8 @@ Two defects found while integrating, fixed outside this file:
     already-valid ``EvidenceCitation``, dropping ``reason`` and making
     ``schemas/benchmark.py`` -- the gold reference data -- raise on import.
     Nothing imported it, so it had been dead.
-  * ``judges/custom_llm_judge.py`` defaults its judge to
-    ``sprintsight-judge-phi``, and ``judges/run_judges.py`` hardcodes trace
-    ids in ``__main__``; neither is pulled or valid in this checkout.
+  * ``judges/run_judges.py`` hardcodes trace ids in ``__main__``, which are
+    not valid in this checkout.
 
 Usage
 -----
@@ -214,7 +213,7 @@ JUDGE_EXPERIMENT = os.getenv("SPRINTSIGHT_JUDGE_EXPERIMENT", "sprintsight-judge-
 #
 # phi4:14b is the default because the existing judge code already reaches for
 # the phi family (`SPRINTSIGHT_JUDGE_MODEL` defaults to "sprintsight-judge-phi"
-# in judges/custom_llm_judge.py), it is not a llama derivative, and at Q4 it
+# in judges/judge_config.py), it is not a llama derivative, and at Q4 it
 # fits alongside a 3B candidate on a 24 GB card. `assert_judge_independence`
 # enforces the family rule at run time rather than trusting this default.
 #
@@ -1449,9 +1448,7 @@ def token_overlap_f1(prediction: str, reference: str) -> float | None:
 # for citation checking an exact-anchor metric (citation_anchor_rate above)
 # is strictly more informative than embedding similarity -- a fabricated SHA
 # is embedding-similar to a real one, which is exactly the case we must
-# catch. `semantic_similarity_hook` is the extension point if a reviewer
-# insists.
-SEMANTIC_SIMILARITY_HOOK: Callable[[str, str], float] | None = None
+# catch.
 
 
 # -- 3e. Arithmetic accuracy against gold -------------------------------------
@@ -1523,37 +1520,6 @@ def numeric_grade_errors(
         gold.overall_score
     )
     return out
-
-
-def rank_inversion_rate(frame: pd.DataFrame, score_column: str = "overall_score") -> float | None:
-    """Fraction of example pairs a model orders differently from gold.
-
-    The discriminative question: a model whose absolute scores are all two
-    points high but which still ranks the five fixtures correctly is far more
-    useful to a course than one with perfect MAE and random ordering. MAE
-    cannot see that difference; this can.
-    """
-    needed = {score_column, "gold_overall_score"}
-    if not needed.issubset(frame.columns):
-        return None
-    usable = frame[[score_column, "gold_overall_score"]].apply(
-        pd.to_numeric, errors="coerce"
-    ).dropna()
-    if len(usable) < 2:
-        return None
-    candidate_values = usable[score_column].to_numpy()
-    gold_values = usable["gold_overall_score"].to_numpy()
-    total = 0
-    inverted = 0
-    for i in range(len(usable)):
-        for j in range(i + 1, len(usable)):
-            gold_delta = gold_values[i] - gold_values[j]
-            if gold_delta == 0:
-                continue  # gold is indifferent; no ordering to violate
-            total += 1
-            if np.sign(candidate_values[i] - candidate_values[j]) != np.sign(gold_delta):
-                inverted += 1
-    return (inverted / total) if total else None
 
 
 # =============================================================================

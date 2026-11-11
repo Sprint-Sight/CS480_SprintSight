@@ -215,11 +215,11 @@ def test_production_and_research_entry_points_agree_on_the_default() -> None:
     env = {key: value for key, value in os.environ.items() if key != "SPRINTSIGHT_JUDGE_MODEL"}
     env["MLFLOW_DISABLE_AGENT_HINT"] = "1"
     code = (
-        "from judges import citation_ground_custom_judge as a, custom_llm_judge as b;"
+        "from judges import citation_ground_custom_judge as a;"
         "from research.eval import mlflow_judge_eval as c;"
-        "print(a.JUDGE_MODEL, b.DEFAULT_JUDGE_MODEL, c.DEFAULT_JUDGE_MODEL)"
+        "print(a.JUDGE_MODEL, c.DEFAULT_JUDGE_MODEL)"
     )
     done = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parent.parent,
                           env=env, capture_output=True, text=True, timeout=120, check=True)
 
-    assert done.stdout.split() == ["sprintsight-judge-phi"] * 3
+    assert done.stdout.split() == ["sprintsight-judge-phi"] * 2

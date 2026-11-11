@@ -22,7 +22,6 @@ from judges.judge_config import configured_judge_model
 from judges.judge_evidence import fit_judge_bundle
 from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
-from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
@@ -89,7 +88,6 @@ commit or the file's contents clearly contradict the claim.
 Return exactly one verdict for EVERY claim id given. Never skip or repeat one. citation_id is only the id
 (for example "C4"), never the claim text."""
 
-BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
 JUDGE_MODEL = configured_judge_model()  # judges/judge_config.py: the one default for prod and research
 
 FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
@@ -440,10 +438,6 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
             Feedback(name="citation_prefilter_drop_rate", value=round(dropped / (dropped + n), 4) if dropped + n else None, source=CODE_SOURCE),
             Feedback(name="citation_severity_weighted_rate_incl_dropped", value=headline, source=source,
                      rationale=f"{n} judged citations (weight sum {wsum}) plus {dropped} code-removed fabrications at weight {CODE_DROP_WEIGHT}")]
-
-_BUNDLES: dict[tuple, ArtifactBundle] = {}
-def remember_bundle(bundle: ArtifactBundle):
-    _BUNDLES[(bundle.team_id, bundle.sprint_id)] = bundle     # call in api/assessment.py and run_ab_trial.py before evaluating
 
 def _fixture_bundle(team: str | None):
     from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE

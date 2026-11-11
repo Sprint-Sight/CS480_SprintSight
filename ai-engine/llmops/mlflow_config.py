@@ -13,8 +13,6 @@ load_dotenv()  # Load environment variables from .env file
 log = logging.getLogger(__name__)
 
 MLFLOW_TRACKING_URI  = os.getenv("MLFLOW_TRACKING_URI")
-EXPERIMENT_NAME      = os.getenv("MLFLOW_EXPERIMENT_NAME")
-BENCHMARK_EXPERIMENT = "sprintsight-benchmarks"
 
 '''
 Experiments are chosen per call by name

@@ -85,23 +85,6 @@ Analyze the following sprint bundle and output a score:
     # Create the Ollama client once — reused across all requests
     _llm_client = create_llm_client()
  
-    # # Attempt to pull the model if not already downloaded.
-    # # This blocks startup until the model is ready.
-    # # On first run this may take several minutes — that is expected.
-    # try:
-    #     await pull_model_if_missing()
-    #     log.info("Model is ready.")
-    # except Exception as e:
-    #     log.error(
-    #         "Could not ensure model  is available: %s. "
-    #         "The service will start but assessments may fail until "
-    #         "the model is manually pulled.",
-    #         e
-    #     )
-    
-    # 2. Setup your global LLM client here if desired (or rely on llm_client.py)
-    # _llm_client = create_llm_client(model_name)
-    
     # The judge runs from a durable queue, not from request-scoped BackgroundTasks, so it
     # survives restarts. Jobs left running by a previous process are re-queued by the worker.
     try:

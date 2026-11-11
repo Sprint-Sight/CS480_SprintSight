@@ -2,24 +2,15 @@ import logging
 
 from mlflow.exceptions import MlflowException
 from mlflow.genai.review_queues import (
-    ReviewQueue,
     add_items_to_review_queue,
     create_review_queue,
     get_review_queue,
-    list_review_queue_items,
 )
 
 log = logging.getLogger(__name__)
 
 TAG_FLAG = "needs review"
 TAG_REASONS = "review reasons"
-
-def get_review_queue_from_id(queue_id: str) -> ReviewQueue:
-    return get_review_queue(queue_id=queue_id)
-
-def is_trace_in_review_queue(queue_id: str, trace_id: str) -> bool:
-    items = list_review_queue_items(queue_id=queue_id)
-    return any(item.item_id == trace_id for item in items)
 
 def add_to_review_queue(queue_name: str, traces_id: list[str]) -> None: # List of trace_ids
 

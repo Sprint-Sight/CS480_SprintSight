@@ -88,8 +88,7 @@ the `for entry in \` list in `hpc/ollama-entrypoint.sh`:
   "phi4:14b|phi4:14b|" \
 ```
 (or create a `models/Modelfile.judge-phi` and register it as a
-`sprintsight-judge-phi` alias, matching what `judges/custom_llm_judge.py`
-already expects).
+`sprintsight-judge-phi` alias, matching the default in `judges/judge_config.py`).
 
 **Note:** `--llm-grounding` additionally needs the judge tag present in
 `MODEL_NUM_CTX` (`schemas/modelname.py`), or
