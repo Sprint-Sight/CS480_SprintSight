@@ -33,7 +33,7 @@ model-comparison harness and feeds the final report.
 ## The judge layer (`mlflow_judge_eval.py`)
 
 Built **on top of** this package and `judges/`, not beside it. It reuses
-`metrics.summarise_example` for every per-example row, `analysis.paired_bootstrap_diff`
+`metrics.summarise_example` for every per-example row, `evaluation.stats.paired_bootstrap_diff`
 for confidence intervals, `judges.code_based_scorer.numeric_grade_accuracy` for grade
 error, `judges.trace_adapters.read_candidate` for trace reading, and
 `llmops.mlflow_config` / `llmops.prompt_registry` for tracking and rubric versioning.

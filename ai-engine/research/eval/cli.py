@@ -66,12 +66,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_analyze(args: argparse.Namespace) -> int:
     # Imported here so the CLI's --help doesn't need pandas/matplotlib.
+    from evaluation.stats import pairwise_ci_table
     from research.eval.analysis import (
         DEFAULT_METRICS,
         comparison_table,
         consistency_summary,
         load_runs,
-        pairwise_ci_table,
     )
     from research.eval.plots import save_all
 

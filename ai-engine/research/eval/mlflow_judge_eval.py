@@ -62,7 +62,7 @@ What this adds to the existing implementation
 ---------------------------------------------
 This module EXTENDS the two judge/eval pipelines already in the repo; it does
 not replace either. Part 11 holds the seams. Reused as-is, never reimplemented:
-``research.eval.metrics.summarise_example`` (base row), ``analysis
+``research.eval.metrics.summarise_example`` (base row), ``evaluation.stats
 .paired_bootstrap_diff`` (CI), ``judges.code_based_scorer
 .numeric_grade_accuracy`` (grade error), ``judges.trace_adapters
 .read_candidate`` (trace reading), ``llmops.mlflow_config`` (tracking),
@@ -161,11 +161,11 @@ from mlflow.metrics.base import MetricValue
 from mlflow.metrics.genai import EvaluationExample, make_genai_metric
 from mlflow.metrics.genai.prompts.v1 import EvaluationModel
 
+from evaluation.stats import paired_bootstrap_diff
 from judges.code_based_scorer import numeric_grade_accuracy
 from judges.judge_config import configured_judge_model
 from llmops.mlflow_config import configure_mlflow, get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
-from research.eval.analysis import paired_bootstrap_diff
 from research.eval.metrics import summarise_example
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
@@ -3442,7 +3442,7 @@ def paired_model_comparison(
     }
 
     # The mean difference, its percentile bootstrap CI and the win rate come
-    # from research.eval.analysis.paired_bootstrap_diff -- the function the
+    # from evaluation.stats.paired_bootstrap_diff -- the function the
     # model-comparison report already uses -- so a CI quoted here and a CI
     # quoted by `cli.py analyze` are the same estimator with the same seed,
     # not two bootstraps that happen to be near each other. What this adds on
@@ -4390,7 +4390,7 @@ def synthetic_records(
 #                             gets filled and `cli.py analyze
 #                             --pairwise-metric judge_quality_score` works.
 #
-#   research/eval/analysis.py paired_bootstrap_diff is called, not
+#   evaluation/stats.py paired_bootstrap_diff is called, not
 #                             reimplemented (see paired_model_comparison).
 #     metrics.py              summarise_example is the base layer of every row.
 #

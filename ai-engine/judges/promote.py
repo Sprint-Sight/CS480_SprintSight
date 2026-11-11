@@ -6,6 +6,7 @@ import mlflow
 import pandas as pd
 from mlflow import MlflowClient, MlflowException
 
+from evaluation.stats import paired_bootstrap_diff
 from judges.flagging import JUDGE_FAILURE_CLASS_COL, MAX_SEVERITY_WEIGHTED_RATE
 from judges.run_judges import run_judge_evaluation
 from llmops.prompt_registry import (
@@ -14,7 +15,6 @@ from llmops.prompt_registry import (
     get_production_prompt,
 )
 from prompts.dimension_criteria import DIMENSIONS
-from research.eval.analysis import paired_bootstrap_diff
 from schemas.failure_class import is_transient
 
 JUDGE_RESULTS_TAG = "judge_results"       # JSON on each prompt version: {"team|sprint|model": {"abs_error": x, "hallucination": y, "severity_weighted": z, "citation_count": n}}
