@@ -172,7 +172,7 @@ def _worse(c: dict, p: dict, metric: str, tolerance: float) -> bool:
 def _compare(challenger, production):
     """Does the challenger beat production? Both are judged on the inputs they share. A mean
     gain over two or three inputs says nothing about how much of it is luck, so the decision
-    uses the paired-bootstrap CI of the error difference (research.eval.analysis): the gain
+    uses the paired-bootstrap CI of the error difference (evaluation.offline.analysis): the gain
     must be at least MIN_IMPROVEMENT *and* the CI must exclude 0."""
     c, p = _load_results(challenger), _load_results(production)
     shared = sorted(c.keys() & p.keys())

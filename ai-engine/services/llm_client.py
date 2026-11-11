@@ -545,7 +545,7 @@ def estimate_dimension_tokens(bundle: ArtifactBundle, dimension_name: str) -> in
 
 class DimensionPrompt:
     """Everything evaluate_dimension sends for one dimension, built without
-    calling the model, so research/eval/inspect_bundle.py can show exactly
+    calling the model, so evaluation/offline/inspect_bundle.py can show exactly
     the same thing."""
 
     def __init__(self, prompt: str, bundle_data: str, index: EvidenceIndex | None, stats: dict[str, Any]):

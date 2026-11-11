@@ -2,16 +2,16 @@
 
 Three subcommands:
 
-    python -m research.eval.cli list-datasets
+    python -m evaluation.offline.cli list-datasets
 
-    python -m research.eval.cli run \\
+    python -m evaluation.offline.cli run \\
         --model sprintsight-qwen \\
         --dataset d1_fixtures \\
         --prompt-version v1.0 \\
         --seed 42 \\
         --repeats 1
 
-    python -m research.eval.cli analyze \\
+    python -m evaluation.offline.cli analyze \\
         --experiment sprintsight-model-comparison \\
         --out-dir research/eval_report \\
         --pairwise-metric overall_score
@@ -21,7 +21,7 @@ run it three times — this keeps each MLflow run self-contained and makes
 partial failures (e.g. one model crashes mid-sweep) easy to retry
 without redoing the healthy runs.
 
-See research/eval/README.md for the recommended invocation sequence.
+See evaluation/offline/README.md for the recommended invocation sequence.
 """
 
 from __future__ import annotations
@@ -31,14 +31,14 @@ import logging
 import sys
 from pathlib import Path
 
-from research.eval.datasets import list_datasets
-from research.eval.runner import DEFAULT_EXPERIMENT, run_evaluation
+from evaluation.offline.datasets import list_datasets
+from evaluation.offline.runner import DEFAULT_EXPERIMENT, run_evaluation
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-log = logging.getLogger("research.eval.cli")
+log = logging.getLogger("evaluation.offline.cli")
 
 
 def _cmd_list_datasets(_: argparse.Namespace) -> int:
@@ -66,14 +66,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_analyze(args: argparse.Namespace) -> int:
     # Imported here so the CLI's --help doesn't need pandas/matplotlib.
-    from evaluation.stats import pairwise_ci_table
-    from research.eval.analysis import (
+    from evaluation.offline.analysis import (
         DEFAULT_METRICS,
         comparison_table,
         consistency_summary,
         load_runs,
     )
-    from research.eval.plots import save_all
+    from evaluation.offline.plots import save_all
+    from evaluation.stats import pairwise_ci_table
 
     df = load_runs(args.experiment, filter_string=args.filter)
     if df.empty:

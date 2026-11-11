@@ -277,7 +277,7 @@ def _print_level(level: int, wall_s: float, results: list[dict[str, Any]], loade
 
 def main() -> None:
     # ai-engine/.env holds the URL the *container* uses; on the host the same
-    # tunnel is plain localhost (see research/eval/RUNBOOK.md §0).
+    # tunnel is plain localhost (see evaluation/offline/RUNBOOK.md §0).
     default_base = (
         os.getenv("OLLAMA_BASE_URL", "http://localhost:11435/v1")
         .replace("/v1", "")

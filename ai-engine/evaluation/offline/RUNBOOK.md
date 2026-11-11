@@ -108,18 +108,18 @@ python -c "import evaluation.benchmarks.synthetic_v1; print('gold OK')"
 
 ```bash
 # Whole judge pipeline against a stub judge, with known-answer assertions
-python -m research.eval.mlflow_judge_eval selftest
+python -m evaluation.offline.judge_study selftest
 ```
 
 ```bash
 # Registered datasets and their hashes
-python -m research.eval.cli list-datasets
+python -m evaluation.offline.cli list-datasets
 ```
 
 ```bash
 # Static checks
 python -m ruff check research/ evaluation/ schemas/ llmops/ services/
-python -m mypy research/eval/mlflow_judge_eval.py evaluation/benchmarks/synthetic_v1.py
+python -m mypy evaluation/offline/judge_study.py evaluation/benchmarks/synthetic_v1.py
 ```
 
 ---
@@ -131,14 +131,14 @@ One MLflow run per `(model × dataset × prompt × seed)`. **Record each printed
 
 **A1. Smoke test one model on one example before paying full cost:**
 ```bash
-python -m research.eval.cli run --model sprintsight-qwen --dataset d1_fixtures \
+python -m evaluation.offline.cli run --model sprintsight-qwen --dataset d1_fixtures \
     --subset high_performing --note "smoke test" --phase smoke
 ```
 
 **A2. Synthetic sweep — pipeline validation only, never a report claim:**
 ```bash
 for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma; do
-  python -m research.eval.cli run --model "$M" --dataset d1_fixtures \
+  python -m evaluation.offline.cli run --model "$M" --dataset d1_fixtures \
       --prompt-version v1.0 --phase preliminary
 done
 ```
@@ -146,7 +146,7 @@ done
 **A3. Real sprints — this is what the report cites:**
 ```bash
 for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma sprintsight-llama31; do
-  python -m research.eval.cli run --model "$M" --dataset d_real_sprints \
+  python -m evaluation.offline.cli run --model "$M" --dataset d_real_sprints \
       --prompt-version v1.0 --phase final
 done
 ```
@@ -154,7 +154,7 @@ done
 **A4. Repeats for within-model consistency (only models that survived A3):**
 ```bash
 for M in sprintsight-qwen sprintsight-mistral; do
-  python -m research.eval.cli run --model "$M" --dataset d_real_sprints \
+  python -m evaluation.offline.cli run --model "$M" --dataset d_real_sprints \
       --repeats 3 --prompt-version v1.0 --phase deep_eval
 done
 ```
@@ -163,7 +163,7 @@ done
 the 24 GB card, so nothing else can be resident:
 ```bash
 for M in sprintsight-qwen25-32b sprintsight-coder-32b sprintsight-r1-32b; do
-  python -m research.eval.cli run --model "$M" --dataset d_real_sprints \
+  python -m evaluation.offline.cli run --model "$M" --dataset d_real_sprints \
       --prompt-version v1.0 --phase final
 done
 ```
@@ -185,7 +185,7 @@ sweep, never interleaved — that keeps one model family resident at a time.
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11435/v1 \
-python -m research.eval.mlflow_judge_eval evaluate \
+python -m evaluation.offline.judge_study evaluate \
     --run-id <PHASE_A_RUN_ID> \
     --judge-model phi4:14b \
     --phase final \
@@ -212,28 +212,28 @@ sprints = 9 rows = **90 judge calls**.
 
 **C1. Merge judge scores back into the Phase-A run:**
 ```bash
-python -m research.eval.attach_judge_scores \
+python -m evaluation.offline.attach_judge_scores \
     --judge-file research/judge_eval_report/judge_scores_for_attach.csv \
     --run-id <PHASE_A_RUN_ID>
 ```
 
 **C2. Tables, pairwise CIs and plots — judge-independent headline:**
 ```bash
-python -m research.eval.cli analyze --experiment sprintsight-model-comparison \
+python -m evaluation.offline.cli analyze --experiment sprintsight-model-comparison \
     --filter 'tags.phase = "final"' --out-dir research/eval_report \
     --pairwise-metric overall_score
 ```
 
 **C3. Same analysis with the judge metric as headline (needs C1):**
 ```bash
-python -m research.eval.cli analyze --experiment sprintsight-model-comparison \
+python -m evaluation.offline.cli analyze --experiment sprintsight-model-comparison \
     --filter 'tags.phase = "final"' --out-dir research/eval_report_with_judge \
     --pairwise-metric judge_quality_score
 ```
 
 **C4. Paired tests with multiplicity correction:**
 ```bash
-python -m research.eval.mlflow_judge_eval compare \
+python -m evaluation.offline.judge_study compare \
     --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
     --out-dir research/judge_eval_report
 ```
@@ -262,7 +262,7 @@ the report says so.
 
 **D2. Agreement + judge card:**
 ```bash
-python -m research.eval.mlflow_judge_eval calibrate \
+python -m evaluation.offline.judge_study calibrate \
     --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
     --human-annotations evaluation/benchmarks/data/human_baseline.csv \
     --out-dir research/judge_eval_report
@@ -274,7 +274,7 @@ Krippendorff α, ICC(2,1) and signed bias, each with a bootstrap CI, plus a
 
 **D3. Position-bias (pairwise, order-swapped):**
 ```bash
-python -m research.eval.mlflow_judge_eval pairwise \
+python -m evaluation.offline.judge_study pairwise \
     --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
     --out-dir research/judge_eval_report
 ```
@@ -284,7 +284,7 @@ model ranking.
 
 **D4. Self-consistency and perturbation sensitivity:**
 ```bash
-python -m research.eval.mlflow_judge_eval consistency \
+python -m evaluation.offline.judge_study consistency \
     --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b --replicates 3 \
     --metrics Code_Faithfulness --out-dir research/judge_eval_report
 ```
@@ -303,7 +303,7 @@ rankings with CIs and say per-example scores are unreliable.
 For assessments produced by the live FastAPI service:
 
 ```python
-from research.eval.mlflow_judge_eval import build_trace_scorers
+from evaluation.offline.judge_study import build_trace_scorers
 from evaluation.online.run_judges import grade_accuracy_from_trace
 scorers = [grade_accuracy_from_trace, *build_trace_scorers()]
 ```

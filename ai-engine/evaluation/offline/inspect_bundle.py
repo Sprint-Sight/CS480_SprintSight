@@ -18,7 +18,7 @@ This answers the three recurring questions:
 
 Usage:
 
-    python -m research.eval.inspect_bundle \\
+    python -m evaluation.offline.inspect_bundle \\
         --dataset d_real_sprints \\
         --example fencing_sp1 \\
         --dimensions code_quality,requirements,collaboration \\
@@ -38,13 +38,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from evaluation.offline.datasets import load_dataset
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
-from research.eval.datasets import load_dataset
 from services import llm_client
 from services.evidence_packer import estimate_tokens
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-log = logging.getLogger("research.eval.inspect")
+log = logging.getLogger("evaluation.offline.inspect")
 
 
 def _ticket_breakdown(tickets: list[dict]) -> dict:

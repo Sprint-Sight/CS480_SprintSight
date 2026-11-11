@@ -5,7 +5,7 @@ and the existing bundle fixtures/registries.
 This package exposes a `judge_quality_score` slot in every per-example row 
 that stays None until judge scores are attached (see attach_judge_scores.py).
 
-Entry point: python -m research.eval.cli --help
+Entry point: python -m evaluation.offline.cli --help
 """
 
 __version__ = "0.1.0"

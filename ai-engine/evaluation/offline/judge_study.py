@@ -62,7 +62,7 @@ What this adds to the existing implementation
 ---------------------------------------------
 This module EXTENDS the two judge/eval pipelines already in the repo; it does
 not replace either. Part 11 holds the seams. Reused as-is, never reimplemented:
-``research.eval.metrics.summarise_example`` (base row), ``evaluation.stats
+``evaluation.offline.metrics.summarise_example`` (base row), ``evaluation.stats
 .paired_bootstrap_diff`` (CI), ``evaluation.judges.grade_accuracy
 .numeric_grade_accuracy`` (grade error), ``evaluation.judges.trace_adapters
 .read_candidate`` (trace reading), ``llmops.mlflow_config`` (tracking),
@@ -127,10 +127,10 @@ Two defects found while integrating, fixed outside this file:
 Usage
 -----
     # Offline self-test of the entire pipeline (no model server needed):
-    python -m research.eval.mlflow_judge_eval selftest
+    python -m evaluation.offline.judge_study selftest
 
     # Real run against local Ollama:
-    python -m research.eval.mlflow_judge_eval evaluate --judge-model phi4:14b
+    python -m evaluation.offline.judge_study evaluate --judge-model phi4:14b
 """
 
 from __future__ import annotations
@@ -163,10 +163,10 @@ from mlflow.metrics.genai.prompts.v1 import EvaluationModel
 
 from evaluation.judges.config import configured_judge_model
 from evaluation.judges.grade_accuracy import numeric_grade_accuracy
+from evaluation.offline.metrics import summarise_example
 from evaluation.stats import paired_bootstrap_diff
 from llmops.mlflow_config import configure_mlflow, get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
-from research.eval.metrics import summarise_example
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
 
@@ -1271,7 +1271,7 @@ def citation_anchor_metrics(
     """Evidence SPECIFICITY: do citations carry hard, checkable identifiers?
 
     Deliberately does NOT recompute groundedness. ``summarise_example`` in
-    ``research.eval.metrics`` already derives ``groundedness_rate`` from
+    ``evaluation.offline.metrics`` already derives ``groundedness_rate`` from
     ``find_ungrounded_citations``, and ``build_eval_frame`` carries that
     column through unchanged -- two implementations of the same quantity is
     how two pipelines end up disagreeing about the same run.
@@ -1863,7 +1863,7 @@ class JudgeRecord:
 def build_eval_frame(records: Sequence[JudgeRecord]) -> pd.DataFrame:
     """Assemble the single DataFrame that ``mlflow.evaluate`` consumes.
 
-    Layered deliberately on top of ``research.eval.metrics.summarise_example``
+    Layered deliberately on top of ``evaluation.offline.metrics.summarise_example``
     rather than recomputing what the model-comparison harness already
     computes. Every column that harness emits into ``per_example.jsonl`` is
     present here under the same name and with the same definition, so:
@@ -2035,7 +2035,7 @@ def _column_metric(
 # the comparison report in Part 8 both know which way is better -- a detail
 # that silently inverts conclusions when left to a default.
 DETERMINISTIC_METRIC_COLUMNS: tuple[tuple[str, bool], ...] = (
-    # --- inherited verbatim from research.eval.metrics.summarise_example ---
+    # --- inherited verbatim from evaluation.offline.metrics.summarise_example ---
     ("format_valid", True),
     ("groundedness_rate", True),
     ("dimension_completion_rate", True),
@@ -3641,7 +3641,7 @@ def classify_errors(frame: pd.DataFrame) -> pd.DataFrame:
         if row.get("schema_valid") is False:
             tags.append("schema_invalid")
 
-        # groundedness_rate comes from research.eval.metrics, not from a
+        # groundedness_rate comes from evaluation.offline.metrics, not from a
         # second implementation here -- see citation_anchor_metrics.
         grounded = row.get("groundedness_rate")
         if grounded is not None and not _is_nan(grounded) and grounded < 1.0:
@@ -4104,7 +4104,7 @@ def load_records_from_run(
     model: str | None = None,
     human_annotations: str | Path | None = None,
 ) -> list[JudgeRecord]:
-    """Rebuild JudgeRecords from a `research.eval.runner` MLflow run.
+    """Rebuild JudgeRecords from a `evaluation.offline.runner` MLflow run.
 
     The runner already logs each candidate SprintAssessment to
     `raw_outputs/raw__<example>__r<n>.json`, so judging reads from MLflow
@@ -4373,14 +4373,14 @@ def synthetic_records(
 # This module is an extension of two pipelines that already exist, not a
 # replacement for either. The seams:
 #
-#   research/eval/runner.py   produces the candidate assessments and the
+#   evaluation/offline/runner.py   produces the candidate assessments and the
 #                             per_example.jsonl rows. We CONSUME those rows
 #                             (`load_records_from_run`) and layer judge
 #                             columns on top via summarise_example, so the
 #                             judged artifact is byte-identical to the one the
 #                             harness already measured.
 #
-#   research/eval/
+#   evaluation/offline/
 #     attach_judge_scores.py  the documented hand-off: it expects a CSV with
 #                             mlflow_run_id, example_id, repeat_index,
 #                             judge_quality_score, judge_rationale and merges
@@ -4505,7 +4505,7 @@ def export_judge_scores(
     run_id: str | None = None,
     score_column: str = "judge_composite",
 ) -> Path:
-    """Write the CSV ``research/eval/attach_judge_scores.py`` consumes.
+    """Write the CSV ``evaluation/offline/attach_judge_scores.py`` consumes.
 
     That script has been waiting for exactly five columns -- mlflow_run_id,
     example_id, repeat_index, judge_quality_score, judge_rationale -- and the
@@ -4513,7 +4513,7 @@ def export_judge_scores(
     placeholders for them since it was written. This closes that loop, which
     is what makes
 
-        python -m research.eval.cli analyze --pairwise-metric judge_quality_score
+        python -m evaluation.offline.cli analyze --pairwise-metric judge_quality_score
 
     produce real numbers instead of an empty column.
 
@@ -4575,7 +4575,7 @@ def export_judge_scores(
     export.to_csv(destination, index=False)
     log.info(
         "Wrote %d judge scores to %s. Attach with: python -m "
-        "research.eval.attach_judge_scores --judge-file %s --run-id <run_id>",
+        "evaluation.offline.attach_judge_scores --judge-file %s --run-id <run_id>",
         len(export), destination, destination,
     )
     return destination
@@ -4668,7 +4668,7 @@ def build_trace_scorers(
     than ask it to change, this returns scorers in the shape it already
     passes to ``mlflow.genai.evaluate(data=traces, scorers=[...])``:
 
-        from research.eval.mlflow_judge_eval import build_trace_scorers
+        from evaluation.offline.judge_study import build_trace_scorers
         scorers = [grade_accuracy_from_trace, *build_trace_scorers()]
 
     The result is that the trace pipeline gains all five rubric dimensions
@@ -4915,14 +4915,14 @@ def _records_for_cli(arguments: argparse.Namespace) -> list[JudgeRecord]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m research.eval.mlflow_judge_eval",
+        prog="python -m evaluation.offline.judge_study",
         description="MLflow-native LLM-as-a-Judge evaluation for SprintSight.",
     )
     parser.add_argument(
         "command",
         choices=["evaluate", "calibrate", "pairwise", "consistency", "compare", "selftest"],
     )
-    parser.add_argument("--run-id", help="MLflow run id from research.eval.runner to judge")
+    parser.add_argument("--run-id", help="MLflow run id from evaluation.offline.runner to judge")
     parser.add_argument("--model", help="Override the candidate model name for --run-id")
     parser.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL)
     parser.add_argument("--experiment", default=JUDGE_EXPERIMENT)
@@ -5048,7 +5048,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             frame.to_csv(out_dir / "judge_eval_rows.csv", index=False)
             calibration.to_csv(out_dir / "judge_calibration.csv")
             if "judge_composite" in frame.columns:
-                # Closes the loop with research/eval/attach_judge_scores.py,
+                # Closes the loop with evaluation/offline/attach_judge_scores.py,
                 # which has been waiting for this file since the harness was
                 # written. See export_judge_scores for the column contract.
                 exported = export_judge_scores(
@@ -5059,7 +5059,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(
                     "To merge these into the model-comparison run:"
                     + '\n' + "  python -m "
-                    "research.eval.attach_judge_scores --judge-file "
+                    "evaluation.offline.attach_judge_scores --judge-file "
                     f"{exported} --run-id <runner run_id>"
                 )
             _print_frame("Error taxonomy", taxonomy_counts(classify_errors(frame)))
@@ -5169,7 +5169,7 @@ def _assert_selftest_invariants(frame: pd.DataFrame) -> int:
     for inherited in ("groundedness_rate", "format_valid", "dimension_completion_rate"):
         if inherited not in frame.columns:
             failures.append(
-                f"{inherited} missing: research.eval.metrics.summarise_example "
+                f"{inherited} missing: evaluation.offline.metrics.summarise_example "
                 "is no longer layered into build_eval_frame"
             )
 

@@ -4,8 +4,8 @@ import random
 from types import SimpleNamespace
 
 from evaluation.benchmarks.cs203 import CS203G6_GOLD
-from research import judge_canary
-from research.judge_canary import build_canary_claims, main, mutate
+from evaluation.offline import judge_canary
+from evaluation.offline.judge_canary import build_canary_claims, main, mutate
 
 
 def test_the_canary_module_imports() -> None:

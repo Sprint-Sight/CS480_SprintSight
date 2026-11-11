@@ -96,7 +96,7 @@ def plot_token_distribution(df: pd.DataFrame, figsize: tuple[float, float] = (6,
     if not anything:
         ax.text(
             0.5, 0.5,
-            "No token data recorded.\nSee research/eval/README.md "
+            "No token data recorded.\nSee evaluation/offline/README.md "
             "for how to populate tokens_* from audit logs.",
             ha="center", va="center", transform=ax.transAxes,
         )

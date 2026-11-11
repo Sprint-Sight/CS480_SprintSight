@@ -26,11 +26,11 @@ model-comparison harness and feeds the final report.
 | `metrics.py` | Per-example scoring: format validity, groundedness, dimension completion, overall score. All without the external judge. |
 | `analysis.py` | Loads per-example rows from MLflow runs, builds comparison tables, computes paired bootstrap CIs. |
 | `plots.py` | Four report-ready plots (latency, format-validity, token distribution, pairwise CIs). |
-| `cli.py` | `python -m research.eval.cli …` driver. |
+| `cli.py` | `python -m evaluation.offline.cli …` driver. |
 | `attach_judge_scores.py` | Hand-off from the judging pipeline. |
-| `mlflow_judge_eval.py` | The judge itself: five `make_genai_metric` rubrics + meta-evaluation. Fills the `judge_quality_score` slot the rest of this package reserves. |
+| `judge_study.py` | The judge itself: five `make_genai_metric` rubrics + meta-evaluation. Fills the `judge_quality_score` slot the rest of this package reserves. |
 
-## The judge layer (`mlflow_judge_eval.py`)
+## The judge layer (`judge_study.py`)
 
 Built **on top of** this package and `evaluation/`, not beside it. It reuses
 `metrics.summarise_example` for every per-example row, `evaluation.stats.paired_bootstrap_diff`
@@ -45,17 +45,17 @@ Two directions of flow:
 # A. Judge the assessments a runner.py sweep already produced, then merge the
 #    scores back into that same run so `analyze --pairwise-metric
 #    judge_quality_score` finally has data.
-python -m research.eval.mlflow_judge_eval evaluate \
+python -m evaluation.offline.judge_study evaluate \
     --run-id <run id from runner.run_evaluation> \
     --judge-model phi4:14b \
     --human-annotations evaluation/benchmarks/data/human_baseline.csv
 
-python -m research.eval.attach_judge_scores \
+python -m evaluation.offline.attach_judge_scores \
     --judge-file research/judge_eval_report/judge_scores_for_attach.csv \
     --run-id <same run id>
 
 # B. Give the trace-based pipeline in evaluation/online/ the same five rubrics:
-#    from research.eval.mlflow_judge_eval import build_trace_scorers
+#    from evaluation.offline.judge_study import build_trace_scorers
 #    scorers = [grade_accuracy_from_trace, *build_trace_scorers()]
 ```
 
@@ -66,7 +66,7 @@ and `selftest`, which runs the whole pipeline against a stub judge on a
 known-answer synthetic set — no GPU, no model server, suitable for CI:
 
 ```bash
-python -m research.eval.mlflow_judge_eval selftest
+python -m evaluation.offline.judge_study selftest
 ```
 
 ### Choosing a judge model
@@ -87,12 +87,12 @@ ollama pull qwen2.5:14b-instruct  # alternative
 
 # 1. Smoke-test on one example per model so you know the pipeline works
 #    before paying full compute cost.
-python -m research.eval.cli run --model sprintsight-qwen \
+python -m evaluation.offline.cli run --model sprintsight-qwen \
     --dataset d1_fixtures --subset high_performing --note "smoke test"
 
 # 2. Full preliminary sweep: 3 models × full dataset × 1 repeat.
 for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma; do
-    python -m research.eval.cli run \
+    python -m evaluation.offline.cli run \
         --model "$M" --dataset d1_fixtures \
         --prompt-version v1.0 --phase preliminary
 done
@@ -100,13 +100,13 @@ done
 # 3. Rerun with repeats=3 ONLY on the models that survived step 2, to
 #    measure within-model consistency.
 for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma; do
-    python -m research.eval.cli run \
+    python -m evaluation.offline.cli run \
         --model "$M" --dataset d1_fixtures --repeats 3 \
         --prompt-version v1.0 --phase deep_eval
 done
 
 # 4. Produce tables, pairwise CIs, and plots.
-python -m research.eval.cli analyze \
+python -m evaluation.offline.cli analyze \
     --experiment sprintsight-model-comparison \
     --out-dir research/eval_report \
     --pairwise-metric overall_score
@@ -115,12 +115,12 @@ python -m research.eval.cli analyze \
 Once the judge pipeline emits a CSV:
 
 ```bash
-python -m research.eval.attach_judge_scores \
+python -m evaluation.offline.attach_judge_scores \
     --judge-file path/to/judge_scores.csv \
     --run-id <mlflow run id of the sweep run>
 
 # Then redo the analysis with the judge-rated metric as the headline.
-python -m research.eval.cli analyze \
+python -m evaluation.offline.cli analyze \
     --experiment sprintsight-model-comparison \
     --out-dir research/eval_report_with_judge \
     --pairwise-metric judge_quality_score

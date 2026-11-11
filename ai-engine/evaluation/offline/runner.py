@@ -2,7 +2,7 @@
 
 A "run" here = (model × dataset × prompt_version × seed), one MLflow run,
 one per-example JSONL artifact. That granularity is deliberate — see
-research/eval/README.md for why we do NOT create a nested MLflow run per
+evaluation/offline/README.md for why we do NOT create a nested MLflow run per
 example.
 
 Public entry:
@@ -42,11 +42,11 @@ import httpx
 import mlflow
 import pandas as pd
 
+from evaluation.offline.datasets import DatasetItem, load_dataset
+from evaluation.offline.metrics import summarise_example
 from llmops.mlflow_config import start_mlflow
 from prompts.dimension_criteria import DIMENSION_PROMPTS
 from prompts.templates import render_dimension_prompt
-from research.eval.datasets import DatasetItem, load_dataset
-from research.eval.metrics import summarise_example
 from services.evaluator import evaluate_sprint
 from services.llm_client import _token_accumulator, new_token_accumulator
 

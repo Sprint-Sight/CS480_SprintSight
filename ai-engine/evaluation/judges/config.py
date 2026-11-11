@@ -1,7 +1,7 @@
 """Which model judges. One definition, read by production and research alike.
 
 `SPRINTSIGHT_JUDGE_MODEL` used to default to "sprintsight-judge-phi" in the production judge
-and in the old single-call judge, but to "phi4:14b" in research/eval/mlflow_judge_eval.py.
+and in the old single-call judge, but to "phi4:14b" in evaluation/offline/judge_study.py.
 Same environment variable, two defaults, so a run with the variable unset judged with
 different models depending on which entry point started it, and the resulting numbers were
 not comparable.

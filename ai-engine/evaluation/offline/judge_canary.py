@@ -11,7 +11,7 @@ A judge that rubber-stamps everything scores 100% on the first and 0% on the sec
 rejects everything is the reverse. Run it after changing the judge prompt, the judge model, or
 the context size; it exits non-zero when either accuracy drops below the threshold.
 
-    python -m research.judge_canary [judge-model] [--repeats 3] [--min-accuracy 0.8]
+    python -m evaluation.offline.judge_canary [judge-model] [--repeats 3] [--min-accuracy 0.8]
 """
 
 from __future__ import annotations

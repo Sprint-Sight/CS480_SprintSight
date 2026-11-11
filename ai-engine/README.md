@@ -214,7 +214,7 @@ answer reserve:
 Every file and diff block carries a `cite as path:Lx-Ly[@sha7]` anchor, and the
 resolved citation (kind, file_path, line_start, line_end, commit_sha) is
 returned in `evidence_citations`. Inspect what any dataset example would send
-with `python -m research.eval.inspect_bundle --example <id>`.
+with `python -m evaluation.offline.inspect_bundle --example <id>`.
 
 ## Audit records
 

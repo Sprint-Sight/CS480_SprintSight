@@ -1,6 +1,6 @@
 """Export ingested sprints from Postgres as ArtifactBundle JSON files.
 
-The AI engine's model-comparison pipeline (ai-engine/research/eval/) reads
+The AI engine's model-comparison pipeline (ai-engine/evaluation/offline/) reads
 one JSON file per sprint from a directory, so this script's job is to
 turn a list of (course_id, project_id, sprint_id) triples into exactly
 that: one ArtifactBundle-shaped JSON per sprint, named by filename.

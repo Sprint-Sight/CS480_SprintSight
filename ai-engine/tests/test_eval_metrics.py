@@ -4,13 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from prompts.dimension_criteria import DIMENSIONS
-from research.eval import metrics
-from research.eval.metrics import (
+from evaluation.offline import metrics
+from evaluation.offline.metrics import (
     citations_dropped,
     groundedness_rate,
     summarise_example,
 )
+from prompts.dimension_criteria import DIMENSIONS
 from schemas.rubrics_dimension_score import (
     ResolvedEvidenceCitation,
     RubricDimensionScore,
