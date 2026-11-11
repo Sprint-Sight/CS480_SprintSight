@@ -8,8 +8,8 @@ from evaluation.offline.metrics import (
     groundedness_rate,
     summarise_example,
 )
-from schemas.artifact_bundle import ArtifactBundle
 from prompts.dimension_criteria import DIMENSIONS
+from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import (
     ResolvedEvidenceCitation,
     RubricDimensionScore,
