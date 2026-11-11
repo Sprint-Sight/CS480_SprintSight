@@ -5,7 +5,12 @@ httpx
 # Structured Pydantic outputs from LLMs
 instructor
 
-mlflow==3.15.0 # LLMops
+# LLMops. Pinned to the version the code is developed and tested against (the venv had drifted
+# to 3.16.1 while this said 3.15.0). The client must match the tracking server: set the same
+# version on the mlflow_service image in docker-compose.yaml. The code relies on
+# mlflow.tracing.set_destination(context_local=True), TraceMetadataKey.SOURCE_RUN and
+# mlflow.genai.review_queues, all verified on this version.
+mlflow==3.16.1
 
 numpy
 

@@ -9,7 +9,7 @@ from typing import Any
 
 AUDIT_LOG_DIR = Path(os.getenv("LLM_AUDIT_LOG_DIR", "/app/audit_logs"))
 # One JSON line per Ollama request with wall-clock start/end, so
-# research/gpu_report.py can tell GPU samples taken while a request was in
+# research/gpu/report.py can tell GPU samples taken while a request was in
 # flight from samples taken while the GPU had nothing to do.
 REQUEST_MARKERS_PATH = Path(
     os.getenv("LLM_REQUEST_MARKERS_PATH", str(AUDIT_LOG_DIR / "request_markers.jsonl"))
