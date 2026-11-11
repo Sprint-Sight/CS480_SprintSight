@@ -1,13 +1,13 @@
 """
 Manually trigger one full register -> evaluate -> judge -> promote cycle
-against the fixed A/B bundles, without going through the FastAPI
-endpoint. Reuses evaluate_sprint() and judge_and_promote_trace() unchanged --
+against the five synthetic_v2 teams (evaluation/benchmarks/synthetic_v2.py),
+without going through the FastAPI endpoint. Reuses evaluate_sprint() and judge_and_promote_trace() unchanged --
 this is a thin CLI wrapper, not a parallel reimplementation -- so a promotion
 triggered here genuinely exercises the same path the live endpoint uses.
 
 Usage:
     for m in sprintsight-qwen25-32b sprintsight-qwen sprintsight-gemma sprintsight-r1-32b sprintsight-coder-32b; do
-        docker compose exec sprintsight_ai python -m research.run_fixture_trial --model "$m"
+        docker compose exec sprintsight_ai python -m research.trials.run_fixture_trial --model "$m"
     done
 """
 import argparse

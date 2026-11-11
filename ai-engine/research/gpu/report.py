@@ -4,7 +4,7 @@ Inputs:
   - the per-job nvidia-smi CSV written by hpc/ollama_gpu.sbatch (fetch it
     with ``bash hpc/hpc-dev.sh gpu-logs``), and
   - request markers: ``audit_logs/request_markers.jsonl`` from real
-    assessments and/or the JSONL written by research/gpu_bench.py.
+    assessments and/or the JSONL written by research/gpu/bench.py.
 
 Each GPU sample is tagged "in flight" if any request was running at that
 moment. Per (model, concurrency) group the report gives:
@@ -35,7 +35,7 @@ moment. Per (model, concurrency) group the report gives:
 
 Usage (from ai-engine/):
 
-    python -m research.gpu_report --gpu-csv gpu_logs/12345.gpu.csv \\
+    python -m research.gpu.report --gpu-csv gpu_logs/12345.gpu.csv \\
         --markers audit_logs/request_markers.jsonl gpu_logs/bench_*.jsonl --mlflow
 """
 
@@ -316,7 +316,7 @@ def main() -> None:
     bandwidth = args.mem_bandwidth_gbs or memory_bandwidth_gbs(gpu_info.get("gpu_name"))
     markers = load_markers(args.markers)
     if markers.empty:
-        raise SystemExit("No request markers found; run an assessment or research/gpu_bench.py first.")
+        raise SystemExit("No request markers found; run an assessment or research/gpu/bench.py first.")
     # Keep only requests the GPU log covers (the markers file spans many jobs).
     markers = markers[(markers["finished_at"] >= samples["time"].min()) & (markers["started_at"] <= samples["time"].max())]
     if markers.empty:

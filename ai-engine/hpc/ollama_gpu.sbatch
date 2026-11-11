@@ -45,7 +45,7 @@ OLLAMA_MODEL_NUM_THREAD="${OLLAMA_MODEL_NUM_THREAD:-${SLURM_CPUS_PER_TASK:-4}}"
 
 # ── GPU telemetry ────────────────────────────────────────────────────────────
 # One nvidia-smi sample per second for the whole job, on the same node and
-# clock as Ollama. research/gpu_report.py joins it with the AI engine's
+# clock as Ollama. research/gpu/report.py joins it with the AI engine's
 # request markers; fetch it to your laptop with `bash hpc/hpc-dev.sh gpu-logs`.
 GPU_LOG_DIR="$HOME/sprintsight/gpu-logs"
 mkdir -p "$GPU_LOG_DIR"

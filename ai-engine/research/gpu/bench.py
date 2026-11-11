@@ -6,7 +6,7 @@ the audit logs (``audit_logs/llm_*.txt``) against Ollama's native /api/chat,
 which also returns how long prefill (reading the prompt) and decode (writing
 the answer) took and whether the model had to be loaded first. It replays
 them at each requested concurrency level and writes one JSON line per request
-in the same shape as the app's request markers, so research/gpu_report.py
+in the same shape as the app's request markers, so research/gpu/report.py
 can line both up with the GPU telemetry.
 
 Ollama only runs OLLAMA_NUM_PARALLEL requests at once (set on the GPU job).
@@ -16,7 +16,7 @@ with OLLAMA_NUM_PARALLEL >= the highest level you sweep.
 Usage (from ai-engine/, venv active, HPC tunnel open; run an assessment with
 the same model first so the audit logs have prompts to replay):
 
-    python -m research.gpu_bench --model sprintsight-llama31 --concurrency 1,2,4
+    python -m research.gpu.bench --model sprintsight-llama31 --concurrency 1,2,4
 
 To find what limits decode speed, compare runs that change one thing:
 ``--format none`` drops the JSON output constraint (grammar sampling runs on

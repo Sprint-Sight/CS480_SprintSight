@@ -171,7 +171,7 @@ done
 **A6. Ordering sanity harness** (different question: does the engine rank the
 hand-crafted fixtures in the expected order?):
 ```bash
-python -m research.validation_harness --models sprintsight-qwen sprintsight-mistral \
+python -m research.trials.validation_harness --models sprintsight-qwen sprintsight-mistral \
     --repeats 5 --out-dir research/validation_results
 ```
 

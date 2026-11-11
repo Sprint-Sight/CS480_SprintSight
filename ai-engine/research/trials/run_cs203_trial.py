@@ -1,12 +1,12 @@
 """
 Manually trigger one full register -> evaluate -> judge -> promote cycle
-against the fixed A/B bundles, without going through the FastAPI
-endpoint. Reuses evaluate_sprint() and judge_and_promote_trace() unchanged --
+against the two real CS203 bundles (evaluation/benchmarks/cs203.py), without
+going through the FastAPI endpoint. Reuses evaluate_sprint() and judge_and_promote_trace() unchanged --
 this is a thin CLI wrapper, not a parallel reimplementation -- so a promotion
 triggered here genuinely exercises the same path the live endpoint uses.
 
 Usage:
-    docker compose exec sprintsight_ai python -m research.run_ab_trial --model sprintsight-qwen
+    docker compose exec sprintsight_ai python -m research.trials.run_cs203_trial --model sprintsight-qwen
 """
 import argparse
 import asyncio

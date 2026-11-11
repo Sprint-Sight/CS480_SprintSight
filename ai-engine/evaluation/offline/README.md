@@ -10,7 +10,7 @@ provides `attach_judge_scores.py` for them to populate it later. All the
 other metrics here are judge-independent — the pipeline can produce
 defensible preliminary results even if the judge work is not yet ready.
 
-## Why this package is separate from `research/validation_harness.py`
+## Why this package is separate from `research/trials/validation_harness.py`
 
 `validation_harness.py` tests a different property (does the engine
 produce the EXPECTED ORDERING across hand-crafted fixtures?). It is a

@@ -4,7 +4,7 @@ The values are the strings each caller used before they were gathered here, so n
 landing next to the old ones. Change a name here only when you mean to start a new experiment.
 
 Not listed:
-  * The per-run experiment names of research/run_cs203_trial.py and run_fixture_trial.py.
+  * The per-run experiment names of research/trials/run_cs203_trial.py and run_fixture_trial.py.
     Those are scratch defaults, changed for every trial run (`--experiment-name`).
   * MLFLOW_EXPERIMENT_NAME (set in docker-compose.yaml). No SprintSight code reads it, but
     MLflow's fluent API does: it is the experiment a run starts in when nothing set one.
@@ -24,8 +24,8 @@ MODEL_COMPARISON = "sprintsight-model-comparison"
 # evaluation/offline/judge_study.py. SPRINTSIGHT_JUDGE_EXPERIMENT overrides it.
 JUDGE_STUDY = "sprintsight-judge-eval"
 
-# research/gpu_report.py --mlflow: GPU utilisation summaries.
+# research/gpu/report.py --mlflow: GPU utilisation summaries.
 GPU_UTILISATION = "sprintsight_gpu_utilisation"
 
-# research/validation_harness.py.
+# research/trials/validation_harness.py.
 VALIDATION_HARNESS = "SprintSight-Research"

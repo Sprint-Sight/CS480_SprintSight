@@ -245,7 +245,7 @@ lone_contributor_poor_outcome_team = ArtifactBundle(
 
 # Fixture key -> bundle, so callers that only receive plain JSON-able inputs (e.g. an MLflow
 # scorer) can look up which bundle produced an assessment. Keys match
-# research/validation_harness.py's FIXTURE_CANDIDATES and the gold below.
+# research/trials/validation_harness.py's FIXTURE_CANDIDATES and the gold below.
 FIXTURES: dict[str, ArtifactBundle] = {
     "high_performing": high_performing_team,
     "struggling": struggling_team,

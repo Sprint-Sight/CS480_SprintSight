@@ -287,11 +287,11 @@ bash start.sh                                 # from the repo root
 # 2. Real assessments: set LLM_DIMENSION_CONCURRENCY=4 in ai-engine/.env,
 #    restart sprintsight_ai, run assessments for the model from the app.
 #    And/or a controlled sweep replaying the recorded prompts:
-python -m research.gpu_bench --model sprintsight-llama31 --concurrency 1,2,4
+python -m research.gpu.bench --model sprintsight-llama31 --concurrency 1,2,4
 
 # 3. Fetch the telemetry and build the report
 bash hpc/hpc-dev.sh gpu-logs                  # -> gpu_logs/<jobid>.gpu.csv + clock offset
-python -m research.gpu_report --gpu-csv gpu_logs/<jobid>.gpu.csv \
+python -m research.gpu.report --gpu-csv gpu_logs/<jobid>.gpu.csv \
     --markers audit_logs/request_markers.jsonl gpu_logs/bench_*.jsonl --mlflow
 ```
 
@@ -370,8 +370,8 @@ path as the API, without the frontend or backend. They replace the old
 
 | Script | Teams | Gold |
 |---|---|---|
-| `research.run_fixture_trial` | 5 synthetic teams: `Team_Alpha`, `Team_Delta`, `Team_Epsilon`, `Team_Theta`, `Team_Gamma` (sprint `2026-08-10_to_2026-08-21`, 7-8 commits each) | `evaluation/benchmarks/data/gold/{alpha,delta,epsilon,theta,gamma}_GOLD.json` (expected overall 8.67 / 6.17 / 6.67 / 3.33 / 2.00) |
-| `research.run_cs203_trial` | 2 real bundles: `cs203g6` (31 commits, expected overall 4.0) and `cs203jy` (id `fa7d4476-…`, 6.5) | `evaluation/benchmarks/cs203.py`, `evaluation/benchmarks/data/gold/cs203jy_GOLD.json` |
+| `research.trials.run_fixture_trial` | 5 synthetic teams: `Team_Alpha`, `Team_Delta`, `Team_Epsilon`, `Team_Theta`, `Team_Gamma` (sprint `2026-08-10_to_2026-08-21`, 7-8 commits each) | `evaluation/benchmarks/data/gold/{alpha,delta,epsilon,theta,gamma}_GOLD.json` (expected overall 8.67 / 6.17 / 6.67 / 3.33 / 2.00) |
+| `research.trials.run_cs203_trial` | 2 real bundles: `cs203g6` (31 commits, expected overall 4.0) and `cs203jy` (id `fa7d4476-…`, 6.5) | `evaluation/benchmarks/cs203.py`, `evaluation/benchmarks/data/gold/cs203jy_GOLD.json` |
 
 ### Prerequisites
 
@@ -389,11 +389,11 @@ path as the API, without the frontend or backend. They replace the old
 cd ai-engine
 
 # Fixture teams (fast: 5 teams x 7-8 commits) if u want to run fixture teams
-docker compose exec sprintsight_ai python -m research.run_fixture_trial \
+docker compose exec sprintsight_ai python -m research.trials.run_fixture_trial \
     --model sprintsight-qwen25-32b --experiment-name "Fixture test 4/11/26"
 
 # CS203 bundles (cs203g6, then cs203jy) if you want to run CS203 bundles
-docker compose exec sprintsight_ai python -m research.run_cs203_trial \
+docker compose exec sprintsight_ai python -m research.trials.run_cs203_trial \
     --model sprintsight-qwen25-32b --experiment-name "CS203 research 4/11/26"
 ```
 

@@ -143,7 +143,7 @@ def new_token_accumulator() -> dict:
 
 
 # Per-assessment-run tags (run_id, concurrency) copied onto every request
-# marker, so research/gpu_report.py can group GPU samples by run and by
+# marker, so research/gpu/report.py can group GPU samples by run and by
 # concurrency setting. Set once in evaluator.evaluate_sprint; the dimension
 # tasks asyncio.gather creates inherit it.
 _run_context: contextvars.ContextVar[dict | None] = contextvars.ContextVar(

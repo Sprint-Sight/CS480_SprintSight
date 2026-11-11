@@ -2,7 +2,7 @@
 
     synthetic_v1     five synthetic teams + gold. Offline only: the d1_fixtures dataset, the judge
                      study and the validation harness.
-    synthetic_v2     five synthetic teams + gold. Online judge and research/run_fixture_trial.py.
+    synthetic_v2     five synthetic teams + gold. Online judge and research/trials/run_fixture_trial.py.
     cs203            two real CS203 sprints + gold. Online judge, trials and the judge canary.
     expected_orders  the ranking the synthetic_v1 teams should get.
     data/            the JSON the modules above load, plus data/real_sprints/ (the d_real_sprints

@@ -234,14 +234,14 @@ agreement. It writes raw runs and an aggregated summary to
 Smoke-test one model first:
 
 ```powershell
-docker compose exec sprintsight_ai python -m research.validation_harness `
+docker compose exec sprintsight_ai python -m research.trials.validation_harness `
     --models sprintsight-qwen --repeats 1
 ```
 
 Run a broader comparison:
 
 ```powershell
-docker compose exec sprintsight_ai python -m research.validation_harness `
+docker compose exec sprintsight_ai python -m research.trials.validation_harness `
     --models sprintsight-qwen sprintsight-mistral sprintsight-gemma `
     --repeats 5
 ```
@@ -260,7 +260,7 @@ considerable time on local hardware.
 | `services/audit_logger.py` | Human-readable LLM request/response records |
 | `evaluation/benchmarks/` | Benchmark bundles and gold assessments (synthetic v1/v2, CS203, real sprints) |
 | `schemas/rubrics_score.py` | Rubric dimensions and grading prompts |
-| `research/validation_harness.py` | Multi-model validation experiments |
+| `research/trials/validation_harness.py` | Multi-model validation experiments |
 | `docker-compose.yaml` | Ollama, FastAPI, MLflow, and PostgreSQL services |
 
 ## Configuration

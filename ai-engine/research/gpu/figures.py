@@ -10,14 +10,14 @@
 Runs are picked by a run_id prefix or a gpu_bench --label. Usage (from
 ai-engine/, venv active):
 
-    python -m research.gpu_figures before-after \\
+    python -m research.gpu.figures before-after \\
         --before-csv gpu_logs/349942.gpu.csv --before-markers gpu_logs/bench_*recorded*.jsonl \\
         --before-run recorded --before-title "As deployed: Ollama's default CPU threads" \\
         --after-csv gpu_logs/349942.gpu.csv --after-markers gpu_logs/bench_*threads4*.jsonl \\
         --after-run threads4 --after-title "CPU threads pinned to the job's 4 cores" \\
         --out gpu_logs/figures/gpu_before_after
 
-    python -m research.gpu_figures models --gpu-csv gpu_logs/351110.gpu.csv \\
+    python -m research.gpu.figures models --gpu-csv gpu_logs/351110.gpu.csv \\
         --runs dc12b5c5 ae69e2a6 24d3ab9f 71a3b0e5 b8e01d8f 6cc85348 \\
         --out gpu_logs/figures/gpu_per_model
 
@@ -36,7 +36,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from research import gpu_report
+from research.gpu import report as gpu_report
 
 # Validated with the dataviz skill's palette checker (light surface).
 UTIL_COLOUR = "#2a78d6"
