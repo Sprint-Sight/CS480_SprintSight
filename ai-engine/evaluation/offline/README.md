@@ -28,9 +28,9 @@ model-comparison harness and feeds the final report.
 | `plots.py` | Four report-ready plots (latency, format-validity, token distribution, pairwise CIs). |
 | `cli.py` | `python -m evaluation.offline.cli …` driver. |
 | `attach_judge_scores.py` | Hand-off from the judging pipeline. |
-| `judge_study.py` | The judge itself: five `make_genai_metric` rubrics + meta-evaluation. Fills the `judge_quality_score` slot the rest of this package reserves. |
+| `judge_study/` | The judge itself: five `make_genai_metric` rubrics + meta-evaluation. Fills the `judge_quality_score` slot the rest of this package reserves. |
 
-## The judge layer (`judge_study.py`)
+## The judge layer (`judge_study/`)
 
 Built **on top of** this package and `evaluation/`, not beside it. It reuses
 `metrics.summarise_example` for every per-example row, `evaluation.stats.paired_bootstrap_diff`

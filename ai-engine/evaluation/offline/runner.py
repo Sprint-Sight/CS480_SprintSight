@@ -29,21 +29,19 @@ import hashlib
 import json
 import logging
 import math
-import os
 import platform
-import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
 import mlflow
 import pandas as pd
 
 from evaluation.offline.datasets import DatasetItem, load_dataset
 from evaluation.offline.metrics import summarise_example
+from evaluation.offline.provenance import git_sha, model_digest, ollama_version
 from llmops import experiments
 from llmops.mlflow_config import get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS
@@ -57,39 +55,6 @@ DEFAULT_EXPERIMENT = experiments.MODEL_COMPARISON
 
 
 # ---------- Reproducibility helpers ----------------------------------------
-
-def _git_sha() -> str | None:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
-        ).decode().strip()
-    except (subprocess.CalledProcessError, OSError):
-        return None
-
-
-def _ollama_version() -> str | None:
-    try:
-        base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").replace("/v1", "")
-        resp = httpx.get(f"{base}/api/version", timeout=5.0)
-        resp.raise_for_status()
-        return resp.json().get("version")
-    except (httpx.HTTPError, ValueError):
-        return None
-
-
-def _model_digest(model_name: str) -> str | None:
-    """Short digest of the Ollama model manifest. Pins the exact weights/
-    quantisation your run used — critical when the same tag can be
-    re-pulled with different quantisation later."""
-    try:
-        base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").replace("/v1", "")
-        resp = httpx.post(f"{base}/api/show", json={"name": model_name}, timeout=10.0)
-        resp.raise_for_status()
-        digest = resp.json().get("digest") or resp.json().get("model_info", {}).get("general.digest")
-        return (digest or "")[:16] or None
-    except (httpx.HTTPError, ValueError):
-        return None
-
 
 def _prompt_hash(prompt_version: str) -> str:
     """Hash the ACTUAL rendered dimension prompts for the current prompt
@@ -243,8 +208,8 @@ def run_evaluation(
     with mlflow.start_run(experiment_id=experiment_id, run_name=run_name) as run:
         mlflow.log_params({
             "model_name": model,
-            "model_digest": _model_digest(model),
-            "ollama_version": _ollama_version(),
+            "model_digest": model_digest(model),
+            "ollama_version": ollama_version(),
             "dataset_name": dataset_name,
             "dataset_hash": ds_hash,
             "dataset_description": ds_spec.description,
@@ -253,7 +218,7 @@ def run_evaluation(
             "prompt_hash": _prompt_hash(prompt_version),
             "seed": seed if seed is not None else "unset",
             "repeats": repeats,
-            "git_sha": _git_sha() or "unknown",
+            "git_sha": git_sha(),
             "python_version": platform.python_version(),
             "phase": phase,
             "note": note[:250],

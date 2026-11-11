@@ -21,7 +21,7 @@ STARTUP = "Sprintsight evaluation"
 # evaluation/offline: model-comparison runs (runner, cli run/analyze).
 MODEL_COMPARISON = "sprintsight-model-comparison"
 
-# evaluation/offline/judge_study.py. SPRINTSIGHT_JUDGE_EXPERIMENT overrides it.
+# evaluation/offline/judge_study/. SPRINTSIGHT_JUDGE_EXPERIMENT overrides it.
 JUDGE_STUDY = "sprintsight-judge-eval"
 
 # research/gpu/report.py --mlflow: GPU utilisation summaries.

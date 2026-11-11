@@ -47,9 +47,9 @@ def offline_runner(monkeypatch):
         return row, None, None
 
     monkeypatch.setattr(runner, "_run_one_example", fake_example)
-    monkeypatch.setattr(runner, "_model_digest", lambda model: None)
-    monkeypatch.setattr(runner, "_ollama_version", lambda: None)
-    monkeypatch.setattr(runner, "_git_sha", lambda: None)
+    monkeypatch.setattr(runner, "model_digest", lambda model: None)
+    monkeypatch.setattr(runner, "ollama_version", lambda: None)
+    monkeypatch.setattr(runner, "git_sha", lambda: "unknown")
 
 
 def test_run_lands_in_the_requested_experiment(store, offline_runner) -> None:

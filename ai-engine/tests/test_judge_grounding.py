@@ -216,7 +216,7 @@ def test_production_and_research_entry_points_agree_on_the_default() -> None:
     env["MLFLOW_DISABLE_AGENT_HINT"] = "1"
     code = (
         "from evaluation.judges import citation_grounding as a;"
-        "from evaluation.offline import judge_study as c;"
+        "from evaluation.offline.judge_study import config as c;"
         "print(a.JUDGE_MODEL, c.DEFAULT_JUDGE_MODEL)"
     )
     done = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parent.parent,

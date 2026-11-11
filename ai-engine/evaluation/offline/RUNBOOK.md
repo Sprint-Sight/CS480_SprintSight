@@ -119,7 +119,7 @@ python -m evaluation.offline.cli list-datasets
 ```bash
 # Static checks
 python -m ruff check research/ evaluation/ schemas/ llmops/ services/
-python -m mypy evaluation/offline/judge_study.py evaluation/benchmarks/synthetic_v1.py
+python -m mypy evaluation/offline/judge_study/ evaluation/benchmarks/synthetic_v1.py
 ```
 
 ---
