@@ -18,10 +18,10 @@ from pathlib import Path
 import mlflow
 from fastapi import BackgroundTasks
 
+from evaluation.benchmarks.synthetic_v2 import FIXTURES_TEAMS
 from judges.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
 from prompts.dimension_criteria import DIMENSIONS
-from research.fixtures import FIXTURES_TEAMS
 from schemas.artifact_bundle import ArtifactBundle
 from services.evaluator import evaluate_sprint
 

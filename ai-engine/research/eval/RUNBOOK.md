@@ -103,7 +103,7 @@ Run these first; they catch wiring breakage in seconds.
 
 ```bash
 # Gold data is self-consistent (all 6 dimensions, overall == rubric mean)
-python -c "import schemas.benchmark; print('gold OK')"
+python -c "import evaluation.benchmarks.synthetic_v1; print('gold OK')"
 ```
 
 ```bash
@@ -119,7 +119,7 @@ python -m research.eval.cli list-datasets
 ```bash
 # Static checks
 python -m ruff check research/ judges/ schemas/ llmops/ services/
-python -m mypy research/eval/mlflow_judge_eval.py schemas/benchmark.py
+python -m mypy research/eval/mlflow_judge_eval.py evaluation/benchmarks/synthetic_v1.py
 ```
 
 ---
@@ -264,7 +264,7 @@ the report says so.
 ```bash
 python -m research.eval.mlflow_judge_eval calibrate \
     --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
-    --human-annotations research/eval/data/human_baseline.csv \
+    --human-annotations evaluation/benchmarks/data/human_baseline.csv \
     --out-dir research/judge_eval_report
 ```
 

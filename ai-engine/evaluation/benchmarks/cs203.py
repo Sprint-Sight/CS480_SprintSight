@@ -1,5 +1,6 @@
-from pathlib import Path
+"""Two real CS203 sprints (cs203g6, cs203jy) and their hand-written gold assessments."""
 
+from evaluation.benchmarks import DATA_DIR
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.member_contribution import MemberContribution
 from schemas.rubrics_dimension_score import ResolvedEvidenceCitation
@@ -11,7 +12,7 @@ def cite(identifier: str, reason: str) -> ResolvedEvidenceCitation:
     return ResolvedEvidenceCitation(identifier=identifier, reason=reason)
 
 CS203G6_BUNDLE = ArtifactBundle.model_validate_json(
-    (Path(__file__).resolve().parent.parent / "research" / "cs203g6_AB.json").read_text()
+    (DATA_DIR / "cs203g6_AB.json").read_text()
 )
 
 CS203G6_GOLD = SprintAssessment(
@@ -109,11 +110,11 @@ CS203G6_GOLD = SprintAssessment(
 )
 
 CS203JY_BUNDLE = ArtifactBundle.model_validate_json(
-    (Path(__file__).resolve().parent.parent / "research" / "cs203jy_AB.json").read_text()
+    (DATA_DIR / "cs203jy_AB.json").read_text()
 )
 
 CS203JY_GOLD = SprintAssessment.model_validate_json(
-    (Path(__file__).resolve().parent.parent / "research" / "gold" /"cs203jy_GOLD.json").read_text()
+    (DATA_DIR / "gold" / "cs203jy_GOLD.json").read_text()
 )
 
 CS203_GOLD = {

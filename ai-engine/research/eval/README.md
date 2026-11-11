@@ -48,7 +48,7 @@ Two directions of flow:
 python -m research.eval.mlflow_judge_eval evaluate \
     --run-id <run id from runner.run_evaluation> \
     --judge-model phi4:14b \
-    --human-annotations research/eval/data/human_baseline.csv
+    --human-annotations evaluation/benchmarks/data/human_baseline.csv
 
 python -m research.eval.attach_judge_scores \
     --judge-file research/judge_eval_report/judge_scores_for_attach.csv \

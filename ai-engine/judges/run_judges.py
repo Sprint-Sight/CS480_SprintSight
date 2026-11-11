@@ -9,6 +9,7 @@ from mlflow.entities import AssessmentSourceType, Trace
 from mlflow.exceptions import RestException
 from mlflow.genai.scorers import scorer
 
+from evaluation.benchmarks import online_gold
 from judges.citation_ground_custom_judge import (
     JUDGE_MODEL,
     llm_judge_citation_grounding,
@@ -23,8 +24,6 @@ from judges.flagging import (
 from judges.trace_adapters import read_candidate
 from llmops.review_queue import add_to_review_queue
 from prompts.dimension_criteria import DIMENSIONS
-from research.cs203_groundtruth import CS203_GOLD
-from research.fixtures import FIXTURES_GOLD
 from services.save_results import save_judge_results
 
 load_dotenv()  # Load environment variables from .env file
@@ -36,7 +35,7 @@ QUEUE_RESEARCH_FLAGS = os.getenv("JUDGE_QUEUE_RESEARCH_FLAGS", "0").strip().lowe
 
 KEEP_ASSESSMENTS = {'gold'} # not produced by the judge
 
-ALL_GOLD = {**CS203_GOLD, **{g.team_id.lower(): g for g in FIXTURES_GOLD.values()}} # All available golds, keyed by team_id
+ALL_GOLD = online_gold() # All available golds (synthetic_v2 + cs203), keyed by lower-cased team_id
 
 def _log(msg):
     print(msg, flush=True)

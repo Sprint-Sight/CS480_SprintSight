@@ -15,7 +15,7 @@ Adding a new dataset later:
         ],
     )
 
-For now d1_fixtures mirrors schemas.benchmark_registry.FIXTURES verbatim so
+For now d1_fixtures mirrors evaluation.benchmarks.synthetic_v1.FIXTURES verbatim so
 we can get the pipeline running against data we already have. The pipeline
 NEVER assumes a particular dataset size — a 3-item subset for a smoke test
 is a valid dataset, just with less statistical power downstream.
@@ -31,16 +31,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from evaluation.benchmarks import DATA_DIR
+from evaluation.benchmarks.synthetic_v1 import FIXTURES
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.benchmark_registry import FIXTURES
 
 log = logging.getLogger(__name__)
 
 # Where on-disk real-sprint JSONs live by default. Override with the env
-# var EVAL_REAL_SPRINTS_DIR when running from a different checkout. Kept
-# relative to the ai-engine root so a fresh clone of the repo gets the
-# same path without local config.
-_DEFAULT_REAL_SPRINTS_DIR = Path("research/eval/data/real_sprints")
+# var EVAL_REAL_SPRINTS_DIR when running from a different checkout. Lives
+# with the other benchmark data, so a fresh clone gets the same path
+# without local config.
+_DEFAULT_REAL_SPRINTS_DIR = DATA_DIR / "real_sprints"
 _REAL_SPRINTS_DIR_ENV = "EVAL_REAL_SPRINTS_DIR"
 
 
@@ -84,7 +85,7 @@ def dataset_hash(items: list[DatasetItem]) -> str:
 
 def _load_d1_fixtures() -> list[DatasetItem]:
     # Keep ordering fixed and alphabetical by key so the hash is stable
-    # even if someone reorders schemas.benchmark_registry.FIXTURES later.
+    # even if someone reorders synthetic_v1.FIXTURES later.
     return [DatasetItem(id=key, bundle=FIXTURES[key]) for key in sorted(FIXTURES)]
 
 
@@ -142,7 +143,7 @@ DATASETS: dict[str, DatasetSpec] = {
         name="d1_fixtures",
         description=(
             "Dataset 1 (synthetic) - 5 hand-crafted sprint fixtures from "
-            "schemas.fixtures covering the full performance spectrum "
+            "evaluation.benchmarks.synthetic_v1 covering the full performance spectrum "
             "(high_performing -> struggling). SMOKE-TEST ONLY: use this to "
             "sanity-check the pipeline wiring, NOT for any claim in the "
             "report. Prefer d_real_sprints for real evaluation."
@@ -156,7 +157,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "Real sprints exported from the SprintSight backend's Postgres "
             "via backend/scripts/export_eval_bundles.py. One JSON file per "
             "(course_id, project_id, sprint_id) in "
-            "research/eval/data/real_sprints/ (override with "
+            "evaluation/benchmarks/data/real_sprints/ (override with "
             f"{_REAL_SPRINTS_DIR_ENV} env var). Size grows as more sprints "
             "are exported; the dataset hash changes with every addition, so "
             "the report must cite the hash alongside the dataset name."

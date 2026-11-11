@@ -258,7 +258,7 @@ considerable time on local hardware.
 | `services/evaluator.py` | Dimension orchestration and score aggregation |
 | `services/llm_client.py` | Ollama client, structured output, retries, and health checks |
 | `services/audit_logger.py` | Human-readable LLM request/response records |
-| `schemas/fixtures.py` | Synthetic artifact bundles |
+| `evaluation/benchmarks/` | Benchmark bundles and gold assessments (synthetic v1/v2, CS203, real sprints) |
 | `schemas/rubrics_score.py` | Rubric dimensions and grading prompts |
 | `research/validation_harness.py` | Multi-model validation experiments |
 | `docker-compose.yaml` | Ollama, FastAPI, MLflow, and PostgreSQL services |

@@ -1,5 +1,5 @@
 """
-schemas/expected_orders.py
+evaluation/benchmarks/expected_orders.py
 
 Encodes the two target orderings across the 5-fixture set:
 
@@ -16,11 +16,11 @@ named-pair style already used in pairwise_discriminative_validity /
 collaboration_pairwise_discriminative_validity in the harness output.
 
 IMPORTANT -- see the __main__ block before trusting this against your data.
-Running it against benchmark.py's current reference scores surfaces 5
+Running it against synthetic_v1's current reference scores surfaces 5
 violations (detailed in chat): lone_contributor_poor_outcome scores BELOW
 struggling on collaboration, code_quality, and (tied) testing/requirements,
 and imbalanced_high_output beats high_performing on requirements. Resolve
-those -- by editing benchmark.py's scores or relaxing these specific links --
+those -- by editing synthetic_v1's gold scores or relaxing these specific links --
 before wiring this into validation_harness.py's compute_summary().
 """
 

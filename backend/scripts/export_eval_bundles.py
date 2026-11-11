@@ -10,7 +10,7 @@ Example — export the two sprints you've already ingested:
     python -m scripts.export_eval_bundles \\
         --triple cs203,proj-a,sprint-1,proj_a_s1 \\
         --triple cs203,proj-b,sprint-1,proj_b_s1 \\
-        --out ../ai-engine/research/eval/data/real_sprints
+        --out ../ai-engine/evaluation/benchmarks/data/real_sprints
 
 Each --triple is `course_id,project_id,sprint_id,output_name`. The
 `output_name` becomes the JSON filename (and therefore the example_id in
@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         type=Path,
         required=True,
-        help="Output directory (e.g. ../ai-engine/research/eval/data/real_sprints).",
+        help="Output directory (e.g. ../ai-engine/evaluation/benchmarks/data/real_sprints).",
     )
     parser.add_argument(
         "--with-documents",

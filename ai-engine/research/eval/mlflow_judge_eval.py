@@ -119,7 +119,7 @@ Gaps in the current implementation that this closes:
 Two defects found while integrating, fixed outside this file:
   * ``schemas/rubrics_dimension_score._normalize_citation`` stringified an
     already-valid ``EvidenceCitation``, dropping ``reason`` and making
-    ``schemas/benchmark.py`` -- the gold reference data -- raise on import.
+    the gold reference data (now ``evaluation/benchmarks/synthetic_v1.py``) raise on import.
     Nothing imported it, so it had been dead.
   * ``judges/run_judges.py`` hardcodes trace ids in ``__main__``, which are
     not valid in this checkout.
@@ -4087,7 +4087,7 @@ def _log_run_artifacts(
 
 def gold_by_fixture() -> dict[str, SprintAssessment]:
     """Map each benchmark fixture key to its human-authored gold assessment."""
-    from schemas import benchmark
+    from evaluation.benchmarks import synthetic_v1 as benchmark
 
     return {
         "high_performing": benchmark.high_performing_grade,
@@ -4112,7 +4112,7 @@ def load_records_from_run(
     cost: it guarantees the judged artifact is byte-identical to the one the
     deterministic metrics in that run were computed on.
     """
-    from schemas.benchmark_registry import FIXTURES
+    from evaluation.benchmarks.synthetic_v1 import FIXTURES
 
     client = mlflow.tracking.MlflowClient()
     run = client.get_run(run_id)
@@ -4305,7 +4305,7 @@ def synthetic_records(
     """
     import copy
 
-    from schemas.benchmark_registry import FIXTURES
+    from evaluation.benchmarks.synthetic_v1 import FIXTURES
 
     golds = gold_by_fixture()
     records: list[JudgeRecord] = []
@@ -4683,8 +4683,8 @@ def build_trace_scorers(
     from mlflow.genai.scorers import scorer
     from mlflow.metrics.genai.genai_metric import _extract_score_and_justification
 
+    from evaluation.benchmarks.synthetic_v1 import FIXTURES
     from judges.trace_adapters import read_candidate
-    from schemas.benchmark_registry import FIXTURES
 
     bundles = dict(bundle_by_team or {b.team_id: b for b in FIXTURES.values()})
     golds = dict(gold_by_team or {g.team_id: g for g in gold_by_fixture().values()})
@@ -4787,8 +4787,8 @@ def load_records_from_traces(
     """
     from mlflow import MlflowClient
 
+    from evaluation.benchmarks.synthetic_v1 import FIXTURES
     from judges.trace_adapters import read_candidate
-    from schemas.benchmark_registry import FIXTURES
 
     # Prefer judges/run_judges.py's own trace selection so both pipelines
     # select traces by identical criteria. That module is currently blocked on

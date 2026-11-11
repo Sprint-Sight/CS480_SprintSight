@@ -440,9 +440,8 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
                      rationale=f"{n} judged citations (weight sum {wsum}) plus {dropped} code-removed fabrications at weight {CODE_DROP_WEIGHT}")]
 
 def _fixture_bundle(team: str | None):
-    from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
-    from research.fixtures import FIXTURES_TEAMS
-    return {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE, *FIXTURES_TEAMS)}.get(team)
+    from evaluation.benchmarks import online_bundles
+    return online_bundles().get(team)
 
 def _bundle_of(trace: Trace, team: str | None) -> ArtifactBundle:
     root = next((s for s in trace.data.spans if s.parent_id is None), None)

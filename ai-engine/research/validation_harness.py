@@ -42,9 +42,9 @@ Results:
     contributions -- only rubric_scores[*].evidence_citations exists today.
 
 STILL UNCONFIRMED (flagging rather than guessing further):
-  - The exact fixture names/callable-ness in schemas/fixtures.py. Your
+  - The exact fixture names/callable-ness in evaluation/benchmarks/synthetic_v1.py. Your
     README implies factory functions (create_struggling_sprint(), etc.),
-    but llm_client.py's own import statement -- from schemas.fixtures import high_performing_team, imbalanced_team, struggling_team
+    but llm_client.py's own import statement -- from evaluation.benchmarks.synthetic_v1 import high_performing_team, imbalanced_team, struggling_team
     
     -- uses bare names with no `create_` prefix and no call, which reads
     like pre-built ArtifactBundle instances, not factories. _load_fixture()
@@ -69,10 +69,14 @@ from typing import Any
 import mlflow
 from dotenv import load_dotenv
 
-import schemas.fixtures as fixtures_module
+import evaluation.benchmarks.synthetic_v1 as fixtures_module
+from evaluation.benchmarks.expected_orders import (
+    COLLABORATION_ORDER,
+    GENERAL_ORDER,
+    check_order,
+)
 from llmops.mlflow_config import start_mlflow
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.expected_orders import COLLABORATION_ORDER, GENERAL_ORDER, check_order
 from services.evaluator import evaluate_sprint
 
 load_dotenv()  # Load environment variables from .env file
@@ -98,7 +102,7 @@ def _load_fixture(key: str) -> ArtifactBundle: # Load all 3 team types
         if candidate is not None:
             return candidate() if callable(candidate) else candidate
     raise AttributeError(
-        f"Could not find a fixture for '{key}' in schemas.fixtures. "
+        f"Could not find a fixture for '{key}' in evaluation.benchmarks.synthetic_v1. "
         f"Tried: {FIXTURE_CANDIDATES[key]}. Update FIXTURE_CANDIDATES to match "
         f"your actual fixtures.py once you confirm the real names."
     )
