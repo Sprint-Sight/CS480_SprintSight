@@ -1,4 +1,4 @@
-"""MLflow run and trace handling that is safe for concurrent requests.
+"""MLflow run and trace handling for requests that overlap on one event loop.
 
 Why this exists. The fluent API (`mlflow.set_experiment`, `mlflow.start_run`,
 `mlflow.log_metric`, ...) keeps its state in two places that concurrent requests share:
@@ -10,19 +10,34 @@ Why this exists. The fluent API (`mlflow.set_experiment`, `mlflow.start_run`,
   * the *default experiment*, which is process-global. A request that targets another
     experiment changes where every other request's traces are written.
 
-Nothing here touches either. A run is created through `MlflowClient` and every log call
-names its `run_id`; the experiment for the traces is set per request through a
-context-local trace destination (a ContextVar, so each request task has its own).
+Runs are therefore created through `MlflowClient` and every log call names its `run_id`
+(`tracked_run`). That part is genuinely concurrency-safe: any number of runs can be open at once.
 
-The judge worker (`evaluation/online/scheduler.py`) still uses the fluent API, which is fine: it runs
-on its own thread, where the thread-local run stack is its own.
+Traces are different, and `mlflow.tracing.set_destination(..., context_local=True)` does NOT make
+them safe. `context_local` scopes only the destination *value*; the tracer provider behind it is a
+single process-wide object, and every `set_destination` call rebuilds it and shuts down the old
+one's span processors. A second request calling it while the first is still running therefore
+drops the first request's remaining spans ("Processor is already shutdown, ignoring call"), so its
+trace is lost or arrives unlinked. This showed up as a test that passed on a developer machine
+and failed on CI, and it would lose traces in production whenever two assessments overlapped.
+
+`exclusive_trace_destination` is the fix: the shared provider is re-pointed only while holding a
+lock, and the lock is held for the whole traced section, so it is never rebuilt under in-flight
+spans. Assessments are serialised from this point, which costs little: the model server runs
+them one at a time anyway.
+
+The judge worker (`evaluation/online/scheduler.py`) still uses the fluent API on its own thread. It
+does not overlap with grading (the model-slot arbiter keeps them apart), so it never sees a
+provider being rebuilt under it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+import weakref
+from collections.abc import AsyncIterator, Iterator, Mapping
+from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 
 import mlflow
@@ -36,6 +51,12 @@ from llmops.mlflow_config import configure_mlflow, get_experiment_id
 log = logging.getLogger(__name__)
 
 _PARENT_RUN_TAG = MLFLOW_PARENT_RUN_ID
+
+# One lock per event loop. An asyncio.Lock must not be shared between loops, and a threading.Lock
+# held across awaits would block the loop for every other task.
+_destination_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 class TrackedRun:
@@ -75,14 +96,26 @@ class TrackedRun:
         mlflow.update_current_trace(metadata={TraceMetadataKey.SOURCE_RUN: self.run_id})
 
 
-def route_traces_to_experiment(experiment_name: str) -> str:
-    """Send the traces recorded in the *current context* to `experiment_name`.
+def _destination_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _destination_locks.get(loop)
+    if lock is None:
+        lock = _destination_locks[loop] = asyncio.Lock()
+    return lock
 
-    Context-local, so a concurrent request using a different experiment is unaffected.
-    Returns the experiment id."""
-    experiment_id = get_experiment_id(experiment_name)
-    mlflow.tracing.set_destination(MlflowExperimentLocation(experiment_id), context_local=True)
-    return experiment_id
+
+@asynccontextmanager
+async def exclusive_trace_destination(experiment_name: str) -> AsyncIterator[str]:
+    """Record the traces of the enclosed block in `experiment_name`, one block at a time.
+
+    Waits for any other block to finish, then points the shared tracer provider at the experiment
+    (context-local, so the judge's thread is unaffected) and holds the lock until the block ends.
+    Yields the experiment id. Cancellation while waiting just leaves the queue."""
+    async with _destination_lock():
+        configure_mlflow()
+        experiment_id = get_experiment_id(experiment_name)
+        mlflow.tracing.set_destination(MlflowExperimentLocation(experiment_id), context_local=True)
+        yield experiment_id
 
 
 def _caller_active_run_id() -> str | None:
@@ -101,10 +134,11 @@ def tracked_run(
     *,
     tags: Mapping[str, str] | None = None,
 ) -> Iterator[TrackedRun]:
-    """Create a run through the client, terminate it on exit, and route this context's
-    traces to the same experiment."""
+    """Create a run through the client and terminate it on exit (FAILED if the block raises or is
+    cancelled). Safe to use concurrently. It does not route traces: wrap the traced section in
+    `exclusive_trace_destination` for that."""
     configure_mlflow()
-    experiment_id = route_traces_to_experiment(experiment_name)
+    experiment_id = get_experiment_id(experiment_name)
     run_tags = dict(tags or {})
     parent = _caller_active_run_id()
     if parent is not None:
