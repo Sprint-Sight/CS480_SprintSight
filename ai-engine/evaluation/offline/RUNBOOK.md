@@ -17,9 +17,9 @@ cd ai-engine
 |---|---|---|
 | `OLLAMA_BASE_URL` | **The #1 gotcha.** `.env` holds the value the *Docker container* uses (`http://host.docker.internal:11435/v1`). The research CLIs run on the **host**, where that name does not resolve. | host + HPC tunnel: `http://localhost:11435/v1`<br>host + local Ollama: `http://localhost:11434/v1` |
 | `MLFLOW_TRACKING_URI` | Defaults to `http://localhost:5000` (`llmops/mlflow_config.py`). MLflow 3.16 **refuses** a bare `./mlruns` file store. | `http://localhost:5000` (server), or `sqlite:///mlflow.db` offline |
-| `SPRINTSIGHT_JUDGE_MODEL` | Judge tag. Must not be a llama derivative — see §2. | `phi4:14b` |
+| `SPRINTSIGHT_JUDGE_MODEL` | Judge tag. Must not be a llama derivative — see §2. | leave unset: `sprintsight-judge-phi` |
 | `SPRINTSIGHT_JUDGE_BUNDLE_CHARS` | Budget for the evidence view (default 32000). The judge is shown the *candidate's* sampled commits, not the raw bundle, so this rarely bites. Do **not** raise it to "fix" truncation — the full real-sprint bundle renders at up to 2.4 MB. | leave |
-| `SPRINTSIGHT_JUDGE_NUM_CTX` | **Required, and easy to miss.** Sent as Ollama `options.num_ctx`. Ollama applies a small default and truncates an over-long prompt *silently*, which would defeat every budget above. Must not exceed the judge's real ceiling. | `16384` for phi4:14b<br>`32768` for qwen2.5:14b-instruct<br>`0` to let Ollama decide |
+| `SPRINTSIGHT_JUDGE_NUM_CTX` | **Required, and easy to miss.** Sent as Ollama `options.num_ctx`. Ollama applies a small default and truncates an over-long prompt *silently*, which would defeat every budget above. Must not exceed the judge's real ceiling. | `16384` for sprintsight-judge-phi<br>`32768` for qwen2.5:14b-instruct<br>`0` to let Ollama decide |
 | `SPRINTSIGHT_JUDGE_SEED` | Judge determinism (default 7). | leave |
 | `SPRINTSIGHT_ALLOW_SAME_FAMILY_JUDGE` | Bypasses the self-preference guard. Only to *measure* the bias. | unset |
 | `LLM_TEMPERATURE` | All grading + judging calls (default 0). | leave at 0 |
@@ -77,23 +77,20 @@ The judge must come from a **different model family** than the candidates.
 A judge from the same family as a candidate grades its own family, so
 `assert_judge_independence()` will refuse to run in that case.
 
-On the cluster, inside the running Ollama container:
-```bash
-ollama pull phi4:14b
-```
+The judge is `sprintsight-judge-phi`: phi4:14b with the context size the judge
+code expects (`models/Modelfile.phi`). It is the default everywhere
+(`evaluation/judges/config.py`), so leave `SPRINTSIGHT_JUDGE_MODEL` and
+`--judge-model` unset. You do not pull it by hand:
 
-To have the Slurm job pull it automatically on every submit, add this line to
-the `for entry in \` list in `hpc/ollama-entrypoint.sh`:
-```
-  "phi4:14b|phi4:14b|" \
-```
-(or create a `models/Modelfile.judge-phi` and register it as a
-`sprintsight-judge-phi` alias, matching the default in `evaluation/judges/config.py`).
+* HPC: the Slurm job creates it on every submit (`hpc/ollama-entrypoint.sh`);
+  `bash hpc/hpc-dev.sh models` creates any that are missing.
+* Local: the compose `model-init` service creates it on `docker compose up`.
 
-**Note:** `--llm-grounding` additionally needs the judge tag present in
-`MODEL_NUM_CTX` (`schemas/modelname.py`), or
-`evaluation/judges/citation_grounding.py` raises. Without it the enrichment
-is skipped with a warning; everything else still runs.
+Check it is there with `ollama list | grep sprintsight-judge-phi`. Do not pass
+the raw `phi4:14b` tag instead: it is not in `MODEL_NUM_CTX`
+(`schemas/modelname.py`), so `--llm-grounding` skips its per-claim grounding
+with a warning, and runs logged under another tag do not line up with the
+production judge's.
 
 ---
 
@@ -122,6 +119,52 @@ python -m ruff check research/ evaluation/ schemas/ llmops/ services/
 python -m mypy evaluation/offline/judge_study/ evaluation/benchmarks/synthetic_v1.py
 ```
 
+### Build the real-sprint dataset (`d_real_sprints`)
+
+`d_real_sprints` is every `*.json` in `evaluation/benchmarks/data/real_sprints/`.
+The files are exported from the backend database and **are not committed**
+(they hold student data), so build them on your machine before Phase A3. Each
+file is the exact bundle a live assessment of that sprint would send the
+engine, repository snapshot included (`backend/scripts/export_eval_bundles.py`).
+
+1. Start the backend stack with the course seeded and Jira ingested, and the
+   project repositories under `repo/` (they are mounted read-only into the
+   backend container).
+2. Export every project and sprint of the course, from the repository root.
+   The script is not part of the backend image, so copy it in; `--overwrite`
+   replaces an earlier export:
+   ```bash
+   docker cp backend/scripts/export_eval_bundles.py sprintsight-backend:/tmp/export_eval_bundles.py
+   docker exec -e PYTHONPATH=/app -w /app sprintsight-backend \
+       python /tmp/export_eval_bundles.py --course CS203 --out /tmp/real_sprints --overwrite
+   docker cp sprintsight-backend:/tmp/real_sprints/. ai-engine/evaluation/benchmarks/data/real_sprints/
+   ```
+   Each sprint becomes `<team>_<sprint>.json` (e.g. `ftms_sprint-1.json`). Like
+   a live assessment, the export re-reads each repository's commits and saves
+   them for that sprint. An ambiguous course code (the same code in several
+   terms or sections) makes it stop and list the course ids; pass the id to
+   `--course` instead.
+
+   **Git Bash on Windows:** run `export MSYS_NO_PATHCONV=1` first. Without it,
+   Git Bash rewrites the container paths (`/tmp/...`, `/app`) into Windows
+   paths and `docker cp` / `docker exec` fail. PowerShell needs nothing extra.
+3. Check what was exported (from `ai-engine/`): one line per sprint, distinct
+   team/sprint pairs, a non-empty snapshot, and the dataset hash to cite:
+   ```bash
+   python -c "
+   from evaluation.offline.datasets import load_dataset
+   items, digest, _ = load_dataset('d_real_sprints')
+   for i in items:
+       b = i.bundle
+       print(f'{i.id:28} team={b.team_id[:8]} sprint={b.sprint_id:9} commits={len(b.commits):4} tickets={len(b.jira_tickets):3} snapshot_files={len(b.repo_snapshot.files) if b.repo_snapshot else 0}')
+   pairs = {(i.bundle.team_id, i.bundle.sprint_id) for i in items}
+   print(len(items), 'sprints;', 'ids distinct' if len(pairs) == len(items) else 'DUPLICATE team/sprint ids', '; hash', digest)
+   "
+   ```
+   A project's sprints share their commit history and repository snapshot (Git
+   ingestion is not windowed by sprint); only the Jira tickets differ. Treat
+   them as one repository each when reading the statistics.
+
 ---
 
 ## 4. Phase A — candidate sweep (the expensive part)
@@ -143,7 +186,8 @@ for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma; do
 done
 ```
 
-**A3. Real sprints — this is what the report cites:**
+**A3. Real sprints — this is what the report cites** (build the dataset first,
+§3 "Build the real-sprint dataset"):
 ```bash
 for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma sprintsight-llama31; do
   python -m evaluation.offline.cli run --model "$M" --dataset d_real_sprints \
@@ -187,7 +231,7 @@ sweep, never interleaved — that keeps one model family resident at a time.
 OLLAMA_BASE_URL=http://localhost:11435/v1 \
 python -m evaluation.offline.judge_study evaluate \
     --run-id <PHASE_A_RUN_ID> \
-    --judge-model phi4:14b \
+    --judge-model sprintsight-judge-phi \
     --phase final \
     --out-dir research/judge_eval_report
 ```
@@ -220,21 +264,37 @@ python -m evaluation.offline.attach_judge_scores \
 **C2. Tables, pairwise CIs and plots — judge-independent headline:**
 ```bash
 python -m evaluation.offline.cli analyze --experiment sprintsight-model-comparison \
-    --filter 'tags.phase = "final"' --out-dir research/eval_report \
+    --filter 'params.phase = "final"' --out-dir research/eval_report \
     --pairwise-metric overall_score
 ```
+
+`analyze` averages every run the filter lets through, so first check what it
+pooled. It prints `Pooling N run(s)`, writes `runs_summary.csv` (one row per
+run: model, dataset, dataset hash, phase, examples), and prints a `WARNING`
+with the filter to use when the pooled runs should not be averaged together:
+
+* **more than one dataset**, e.g. a `d1_fixtures` smoke test next to the
+  real sprints;
+* **one dataset, several hashes**: `d_real_sprints` was re-exported between
+  runs, so the examples differ. Re-run the older conditions on the current
+  export, or analyse one version with `--filter 'params.dataset_hash = "<hash>"'`;
+* **more than one phase**, e.g. `preliminary` runs next to the `final` sweep.
+
+Filter on `params.phase`, not `tags.phase`: until the dataset's own label was
+renamed `dataset_phase`, it overwrote the `phase` tag (every run was tagged
+`smoke_test` or `preliminary` whatever `--phase` said).
 
 **C3. Same analysis with the judge metric as headline (needs C1):**
 ```bash
 python -m evaluation.offline.cli analyze --experiment sprintsight-model-comparison \
-    --filter 'tags.phase = "final"' --out-dir research/eval_report_with_judge \
+    --filter 'params.phase = "final"' --out-dir research/eval_report_with_judge \
     --pairwise-metric judge_quality_score
 ```
 
 **C4. Paired tests with multiplicity correction:**
 ```bash
 python -m evaluation.offline.judge_study compare \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi \
     --out-dir research/judge_eval_report
 ```
 
@@ -263,7 +323,7 @@ the report says so.
 **D2. Agreement + judge card:**
 ```bash
 python -m evaluation.offline.judge_study calibrate \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi \
     --human-annotations evaluation/benchmarks/data/human_baseline.csv \
     --out-dir research/judge_eval_report
 ```
@@ -275,7 +335,7 @@ Krippendorff α, ICC(2,1) and signed bias, each with a bootstrap CI, plus a
 **D3. Position-bias (pairwise, order-swapped):**
 ```bash
 python -m evaluation.offline.judge_study pairwise \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi \
     --out-dir research/judge_eval_report
 ```
 
@@ -285,7 +345,7 @@ model ranking.
 **D4. Self-consistency and perturbation sensitivity:**
 ```bash
 python -m evaluation.offline.judge_study consistency \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b --replicates 3 \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi --replicates 3 \
     --metrics Code_Faithfulness --out-dir research/judge_eval_report
 ```
 
@@ -316,38 +376,62 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
 
 ---
 
-## 9. Known blockers
+## 9. Known blockers and caveats
 
-1. **No human gold for real sprints.** `gold_by_fixture()` covers only the
-   five synthetic fixtures. `load_records_from_run` **skips** `esports_sp1`,
-   `ftms_sp1` and `tennis_sp1` with a warning, so Phases B–D currently only
-   work on `d1_fixtures`. Judging real sprints requires authoring gold
-   assessments for them — this is the single biggest gap.
-2. **`d1_fixtures` is smoke-test only**, per its own description. It must not
-   back a report claim.
+Status as of the `fix/eval-runbook-blockers` work. **Fixed** items need nothing
+from you beyond what is written; **caveats** are limits to state in the report.
+
+1. ~~**No human gold for real sprints.**~~ **FIXED (judged without gold).** The
+   real sprints still have no gold, and none is invented: three of the five
+   rubrics (Bug_Actionability, Technical_Correctness, Rubric_Adherence) read
+   gold as grading context, so placeholder gold would bias the judge.
+   `load_records_from_run` now takes each bundle from the dataset the run
+   logged, and a run over gold-free sprints scores only **Code_Faithfulness**
+   and **Evidence_Specificity**, leaves every gold-derived column (grade
+   errors, ROUGE vs gold) empty, and logs `gold_available=False` and
+   `judge_metrics`. A run mixing gold and gold-free records is refused.
+   **Caveat:** on real sprints `judge_composite` (and so `judge_quality_score`)
+   averages those two rubrics only; do not compare it with a synthetic-run
+   composite, and back it with the human calibration in Phase D. Writing human
+   gold for the real sprints would enable the other three rubrics.
+2. **Caveat — `d1_fixtures` is smoke-test only**, per its own description. Run
+   it with `--phase smoke` or `preliminary`, run the real sprints with
+   `--phase final`, and report only `--filter 'params.phase = "final"'`.
+   `analyze` warns when it pools phases or datasets (Phase C).
 3. ~~**The CS203 ground truth is missing.**~~ **FIXED.** It lives in
    `evaluation/benchmarks/cs203.py`, and `evaluation/online/run_judges.py` and
    `evaluation/judges/citation_grounding.py` import cleanly, so §8 is not
    blocked.
-4. **`cicd` has no variance.** All five golds score it 1 because no fixture
-   has any CI artifact, so cicd cannot discriminate between models and will
-   always be the "weakest dimension" that `Bug_Actionability` rewards
-   targeting. Fixing this needs a fixture with real CI.
+4. **Caveat — `cicd` has no variance in the synthetic gold.** All five golds
+   score it 1 because no fixture has CI, so on `d1_fixtures` cicd cannot
+   separate models and is always the "weakest dimension" that
+   Bug_Actionability rewards targeting. This touches only gold-based numbers,
+   which the real sprints do not produce (item 1). On the real sprints only
+   FTMS has CI configuration (four GitHub Actions workflows at HEAD);
+   CareSpace, Esports TMS and ShuttleScore have none, so a cicd comparison
+   rests on one repository. Say so if the report discusses cicd.
 5. ~~**Real-sprint bundles are huge.**~~ **FIXED.** The judge was shown the
    first ~20 commits of the raw bundle while the candidate was shown 30
    *sampled* ones, so 27–29 of every 30 citable commits were invisible and
    would have scored as fabrications. `render_bundle_for_judge` now shows the
    union of `_select_representative_commits` across dimensions — the
-   candidate's own evidence view — plus the precomputed aggregates. 0 of
-   64–89 citable SHAs are now invisible on all three real sprints. File
+   candidate's own evidence view — plus the precomputed aggregates. File
    lists degrade before any commit is dropped, and `SPRINTSIGHT_JUDGE_NUM_CTX`
-   stops Ollama silently truncating the result.
-6. **All three real sprints share one `team_id`/`sprint_id`**
-   (`579ad702…/sp1`), which looks like an export artifact. The trace path
-   keys on `team_id`, so they are indistinguishable there.
-7. **Gold `overall_score` changed** when cicd was added (e.g. 9.0 → 7.5).
-   Any `grade_abs_error_overall` from before that is not comparable; tag new
-   sweeps with a fresh `--phase`.
+   (default 16384) stops Ollama silently truncating the result.
+6. ~~**All real sprints share one `team_id`/`sprint_id`.**~~ **FIXED.** The old
+   exports were taken under one backend project. `d_real_sprints` is now
+   rebuilt locally from the seeded database with
+   `backend/scripts/export_eval_bundles.py` (§3 "Build the real-sprint
+   dataset"), which builds each bundle the way a live assessment does, so
+   every project has its own `team_id` and every bundle carries the
+   repository snapshot. **Caveat:** a project's sprints share their commit
+   history and snapshot (Git ingestion is not windowed by sprint); only the
+   Jira tickets differ, so the 10 sprints are 4 repositories.
+7. **Caveat — gold `overall_score` changed** when cicd was added (e.g. 9.0 →
+   7.5), so a `grade_abs_error_overall` from before that is not comparable.
+   It only concerns synthetic runs, and until item 11 that column was empty
+   anyway. Start new sweeps with a fresh `--phase`; `analyze` warns when it
+   pools phases or two versions of one dataset.
 8. **Older model-comparison runs are in the wrong experiment.** Until the
    runner passed `experiment_id` to `start_run`, its run (params, metrics,
    `per_example.jsonl`) opened in MLflow's default experiment:
@@ -355,20 +439,38 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
    `Default`. Only the child runs and traces reached `--experiment`, so
    `analyze` never saw them. On the local server these are five
    `d_real_sprints` runs from 9–10 Oct (llama31 ×2, coder-32b, r1-32b,
-   qwen25-32b). Analyse them on their own with:
+   qwen25-32b). Their artifacts are gone (item 9), so only their run-level
+   params and metrics remain, and they graded the old, colliding export
+   (item 6). Re-run those models on the current `d_real_sprints` instead.
+   To look at what is left:
    ```bash
-   python -m evaluation.offline.cli analyze --experiment sprintsight_experiment        --filter 'tags.run_type = "model_comparison"' --out-dir research/eval_report_misplaced
+   python -m evaluation.offline.cli analyze --experiment sprintsight_experiment \
+       --filter 'tags.run_type = "model_comparison"' --out-dir research/eval_report_misplaced
    ```
-   MLflow cannot move a run, so putting them next to newer runs means
-   re-logging each one as a new run (new run id). **As of 11 Nov their
-   artifacts are gone (see 9):** `analyze` skips all five with "no
-   per_example.jsonl artifact", and only their run-level params and metrics
-   remain. Re-run those conditions if the report needs per-example data.
-9. **The compose MLflow service does not keep artifacts.** `mlflow server`
-   runs without `--artifacts-destination` or a volume, so artifacts are
-   written to `/mlartifacts` inside the container and are lost when it is
-   recreated. Run metadata survives in Postgres. No model-comparison run
-   logged before the container was recreated on 10 Nov has artifacts left.
+9. ~~**The compose MLflow service does not keep artifacts.**~~ **FIXED.**
+   `mlflow_service` now runs with `--artifacts-destination /mlartifacts` and
+   mounts the named volume `mlflow_artifacts` there, the same way Postgres
+   keeps its data in `postgres_data`. Artifacts survive restarts and container
+   recreation; only `docker compose down -v` deletes them (and the Postgres
+   data with them). Apply it once with `docker compose up -d mlflow_service`.
+   Runs logged before that are still without artifacts: no model-comparison
+   run logged before the container was recreated on 10 Nov has any left.
+   Back the artifacts up before you delete volumes, from `ai-engine/`:
+   ```bash
+   docker run --rm --entrypoint tar -v ai-engine_mlflow_artifacts:/mlartifacts:ro -v "$PWD":/backup sprintsight-mlflow:3.16.1 czf /backup/mlartifacts-backup.tgz -C /mlartifacts .
+   ```
+   (In Git Bash, prefix it with `MSYS_NO_PATHCONV=1`; in PowerShell use
+   `${PWD}`.)
+10. ~~**`--phase` could not be filtered on.**~~ **FIXED.** The dataset's own
+    label was also tagged `phase` and overwrote `--phase`, so
+    `tags.phase = "final"` matched nothing. It is now `dataset_phase`; filter on
+    `params.phase`, which was always right, old runs included.
+11. ~~**The judge study's grade-error columns were empty.**~~ **FIXED.** The
+    grade scorer renamed its MAE to `grade_mae_scored_only` and dropped the
+    overall error (93156b5), so `grade_mae_per_dimension` and
+    `grade_abs_error_overall` were blank on every judge run. Both are filled
+    again, with their original definitions; judge runs from before have no
+    values for them.
 
 ---
 
@@ -376,7 +478,7 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
 
 | Path | Contents |
 |---|---|
-| MLflow UI | runs, params, metrics, `judge_card.md`, figures, eval tables |
+| MLflow UI | runs, params, metrics, `judge_card.md`, figures, eval tables (metadata in Postgres, artifacts in the `mlflow_artifacts` volume) |
 | `research/eval_report/` | comparison tables, pairwise CIs, plots |
 | `research/eval_report_with_judge/` | same, headline = judge score |
 | `research/judge_eval_report/` | `judge_eval_rows.csv`, `judge_calibration.csv`, `model_comparisons.csv`, `judge_scores_for_attach.csv`, `pairwise_comparisons.csv`, `consistency_probe.csv` |

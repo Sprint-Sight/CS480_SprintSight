@@ -137,7 +137,7 @@ Usage
     python -m evaluation.offline.judge_study selftest
 
     # Real run against local Ollama:
-    python -m evaluation.offline.judge_study evaluate --judge-model phi4:14b
+    python -m evaluation.offline.judge_study evaluate --run-id <runner run id>
 """
 
 from evaluation.offline.judge_study.artifacts import judge_card

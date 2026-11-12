@@ -41,6 +41,8 @@ from evaluation.offline.judge_study.deterministic import (
     token_overlap_f1,
 )
 from evaluation.offline.judge_study.specs import (
+    GOLD_DEPENDENT_METRICS,
+    GOLD_FREE_METRICS,
     JUDGE_METRIC_NAMES,
     JUDGE_METRIC_SPECS,
     JudgeMetricSpec,
@@ -332,14 +334,23 @@ def render_rubric_criteria() -> str:
     )
 
 
-def render_gold_for_judge(gold: SprintAssessment) -> str:
+NO_GOLD_REFERENCE = (
+    "No human reference assessment exists for this sprint. Judge against the artifacts only."
+)
+
+
+def render_gold_for_judge(gold: SprintAssessment | None) -> str:
     """Compact gold reference: scores and bottleneck ordering only.
 
     Deliberately NOT the full gold narrative. Showing the judge a complete
     human-written assessment invites it to score candidates on textual
     similarity to gold rather than on the rubric, which would make
     Bug_Actionability a paraphrase detector.
+
+    No gold (a real sprint) renders a neutral line, never placeholder scores.
     """
+    if gold is None:
+        return NO_GOLD_REFERENCE
     scores = []
     for dimension in DIMENSIONS:
         score = getattr(gold.rubric_scores, dimension, None)
@@ -379,7 +390,7 @@ class JudgeRecord:
     example_id: str
     model: str
     bundle: ArtifactBundle
-    gold: SprintAssessment
+    gold: SprintAssessment | None  # None for a real sprint: no human reference exists
     candidate: SprintAssessment | None = None
     candidate_raw: Mapping[str, Any] | None = None
     error: str | None = None
@@ -432,7 +443,7 @@ def build_eval_frame(records: Sequence[JudgeRecord]) -> pd.DataFrame:
     for record in records:
         candidate = record.candidate
         prediction = render_assessment_for_judge(candidate, record.error)
-        target = render_assessment_for_judge(record.gold)
+        target = render_assessment_for_judge(record.gold) if record.gold is not None else ""
 
         # Layer 1: the model-comparison harness's own per-example row, verbatim.
         row: dict[str, Any] = dict(
@@ -459,10 +470,12 @@ def build_eval_frame(records: Sequence[JudgeRecord]) -> pd.DataFrame:
             "rubric_criteria": rubric_criteria,
             "schema_valid": schema_round_trip_ok(record.candidate_raw),
             "python_syntax_valid": python_snippet_syntax_valid(prediction),
-            "rouge_l_vs_gold": rouge_l_f1(prediction, target),
-            "token_overlap_vs_gold": token_overlap_f1(prediction, target),
+            "rouge_l_vs_gold": rouge_l_f1(prediction, target) if target else None,
+            "token_overlap_vs_gold": token_overlap_f1(prediction, target) if target else None,
             "latency_s": record.latency_s,
-            "gold_overall_score": float(record.gold.overall_score),
+            "gold_overall_score": (
+                float(record.gold.overall_score) if record.gold is not None else None
+            ),
         })
 
         if candidate is not None:
@@ -750,6 +763,7 @@ def run_judge_evaluation(
     ``cot_mode="inline"`` halves the judge calls and accepts that weakness.
     """
     judge_uri = configure_judge_endpoint(judge_model)
+    gold_available, only_metrics = _metrics_for_gold(records, only_metrics)
 
     independence: dict[str, Any] = {"independence": "not_checked"}
     if include_llm_metrics:
@@ -809,6 +823,9 @@ def run_judge_evaluation(
             "n_examples": int(frame["example_id"].nunique()),
             "n_candidate_models": int(frame["model"].nunique()),
             "include_llm_metrics": include_llm_metrics,
+            # Without gold only the gold-free rubrics run, and judge_composite averages those.
+            "gold_available": gold_available,
+            "judge_metrics": ",".join(spec.name for spec in specs) if include_llm_metrics else "",
             "git_sha": git_sha(),
             "phase": phase,
             # Judge provenance: a reader must be able to tell from the run
@@ -829,7 +846,7 @@ def run_judge_evaluation(
         result = mlflow.evaluate(
             data=frame,
             predictions="prediction",
-            targets="target",
+            targets="target" if gold_available else None,
             model_type=None,
             extra_metrics=metrics,
             evaluators="default",
@@ -844,6 +861,38 @@ def run_judge_evaluation(
         log.info("Judge evaluation run %s complete.", run.info.run_id)
 
     return result, enriched
+
+
+def _metrics_for_gold(
+    records: Sequence[JudgeRecord], only_metrics: Sequence[str] | None
+) -> tuple[bool, Sequence[str] | None]:
+    """(gold_available, rubrics to run). Every record has gold, or none does.
+
+    A run over real sprints (no human gold) runs only the gold-free rubrics. Mixing the two in
+    one run is refused: the gold-dependent rubrics would cover only part of the rows and every
+    aggregate would mean something different per row.
+    """
+    with_gold = sum(record.gold is not None for record in records)
+    if with_gold == len(records):
+        return True, only_metrics
+    if with_gold:
+        raise ValueError(
+            f"{with_gold} of {len(records)} records have gold and the rest do not; judge "
+            "synthetic (gold) and real (no gold) sprints in separate runs."
+        )
+    requested = list(only_metrics) if only_metrics else list(JUDGE_METRIC_NAMES)
+    dropped = [name for name in requested if name in GOLD_DEPENDENT_METRICS]
+    kept = [name for name in requested if name not in GOLD_DEPENDENT_METRICS]
+    if dropped:
+        log.warning(
+            "No gold for these sprints: skipping the gold-dependent rubrics %s.", ", ".join(dropped)
+        )
+    if not kept:
+        raise ValueError(
+            f"Every requested rubric needs gold ({', '.join(dropped)}); "
+            f"choose from {', '.join(GOLD_FREE_METRICS)} for sprints without gold."
+        )
+    return False, kept
 
 
 def _merge_judge_scores(frame: pd.DataFrame, result: Any) -> pd.DataFrame:

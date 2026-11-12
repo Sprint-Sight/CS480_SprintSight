@@ -149,7 +149,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "report. Prefer d_real_sprints for real evaluation."
         ),
         load=_load_d1_fixtures,
-        tags={"source": "fixtures", "phase": "smoke_test"},
+        tags={"source": "fixtures", "dataset_phase": "smoke_test"},
     ),
     "d_real_sprints": DatasetSpec(
         name="d_real_sprints",
@@ -163,7 +163,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "the report must cite the hash alongside the dataset name."
         ),
         load=_load_real_sprints,
-        tags={"source": "backend_postgres", "phase": "preliminary"},
+        tags={"source": "backend_postgres", "dataset_phase": "preliminary"},
     ),
     # Add d_real_sprints_held_out, d_real_sprints_final, etc. by pointing a
     # different EVAL_REAL_SPRINTS_DIR at a separate directory and registering

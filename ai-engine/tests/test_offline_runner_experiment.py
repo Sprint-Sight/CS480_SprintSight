@@ -72,3 +72,22 @@ def test_run_lands_in_the_requested_experiment(store, offline_runner) -> None:
 
     rows = analysis.load_runs(target, cache_dir=tmp_path / "cache")  # what `cli analyze` reads
     assert list(rows["mlflow_run_id"]) == [run_id]
+
+
+def test_the_phase_tag_is_the_phase_you_asked_for(store, offline_runner) -> None:
+    # Each dataset spec carries its own maturity label; it used to be tagged as `phase` after
+    # --phase and overwrite it, so `--filter 'tags.phase = "final"'` never matched a final run.
+    client, tmp_path = store
+
+    run_id = runner.run_evaluation(
+        model="fake-model", dataset_name="d1_fixtures", subset=["high_performing"],
+        experiment="phase-under-test", phase="final",
+    )
+
+    run = client.get_run(run_id)
+    assert run.data.params["phase"] == "final"
+    assert run.data.tags["phase"] == "final"
+    assert run.data.tags["dataset_phase"] == "smoke_test"  # the dataset's own label, kept apart
+    rows = analysis.load_runs("phase-under-test", cache_dir=tmp_path / "cache")
+    assert set(rows["phase"]) == {"final"}
+    assert set(rows["dataset_hash"]) == {run.data.params["dataset_hash"]}
