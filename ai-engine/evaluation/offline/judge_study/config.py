@@ -34,14 +34,14 @@ JUDGE_EXPERIMENT = os.getenv("SPRINTSIGHT_JUDGE_EXPERIMENT", experiments.JUDGE_S
 # tendency to prefer text from its own family -- that becomes indistinguishable
 # from real quality.
 #
-# phi4:14b is the default because the existing judge code already reaches for
+# sprintsight-judge-phi (phi4:14b) is the default because the existing judge code reaches for
 # the phi family (`SPRINTSIGHT_JUDGE_MODEL` defaults to "sprintsight-judge-phi"
 # in evaluation/judges/config.py), it is not a llama derivative, and at Q4 it
 # fits alongside a 3B candidate on a 24 GB card. `assert_judge_independence`
 # enforces the family rule at run time rather than trusting this default.
 #
-#   ollama pull phi4:14b          # ~9 GB, recommended
-#   ollama pull qwen2.5:14b-instruct   # alternative, also non-llama
+#   sprintsight-judge-phi           # phi4:14b, ~9 GB; created by compose and the HPC job
+#   qwen2.5:14b-instruct            # alternative, also non-llama
 # Shared with the production judge (evaluation/judges/config.py). The default used to differ
 # ("phi4:14b" here, "sprintsight-judge-phi" there) for the SAME environment variable, so an
 # unset variable meant a different judge per entry point. sprintsight-judge-phi IS phi4:14b,
@@ -269,7 +269,7 @@ def assert_judge_independence(
             f"Judge '{judge_model}' (family={judge_family}) shares a model family "
             f"with {len(clashes)} candidate(s) under test: {', '.join(clashes)}. "
             "Self-preference bias makes these scores uninterpretable as quality. "
-            "Use a judge from another family -- `ollama pull phi4:14b` or "
+            "Use a judge from another family -- the default sprintsight-judge-phi or "
             "`ollama pull qwen2.5:14b-instruct` -- or set "
             "SPRINTSIGHT_ALLOW_SAME_FAMILY_JUDGE=1 if you are deliberately "
             "measuring the bias itself."

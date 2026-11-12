@@ -406,11 +406,10 @@ EVERY TIME YOU WANT GPU ACCESS
        docker compose up -d --no-deps --build sprintsight_ai
   4. verify:       curl.exe http://localhost:8001/health
 
-# To add new sprintsight judge phi to GPU cluster run
-1. `ollama pull phi4:14b`
-2. `ollama create sprintsight-judge-phi -f models/Modelfile.phi`
-3. `bash hpc/hpc-dev.sh models`
-4. `curl -s http://localhost:11435/api/create -d '{"model":"sprintsight-judge-phi","from":"phi4:14b" "parameters":{"temperature":0.1,"num_ctx":16384}}'`
+# The judge model (sprintsight-judge-phi) on the GPU cluster
+The Slurm job creates `sprintsight-judge-phi` from `phi4:14b` and `models/Modelfile.phi` on every
+submit (`hpc/ollama-entrypoint.sh`). If it is missing, run `bash hpc/hpc-dev.sh models` with the
+tunnel open: it creates every missing `sprintsight-*` model, the judge included.
 
 ## Running LLM judge and code-based scorer
 1. Start the Ollama GPU container on the cluster node (see above).

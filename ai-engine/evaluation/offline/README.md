@@ -47,7 +47,7 @@ Two directions of flow:
 #    judge_quality_score` finally has data.
 python -m evaluation.offline.judge_study evaluate \
     --run-id <run id from runner.run_evaluation> \
-    --judge-model phi4:14b \
+    --judge-model sprintsight-judge-phi \
     --human-annotations evaluation/benchmarks/data/human_baseline.csv
 
 python -m evaluation.offline.attach_judge_scores \
@@ -75,10 +75,9 @@ The judge **must not share a model family with the candidates under test**.
 `assert_judge_independence` enforces this and will refuse to run; override only
 to deliberately measure the bias:
 
-```bash
-ollama pull phi4:14b              # default, ~9 GB, non-llama
-ollama pull qwen2.5:14b-instruct  # alternative
-```
+The default is `sprintsight-judge-phi` (phi4:14b, ~9 GB, non-llama, built from
+`models/Modelfile.phi` by compose and the HPC job). The alternative is
+`qwen2.5:14b-instruct`; give it a Modelfile and a `MODEL_NUM_CTX` entry first.
 
 ## Typical invocation
 

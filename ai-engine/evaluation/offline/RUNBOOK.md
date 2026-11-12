@@ -17,9 +17,9 @@ cd ai-engine
 |---|---|---|
 | `OLLAMA_BASE_URL` | **The #1 gotcha.** `.env` holds the value the *Docker container* uses (`http://host.docker.internal:11435/v1`). The research CLIs run on the **host**, where that name does not resolve. | host + HPC tunnel: `http://localhost:11435/v1`<br>host + local Ollama: `http://localhost:11434/v1` |
 | `MLFLOW_TRACKING_URI` | Defaults to `http://localhost:5000` (`llmops/mlflow_config.py`). MLflow 3.16 **refuses** a bare `./mlruns` file store. | `http://localhost:5000` (server), or `sqlite:///mlflow.db` offline |
-| `SPRINTSIGHT_JUDGE_MODEL` | Judge tag. Must not be a llama derivative — see §2. | `phi4:14b` |
+| `SPRINTSIGHT_JUDGE_MODEL` | Judge tag. Must not be a llama derivative — see §2. | leave unset: `sprintsight-judge-phi` |
 | `SPRINTSIGHT_JUDGE_BUNDLE_CHARS` | Budget for the evidence view (default 32000). The judge is shown the *candidate's* sampled commits, not the raw bundle, so this rarely bites. Do **not** raise it to "fix" truncation — the full real-sprint bundle renders at up to 2.4 MB. | leave |
-| `SPRINTSIGHT_JUDGE_NUM_CTX` | **Required, and easy to miss.** Sent as Ollama `options.num_ctx`. Ollama applies a small default and truncates an over-long prompt *silently*, which would defeat every budget above. Must not exceed the judge's real ceiling. | `16384` for phi4:14b<br>`32768` for qwen2.5:14b-instruct<br>`0` to let Ollama decide |
+| `SPRINTSIGHT_JUDGE_NUM_CTX` | **Required, and easy to miss.** Sent as Ollama `options.num_ctx`. Ollama applies a small default and truncates an over-long prompt *silently*, which would defeat every budget above. Must not exceed the judge's real ceiling. | `16384` for sprintsight-judge-phi<br>`32768` for qwen2.5:14b-instruct<br>`0` to let Ollama decide |
 | `SPRINTSIGHT_JUDGE_SEED` | Judge determinism (default 7). | leave |
 | `SPRINTSIGHT_ALLOW_SAME_FAMILY_JUDGE` | Bypasses the self-preference guard. Only to *measure* the bias. | unset |
 | `LLM_TEMPERATURE` | All grading + judging calls (default 0). | leave at 0 |
@@ -77,23 +77,20 @@ The judge must come from a **different model family** than the candidates.
 A judge from the same family as a candidate grades its own family, so
 `assert_judge_independence()` will refuse to run in that case.
 
-On the cluster, inside the running Ollama container:
-```bash
-ollama pull phi4:14b
-```
+The judge is `sprintsight-judge-phi`: phi4:14b with the context size the judge
+code expects (`models/Modelfile.phi`). It is the default everywhere
+(`evaluation/judges/config.py`), so leave `SPRINTSIGHT_JUDGE_MODEL` and
+`--judge-model` unset. You do not pull it by hand:
 
-To have the Slurm job pull it automatically on every submit, add this line to
-the `for entry in \` list in `hpc/ollama-entrypoint.sh`:
-```
-  "phi4:14b|phi4:14b|" \
-```
-(or create a `models/Modelfile.judge-phi` and register it as a
-`sprintsight-judge-phi` alias, matching the default in `evaluation/judges/config.py`).
+* HPC: the Slurm job creates it on every submit (`hpc/ollama-entrypoint.sh`);
+  `bash hpc/hpc-dev.sh models` creates any that are missing.
+* Local: the compose `model-init` service creates it on `docker compose up`.
 
-**Note:** `--llm-grounding` additionally needs the judge tag present in
-`MODEL_NUM_CTX` (`schemas/modelname.py`), or
-`evaluation/judges/citation_grounding.py` raises. Without it the enrichment
-is skipped with a warning; everything else still runs.
+Check it is there with `ollama list | grep sprintsight-judge-phi`. Do not pass
+the raw `phi4:14b` tag instead: it is not in `MODEL_NUM_CTX`
+(`schemas/modelname.py`), so `--llm-grounding` skips its per-claim grounding
+with a warning, and runs logged under another tag do not line up with the
+production judge's.
 
 ---
 
@@ -229,7 +226,7 @@ sweep, never interleaved — that keeps one model family resident at a time.
 OLLAMA_BASE_URL=http://localhost:11435/v1 \
 python -m evaluation.offline.judge_study evaluate \
     --run-id <PHASE_A_RUN_ID> \
-    --judge-model phi4:14b \
+    --judge-model sprintsight-judge-phi \
     --phase final \
     --out-dir research/judge_eval_report
 ```
@@ -276,7 +273,7 @@ python -m evaluation.offline.cli analyze --experiment sprintsight-model-comparis
 **C4. Paired tests with multiplicity correction:**
 ```bash
 python -m evaluation.offline.judge_study compare \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi \
     --out-dir research/judge_eval_report
 ```
 
@@ -305,7 +302,7 @@ the report says so.
 **D2. Agreement + judge card:**
 ```bash
 python -m evaluation.offline.judge_study calibrate \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi \
     --human-annotations evaluation/benchmarks/data/human_baseline.csv \
     --out-dir research/judge_eval_report
 ```
@@ -317,7 +314,7 @@ Krippendorff α, ICC(2,1) and signed bias, each with a bootstrap CI, plus a
 **D3. Position-bias (pairwise, order-swapped):**
 ```bash
 python -m evaluation.offline.judge_study pairwise \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi \
     --out-dir research/judge_eval_report
 ```
 
@@ -327,7 +324,7 @@ model ranking.
 **D4. Self-consistency and perturbation sensitivity:**
 ```bash
 python -m evaluation.offline.judge_study consistency \
-    --run-id <PHASE_A_RUN_ID> --judge-model phi4:14b --replicates 3 \
+    --run-id <PHASE_A_RUN_ID> --judge-model sprintsight-judge-phi --replicates 3 \
     --metrics Code_Faithfulness --out-dir research/judge_eval_report
 ```
 
