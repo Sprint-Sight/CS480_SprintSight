@@ -1,4 +1,7 @@
 FROM phi4:14b
 
 PARAMETER temperature 0.1
-PARAMETER num_ctx 49152
+# phi4:14b was trained for 16384 tokens. Ollama clamps a larger num_ctx to that (49152 here used
+# to run at 16384 anyway), so the real value is stated. Keep it equal to MODEL_NUM_CTX in
+# schemas/modelname.py. A longer window needs a different judge model, not a bigger number.
+PARAMETER num_ctx 16384

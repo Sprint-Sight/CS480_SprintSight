@@ -1596,6 +1596,9 @@ def ensure_assessment_schema(pool: ConnectionPool) -> None:
                 rubric_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
                 strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
                 weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb,
+                trace_id TEXT,
+                evaluation_failed BOOLEAN NOT NULL DEFAULT FALSE,
+                failed_dimensions JSONB NOT NULL DEFAULT '[]'::jsonb,
                 override BOOLEAN NOT NULL DEFAULT FALSE,
                 requirements_score NUMERIC(5, 2) CHECK (requirements_score BETWEEN 0 AND 100),
                 code_quality_score NUMERIC(5, 2) CHECK (code_quality_score BETWEEN 0 AND 100),
@@ -1620,6 +1623,9 @@ def ensure_assessment_schema(pool: ConnectionPool) -> None:
             )"""
         )
         for statement in (
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS trace_id TEXT",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS evaluation_failed BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS failed_dimensions JSONB NOT NULL DEFAULT '[]'::jsonb",
             "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS override BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS requirements_score NUMERIC(5, 2)",
             "ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS code_quality_score NUMERIC(5, 2)",
@@ -1671,8 +1677,8 @@ class PostgresAssessmentRepository(AssessmentRepository):
                 (report_id, model_name, mode, course_id, project_id,
                  sprint_id, generated_at, rubric_weights, team_score,
                  individual_scores, recommendations, rubric_scores,
-                 strengths, weaknesses)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 strengths, weaknesses, trace_id, evaluation_failed, failed_dimensions)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (report_id)
                 DO UPDATE SET model_name = EXCLUDED.model_name,
                               mode = EXCLUDED.mode,
@@ -1686,7 +1692,10 @@ class PostgresAssessmentRepository(AssessmentRepository):
                               recommendations = EXCLUDED.recommendations,
                               rubric_scores = EXCLUDED.rubric_scores,
                               strengths = EXCLUDED.strengths,
-                              weaknesses = EXCLUDED.weaknesses""",
+                              weaknesses = EXCLUDED.weaknesses,
+                              trace_id = EXCLUDED.trace_id,
+                              evaluation_failed = EXCLUDED.evaluation_failed,
+                              failed_dimensions = EXCLUDED.failed_dimensions""",
                 (
                     UUID(report.report_id.replace("rpt-", ""))
                     if report.report_id.startswith("rpt-")
@@ -1704,6 +1713,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
                     Json({k: v.model_dump(mode="json") for k, v in report.rubric_scores.items()}),
                     Json(report.strengths),
                     Json(report.weaknesses),
+                    report.trace_id,
+                    report.evaluation_failed,
+                    Json(report.failed_dimensions),
                 ),
             )
 
@@ -1818,6 +1830,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
             rubric_scores=rubric_scores,
             strengths=row["strengths"],
             weaknesses=row["weaknesses"],
+            trace_id=row.get("trace_id"),
+            evaluation_failed=bool(row.get("evaluation_failed", False)),
+            failed_dimensions=row.get("failed_dimensions") or [],
             override=row.get("override", False),
             requirements_score=float(row["requirements_score"])
             if row.get("requirements_score") is not None

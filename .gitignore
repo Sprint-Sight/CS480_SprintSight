@@ -48,7 +48,10 @@ frontend/yarn-error.log*
 # ==========================================
 # 4. Databases & Local Storage
 # ==========================================
+ai-engine/results/
 *.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 *.db
 pgdata/
 uploads/
@@ -81,6 +84,8 @@ Thumbs.db
 # 7. AI Engine & MLflow
 # ==========================================
 ai-engine/research/validation_results/*
+ai-engine/research/eval_inspection/
+ai-engine/research/judge_eval_report/
 
 # ==========================================
 # TypeScript

@@ -3,6 +3,7 @@ import logging
 import math
 import re
 import threading
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean
@@ -10,6 +11,12 @@ from statistics import mean
 import mlflow
 
 from prompts.dimension_criteria import DIMENSIONS
+from schemas.run_record import (
+    base_record,
+    normalize_run_record,
+    score_fields,
+    validity_fields,
+)
 
 log = logging.getLogger("sprintsight.save_results")
 
@@ -28,16 +35,18 @@ def _plain(v):
     return None if isinstance(v, float) and math.isnan(v) else v
 
 def _summarize_raw_results(rows: list[dict], meta: dict) -> dict:
+    rows = [normalize_run_record(r) for r in rows]  # files written before the unified schema still summarise
     teams = {}
-    for team in sorted({r["team_id"] for r in rows}):
+    for team in sorted({r["team_id"] for r in rows if r["team_id"]}):
         t = [r for r in rows if r["team_id"] == team]
-        dim_scores = {d: [r["dimension_scores"][d] for r in t if r["dimension_scores"].get(d) is not None]
-                      for d in DIMENSIONS}
+        dim_scores = {d: [r[f"score_{d}"] for r in t if r[f"score_{d}"] is not None] for d in DIMENSIONS}
+        overall = [r["overall_score"] for r in t if r["overall_score"] is not None]
         teams[team] = {
             "runs": len(t),
-            "mean_overall_score": round(mean(r["overall_score"] for r in t), 3),
+            "mean_overall_score": round(mean(overall), 3) if overall else None,
             "mean_dimension_scores": {d: round(mean(v), 3) if v else None for d, v in dim_scores.items()},
-            "runs_with_failed_dimensions": sum(1 for r in t if r["failed_dimensions"]),
+            "runs_with_failed_dimensions": sum(1 for r in t if r["dimensions_failed"] or r["dimensions_missing"]),
+            "failure_classes": dict(Counter(c for r in t for c in r["failure_classes"].values())),
             "trace_ids": [r["trace_id"] for r in t],
         }
     return {**meta, "total_runs": len(rows), "teams": teams}
@@ -51,19 +60,26 @@ def _summarize_raw_results(rows: list[dict], meta: dict) -> dict:
 def save_run_results(*, experiment_name: str, model_name: str, team_id: str, sprint_id: str,
                      trace_id: str, run_id: str, overall_score: float,
                      scores_by_dim: dict, failed_dimensions: dict,
-                     prompt_versions: dict, duration_seconds: float) -> tuple[Path, Path]:
+                     prompt_versions: dict, duration_seconds: float,
+                     failure_classes: dict | None = None) -> tuple[Path, Path]:
     label = _slug(experiment_name)
     raw_path = RESULTS_DIRECTORY / f"raw_results_{label}_{_SESSION_TS}.jsonl"
     summary_path = RESULTS_DIRECTORY / f"summary_{label}_{_SESSION_TS}.json"
-    row = {
-        "team_id": team_id, "sprint_id": sprint_id, "model": model_name, "run_id": run_id, "trace_id": trace_id,
-        "overall_score": overall_score,
-        "dimension_scores": {d: (None if s.evaluation_failed else s.score) for d, s in scores_by_dim.items()},
-        "failed_dimensions": failed_dimensions,
-        "prompt_versions": prompt_versions,
-        "duration_seconds": round(duration_seconds, 2),
-        "timestamp": datetime.now(UTC).isoformat(),
-    }
+    # The same row shape the research runner writes to per_example.jsonl (schemas/run_record.py),
+    # so the analysis layer can read production runs and benchmark runs with one loader.
+    row = base_record()
+    row.update(
+        example_id=f"{team_id}|{sprint_id}", repeat_index=0, model=model_name,
+        team_id=team_id, sprint_id=sprint_id, run_id=run_id, trace_id=trace_id,
+        overall_score=overall_score,
+        failure_classes=failure_classes or {},
+        failure_details=failed_dimensions,   # {dimension: "<class>: <full error text>"}
+        prompt_versions=prompt_versions,
+        latency_s=round(duration_seconds, 2),
+        timestamp=datetime.now(UTC).isoformat(),
+    )
+    row.update(validity_fields(scores_by_dim))
+    row.update(score_fields(scores_by_dim))
     try:
         with _LOCK: # concurrent writes to the same file
             RESULTS_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -74,9 +90,11 @@ def save_run_results(*, experiment_name: str, model_name: str, team_id: str, spr
             tmp = summary_path.with_suffix(".json.tmp")                           # write-then-rename: never a half-written summary
             tmp.write_text(json.dumps(summary, indent=2), encoding="utf-8")
             tmp.replace(summary_path)
-        # Log artifact attaches to active run
-        mlflow.log_artifact(str(raw_path), artifact_path="trial_results")
-        mlflow.log_artifact(str(summary_path), artifact_path="trial_results")
+        # Attach to the grading run by id. The fluent mlflow.log_artifact needs an active run,
+        # and evaluate_sprint no longer opens one (it would create a stray run instead).
+        client = mlflow.MlflowClient()
+        client.log_artifact(run_id, str(raw_path), "trial_results")
+        client.log_artifact(run_id, str(summary_path), "trial_results")
         print(f"Raw results: {raw_path}\nSummary:     {summary_path}")
 
     except Exception:

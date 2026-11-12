@@ -25,7 +25,7 @@ import { GitIngestionRunsTable } from "@/features/artifacts/components/git-inges
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
 import { JiraBurndownChart, type JiraBurndownResponse } from "@/features/artifacts/components/jira-burndown-chart";
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
-import { downloadBlob } from "@/features/artifacts/download-blob";
+import { downloadBlob } from "@/lib/download-blob";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -428,13 +428,13 @@ export default function ArtifactViewerPageContent() {
       } catch (error) {
         if (!isStale()) {
           setJiraBurndownError(
-            error instanceof Error ? error.message : "Failed to load the Jira burndown chart.",
+            getErrorMessage(error, "Failed to load the Jira burndown chart."),
           );
         }
       }
     } catch (error) {
       if (!isStale()) {
-        setJiraError(error instanceof Error ? error.message : "Failed to load Jira data.");
+        setJiraError(getErrorMessage(error, "Failed to load Jira data."));
       }
     } finally {
       if (requestId === jiraBurndownRequestId.current) setIsLoadingBurndown(false);

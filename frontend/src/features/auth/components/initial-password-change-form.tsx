@@ -85,7 +85,7 @@ export function InitialPasswordChangeForm({
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-[#0b2046] hover:bg-[#0f2c61] text-white py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+            className="w-full bg-brand hover:bg-brand-hover text-white py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50"
           >
             {isLoading ? "Updating password..." : "Set Password and Continue"}
           </button>

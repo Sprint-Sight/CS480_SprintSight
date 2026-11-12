@@ -16,4 +16,40 @@
   --chart-4: 206 70% 70%;
   --chart-5: 202 80% 81%;
   --chart-bar: 209 48% 35%;
+  /* Each value is the exact HSL of the hex color it replaces. */
+  --chart-highlight: 217.2 91.2% 59.8%; /* #3b82f6 */
+  --chart-accent: 221.2 83.2% 53.3%; /* #2563eb */
+  --chart-track: 211.3 46.9% 90.4%; /* #dbe6f2 */
+  /* Dark-to-light blue ramp for multi-series charts. */
+  --series-1: 216.9 55.7% 27.5%; /* #1f3d6d */
+  --series-2: 209.3 47.8% 35.3%; /* #2f5b85 */
+  --series-3: 201.5 43% 43.3%; /* #3f7c9e */
+  --series-4: 202.9 42.4% 55.1%; /* #5c98bd */
+  --series-5: 202.8 54.8% 67.1%; /* #7db6d9 */
+  /* Score bands: >= 85, >= 75, below 75. */
+  --score-high: 209.3 47.8% 35.3%; /* #2f5b85 */
+  --score-mid: 205.2 39.7% 50.6%; /* #4f89b3 */
+  --score-low: 202.3 56.1% 66.1%; /* #78b5d9 */
+  /* Navy used for the auth screens' main button. */
+  --brand: 218.6 72.8% 15.9%; /* #0b2046 */
+  --brand-hover: 218.8 73.2% 22%; /* #0f2c61 */
+}
+
+/*
+ * Keyboard focus fallback for controls that don't style their own focus yet (buttons and
+ * links still being migrated to <Button>). :where() has zero specificity, so any
+ * component's own focus or outline utility still wins.
+ */
+@layer base {
+  :where(
+      button,
+      a[href],
+      select,
+      summary,
+      [role="button"],
+      [tabindex]:not([tabindex="-1"])
+    ):focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+  }
 }

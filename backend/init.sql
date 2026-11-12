@@ -248,6 +248,12 @@ CREATE TABLE IF NOT EXISTS assessment_reports (
     rubric_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
     strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
     weaknesses JSONB NOT NULL DEFAULT '[]'::jsonb,
+    -- MLflow trace of the AI engine's grading run (join key to the judge verdict).
+    trace_id TEXT,
+    -- At least one rubric dimension exhausted its retries and was not scored; the report
+    -- needs manual review and its team_score covers only the assessed dimensions.
+    evaluation_failed BOOLEAN NOT NULL DEFAULT FALSE,
+    failed_dimensions JSONB NOT NULL DEFAULT '[]'::jsonb,
     override BOOLEAN NOT NULL DEFAULT FALSE,
     requirements_score NUMERIC(5, 2) CHECK (requirements_score BETWEEN 0 AND 100),
     code_quality_score NUMERIC(5, 2) CHECK (code_quality_score BETWEEN 0 AND 100),

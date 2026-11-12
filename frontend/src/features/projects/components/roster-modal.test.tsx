@@ -134,3 +134,39 @@ describe("RosterModal enroll list", () => {
     expect(screen.getByText("No available students match your search.")).toBeTruthy();
   });
 });
+
+describe("RosterModal pending actions", () => {
+  it("disables Create while a student is being created", () => {
+    const props = renderRoster({ isCreatingStudent: true });
+
+    const create = screen.getByRole("button", { name: "Creating..." }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.click(create);
+    expect(props.onCreateStudent).not.toHaveBeenCalled();
+  });
+
+  it("disables Enroll only for the row whose request is in flight", () => {
+    const another = {
+      ...notEnrolled,
+      id: "s5",
+      email: "other@example.com",
+      full_name: "Other Free",
+    };
+    renderRoster({
+      allStudents: [enrolledHere, inSibling, notEnrolled, another],
+      pendingStudentId: "s3",
+    });
+
+    expect((enrollButton("Not Enrolled") as HTMLButtonElement).disabled).toBe(true);
+    expect((enrollButton("Other Free") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("disables Unenroll for the row whose request is in flight", () => {
+    renderRoster({ pendingStudentId: "s1" });
+
+    const unenroll = screen.getByRole("button", {
+      name: "Unenroll Enrolled Here",
+    }) as HTMLButtonElement;
+    expect(unenroll.disabled).toBe(true);
+  });
+});
