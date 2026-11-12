@@ -1,6 +1,4 @@
-import asyncio
-import os
-import time
+import asyncio, os, time
 from typing import Literal
 
 import mlflow
@@ -12,7 +10,7 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, create_model
 
 from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
@@ -54,7 +52,8 @@ Citations to things that do not exist were already removed by code; you will not
 Return exactly one verdict for EVERY claim id given. Never skip or repeat one."""
 
 BUNDLE_BY_TEAM = {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE)}
-JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", "sprintsight-judge-phi")
+JUDGE_MODEL = os.getenv("SPRINTSIGHT_JUDGE_MODEL", 'sprintsight-judge-phi')
+FIXTURE_JUDGE_MODEL = "gpt-4o-mini"  # Ollama judge for fixtures, OpenAI judge for real runs
 
 FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
                   "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
@@ -65,6 +64,9 @@ SEVERITY_WEIGHT = {"none": 0.0, "minor_detail": 0.25, "major_misattribution": 0.
 CODE_DROP_WEIGHT = 1.0           # a citation code had to remove is a fabrication
 _ALLOWED_SEVERITY = {"grounded": {"none"}, "partially_grounded": {"minor_detail", "major_misattribution"},
                      "hallucinated": {"major_misattribution"}}
+
+def judge_model_for(trace):
+    return FIXTURE_JUDGE_MODEL if trace.info.tags.get("fixture") == "true" else JUDGE_MODEL
 
 class JudgeContextTooSmall(RuntimeError):
     """Prompt would not fit in the judge's context window; the row must be treated as invalid."""
@@ -88,16 +90,25 @@ class GroundingVerdict(BaseModel):
 def make_grounding_verdict_model(expected_ids: set[str]) -> type[GroundingVerdict]:
     """Closure instead of validation_context (instructor can't pass it, see services/grounding.py).
     A skipped/duplicated/unknown id raises, so instructor's max_retries re-asks with the error text."""
-    class _Checked(GroundingVerdict):
+    
+    id_type = Literal[tuple(sorted(expected_ids))]  # type: ignore[valid-type]  # runtime-built enum of the allowed ids
+
+    verdict_cls = create_model(
+        "_Verdict", __base__=CitationVerdict,
+        citation_id=(id_type, Field(description="Exactly the claim id (C1, C2, ...). Never a commit SHA or ticket key.")),
+    )
+    base = create_model("_CheckedBase", __base__=GroundingVerdict, citation_verdicts=(list[verdict_cls], ...))
+
+    class _Checked(base):
         @model_validator(mode="after")
         def _every_id_exactly_once(self):
             seen = [v.citation_id for v in self.citation_verdicts]
             missing = sorted(expected_ids - set(seen))
-            unknown = sorted(set(seen) - expected_ids)
             dupes = sorted({i for i in seen if seen.count(i) > 1})
-            if missing or unknown or dupes:
-                raise ValueError(f"Need exactly one verdict per claim id. Missing: {missing}; unknown: {unknown}; duplicated: {dupes}")
+            if missing or dupes:
+                raise ValueError(f"Need exactly one verdict per claim id. Missing: {missing}; duplicated: {dupes}")
             return self
+
     return _Checked
 
 def collect_citations(rubric_scores: RubricsScore) -> dict[str, dict]:
@@ -196,16 +207,21 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
     7. If the judge succeeds, compute the number of judged citations and the weighted sum of their severities.
     8. Return a list of Feedback objects with the judge's verdict and any citations dropped by code.
     '''
-    is_fixture = trace.info.tags.get("fixture") == "true"
-    judge_model = "gpt-4o-mini" if is_fixture else JUDGE_MODEL
-    judge_provider = "openai" if is_fixture else "ollama"
+
+    judge_model = judge_model_for(trace)
+    judge_provider = "openai" if judge_model == FIXTURE_JUDGE_MODEL else "ollama"
 
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
     team, model = trace.info.tags.get("team_id"), trace.info.tags.get("model")
     print(f"\n[judge] {judge_model} (using {judge_provider}) checking {model} / {team}...", flush=True)
 
     start = time.perf_counter()
-    with mlflow.start_span(name=f"llm_judge_citation_grounding on {model} / {team}", span_type=SpanType.LLM):
+    with mlflow.start_span(name=f"llm_judge_citation_grounding on {model} / {team}", span_type=SpanType.LLM) as span:
+        
+        span.set_inputs({"scored_trace_id": trace.info.trace_id, "team_id": team,
+                         "sprint_id": trace.info.tags.get("sprint_id"), "candidate_model": model,
+                         "judge_model": judge_model, "judge_provider": judge_provider})
+        
         mlflow.update_current_trace(
             request_preview=f"llm_judge_citation_grounding on {model} / {team}",
             tags={"team_id": team, "model": model, "judge_model": judge_model, "judge_provider": judge_provider, "dimension": "judge_grounding"},
@@ -218,10 +234,16 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
         
         except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
             print(f"  [judge] {model} / {team} FAILED after {time.perf_counter() - start:.0f}s: {type(e).__name__}: {e}", flush=True)
-            mlflow.update_current_trace(response_preview=f"Error: {e}")
+            span.set_outputs({"error_type": type(e).__name__, "error": str(e)[:1500]})
+            span.set_status("ERROR")
+            mlflow.update_current_trace(response_preview=_clip(f"Error {type(e).__name__}: {e}"))
+            mlflow.update_current_trace(response_preview=f"Error: {e}"[:900])
             return [Feedback(name="citation_hallucination_rate", error=e, source=source)]
         
-        mlflow.update_current_trace(response_preview=f"Result: {result}")
+        span.set_outputs({"metrics": result, "citations_dropped_by_code": dropped, "verdicts": rows})
+        mlflow.update_current_trace(response_preview=_clip(
+            f"halluc={result['hallucination_rate']} grounded={result['grounded_rate']} "
+            f"cites={result['citation_count']} dropped={dropped}"))
         print(f"  [judge] {model} / {team} done in {time.perf_counter() - start:.0f}s: {result}", flush=True)
         n, wsum = result["citation_count"], sum(SEVERITY_WEIGHT[r["severity"]] for r in rows)
         headline = round((wsum + CODE_DROP_WEIGHT * dropped) / (n + dropped), 4) if n + dropped else None
@@ -237,10 +259,6 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
             Feedback(name="citation_severity_weighted_rate_incl_dropped", value=headline, source=source,
                      rationale=f"{n} judged citations (weight sum {wsum}) plus {dropped} code-removed fabrications at weight {CODE_DROP_WEIGHT}")]
 
-_BUNDLES: dict[tuple, ArtifactBundle] = {}
-def remember_bundle(bundle: ArtifactBundle):
-    _BUNDLES[(bundle.team_id, bundle.sprint_id)] = bundle     # call in api/assessment.py and run_ab_trial.py before evaluating
-
 def _fixture_bundle(team: str | None):
     from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
     from research.fixtures import FIXTURES_TEAMS
@@ -255,6 +273,9 @@ def _bundle_of(trace: Trace, team: str | None) -> ArtifactBundle:
     if bundle is None:
         raise KeyError(f"no bundle for team={team!r} sprint={inputs.get('sprint_id')!r}")
     return bundle
+
+def _clip(s: str, n: int = 900) -> str: # trace_info preview conlumns are varchar(1000)
+    return s if len(s) <= n else s[: n - 3] + "..."
 
 def _feedback_name(key: str) -> str: # known keys keep their names
     return FEEDBACK_NAMES.get(key, f'citation_{key}')

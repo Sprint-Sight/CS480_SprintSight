@@ -10,12 +10,9 @@ Usage:
         docker compose exec sprintsight_ai python -m research.run_fixture_trial --model "$m"
     done
 """
-import argparse
-import asyncio
-import json
+import argparse, asyncio, json, mlflow
 from pathlib import Path
 
-import mlflow
 from fastapi import BackgroundTasks
 
 from judges.promote import judge_and_promote_trace
@@ -25,7 +22,7 @@ from research.fixtures import FIXTURES_TEAMS
 from schemas.artifact_bundle import ArtifactBundle
 from services.evaluator import evaluate_sprint
 
-DEFAULT_EXPERIMENT_NAME = "openai judges fixtures test 1"
+DEFAULT_EXPERIMENT_NAME = "openai judges fixtures test 4"
 
 def load_ab_bundle(ab_bundle_path: Path) -> ArtifactBundle:
     with ab_bundle_path.open() as f:
@@ -38,7 +35,11 @@ async def run_fixture_trial(model_name: str, experiment_name: str = "Fixture tes
         for i in range(repeats):
             print(f"[{i + 1}/{repeats}] Evaluating '{model_name}' against {bundle.team_id}...")
             trace_ids: list[str] = []  # fresh per run so a judge task only sees its own traces
-            assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
+            try:
+                assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
+            except Exception as e:
+                print(f"  Error evaluating '{model_name}' against {bundle.team_id}: {e}, SKIPPED")
+                continue
             print(f"  trace_ids={trace_ids}  overall_score={assessment.overall_score}")
             trace_id = trace_ids[0]
 

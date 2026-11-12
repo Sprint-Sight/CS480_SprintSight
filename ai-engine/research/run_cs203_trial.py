@@ -8,12 +8,8 @@ triggered here genuinely exercises the same path the live endpoint uses.
 Usage:
     docker compose exec sprintsight_ai python -m research.run_ab_trial --model sprintsight-qwen
 """
-import argparse
-import asyncio
-import json
+import argparse, asyncio, json, mlflow
 from pathlib import Path
-
-import mlflow
 from fastapi import BackgroundTasks
 
 from judges.promote import judge_and_promote_trace
@@ -24,7 +20,7 @@ from services.evaluator import evaluate_sprint
 
 CS203g6_BUNDLE_PATH = Path(__file__).parent / "cs203g6_AB.json"
 CS203jy_BUNDLE_PATH = Path(__file__).parent / "cs203jy_AB.json"
-DEFAULT_EXPERIMENT_NAME = "CS203 research 6/11/26" # ChangeMe: Update this to a new experiment name for each run, so the judge can see the new traces and not be confused by old ones. The judge only looks at traces in the same experiment as the challenger prompt version.
+DEFAULT_EXPERIMENT_NAME = "CS203 research 11/11/26" # ChangeMe: Update this to a new experiment name for each run, so the judge can see the new traces and not be confused by old ones. The judge only looks at traces in the same experiment as the challenger prompt version.
 
 def load_ab_bundle(ab_bundle_path: Path) -> ArtifactBundle:
     with ab_bundle_path.open() as f:
