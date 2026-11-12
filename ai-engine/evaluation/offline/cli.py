@@ -71,6 +71,8 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
         comparison_table,
         consistency_summary,
         load_runs,
+        mixed_run_warnings,
+        run_summary,
     )
     from evaluation.offline.plots import save_all
     from evaluation.stats import pairwise_ci_table
@@ -82,6 +84,12 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    runs = run_summary(df)
+    runs.to_csv(out_dir / "runs_summary.csv", index=False)
+    print(f"Pooling {len(runs)} run(s); wrote {out_dir / 'runs_summary.csv'}")
+    for warning in mixed_run_warnings(df):
+        print(f"WARNING: {warning}")
 
     table = comparison_table(df)
     table_path = out_dir / "comparison_table.csv"

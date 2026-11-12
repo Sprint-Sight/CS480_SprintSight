@@ -25,7 +25,7 @@ from evaluation.offline.judge_study.frame import (
     render_rubric_criteria,
 )
 from evaluation.offline.judge_study.meta import krippendorff_alpha_ordinal
-from evaluation.offline.judge_study.specs import SPEC_BY_NAME
+from evaluation.offline.judge_study.specs import GOLD_DEPENDENT_METRICS, SPEC_BY_NAME
 from evaluation.stats import bootstrap_ci
 
 #
@@ -142,6 +142,8 @@ def self_consistency_probe(
             f"Grade sprint {record.bundle.sprint_id} for team {record.bundle.team_id}."
         )
         for metric_name in metrics:
+            if record.gold is None and metric_name in GOLD_DEPENDENT_METRICS:
+                continue  # no human reference for this sprint: the rubric cannot be applied
             spec = SPEC_BY_NAME[metric_name]
             grading_context = {
                 column: context_values[column] for column in spec.grading_context_columns

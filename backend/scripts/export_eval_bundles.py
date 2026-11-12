@@ -1,35 +1,33 @@
-"""Export ingested sprints from Postgres as ArtifactBundle JSON files.
+"""Export sprints as the exact ArtifactBundle the AI engine grades in a live assessment.
 
-The AI engine's model-comparison pipeline (ai-engine/evaluation/offline/) reads
-one JSON file per sprint from a directory, so this script's job is to
-turn a list of (course_id, project_id, sprint_id) triples into exactly
-that: one ArtifactBundle-shaped JSON per sprint, named by filename.
+The AI engine's model-comparison pipeline (ai-engine/evaluation/offline/) reads one JSON file per
+sprint from a directory (the `d_real_sprints` dataset). Each file here is built the way
+`run_assessment_job` builds a live request: commits re-extracted from the project's local
+repository (`ingest_github_metrics`, which also saves them, as an assessment does), the latest
+processed Jira snapshot without changelogs, instructor expectations, uploaded context documents
+and the repository snapshot at HEAD, assembled by `build_assessment_payload`. The payload is then
+mapped to an ArtifactBundle the way ai-engine/api/assessment.py maps it, so the offline dataset
+is what production would grade.
 
-Example — export the two sprints you've already ingested:
+Run it inside the backend container (it needs the database, MinIO and the mounted repositories;
+`scripts/` is not part of the image, so copy it in), from the repository root:
 
-    python -m scripts.export_eval_bundles \\
-        --triple cs203,proj-a,sprint-1,proj_a_s1 \\
-        --triple cs203,proj-b,sprint-1,proj_b_s1 \\
-        --out ../ai-engine/evaluation/benchmarks/data/real_sprints
+    docker cp backend/scripts/export_eval_bundles.py sprintsight-backend:/tmp/export_eval_bundles.py
+    docker exec -e PYTHONPATH=/app -w /app sprintsight-backend \\
+        python /tmp/export_eval_bundles.py --course CS203 --out /tmp/real_sprints
+    docker cp sprintsight-backend:/tmp/real_sprints/. \\
+        ai-engine/evaluation/benchmarks/data/real_sprints/
 
-Each --triple is `course_id,project_id,sprint_id,output_name`. The
-`output_name` becomes the JSON filename (and therefore the example_id in
-every subsequent MLflow run and plot). Pick stable names — a rename later
-produces a different dataset hash.
+Selecting sprints:
 
-Data pulled from Postgres (via the same repositories the API uses):
+    --course CS203                 every project of the course x every sprint that has a Jira
+                                   ingestion run; each file is named <team>_<sprint>, e.g.
+                                   ftms_sprint-1.json
+    --triple C,P,S,NAME            one sprint by course_id, project_id, sprint_id and file name;
+                                   repeatable
 
-    metrics        <- PostgresMetricsRepository.get_metrics
-    jira_tickets   <- PostgresJiraIngestionRunRepository.list_runs (latest
-                      cleaned_snapshot)
-    manual_text    <- PostgresManualTextRepository.get
-    documents      <- optional; off by default because it needs MinIO.
-                      Pass --with-documents and set MINIO_* env vars to
-                      include extracted document text.
-
-Everything else that an ArtifactBundle expects but doesn't come from
-Postgres (peer_evaluations, artifact_metrics) is written as empty — the
-production pipeline treats those as optional too.
+The file name becomes the example_id in every MLflow run and plot, and the dataset hash covers
+the file contents, so a rename or a re-export with new data is a different dataset.
 """
 
 from __future__ import annotations
@@ -37,221 +35,237 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-
-def _import_backend_bits():
-    """Imported lazily so --help works without the backend env configured."""
-    # Settings/env must be ready before touching Postgres.
-    from app.core.config import get_settings
-    from app.repositories.postgres import (
-        PostgresDocumentRepository,
-        PostgresJiraIngestionRunRepository,
-        PostgresManualTextRepository,
-        PostgresMetricsRepository,
-        create_user_pool,
-    )
-    from app.services.documentsService.service import collect_project_context_documents
-
-    return (
-        get_settings,
-        create_user_pool,
-        PostgresMetricsRepository,
-        PostgresJiraIngestionRunRepository,
-        PostgresManualTextRepository,
-        PostgresDocumentRepository,
-        collect_project_context_documents,
-    )
+# The fields ai-engine/api/assessment.py copies from the payload into its ArtifactBundle.
+BUNDLE_FIELDS = (
+    "team_id",
+    "sprint_id",
+    "commits",
+    "jira_tickets",
+    "peer_evaluations",
+    "collaboration_metrics",
+    "artifact_metrics",
+    "project_context_documents",
+    "repo_snapshot",
+    "instructor_expectations",
+)
 
 
-def _collaboration_metrics_from_metrics(metrics) -> dict[str, Any]:
-    """Mirror the shape the AI engine's BackendCollaborationMetrics expects
-    (see ai-engine/api/assessment.py). Keeping it structural so a future
-    field drift is caught by Pydantic parsing on the AI-engine side rather
-    than by a mysterious KeyError here."""
+@dataclass(frozen=True)
+class SprintRef:
+    course_id: str
+    project_id: str
+    sprint_id: str
+    output_name: str
+
+
+def bundle_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """The ArtifactBundle the AI engine builds from a live payload (ai-engine/api/assessment.py):
+    the project id is the team id, and absent optional lists default to empty."""
+    context = payload["sprint_context"]
     return {
-        "commit_frequency": metrics.commit_frequency,
-        "code_churn": metrics.code_churn,
-        "pr_turnaround_hours": metrics.pr_turnaround_hours,
-        "assigned_story_points": metrics.assigned_story_points,
-        "completion_percent": metrics.completion_percent,
+        "team_id": context["project_id"],
+        "sprint_id": context["sprint_id"],
+        "commits": payload.get("commits") or [],
+        "jira_tickets": payload.get("jira_tickets") or [],
+        "peer_evaluations": payload.get("peer_evaluations") or [],
+        "collaboration_metrics": payload.get("collaboration_metrics") or {},
+        "artifact_metrics": payload.get("artifact_metrics") or {},
+        "project_context_documents": payload.get("project_context_documents") or [],
+        "repo_snapshot": payload.get("repo_snapshot"),
+        "instructor_expectations": payload.get(
+            "instructor_expectations", "No instructor guidance provided."
+        ),
     }
 
 
-def _latest_jira_tickets(jira_repo, project_id: str, sprint_id: str) -> list[dict]:
-    runs = jira_repo.list_runs(project_id, sprint_id)
-    processed = [r for r in runs if r.cleaned_snapshot]
+def latest_jira_tickets(jira_repo, project_id: str, sprint_id: str) -> list[dict]:
+    """The latest processed Jira snapshot, serialised as run_assessment_job serialises it."""
+    processed = [run for run in jira_repo.list_runs(project_id, sprint_id) if run.cleaned_snapshot]
     if not processed:
         return []
-    latest = max(processed, key=lambda r: r.captured_at)
-    return [ticket.model_dump(mode="json") for ticket in latest.cleaned_snapshot.tickets]
+    latest = max(processed, key=lambda run: run.captured_at)
+    return [
+        ticket.model_dump(mode="json", exclude={"changelog"})
+        for ticket in latest.cleaned_snapshot.tickets
+    ]
 
 
-def _bundle_dict_from_db(
-    course_id: str,
-    project_id: str,
-    sprint_id: str,
-    metrics_repo,
-    jira_repo,
-    manual_repo,
-    document_repo=None,
-    storage=None,
-    include_documents: bool = False,
-) -> dict[str, Any]:
-    """Build an ArtifactBundle-shaped dict for ONE sprint. Shape matches
-    ai-engine/schemas/artifact_bundle.ArtifactBundle so the dataset loader
-    can parse it with `ArtifactBundle.model_validate(...)`.
-    """
-    metrics = metrics_repo.get_metrics(course_id, project_id, sprint_id)
-    if metrics is None:
-        raise LookupError(
-            f"No metrics in Postgres for (course_id={course_id}, "
-            f"project_id={project_id}, sprint_id={sprint_id}). Ingest the "
-            f"repo first via /api/v1/ingestion/sync, then rerun this export."
-        )
-    jira_tickets = _latest_jira_tickets(jira_repo, project_id, sprint_id)
-    manual_text = (
-        manual_repo.get(course_id, project_id, sprint_id) or "No instructor guidance provided."
+def build_live_payload(ref: SprintRef, project, repos: dict[str, Any], storage) -> dict[str, Any]:
+    """Collect one sprint's inputs exactly as run_assessment_job does, then build the payload."""
+    from app.schemas.assessment import AssessRequest
+    from app.services.documentsService.service import collect_project_context_documents
+    from app.services.gitlabGithub.service import (
+        collect_repository_snapshot,
+        ingest_github_metrics,
+        resolve_local_repository_path,
     )
+    from app.services.manualTextService.service import get_manual_text
+    from app.services.middleManService.service import build_assessment_payload
+
+    if not project.local_repo_path:
+        raise LookupError(f"project {project.team_name!r} has no local repository configured")
+    try:
+        repository_path = resolve_local_repository_path(project.local_repo_path)
+    except ValueError as exc:
+        raise LookupError(f"project {project.team_name!r}: {exc}") from exc
+
+    request = AssessRequest(
+        course_id=ref.course_id, project_id=ref.project_id, sprint_id=ref.sprint_id
+    )
+    metrics = ingest_github_metrics(request, repository_path, repos["metrics"])
+    manual_text = get_manual_text(repos["manual"], ref.course_id, ref.project_id, ref.sprint_id)
+    jira_tickets = latest_jira_tickets(repos["jira"], ref.project_id, ref.sprint_id)
 
     project_context_documents: list[dict] = []
-    if include_documents and document_repo is not None and storage is not None:
-        try:
-            # Re-use the production path so the export is faithful to what
-            # the AI engine actually sees in a live /assess call.
-            from app.services.documentsService.service import collect_project_context_documents
+    try:
+        project_context_documents = collect_project_context_documents(
+            ref.project_id, repos["documents"], storage
+        )
+    except Exception:
+        log.exception(
+            "Document collection failed for %s; continuing without them.", ref.output_name
+        )
 
-            project_context_documents = collect_project_context_documents(
-                project_id, document_repo, storage
+    repo_snapshot: dict | None = None
+    try:
+        repo_snapshot = collect_repository_snapshot(repository_path, metrics.head_sha or "HEAD")
+    except Exception:
+        log.exception(
+            "Repository snapshot failed for %s; continuing with history only.", ref.output_name
+        )
+
+    return build_assessment_payload(
+        metrics, {}, manual_text, jira_tickets, project_context_documents, repo_snapshot
+    )
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9-]+", "_", text.strip().lower()).strip("_")
+
+
+def sprints_for_course(course_code_or_id: str, project_repo, jira_repo) -> list[SprintRef]:
+    """Every project of the course x every sprint that has a Jira ingestion run."""
+    wanted = course_code_or_id.strip().lower()
+    courses = [
+        c for c in project_repo.list_courses() if wanted in (c.id.lower(), c.code.strip().lower())
+    ]
+    if not courses:
+        raise LookupError(f"no course with code or id {course_code_or_id!r}")
+    if len(courses) > 1:
+        options = ", ".join(f"{c.id} ({c.code} {c.section} {c.year} {c.term})" for c in courses)
+        raise LookupError(f"course code {course_code_or_id!r} is ambiguous; pass an id: {options}")
+    course = courses[0]
+    refs: list[SprintRef] = []
+    for project in sorted(project_repo.list_projects(course.id), key=lambda p: p.team_name.lower()):
+        sprint_ids = sorted({run.sprint_id for run in jira_repo.list_project_runs(project.id)})
+        if not sprint_ids:
+            log.warning(
+                "Project %r has no Jira ingestion runs; nothing to export.", project.team_name
             )
-        except Exception:
-            log.exception("Document collection failed; writing bundle without context docs.")
-
-    return {
-        # Fields in ArtifactBundle (ai-engine/schemas/artifact_bundle.py)
-        "team_id": project_id,
-        "sprint_id": sprint_id,
-        "commits": [commit.model_dump(mode="json") for commit in metrics.commits],
-        "jira_tickets": jira_tickets,
-        "peer_evaluations": [],  # Not currently captured by backend ingestion
-        "collaboration_metrics": _collaboration_metrics_from_metrics(metrics),
-        "artifact_metrics": {},  # Reserved; mock was removed in the docs work
-        "project_context_documents": project_context_documents,
-        "instructor_expectations": manual_text,
-    }
+        for sprint_id in sprint_ids:
+            name = f"{slug(project.team_name)}_{slug(sprint_id)}"
+            refs.append(SprintRef(course.id, project.id, sprint_id, name))
+    names = [ref.output_name for ref in refs]
+    if len(set(names)) != len(names):
+        raise LookupError(f"two sprints map to the same file name: {sorted(names)}")
+    return refs
 
 
-def _parse_triple(raw: str) -> tuple[str, str, str, str]:
-    parts = raw.split(",")
-    if len(parts) != 4:
+def parse_triple(raw: str) -> SprintRef:
+    parts = [part.strip() for part in raw.split(",")]
+    if len(parts) != 4 or not all(parts):
         raise argparse.ArgumentTypeError(
             f"--triple must be course_id,project_id,sprint_id,output_name (got {raw!r})"
         )
-    course_id, project_id, sprint_id, output_name = (p.strip() for p in parts)
-    if not all([course_id, project_id, sprint_id, output_name]):
-        raise argparse.ArgumentTypeError(f"--triple has empty fields: {raw!r}")
-    return course_id, project_id, sprint_id, output_name
+    return SprintRef(*parts)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument(
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--course", help="Course code or id: export every project and sprint.")
+    selection.add_argument(
         "--triple",
         action="append",
-        type=_parse_triple,
-        required=True,
+        type=parse_triple,
         metavar="C,P,S,NAME",
-        help="course_id,project_id,sprint_id,output_name. Repeat for multiple sprints.",
+        help="course_id,project_id,sprint_id,output_name. Repeat for several sprints.",
     )
+    parser.add_argument("--out", type=Path, required=True, help="Output directory.")
     parser.add_argument(
-        "--out",
-        type=Path,
-        required=True,
-        help="Output directory (e.g. ../ai-engine/evaluation/benchmarks/data/real_sprints).",
-    )
-    parser.add_argument(
-        "--with-documents",
-        action="store_true",
-        help="Include extracted project_context_documents. Requires MinIO env vars.",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing JSON files; default is to skip them.",
+        "--overwrite", action="store_true", help="Replace existing files (default: skip them)."
     )
     args = parser.parse_args(argv)
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    log.info("Writing bundles to %s", args.out.resolve())
-
-    (
-        get_settings,
+    from app.core.config import get_settings
+    from app.core.storage import storage
+    from app.repositories.postgres import (
+        PostgresDocumentRepository,
+        PostgresJiraIngestionRunRepository,
+        PostgresManualTextRepository,
+        PostgresMetricsRepository,
+        PostgresProjectRepository,
         create_user_pool,
-        metrics_repo_cls,
-        jira_repo_cls,
-        manual_text_repo_cls,
-        document_repo_cls,
-        _collect,
-    ) = _import_backend_bits()
+    )
 
-    settings = get_settings()
-    pool = create_user_pool(settings.database_connection_string())
+    pool = create_user_pool(get_settings().database_connection_string())
     pool.open(wait=True)
     try:
-        metrics_repo = metrics_repo_cls(pool)
-        jira_repo = jira_repo_cls(pool)
-        manual_repo = manual_text_repo_cls(pool)
-
-        storage = None
-        document_repo = None
-        if args.with_documents:
-            # Imported here so a bundle export without --with-documents
-            # doesn't require boto3/MinIO to be reachable.
-            from app.core.storage import storage as default_storage
-
-            document_repo = document_repo_cls(pool)
-            storage = default_storage
-
-        exit_code = 0
-        for course_id, project_id, sprint_id, output_name in args.triple:
-            dest = args.out / f"{output_name}.json"
-            if dest.exists() and not args.overwrite:
-                log.info("Skipping existing %s (pass --overwrite to replace).", dest.name)
-                continue
-            try:
-                bundle = _bundle_dict_from_db(
-                    course_id,
-                    project_id,
-                    sprint_id,
-                    metrics_repo,
-                    jira_repo,
-                    manual_repo,
-                    document_repo=document_repo,
-                    storage=storage,
-                    include_documents=args.with_documents,
-                )
-            except LookupError as exc:
-                log.error("Skipping %s: %s", output_name, exc)
-                exit_code = 1
-                continue
-            with dest.open("w", encoding="utf-8") as f:
-                json.dump(bundle, f, indent=2, ensure_ascii=True)
-            log.info(
-                "Wrote %s (commits=%d, tickets=%d, docs=%d).",
-                dest.name,
-                len(bundle["commits"]),
-                len(bundle["jira_tickets"]),
-                len(bundle["project_context_documents"]),
-            )
-        return exit_code
+        repos = {
+            "metrics": PostgresMetricsRepository(pool),
+            "jira": PostgresJiraIngestionRunRepository(pool),
+            "manual": PostgresManualTextRepository(pool),
+            "documents": PostgresDocumentRepository(pool),
+            "projects": PostgresProjectRepository(pool),
+        }
+        refs = args.triple or sprints_for_course(args.course, repos["projects"], repos["jira"])
+        return export(refs, repos, storage, args.out, overwrite=args.overwrite)
     finally:
         pool.close()
+
+
+def export(
+    refs: list[SprintRef], repos: dict[str, Any], storage, out: Path, *, overwrite: bool
+) -> int:
+    out.mkdir(parents=True, exist_ok=True)
+    log.info("Writing %d bundle(s) to %s", len(refs), out.resolve())
+    exit_code = 0
+    for ref in refs:
+        dest = out / f"{ref.output_name}.json"
+        if dest.exists() and not overwrite:
+            log.info("Skipping existing %s (pass --overwrite to replace).", dest.name)
+            continue
+        project = repos["projects"].get_project(ref.project_id)
+        try:
+            if project is None:
+                raise LookupError(f"no project {ref.project_id}")
+            bundle = bundle_from_payload(build_live_payload(ref, project, repos, storage))
+        except LookupError as exc:
+            log.error("Skipping %s: %s", ref.output_name, exc)
+            exit_code = 1
+            continue
+        with dest.open("w", encoding="utf-8") as f:
+            json.dump(bundle, f, indent=2, ensure_ascii=True)
+        snapshot = bundle["repo_snapshot"] or {}
+        log.info(
+            "Wrote %s (commits=%d, tickets=%d, docs=%d, snapshot files=%d).",
+            dest.name,
+            len(bundle["commits"]),
+            len(bundle["jira_tickets"]),
+            len(bundle["project_context_documents"]),
+            len(snapshot.get("files") or []),
+        )
+    return exit_code
 
 
 if __name__ == "__main__":
