@@ -1,0 +1,98 @@
+{
+  "experiment": "openai judges fixtures test 4",
+  "model": "sprintsight-gemma",
+  "session": "20261111T085747",
+  "total_runs": 15,
+  "teams": {
+    "Team_Alpha": {
+      "runs": 3,
+      "mean_overall_score": 9.267,
+      "mean_dimension_scores": {
+        "code_quality": 9.333,
+        "testing": 9,
+        "documentation": 9,
+        "requirements": 10,
+        "collaboration": null,
+        "cicd": 9
+      },
+      "runs_with_failed_dimensions": 3,
+      "trace_ids": [
+        "tr-24392c916279d03b7121e2a0f48efb51",
+        "tr-1a6cd950ba31a89ee3ab8c92cee77777",
+        "tr-1562965192374e2735bf6368e37e2450"
+      ]
+    },
+    "Team_Delta": {
+      "runs": 3,
+      "mean_overall_score": 7.189,
+      "mean_dimension_scores": {
+        "code_quality": 8.667,
+        "testing": 6,
+        "documentation": 8.667,
+        "requirements": 7,
+        "collaboration": 6.5,
+        "cicd": 6
+      },
+      "runs_with_failed_dimensions": 1,
+      "trace_ids": [
+        "tr-be10cb9071cc3e55809332420b2ab3a4",
+        "tr-146d34e298e47a041bfd60025a3f21fb",
+        "tr-3655e4334215662d84a8b564bc8ff6bd"
+      ]
+    },
+    "Team_Epsilon": {
+      "runs": 3,
+      "mean_overall_score": 8.378,
+      "mean_dimension_scores": {
+        "code_quality": 9,
+        "testing": 8.5,
+        "documentation": 9,
+        "requirements": 8,
+        "collaboration": null,
+        "cicd": 7.667
+      },
+      "runs_with_failed_dimensions": 3,
+      "trace_ids": [
+        "tr-89a1011ba61e91c9375ee606b2b56ce2",
+        "tr-a8538f27d463bf825f725e71df77004a",
+        "tr-f5bd3b008a9988fa041291050fa489cc"
+      ]
+    },
+    "Team_Gamma": {
+      "runs": 3,
+      "mean_overall_score": 2.844,
+      "mean_dimension_scores": {
+        "code_quality": 4.667,
+        "testing": 3,
+        "documentation": 3.667,
+        "requirements": 1,
+        "collaboration": 6,
+        "cicd": 1
+      },
+      "runs_with_failed_dimensions": 2,
+      "trace_ids": [
+        "tr-f437817e68c834c6e7c8dec01d6662b7",
+        "tr-25ec7bf8d57c2d92466f3e80d1bc525a",
+        "tr-cf508b0875899606e0c8b970605ece4e"
+      ]
+    },
+    "Team_Theta": {
+      "runs": 3,
+      "mean_overall_score": 5.556,
+      "mean_dimension_scores": {
+        "code_quality": 7,
+        "testing": 5,
+        "documentation": 7,
+        "requirements": 3.667,
+        "collaboration": 4,
+        "cicd": 5.333
+      },
+      "runs_with_failed_dimensions": 2,
+      "trace_ids": [
+        "tr-d3501d87f9b856a005bb7974c8c98c38",
+        "tr-728d0b8a84d03d6378a913c75cd1ca74",
+        "tr-697e8f8580c37f1f4ee153ef6fb42bb8"
+      ]
+    }
+  }
+}
