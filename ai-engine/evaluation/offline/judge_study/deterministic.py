@@ -341,8 +341,13 @@ def numeric_grade_errors(
     shows for a trace-based run.
 
     Feedback names are preserved verbatim (``grade_abs_error_<dim>``,
-    ``grade_abs_error_overall``, ``grade_mae_per_dimension``) so the two
-    pipelines are comparable without a translation table.
+    ``grade_penalised_mae``, ``grade_mae_scored_only``, ...) so the two
+    pipelines are comparable without a translation table. Two columns keep the
+    names this study has always reported: ``grade_mae_per_dimension`` is the
+    scorer's ``grade_mae_scored_only`` (the scorer renamed it in 93156b5; same
+    definition), and ``grade_abs_error_overall`` is computed here because the
+    scorer stopped emitting it then. Until this mapping existed both columns
+    were silently empty.
 
     Two things this adds on top of the existing scorer:
       * it tolerates a missing candidate (a run where the model crashed),
@@ -387,10 +392,9 @@ def numeric_grade_errors(
     # silently widen the frame when one model drops a dimension.
     for dimension in DIMENSIONS:
         out.setdefault(f"grade_abs_error_{dimension}", None)
-    out.setdefault("grade_mae_per_dimension", None)
-    out.setdefault("grade_abs_error_overall", None)
+    out["grade_mae_per_dimension"] = out.get("grade_mae_scored_only")
 
-    out["grade_signed_error_overall"] = float(candidate.overall_score) - float(
-        gold.overall_score
-    )
+    signed = float(candidate.overall_score) - float(gold.overall_score)
+    out["grade_abs_error_overall"] = abs(signed)
+    out["grade_signed_error_overall"] = signed
     return out

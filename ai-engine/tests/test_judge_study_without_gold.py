@@ -73,7 +73,8 @@ def test_eval_frame_leaves_every_gold_column_empty_without_gold() -> None:
     assert (free_frame["target"] == "").all()
     assert (free_frame["gold_reference"] == NO_GOLD_REFERENCE).all()
     for column in ("rouge_l_vs_gold", "token_overlap_vs_gold", "gold_overall_score",
-                   "grade_abs_error_code_quality", "grade_signed_error_overall"):
+                   "grade_abs_error_code_quality", "grade_signed_error_overall",
+                   "grade_abs_error_overall", "grade_mae_per_dimension"):
         assert free_frame[column].isna().all(), column
         assert gold_frame[column].notna().all(), column
     # Everything that does not depend on gold is computed the same way.
