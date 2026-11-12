@@ -328,7 +328,7 @@ def token_overlap_f1(prediction: str, reference: str) -> float | None:
 # -- 3e. Arithmetic accuracy against gold -------------------------------------
 
 def numeric_grade_errors(
-    candidate: SprintAssessment | None, gold: SprintAssessment
+    candidate: SprintAssessment | None, gold: SprintAssessment | None
 ) -> dict[str, float | None]:
     """Per-dimension and overall absolute error against the gold assessment.
 
@@ -354,7 +354,7 @@ def numeric_grade_errors(
     """
     out: dict[str, float | None] = {}
 
-    if candidate is None:
+    if candidate is None or gold is None:  # nothing to compare: no output, or no human gold
         for dimension in DIMENSIONS:
             out[f"grade_abs_error_{dimension}"] = None
         out["grade_mae_per_dimension"] = None

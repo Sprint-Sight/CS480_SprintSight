@@ -770,6 +770,16 @@ JUDGE_METRIC_NAMES: tuple[str, ...] = tuple(spec.name for spec in JUDGE_METRIC_S
 
 SPEC_BY_NAME: dict[str, JudgeMetricSpec] = {spec.name: spec for spec in JUDGE_METRIC_SPECS}
 
+# Rubrics that read the human gold reference as grading context. A sprint with no gold (the real
+# sprints) can only be judged on the others: showing the judge a placeholder reference would bias
+# exactly the scores it is meant to produce.
+GOLD_DEPENDENT_METRICS: tuple[str, ...] = tuple(
+    spec.name for spec in JUDGE_METRIC_SPECS if "gold_reference" in spec.grading_context_columns
+)
+GOLD_FREE_METRICS: tuple[str, ...] = tuple(
+    name for name in JUDGE_METRIC_NAMES if name not in GOLD_DEPENDENT_METRICS
+)
+
 
 def selected_specs(only: Sequence[str] | None = None) -> tuple[JudgeMetricSpec, ...]:
     if not only:

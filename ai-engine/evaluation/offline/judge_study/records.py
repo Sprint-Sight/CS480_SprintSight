@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import random
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from evaluation.offline.judge_study.deterministic import _GENERIC_FILLER, _HARD_
 from evaluation.offline.judge_study.frame import JudgeRecord
 from evaluation.offline.judge_study.specs import JUDGE_METRIC_NAMES
 from prompts.dimension_criteria import DIMENSIONS
+from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,29 @@ def gold_by_fixture() -> dict[str, SprintAssessment]:
     }
 
 
+def bundles_for_run(params: Mapping[str, str]) -> dict[str, ArtifactBundle]:
+    """The bundles a runner run graded, keyed by example id, from the dataset it logged.
+
+    Runs logged before the dataset name was recorded fall back to the synthetic fixtures. A
+    dataset whose hash no longer matches the run (re-exported since) is still used, with a
+    warning: the judge would then read different evidence from what the candidate was graded on.
+    """
+    from evaluation.benchmarks.synthetic_v1 import FIXTURES
+    from evaluation.offline.datasets import load_dataset
+
+    name = params.get("dataset_name")
+    if not name:
+        return dict(FIXTURES)
+    items, digest, _ = load_dataset(name)
+    logged = params.get("dataset_hash")
+    if logged and logged != digest:
+        log.warning(
+            "Dataset %s has changed since this run (hash %s, run logged %s); the judge will read "
+            "the current bundles.", name, digest, logged,
+        )
+    return {item.id: item.bundle for item in items}
+
+
 def load_records_from_run(
     run_id: str,
     *,
@@ -51,12 +75,11 @@ def load_records_from_run(
     cost: it guarantees the judged artifact is byte-identical to the one the
     deterministic metrics in that run were computed on.
     """
-    from evaluation.benchmarks.synthetic_v1 import FIXTURES
-
     client = mlflow.tracking.MlflowClient()
     run = client.get_run(run_id)
     resolved_model = model or run.data.params.get("model_name") or "unknown"
-    golds = gold_by_fixture()
+    bundles = bundles_for_run(run.data.params)
+    golds = gold_by_fixture()  # the synthetic fixtures only; real sprints have none
 
     destination = Path(".eval_cache") / run_id
     destination.mkdir(parents=True, exist_ok=True)
@@ -73,8 +96,8 @@ def load_records_from_run(
             continue
         example_id = parts[1]
         repeat_index = int(parts[2].lstrip("r") or 0)
-        if example_id not in FIXTURES or example_id not in golds:
-            log.warning("No fixture/gold for example '%s'; skipping.", example_id)
+        if example_id not in bundles:
+            log.warning("No bundle for example '%s' in the run's dataset; skipping.", example_id)
             continue
         raw = json.loads(local.read_text(encoding="utf-8"))
         try:
@@ -86,8 +109,8 @@ def load_records_from_run(
             JudgeRecord(
                 example_id=example_id,
                 model=resolved_model,
-                bundle=FIXTURES[example_id],
-                gold=golds[example_id],
+                bundle=bundles[example_id],
+                gold=golds.get(example_id),
                 candidate=candidate,
                 candidate_raw=raw,
                 error=error,
