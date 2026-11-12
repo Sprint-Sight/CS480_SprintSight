@@ -141,8 +141,13 @@ engine, repository snapshot included (`backend/scripts/export_eval_bundles.py`).
    ```
    Each sprint becomes `<team>_<sprint>.json` (e.g. `ftms_sprint-1.json`). Like
    a live assessment, the export re-reads each repository's commits and saves
-   them for that sprint. An ambiguous course code makes it list the course ids;
-   pass one instead.
+   them for that sprint. An ambiguous course code (the same code in several
+   terms or sections) makes it stop and list the course ids; pass the id to
+   `--course` instead.
+
+   **Git Bash on Windows:** run `export MSYS_NO_PATHCONV=1` first. Without it,
+   Git Bash rewrites the container paths (`/tmp/...`, `/app`) into Windows
+   paths and `docker cp` / `docker exec` fail. PowerShell needs nothing extra.
 3. Check what was exported (from `ai-engine/`): one line per sprint, distinct
    team/sprint pairs, a non-empty snapshot, and the dataset hash to cite:
    ```bash
@@ -371,38 +376,62 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
 
 ---
 
-## 9. Known blockers
+## 9. Known blockers and caveats
 
-1. **No human gold for real sprints.** `gold_by_fixture()` covers only the
-   five synthetic fixtures. `load_records_from_run` **skips** `esports_sp1`,
-   `ftms_sp1` and `tennis_sp1` with a warning, so Phases B–D currently only
-   work on `d1_fixtures`. Judging real sprints requires authoring gold
-   assessments for them — this is the single biggest gap.
-2. **`d1_fixtures` is smoke-test only**, per its own description. It must not
-   back a report claim.
+Status as of the `fix/eval-runbook-blockers` work. **Fixed** items need nothing
+from you beyond what is written; **caveats** are limits to state in the report.
+
+1. ~~**No human gold for real sprints.**~~ **FIXED (judged without gold).** The
+   real sprints still have no gold, and none is invented: three of the five
+   rubrics (Bug_Actionability, Technical_Correctness, Rubric_Adherence) read
+   gold as grading context, so placeholder gold would bias the judge.
+   `load_records_from_run` now takes each bundle from the dataset the run
+   logged, and a run over gold-free sprints scores only **Code_Faithfulness**
+   and **Evidence_Specificity**, leaves every gold-derived column (grade
+   errors, ROUGE vs gold) empty, and logs `gold_available=False` and
+   `judge_metrics`. A run mixing gold and gold-free records is refused.
+   **Caveat:** on real sprints `judge_composite` (and so `judge_quality_score`)
+   averages those two rubrics only; do not compare it with a synthetic-run
+   composite, and back it with the human calibration in Phase D. Writing human
+   gold for the real sprints would enable the other three rubrics.
+2. **Caveat — `d1_fixtures` is smoke-test only**, per its own description. Run
+   it with `--phase smoke` or `preliminary`, run the real sprints with
+   `--phase final`, and report only `--filter 'params.phase = "final"'`.
+   `analyze` warns when it pools phases or datasets (Phase C).
 3. ~~**The CS203 ground truth is missing.**~~ **FIXED.** It lives in
    `evaluation/benchmarks/cs203.py`, and `evaluation/online/run_judges.py` and
    `evaluation/judges/citation_grounding.py` import cleanly, so §8 is not
    blocked.
-4. **`cicd` has no variance.** All five golds score it 1 because no fixture
-   has any CI artifact, so cicd cannot discriminate between models and will
-   always be the "weakest dimension" that `Bug_Actionability` rewards
-   targeting. Fixing this needs a fixture with real CI.
+4. **Caveat — `cicd` has no variance in the synthetic gold.** All five golds
+   score it 1 because no fixture has CI, so on `d1_fixtures` cicd cannot
+   separate models and is always the "weakest dimension" that
+   Bug_Actionability rewards targeting. This touches only gold-based numbers,
+   which the real sprints do not produce (item 1). On the real sprints only
+   FTMS has CI configuration (four GitHub Actions workflows at HEAD);
+   CareSpace, Esports TMS and ShuttleScore have none, so a cicd comparison
+   rests on one repository. Say so if the report discusses cicd.
 5. ~~**Real-sprint bundles are huge.**~~ **FIXED.** The judge was shown the
    first ~20 commits of the raw bundle while the candidate was shown 30
    *sampled* ones, so 27–29 of every 30 citable commits were invisible and
    would have scored as fabrications. `render_bundle_for_judge` now shows the
    union of `_select_representative_commits` across dimensions — the
-   candidate's own evidence view — plus the precomputed aggregates. 0 of
-   64–89 citable SHAs are now invisible on all three real sprints. File
+   candidate's own evidence view — plus the precomputed aggregates. File
    lists degrade before any commit is dropped, and `SPRINTSIGHT_JUDGE_NUM_CTX`
-   stops Ollama silently truncating the result.
-6. **All three real sprints share one `team_id`/`sprint_id`**
-   (`579ad702…/sp1`), which looks like an export artifact. The trace path
-   keys on `team_id`, so they are indistinguishable there.
-7. **Gold `overall_score` changed** when cicd was added (e.g. 9.0 → 7.5).
-   Any `grade_abs_error_overall` from before that is not comparable; tag new
-   sweeps with a fresh `--phase`.
+   (default 16384) stops Ollama silently truncating the result.
+6. ~~**All real sprints share one `team_id`/`sprint_id`.**~~ **FIXED.** The old
+   exports were taken under one backend project. `d_real_sprints` is now
+   rebuilt locally from the seeded database with
+   `backend/scripts/export_eval_bundles.py` (§3 "Build the real-sprint
+   dataset"), which builds each bundle the way a live assessment does, so
+   every project has its own `team_id` and every bundle carries the
+   repository snapshot. **Caveat:** a project's sprints share their commit
+   history and snapshot (Git ingestion is not windowed by sprint); only the
+   Jira tickets differ, so the 10 sprints are 4 repositories.
+7. **Caveat — gold `overall_score` changed** when cicd was added (e.g. 9.0 →
+   7.5), so a `grade_abs_error_overall` from before that is not comparable.
+   It only concerns synthetic runs, and until item 11 that column was empty
+   anyway. Start new sweeps with a fresh `--phase`; `analyze` warns when it
+   pools phases or two versions of one dataset.
 8. **Older model-comparison runs are in the wrong experiment.** Until the
    runner passed `experiment_id` to `start_run`, its run (params, metrics,
    `per_example.jsonl`) opened in MLflow's default experiment:
@@ -410,15 +439,14 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
    `Default`. Only the child runs and traces reached `--experiment`, so
    `analyze` never saw them. On the local server these are five
    `d_real_sprints` runs from 9–10 Oct (llama31 ×2, coder-32b, r1-32b,
-   qwen25-32b). Analyse them on their own with:
+   qwen25-32b). Their artifacts are gone (item 9), so only their run-level
+   params and metrics remain, and they graded the old, colliding export
+   (item 6). Re-run those models on the current `d_real_sprints` instead.
+   To look at what is left:
    ```bash
-   python -m evaluation.offline.cli analyze --experiment sprintsight_experiment        --filter 'tags.run_type = "model_comparison"' --out-dir research/eval_report_misplaced
+   python -m evaluation.offline.cli analyze --experiment sprintsight_experiment \
+       --filter 'tags.run_type = "model_comparison"' --out-dir research/eval_report_misplaced
    ```
-   MLflow cannot move a run, so putting them next to newer runs means
-   re-logging each one as a new run (new run id). **As of 11 Nov their
-   artifacts are gone (see 9):** `analyze` skips all five with "no
-   per_example.jsonl artifact", and only their run-level params and metrics
-   remain. Re-run those conditions if the report needs per-example data.
 9. ~~**The compose MLflow service does not keep artifacts.**~~ **FIXED.**
    `mlflow_service` now runs with `--artifacts-destination /mlartifacts` and
    mounts the named volume `mlflow_artifacts` there, the same way Postgres
@@ -433,6 +461,16 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
    ```
    (In Git Bash, prefix it with `MSYS_NO_PATHCONV=1`; in PowerShell use
    `${PWD}`.)
+10. ~~**`--phase` could not be filtered on.**~~ **FIXED.** The dataset's own
+    label was also tagged `phase` and overwrote `--phase`, so
+    `tags.phase = "final"` matched nothing. It is now `dataset_phase`; filter on
+    `params.phase`, which was always right, old runs included.
+11. ~~**The judge study's grade-error columns were empty.**~~ **FIXED.** The
+    grade scorer renamed its MAE to `grade_mae_scored_only` and dropped the
+    overall error (93156b5), so `grade_mae_per_dimension` and
+    `grade_abs_error_overall` were blank on every judge run. Both are filled
+    again, with their original definitions; judge runs from before have no
+    values for them.
 
 ---
 
