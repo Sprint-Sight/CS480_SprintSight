@@ -364,11 +364,20 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
    artifacts are gone (see 9):** `analyze` skips all five with "no
    per_example.jsonl artifact", and only their run-level params and metrics
    remain. Re-run those conditions if the report needs per-example data.
-9. **The compose MLflow service does not keep artifacts.** `mlflow server`
-   runs without `--artifacts-destination` or a volume, so artifacts are
-   written to `/mlartifacts` inside the container and are lost when it is
-   recreated. Run metadata survives in Postgres. No model-comparison run
-   logged before the container was recreated on 10 Nov has artifacts left.
+9. ~~**The compose MLflow service does not keep artifacts.**~~ **FIXED.**
+   `mlflow_service` now runs with `--artifacts-destination /mlartifacts` and
+   mounts the named volume `mlflow_artifacts` there, the same way Postgres
+   keeps its data in `postgres_data`. Artifacts survive restarts and container
+   recreation; only `docker compose down -v` deletes them (and the Postgres
+   data with them). Apply it once with `docker compose up -d mlflow_service`.
+   Runs logged before that are still without artifacts: no model-comparison
+   run logged before the container was recreated on 10 Nov has any left.
+   Back the artifacts up before you delete volumes, from `ai-engine/`:
+   ```bash
+   docker run --rm --entrypoint tar -v ai-engine_mlflow_artifacts:/mlartifacts:ro -v "$PWD":/backup sprintsight-mlflow:3.16.1 czf /backup/mlartifacts-backup.tgz -C /mlartifacts .
+   ```
+   (In Git Bash, prefix it with `MSYS_NO_PATHCONV=1`; in PowerShell use
+   `${PWD}`.)
 
 ---
 
@@ -376,7 +385,7 @@ MLFLOW_GENAI_EVAL_MAX_WORKERS=1 python -m evaluation.online.run_judges
 
 | Path | Contents |
 |---|---|
-| MLflow UI | runs, params, metrics, `judge_card.md`, figures, eval tables |
+| MLflow UI | runs, params, metrics, `judge_card.md`, figures, eval tables (metadata in Postgres, artifacts in the `mlflow_artifacts` volume) |
 | `research/eval_report/` | comparison tables, pairwise CIs, plots |
 | `research/eval_report_with_judge/` | same, headline = judge score |
 | `research/judge_eval_report/` | `judge_eval_rows.csv`, `judge_calibration.csv`, `model_comparisons.csv`, `judge_scores_for_attach.csv`, `pairwise_comparisons.csv`, `consistency_probe.csv` |

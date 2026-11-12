@@ -56,6 +56,7 @@ Ollama (port 11434)
 
 MLflow (port 5000) receives traces, metrics, and prompt-registry data.
 PostgreSQL (port 5432) is used as MLflow's backend store.
+MLflow artifacts (per-example rows, raw outputs, figures) live in the mlflow_artifacts volume.
 After each assessment its trace is queued for the judge (evaluation/online/),
 which runs while no grading request is in flight.
 ```
