@@ -259,14 +259,30 @@ python -m evaluation.offline.attach_judge_scores \
 **C2. Tables, pairwise CIs and plots — judge-independent headline:**
 ```bash
 python -m evaluation.offline.cli analyze --experiment sprintsight-model-comparison \
-    --filter 'tags.phase = "final"' --out-dir research/eval_report \
+    --filter 'params.phase = "final"' --out-dir research/eval_report \
     --pairwise-metric overall_score
 ```
+
+`analyze` averages every run the filter lets through, so first check what it
+pooled. It prints `Pooling N run(s)`, writes `runs_summary.csv` (one row per
+run: model, dataset, dataset hash, phase, examples), and prints a `WARNING`
+with the filter to use when the pooled runs should not be averaged together:
+
+* **more than one dataset**, e.g. a `d1_fixtures` smoke test next to the
+  real sprints;
+* **one dataset, several hashes**: `d_real_sprints` was re-exported between
+  runs, so the examples differ. Re-run the older conditions on the current
+  export, or analyse one version with `--filter 'params.dataset_hash = "<hash>"'`;
+* **more than one phase**, e.g. `preliminary` runs next to the `final` sweep.
+
+Filter on `params.phase`, not `tags.phase`: until the dataset's own label was
+renamed `dataset_phase`, it overwrote the `phase` tag (every run was tagged
+`smoke_test` or `preliminary` whatever `--phase` said).
 
 **C3. Same analysis with the judge metric as headline (needs C1):**
 ```bash
 python -m evaluation.offline.cli analyze --experiment sprintsight-model-comparison \
-    --filter 'tags.phase = "final"' --out-dir research/eval_report_with_judge \
+    --filter 'params.phase = "final"' --out-dir research/eval_report_with_judge \
     --pairwise-metric judge_quality_score
 ```
 

@@ -152,7 +152,7 @@ python -m evaluation.offline.cli analyze \
 Use the `phase` tag. Default is `preliminary`. When Dataset 2 and 3 land
 and you redo the sweep, pass `--phase deep_eval` or `--phase final`. The
 analysis layer accepts a `--filter` string, so a report-worthy run uses
-`--filter 'tags.phase = "final"'`.
+`--filter 'params.phase = "final"'`.
 
 Experiment names, dataset names, and phases together give you three
 independent axes to carve by — in practice `phase` is the one you'll use

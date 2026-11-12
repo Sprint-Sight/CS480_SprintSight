@@ -42,7 +42,7 @@ def load_runs(
 ) -> pd.DataFrame:
     """Return one row per (run, example, repeat) spanning the given MLflow
     experiment. Pass `filter_string` through to mlflow.search_runs (e.g.
-    'tags.phase = "preliminary"').
+    'params.phase = "final"').
     """
     cache_root = Path(cache_dir)
     cache_root.mkdir(exist_ok=True)
@@ -71,7 +71,8 @@ def load_runs(
         df["mlflow_run_id"] = run_id
         # Propagate selected run-level columns so filtering by model /
         # dataset is cheap during analysis.
-        for col in ("params.model_name", "params.dataset_name", "params.prompt_version", "params.seed"):
+        for col in ("params.model_name", "params.dataset_name", "params.dataset_hash",
+                    "params.prompt_version", "params.seed", "params.phase"):
             if col in run_row:
                 df[col.replace("params.", "")] = run_row[col]
         frames.append(df)
@@ -105,6 +106,53 @@ def load_engine_results(
     if not judge_files:
         return frame
     return merge_judge_scores(frame, load_judge_scores(judge_files))
+
+
+# ---------- Which runs were pooled ------------------------------------------
+
+def run_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per pooled run: model, dataset, dataset hash, phase and its example count."""
+    columns = [c for c in ("model", "dataset_name", "dataset_hash", "phase") if c in df.columns]
+    return (
+        df.groupby(["mlflow_run_id", *columns], dropna=False)["example_id"]
+        .nunique()
+        .rename("n_examples")
+        .reset_index()
+    )
+
+
+def mixed_run_warnings(df: pd.DataFrame) -> list[str]:
+    """Why the pooled runs should not be averaged together, if they should not.
+
+    `analyze` reads every run in the experiment. Runs on different datasets, on different
+    versions of one dataset (same name, new export) or from different phases (a smoke test next
+    to the final sweep) measure different things, and a model's mean across them is not a
+    result. Each warning names the filter that isolates one group.
+    """
+    warnings: list[str] = []
+    runs = run_summary(df)
+    if "dataset_name" in runs and runs["dataset_name"].nunique(dropna=False) > 1:
+        names = sorted(map(str, runs["dataset_name"].unique()))
+        warnings.append(
+            f"runs on {len(names)} datasets are pooled ({', '.join(names)}); analyse one with "
+            f"--filter 'params.dataset_name = \"{names[0]}\"'"
+        )
+    if {"dataset_name", "dataset_hash"} <= set(runs.columns):
+        for name, group in runs.groupby("dataset_name", dropna=False):
+            hashes = sorted(map(str, group["dataset_hash"].unique()))
+            if len(hashes) > 1:
+                warnings.append(
+                    f"dataset {name} changed between runs ({len(hashes)} hashes: {', '.join(hashes)}); "
+                    f"the examples differ, so analyse one version with "
+                    f"--filter 'params.dataset_hash = \"{hashes[-1]}\"'"
+                )
+    if "phase" in runs and runs["phase"].nunique(dropna=False) > 1:
+        phases = sorted(map(str, runs["phase"].unique()))
+        warnings.append(
+            f"runs from {len(phases)} phases are pooled ({', '.join(phases)}); report the final "
+            f"sweep alone with --filter 'params.phase = \"final\"'"
+        )
+    return warnings
 
 
 # ---------- Comparison table ----------------------------------------------
