@@ -122,6 +122,47 @@ python -m ruff check research/ evaluation/ schemas/ llmops/ services/
 python -m mypy evaluation/offline/judge_study/ evaluation/benchmarks/synthetic_v1.py
 ```
 
+### Build the real-sprint dataset (`d_real_sprints`)
+
+`d_real_sprints` is every `*.json` in `evaluation/benchmarks/data/real_sprints/`.
+The files are exported from the backend database and **are not committed**
+(they hold student data), so build them on your machine before Phase A3. Each
+file is the exact bundle a live assessment of that sprint would send the
+engine, repository snapshot included (`backend/scripts/export_eval_bundles.py`).
+
+1. Start the backend stack with the course seeded and Jira ingested, and the
+   project repositories under `repo/` (they are mounted read-only into the
+   backend container).
+2. Export every project and sprint of the course, from the repository root.
+   The script is not part of the backend image, so copy it in; `--overwrite`
+   replaces an earlier export:
+   ```bash
+   docker cp backend/scripts/export_eval_bundles.py sprintsight-backend:/tmp/export_eval_bundles.py
+   docker exec -e PYTHONPATH=/app -w /app sprintsight-backend \
+       python /tmp/export_eval_bundles.py --course CS203 --out /tmp/real_sprints --overwrite
+   docker cp sprintsight-backend:/tmp/real_sprints/. ai-engine/evaluation/benchmarks/data/real_sprints/
+   ```
+   Each sprint becomes `<team>_<sprint>.json` (e.g. `ftms_sprint-1.json`). Like
+   a live assessment, the export re-reads each repository's commits and saves
+   them for that sprint. An ambiguous course code makes it list the course ids;
+   pass one instead.
+3. Check what was exported (from `ai-engine/`): one line per sprint, distinct
+   team/sprint pairs, a non-empty snapshot, and the dataset hash to cite:
+   ```bash
+   python -c "
+   from evaluation.offline.datasets import load_dataset
+   items, digest, _ = load_dataset('d_real_sprints')
+   for i in items:
+       b = i.bundle
+       print(f'{i.id:28} team={b.team_id[:8]} sprint={b.sprint_id:9} commits={len(b.commits):4} tickets={len(b.jira_tickets):3} snapshot_files={len(b.repo_snapshot.files) if b.repo_snapshot else 0}')
+   pairs = {(i.bundle.team_id, i.bundle.sprint_id) for i in items}
+   print(len(items), 'sprints;', 'ids distinct' if len(pairs) == len(items) else 'DUPLICATE team/sprint ids', '; hash', digest)
+   "
+   ```
+   A project's sprints share their commit history and repository snapshot (Git
+   ingestion is not windowed by sprint); only the Jira tickets differ. Treat
+   them as one repository each when reading the statistics.
+
 ---
 
 ## 4. Phase A — candidate sweep (the expensive part)
@@ -143,7 +184,8 @@ for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma; do
 done
 ```
 
-**A3. Real sprints — this is what the report cites:**
+**A3. Real sprints — this is what the report cites** (build the dataset first,
+§3 "Build the real-sprint dataset"):
 ```bash
 for M in sprintsight-qwen sprintsight-mistral sprintsight-gemma sprintsight-llama31; do
   python -m evaluation.offline.cli run --model "$M" --dataset d_real_sprints \

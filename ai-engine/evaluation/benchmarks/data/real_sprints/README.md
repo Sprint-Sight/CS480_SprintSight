@@ -8,6 +8,11 @@ The filename stem (`myfile.json` -> `myfile`) is the `example_id` used in
 MLflow runs, plots, and judge-score merges. Pick stable names — a rename
 produces a different dataset hash.
 
+The bundles are **not committed**: they hold students' names, commit
+messages, Jira tickets and source files. Export them locally (below); the
+`.json` files stay on your machine. `evaluation/offline/RUNBOOK.md` ("Build the
+real-sprint dataset") has the full procedure.
+
 ## Produced by
 
 `backend/scripts/export_eval_bundles.py`. It builds each file the way a live
