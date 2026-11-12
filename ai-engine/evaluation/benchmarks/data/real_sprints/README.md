@@ -20,18 +20,27 @@ assessment builds its request (fresh commits from the project's repository,
 the latest Jira snapshot, instructor expectations, uploaded documents and the
 repository snapshot at HEAD), so the dataset is what production grades. Run it
 inside the backend container; the exact commands are in the script's
-docstring and `--help`. `--course CS203` exports every project and sprint as
-`<team>_<sprint>.json`.
+docstring and `--help`. `--course <course_id_or_code>` exports every project
+and sprint as `<team>_<sprint>.json`.
 
-## Expected top-level JSON keys
+## How to export locally
 
-```
-team_id, sprint_id, commits, jira_tickets, peer_evaluations,
-collaboration_metrics, artifact_metrics, project_context_documents,
-repo_snapshot, instructor_expectations
-```
+With the backend container (`sprintsight-backend`) running, execute from the
+repository root:
 
-`team_id` is the backend project id, as in a live assessment, so every
-project gets its own. A missing field fails `ArtifactBundle.model_validate`
-loudly, which is the point — a silent skip would quietly change the dataset
-hash on the next run.
+```bash
+# Required on Windows Git Bash (MINGW64) to prevent POSIX path translation
+export MSYS_NO_PATHCONV=1
+
+# 1. Copy the export script into the running backend container
+docker cp backend/scripts/export_eval_bundles.py sprintsight-backend:/tmp/export_eval_bundles.py
+
+# 2. Export bundles inside the container (pass the exact course UUID if multiple CS203 terms exist)
+docker exec -e PYTHONPATH=/app -w /app sprintsight-backend \
+    python /tmp/export_eval_bundles.py \
+    --course c12715cc-4004-443f-965e-c2db1e708d2e \
+    --out /tmp/real_sprints \
+    --overwrite
+
+# 3. Copy the generated JSON bundles into this directory
+docker cp sprintsight-backend:/tmp/real_sprints/. ai-engine/evaluation/benchmarks/data/real_sprints/
