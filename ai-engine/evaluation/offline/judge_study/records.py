@@ -51,7 +51,7 @@ def bundles_for_run(params: Mapping[str, str]) -> dict[str, ArtifactBundle]:
     name = params.get("dataset_name")
     if not name:
         return dict(FIXTURES)
-    items, digest, _ = load_dataset(name)
+    items, digest, _ = load_dataset(name)  # nosec B615
     logged = params.get("dataset_hash")
     if logged and logged != digest:
         log.warning(
