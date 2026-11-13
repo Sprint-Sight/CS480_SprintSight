@@ -66,7 +66,7 @@ runs = runs[runs["set"].isin(sets) & runs.model.isin(models)]
 
 long = runs.melt(id_vars=["session", "model", "team", "team_label", "set", "date"], value_vars=DIMS,
                  var_name="dimension", value_name="score").dropna(subset=["score"])
-long["gold"] = [GOLD[t][DIMS.index(d)] for t, d in zip(long.team, long.dimension)]
+long["gold"] = [GOLD[t][DIMS.index(d)] for t, d in zip(long.team, long.dimension, strict=False)]
 long["error"] = long.score - long.gold
 long["abs_error"] = long.error.abs()
 gold_overall = {t: sum(v) / 6 for t, v in GOLD.items()}

@@ -4,6 +4,7 @@ import math
 
 import pandas as pd
 import pytest
+
 from evaluation.judges.flagging import (
     CITATION_COUNT_COL,
     CRITICAL_COL,

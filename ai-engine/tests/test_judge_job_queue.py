@@ -1,6 +1,7 @@
 """The judge queue is durable: a job is a row that survives restarts and crashes."""
 
 import pytest
+
 from evaluation.online.job_queue import DEAD, DONE, QUEUED, RUNNING, JudgeJobQueue
 
 

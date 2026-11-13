@@ -64,7 +64,7 @@ def plot_success_rate(df: pd.DataFrame, figsize: tuple[float, float] = (6, 4)) -
         .sort_index()
     )
     bars = ax.bar(series.index, series["mean"], color="#4a7fb0")
-    for bar, (model, row) in zip(bars, series.iterrows()):
+    for bar, (_, row) in zip(bars, series.iterrows(), strict=False):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 0.02,

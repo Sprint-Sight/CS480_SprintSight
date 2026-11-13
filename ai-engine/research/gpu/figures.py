@@ -35,6 +35,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+
 from research.gpu import report as gpu_report
 
 # Validated with the dataviz skill's palette checker (light surface).
@@ -100,7 +101,7 @@ def run_timeline(samples: pd.DataFrame, run: pd.DataFrame, power_limit: float) -
 def plot_before_after(before: dict[str, Any], after: dict[str, Any], titles: tuple[str, str], xlabel: str, out: Path) -> None:
     fig, axes = plt.subplots(2, 1, figsize=(7.2, 4.9), sharex=True, sharey=True)
     x_max = max(before["duration"], after["duration"]) * 1.04
-    for ax, panel, letter, title in zip(axes, (before, after), "ab", titles):
+    for ax, panel, letter, title in zip(axes, (before, after), "ab", titles, strict=False):
         ax.plot(panel["seconds"], panel["util"], color=UTIL_COLOUR, linewidth=1.3, label="GPU utilisation")
         ax.plot(panel["seconds"], panel["power_pct"], color=POWER_COLOUR, linewidth=1.3, linestyle=(0, (4, 2.5)),
                 label="Power draw (% of limit)")
@@ -149,10 +150,10 @@ def plot_models(rows: list[dict[str, Any]], flagged: dict[str, str], power_limit
     ]
     names = [r["name"] for r in rows]
     fig, axes = plt.subplots(1, len(panels), figsize=(7.4, 0.42 * len(rows) + 1.3), sharey=True)
-    for ax, (key, label, limit) in zip(axes, panels):
+    for ax, (key, label, limit) in zip(axes, panels, strict=False):
         values = [r[key] or 0 for r in rows]
         bars = ax.barh(names, values, height=0.68, color=UTIL_COLOUR)
-        for bar, row in zip(bars, rows):
+        for bar, row in zip(bars, rows, strict=False):
             if row["name"] in flagged:
                 bar.set_hatch("////")
                 bar.set_facecolor("white")

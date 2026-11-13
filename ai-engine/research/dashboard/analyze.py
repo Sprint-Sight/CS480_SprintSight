@@ -80,7 +80,7 @@ judge_only = [s for s, i in invocations.items() if "raw" not in i["files"]]
 for s in judge_only: del invocations[s]
 batch_files = [p for p in batch_files if session_of(p) not in judge_only]
 
-def parse_ts(s): return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+def parse_ts(s): return dt.datetime.fromisoformat(s)
 
 # ---------------- runs ----------------
 runs = []
@@ -114,7 +114,7 @@ for p in AUD.iterdir():
     m = re.match(r"llm_(\d{8}T\d{6})", p.name)
     if not m:
         continue
-    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.timezone.utc)
+    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.UTC)
     if not (t0 - dt.timedelta(hours=1) <= ts <= t1 + dt.timedelta(hours=1)):
         continue
     text = p.read_text(encoding="utf-8", errors="replace")
@@ -209,7 +209,7 @@ for r in runs:
 
 # ---------------- judge rows ----------------
 judge = {}
-for s, inv in invocations.items():
+for inv in invocations.values():
     p = inv["files"].get("judge")
     rows = [json.loads(l) for l in p.read_text().splitlines() if l.strip()] if p else []
     inv["judge_rows"] = len(rows)
@@ -233,7 +233,7 @@ def pearson(a, b):
     if len(a) < 5: return None
     ma, mb = st.mean(a), st.mean(b)
     va, vb = sum((x - ma) ** 2 for x in a), sum((y - mb) ** 2 for y in b)
-    return round(sum((x - ma) * (y - mb) for x, y in zip(a, b)) / math.sqrt(va * vb), 3) if va and vb else None
+    return round(sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=False)) / math.sqrt(va * vb), 3) if va and vb else None
 
 models = list(dict.fromkeys(r["model"] for r in sorted(runs, key=lambda r: r["session"])))
 MODEL_ORDER = [m for m in ["qwen25-32b", "qwen", "gemma", "r1-32b", "coder-32b"] if m in models] + [m for m in models if m not in ["qwen25-32b", "qwen", "gemma", "r1-32b", "coder-32b"]]
@@ -400,7 +400,7 @@ for i, a in enumerate(MODEL_ORDER):
     for b in MODEL_ORDER[i + 1:]:
         keys = sorted({(x[1], x[2]) for x in cell_mean if x[0] == a} & {(x[1], x[2]) for x in cell_mean if x[0] == b})
         xa, xb = [cell_mean[(a, *k)] for k in keys], [cell_mean[(b, *k)] for k in keys]
-        keep = [(x, y) for x, y in zip(xa, xb) if not (x == 1 and y == 1)]
+        keep = [(x, y) for x, y in zip(xa, xb, strict=False) if not (x == 1 and y == 1)]
         agreement.append({"a": a, "b": b, "n": len(keys), "r": pearson(xa, xb), "shared_ones": len(keys) - len(keep),
                           "n_excl": len(keep), "r_excl_shared_ones": pearson([k[0] for k in keep], [k[1] for k in keep])})
 

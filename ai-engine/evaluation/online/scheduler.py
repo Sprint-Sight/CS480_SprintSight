@@ -29,9 +29,8 @@ import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 
-from services.failures import classify_failure, failure_detail
-
 from evaluation.online.job_queue import JudgeJob, JudgeJobQueue
+from services.failures import classify_failure, failure_detail
 
 log = logging.getLogger("sprintsight.judges.scheduler")
 

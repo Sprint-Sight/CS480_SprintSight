@@ -1,10 +1,11 @@
 """POST /assess/sprint/data: returns the trace id and hands judging to the durable queue."""
 
 import pytest
-from api import assessment as route
-from evaluation.online.job_queue import JudgeJobQueue
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from api import assessment as route
+from evaluation.online.job_queue import JudgeJobQueue
 from schemas.modelname import ModelName
 from schemas.rubrics_dimension_score import RubricDimensionScore
 from schemas.rubrics_score import RubricsScore

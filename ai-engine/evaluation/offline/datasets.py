@@ -31,10 +31,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from schemas.artifact_bundle import ArtifactBundle
-
 from evaluation.benchmarks import DATA_DIR
 from evaluation.benchmarks.synthetic_v1 import FIXTURES
+from schemas.artifact_bundle import ArtifactBundle
 
 log = logging.getLogger(__name__)
 

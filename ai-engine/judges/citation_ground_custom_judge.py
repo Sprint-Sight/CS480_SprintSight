@@ -4,8 +4,6 @@ import time
 from typing import Literal
 
 import mlflow
-from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
-from evaluation.judges.trace_adapters import read_candidate
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
@@ -14,8 +12,11 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from prompts.dimension_criteria import DIMENSIONS
 from pydantic import BaseModel, Field, create_model, model_validator
+
+from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
+from evaluation.judges.trace_adapters import read_candidate
+from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX

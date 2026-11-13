@@ -3,6 +3,7 @@ from typing import cast
 
 from mlflow.entities import Trace
 from pydantic import ValidationError
+
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import (
     DimensionName,

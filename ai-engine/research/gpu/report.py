@@ -145,7 +145,7 @@ def _within(times: pd.Series, starts: pd.Series, ends: pd.Series) -> np.ndarray:
     """Boolean mask: which times fall inside any [start, end] interval."""
     t = times.to_numpy("datetime64[ns]")
     mask = np.zeros(len(t), dtype=bool)
-    for start, end in zip(starts.to_numpy("datetime64[ns]"), ends.to_numpy("datetime64[ns]")):
+    for start, end in zip(starts.to_numpy("datetime64[ns]"), ends.to_numpy("datetime64[ns]"), strict=False):
         mask |= (t >= start) & (t <= end)
     return mask
 
@@ -329,7 +329,7 @@ def main() -> None:
 
     rows = []
     for key, group in markers.groupby(group_by):
-        labels = dict(zip(group_by, key if isinstance(key, tuple) else (key,)))
+        labels = dict(zip(group_by, key if isinstance(key, tuple) else (key,), strict=False))
         metrics, window = summarise_group(samples, group, gpu_info, bandwidth)
         rows.append({**labels, **metrics})
         slug = "_".join(str(v).replace(":", "-") for v in labels.values())
@@ -350,6 +350,7 @@ def _log_to_mlflow(
     plot: Path, gpu_csv: Path,
 ) -> None:
     import mlflow
+
     from llmops import experiments
     from llmops.mlflow_config import configure_mlflow
 

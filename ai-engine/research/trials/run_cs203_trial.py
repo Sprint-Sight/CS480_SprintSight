@@ -14,8 +14,9 @@ import json
 from pathlib import Path
 
 import mlflow
-from evaluation.online.promote import judge_and_promote_trace
 from fastapi import BackgroundTasks
+
+from evaluation.online.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle

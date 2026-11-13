@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+
 from evaluation.judges import citation_grounding as judge
 from evaluation.judges.citation_grounding import (
     CODE_DROP_WEIGHT,

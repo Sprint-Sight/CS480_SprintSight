@@ -7,7 +7,6 @@ import asyncio
 from typing import Literal
 
 import mlflow
-from judges.citation_ground_custom_judge import FIXTURE_JUDGE_MODEL, judge_model_for
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
@@ -16,8 +15,10 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from prompts.dimension_criteria import DIMENSIONS
 from pydantic import BaseModel, Field, model_validator
+
+from judges.citation_ground_custom_judge import FIXTURE_JUDGE_MODEL, judge_model_for
+from prompts.dimension_criteria import DIMENSIONS
 from schemas.modelname import MODEL_NUM_CTX
 from services.llm_client import (
     LLM_TEMPERATURE,

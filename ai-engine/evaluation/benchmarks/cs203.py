@@ -1,12 +1,11 @@
 """Two real CS203 sprints (cs203g6, cs203jy) and their hand-written gold assessments."""
 
+from evaluation.benchmarks import DATA_DIR
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.member_contribution import MemberContribution
 from schemas.rubrics_dimension_score import ResolvedEvidenceCitation
 from schemas.rubrics_score import RubricDimensionScore, RubricsScore
 from schemas.sprint_assessment import SprintAssessment
-
-from evaluation.benchmarks import DATA_DIR
 
 
 def cite(identifier: str, reason: str) -> ResolvedEvidenceCitation:
