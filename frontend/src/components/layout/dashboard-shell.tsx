@@ -163,6 +163,8 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [selectedSprintId, setSelectedSprintId] = useState<string>("sprint-1");
   const [isLoadingScope, setIsLoadingScope] = useState<boolean>(false);
+  // Blocks scope write-backs until the saved selection has been read, so an empty first render cannot erase it.
+  const [hasLoadedScope, setHasLoadedScope] = useState<boolean>(false);
 
   useEffect(() => {
     if (isAuthorized && role === "student" && isRestrictedForStudent) {
@@ -244,6 +246,7 @@ export default function DashboardShell({ children }: DashboardShellProps) {
         console.error("Failed to load dashboard scope data:", error);
       } finally {
         setIsLoadingScope(false);
+        setHasLoadedScope(true);
       }
     }
 
@@ -359,13 +362,15 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   };
 
   useEffect(() => {
+    if (!hasLoadedScope) return;
     const selectedTeam = teams.find((team) => team.id === selectedTeamId);
     if (selectedTeam) {
       writeScope({ selectedProjectId: selectedTeam.id, selectedCourseId: selectedTeam.courseId });
     }
-  }, [selectedTeamId, teams]);
+  }, [hasLoadedScope, selectedTeamId, teams]);
 
   useEffect(() => {
+    if (!hasLoadedScope) return;
     const selectedTeam = teams.find((team) => team.id === selectedTeamId && team.courseId === selectedSectionId);
     if (selectedTeam) return;
 
@@ -375,11 +380,11 @@ export default function DashboardShell({ children }: DashboardShellProps) {
       selectedProjectId: firstTeamInSection?.id || "",
       selectedCourseId: selectedSectionId,
     });
-  }, [selectedSectionId, selectedTeamId, teams]);
+  }, [hasLoadedScope, selectedSectionId, selectedTeamId, teams]);
 
   useEffect(() => {
-    if (isAuthorized && role === "instructor") writeScope({ selectedSprintId });
-  }, [isAuthorized, role, selectedSprintId]);
+    if (hasLoadedScope && isAuthorized && role === "instructor") writeScope({ selectedSprintId });
+  }, [hasLoadedScope, isAuthorized, role, selectedSprintId]);
 
   const navItems = role === "student" ? studentNavItems : instructorNavItems;
 

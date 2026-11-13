@@ -60,13 +60,14 @@ function AutoResizeTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) 
   );
 }
 
-export function CircularScore({ score }: { score: number }) {
+export function CircularScore({ score, size = 160 }: { score: number; size?: number }) {
   const radius = 44;
   const circumference = 2 * Math.PI * radius;
   const progress = (score / 100) * circumference;
+  const textClass = size >= 200 ? "text-7xl" : "text-5xl";
   return (
-    <div className="relative mx-auto flex h-40 w-40 items-center justify-center">
-      <svg width="160" height="160" viewBox="0 0 160 160" className="-rotate-90">
+    <div className="relative mx-auto flex items-center justify-center" style={{ height: size, width: size }}>
+      <svg width={size} height={size} viewBox="0 0 160 160" className="-rotate-90">
         <circle
           cx="80"
           cy="80"
@@ -87,7 +88,7 @@ export function CircularScore({ score }: { score: number }) {
         />
       </svg>
       <div className="absolute text-center">
-        <div className="text-5xl font-bold text-blue-950">{score}</div>
+        <div className={`${textClass} font-bold text-blue-950`}>{score}</div>
       </div>
     </div>
   );
@@ -104,9 +105,11 @@ export function AssessmentScoreVisuals({
   }));
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-500">Overall Sprint Score</h2>
-        <CircularScore score={report.overallScore} />
+        <div className="flex flex-1 items-center justify-center">
+          <CircularScore score={report.overallScore} size={240} />
+        </div>
       </section>
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-2xl font-semibold text-blue-950">Rubric Score Breakdown</h2>
