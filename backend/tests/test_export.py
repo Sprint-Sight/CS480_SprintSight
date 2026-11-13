@@ -1,7 +1,10 @@
 """Tests for the report export feature (PDF/CSV download for instructors)."""
 
+import csv
+import io
 from datetime import UTC, datetime, timedelta
 
+import pdfplumber
 import pytest
 from fastapi.testclient import TestClient
 
@@ -30,7 +33,7 @@ from app.schemas.assessment import (
     StudentScore,
     TeamScore,
 )
-from app.services.exportService.service import _EXPORT_STORE
+from app.services.exportService.service import _EXPORT_STORE, ExportService
 
 client = TestClient(app)
 
@@ -310,6 +313,55 @@ def test_export_pdf_generates_download_url_and_logs_export(
         _clear_overrides()
 
 
+def test_export_pdf_matches_frontend_evidence_and_wraps_long_text() -> None:
+    report = _make_report("course-1", "project-1", "sprint-1")
+    citations = [
+        "src/app.ts:10-20 — verifies the request flow",
+        "commit 1a2b3c4 adds input validation",
+    ]
+    report.rubric_scores["requirements"].evidence_citations = citations
+    report.team_score.rationale = (
+        "A detailed team rationale that must wrap across lines. " * 100
+    ) + "TEAM-RATIONALE-END"
+    report.rubric_scores["requirements"].justification = (
+        ("Frontend-style justification content that must wrap. " * 80)
+        + ("Z" * 600)
+        + " JUSTIFICATION-END"
+    )
+
+    service = ExportService(InMemoryExportLogRepository())
+    pdf_bytes = service._build_pdf(report, include_student_emails=False)
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as document:
+        extracted = " ".join(
+            (page.extract_text() or "").replace("\n", " ") for page in document.pages
+        )
+        assert len(document.pages) > 1
+        for page in document.pages:
+            for character in page.chars:
+                assert character["x0"] >= 57.5
+                assert character["x1"] <= page.width - 57.5
+        for page in document.pages[1:]:
+            assert not any(
+                abs(line["x0"] - line["x1"]) < 1
+                and abs(line["y0"] - line["y1"]) > 20
+                and min(abs(line["x0"] - 58), abs(line["x0"] - (page.width - 58))) < 2
+                for line in page.lines
+            )
+
+    assert "TEAM-RATIONALE-END" in extracted
+    assert "JUSTIFICATION-END" in extracted
+    assert "Grade:" not in extracted
+    assert "Strengths" in extracted
+    assert "1. Delivery" in extracted
+    assert "Weaknesses" in extracted
+    assert "1. Testing" in extracted
+    assert extracted.count("Z") == 600
+    first_evidence = extracted.index(citations[0])
+    second_evidence = extracted.index(citations[1])
+    assert first_evidence < second_evidence
+
+
 def test_export_csv_generates_download_url(override_user_repository) -> None:
     project_repository, course = _setup_course_and_project()
     assessment_repository = InMemoryAssessmentRepository()
@@ -317,6 +369,10 @@ def test_export_csv_generates_download_url(override_user_repository) -> None:
     user_repository = InMemoryUserRepository()
 
     report = _make_report(course.id, "proj-export", "sp1")
+    report.rubric_scores["requirements"].evidence_citations = [
+        "src/app.py:L10-L14 — validates the request",
+        "commit abc123 — adds validation",
+    ]
     assessment_repository.save_report(report)
 
     _override_repos(
@@ -351,6 +407,18 @@ def test_export_csv_generates_download_url(override_user_repository) -> None:
         content = file_bytes.decode("utf-8")
         assert "rpt-export-1" in content
         assert "85.0" in content
+        assert "Grade" not in content
+        rows = list(csv.reader(io.StringIO(content)))
+        assert ["Grade", "A"] not in rows
+        assert ["Strengths"] in rows
+        assert ["Delivery"] in rows
+        assert ["Weaknesses"] in rows
+        assert ["Testing"] in rows
+        rubric_header = rows.index(["Dimension", "Score", "Justification", "Evidence"])
+        requirements_row = rows[rubric_header + 1]
+        assert requirements_row[0] == "requirements"
+        assert "src/app.py:L10-L14 — validates the request" in requirements_row[3]
+        assert "commit abc123 — adds validation" in requirements_row[3]
     finally:
         _clear_overrides()
 
