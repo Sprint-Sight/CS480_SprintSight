@@ -1,0 +1,44 @@
+{
+  "experiment": "CS203 research 11/11/26",
+  "model": "sprintsight-r1-32b",
+  "session": "20261111T141745",
+  "total_runs": 6,
+  "teams": {
+    "cs203g6": {
+      "runs": 3,
+      "mean_overall_score": 4.222,
+      "mean_dimension_scores": {
+        "code_quality": 7,
+        "testing": 5.333,
+        "documentation": 2.333,
+        "requirements": 1,
+        "collaboration": 5,
+        "cicd": 6
+      },
+      "runs_with_failed_dimensions": 1,
+      "trace_ids": [
+        "tr-52aaefd2388ba00058935d23f6c65dd4",
+        "tr-3e25fc3572eaabb097591900a3fedd21",
+        "tr-32a5bc92d91cfba35c2597186e6a8f38"
+      ]
+    },
+    "fa7d4476-78fd-4013-8d66-1e290a65fe1c": {
+      "runs": 3,
+      "mean_overall_score": 4.444,
+      "mean_dimension_scores": {
+        "code_quality": 9,
+        "testing": 6,
+        "documentation": 6.333,
+        "requirements": 1,
+        "collaboration": 3.333,
+        "cicd": 1
+      },
+      "runs_with_failed_dimensions": 0,
+      "trace_ids": [
+        "tr-aeb577dade4efb909fca55a52de044b4",
+        "tr-89f9c191c953887d923b096d265825a0",
+        "tr-18eee8eb79ec3690a3a3a2211690759d"
+      ]
+    }
+  }
+}

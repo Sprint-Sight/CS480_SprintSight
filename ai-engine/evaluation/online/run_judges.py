@@ -1,7 +1,4 @@
-import os
-import time
-
-import mlflow
+import os, time, mlflow
 import pandas as pd
 from dotenv import load_dotenv
 from mlflow import MlflowClient
@@ -28,6 +25,22 @@ from services.save_results import save_judge_results
 
 load_dotenv()  # Load environment variables from .env file
 
+GRADE_COL = "grade_penalised_mae/value"
+MAE_COL = "grade_mae_scored_only/value"
+HALLUCINATION_COL = "citation_hallucination_rate/value"
+CITATION_COUNT_COL = "citation_count/value"
+GROUNDED_COL = "citation_grounded_rate/value"
+CRITICAL_COL = "citations_dropped_by_code/value" # was citation_critical_fabrication_count
+PEDAGOGY_HARSH_COL = "pedagogy_harsh/value"
+JUSTIFICATION_COL = "justification_hard_contradictions/value"
+NARRATIVE_COL = "narrative_contradiction_count/value"
+PEDAGOGY_COL = "pedagogy_score/value"
+MIN_PEDAGOGY_SCORE = 0.6
+
+MAX_PENALISED_MAE = 3
+MAX_HALLUCINATION = 0.1
+MIN_CITATIONS = 10
+MIN_GROUNDED_RATE = 0.5
 # Flagging rules, thresholds and result-frame column names live in evaluation/judges/flagging.py.
 # Research-only reasons (comparison against a gold assessment) are kept apart from production
 # reasons there; only production reasons go to the review queue unless explicitly opted in.
@@ -66,6 +79,7 @@ def find_gold(trace: Trace):
     sprint = _sprint_of(trace)
     if sprint is not None and sprint != gold.sprint_id: # store gold for team/sprint only if the trace's sprint matches the gold's sprint; otherwise, skip the gold and let the LLM judge handle it
         _log(f"  {trace.info.trace_id}: sprint '{sprint}' != gold sprint '{gold.sprint_id}' -> gold skipped")
+        return None
     return gold
 
 # Either trace_ids is provided (explicitly select traces) or model/team_id is provided (filter by tags). If both are provided, trace_ids takes precedence.
@@ -126,7 +140,7 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
         trace_id, team = trace.info.trace_id, trace.info.tags.get("team_id")
         label = f"  [{i}/{len(traces)}] {trace_id} ({team})"
 
-        for assessment in trace.info.assessments: # clear a previous judge run so results don't pile up
+        for assessment in (trace.info.assessments or []): # clear a previous judge run so results don't pile up
             if assessment.name not in KEEP_ASSESSMENTS and assessment.source.source_type != AssessmentSourceType.HUMAN: # instructor labels survive a re-judge
                 mlflow.delete_assessment(trace_id=trace_id, assessment_id=assessment.assessment_id)
                 _log(f"{label}: existing assessment '{assessment.name}' deleted")
@@ -159,10 +173,12 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
     if not (with_gold or without_gold):
         raise RuntimeError("No judgeable traces selected.")
 
-    judge = [llm_judge_citation_grounding] if with_judge else []
+    judge = [llm_judge_citation_grounding, llm_judge_sprint_feedback_consistency] if with_judge else []
     groups = [("gold", with_gold, [grade_accuracy_from_trace, *judge]), ("no_gold", without_gold, judge)]
     os.environ.setdefault("MLFLOW_GENAI_EVAL_MAX_WORKERS", "1")   # default 10 parallel scorers would swamp one Ollama server
-    base_name = run_name or f"judge_{JUDGE_MODEL}_{time.strftime('%Y%m%d-%H%M')}"
+    # Determine judge model by checking trace tag to see if fixture = true 
+    judge_model = "+".join(sorted({judge_model_for(t) for t in (*with_gold, *without_gold)}))
+    base_name = run_name or f"judge_{judge_model}_{time.strftime('%Y%m%d-%H%M')}"
     start, results = time.perf_counter(), []
 
     for group_name, group, scorers in groups:
@@ -178,7 +194,7 @@ def run_judge_evaluation(experiment_name: str, client: MlflowClient, *, trace_id
             if result.result_df is not None:
                 save_judge_results(
                     experiment_name=experiment_name,
-                    judge_model=JUDGE_MODEL,
+                    judge_model=judge_model,
                     group_name=group_name,
                     run_id=run.info.run_id,
                     result_df=result.result_df,

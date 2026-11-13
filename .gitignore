@@ -86,6 +86,7 @@ Thumbs.db
 ai-engine/research/validation_results/*
 ai-engine/research/eval_inspection/
 ai-engine/research/judge_eval_report/
+ai-engine/results/*
 
 # ==========================================
 # TypeScript
