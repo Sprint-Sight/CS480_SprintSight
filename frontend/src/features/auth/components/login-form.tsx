@@ -12,9 +12,12 @@ type LoginFormProps = {
   onEmailChange: (email: string) => void;
   onPasswordChange: (password: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  /** Auth showcase (idle) heading instead of the logo; false by default. */
+  showWelcomeHeading?: boolean;
 };
 
 export function LoginForm({
+  showWelcomeHeading = false,
   email,
   password,
   error,
@@ -28,21 +31,36 @@ export function LoginForm({
   const errorId = useId();
 
   return (
-    <div className="min-h-dvh flex items-start justify-center bg-slate-50 p-4 sm:items-center">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-6 sm:p-8">
-        <div className="flex flex-col items-center mb-6">
-          <Image
-            src="/logo.png"
-            alt="SprintSight Logo"
-            width={320}
-            height={100}
-            priority
-            className="h-16 sm:h-24 w-auto object-contain mb-1"
-          />
-          <p className="text-xs text-slate-400 font-medium tracking-tight">
-            AI-Powered Continuous Sprint Assessment
-          </p>
-        </div>
+    <div className="min-h-dvh flex items-start justify-center p-4 sm:items-center">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] lg:shadow-[0_24px_64px_-16px_rgb(11,32,70,0.35)] p-6 sm:p-8">
+        {showWelcomeHeading ? (
+          // IDLE FEATURE: AUTH SHOWCASE heading (only when NEXT_PUBLIC_AUTH_SHOWCASE=true).
+          <header className="mb-8 text-center">
+            <h1 className="text-[1.75rem] font-bold leading-tight tracking-tight text-slate-900 sm:text-4xl">
+              Welcome to{" "}
+              <span
+                data-testid="login-welcome-brand"
+                className="bg-gradient-to-r from-brand to-sky-600 bg-clip-text text-transparent"
+              >
+                SprintSight
+              </span>
+            </h1>
+          </header>
+        ) : (
+          <div className="flex flex-col items-center mb-6">
+            <Image
+              src="/logo.png"
+              alt="SprintSight Logo"
+              width={320}
+              height={100}
+              priority
+              className="h-16 sm:h-24 w-auto object-contain mb-1"
+            />
+            <p className="text-xs text-slate-400 font-medium tracking-tight">
+              AI-Powered Continuous Sprint Assessment
+            </p>
+          </div>
+        )}
 
         <form className="space-y-6" onSubmit={onSubmit} onFocus={scrollFieldIntoView}>
           <div>

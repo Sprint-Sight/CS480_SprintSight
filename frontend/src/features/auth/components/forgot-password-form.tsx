@@ -20,8 +20,8 @@ export function ForgotPasswordForm({
   onSubmit,
 }: ForgotPasswordFormProps) {
   return (
-    <main className="flex min-h-dvh items-start justify-center bg-slate-50 p-4 sm:items-center">
-      <section className="w-full max-w-md rounded-2xl bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-8">
+    <main className="flex min-h-dvh items-start justify-center p-4 sm:items-center">
+      <section className="w-full max-w-md rounded-2xl bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] lg:shadow-[0_24px_64px_-16px_rgb(11,32,70,0.35)] sm:p-8">
         <h1 className="mb-2 text-2xl font-semibold text-slate-900">Reset your password</h1>
         {isSubmitted ? (
           <div className="space-y-5">

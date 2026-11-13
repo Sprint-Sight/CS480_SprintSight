@@ -1,5 +1,6 @@
 "use client";
 
+import { AUTH_SHOWCASE_ENABLED } from "@/features/auth/auth-feature-flags";
 import { useLogin } from "@/features/auth/hooks/use-login";
 import { LoginForm } from "@/features/auth/components/login-form";
 import { InitialPasswordChangeForm } from "@/features/auth/components/initial-password-change-form";
@@ -26,6 +27,7 @@ export function LoginPageContent() {
 
   return (
     <LoginForm
+      showWelcomeHeading={AUTH_SHOWCASE_ENABLED}
       email={login.email}
       password={login.password}
       error={login.error}
