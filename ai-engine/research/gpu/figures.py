@@ -35,7 +35,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
-
 from research.gpu import report as gpu_report
 
 # Validated with the dataviz skill's palette checker (light surface).

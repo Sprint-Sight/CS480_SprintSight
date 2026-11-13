@@ -5,7 +5,6 @@ import threading
 import time
 
 import pytest
-
 from evaluation.online.job_queue import DEAD, DONE, QUEUED, JudgeJobQueue
 from evaluation.online.scheduler import JudgeWorker, ModelSlotArbiter
 

@@ -9,7 +9,15 @@ Optional filters:   --since 2026-11-11        only sessions on or after this dat
 Note: the scorecard pools sessions of the same model and script, so use a filter when the folder mixes
 experiments with different prompts or judges.
 """
-import argparse, csv, datetime as dt, importlib.util, json, math, re, statistics as st, collections
+import argparse
+import collections
+import csv
+import datetime as dt
+import importlib.util
+import json
+import math
+import re
+import statistics as st
 from pathlib import Path
 
 ap = argparse.ArgumentParser()
@@ -46,13 +54,12 @@ def load_gold():
 GOLD = load_gold()
 
 # ---------------- batch files ----------------
-now = dt.datetime.now()
+now = dt.datetime.now(dt.UTC)
 def session_of(p): return re.search(r"_(\d{8}T\d{6})\.json", p.name).group(1)
 
 def keep(p):
     if args.experiment and args.experiment not in p.name: return False
-    if args.since and session_of(p)[:8] < args.since.replace("-", ""): return False
-    return True
+    return not (args.since and session_of(p)[:8] < args.since.replace("-", ""))
 
 all_files = sorted(p for p in RES.iterdir() if p.name.startswith(("raw_", "summary_")))
 batch_files = [p for p in all_files if keep(p)]
@@ -98,7 +105,7 @@ for s, inv in sorted(invocations.items()):
     inv["model"] = runs[-1]["model"] if runs and runs[-1]["session"] == s else None
 
 # ---------------- audit logs (calls inside the batch window) ----------------
-SECTION = re.compile(r"\n([A-Z][A-Z /]+)\n-+\n(.*?)(?=\n[A-Z][A-Z /]+\n-+\n|\Z)", re.S)
+SECTION = re.compile(r"\n([A-Z][A-Z /]+)\n-+\n(.*?)(?=\n[A-Z][A-Z /]+\n-+\n|\Z)", re.DOTALL)
 if not runs: raise SystemExit("No runs found for these filters.")
 t0 = min(r["start"] for r in runs) - dt.timedelta(minutes=5)
 t1 = max(r["end"] for r in runs) + dt.timedelta(minutes=30)
@@ -113,8 +120,8 @@ for p in AUD.iterdir():
     text = p.read_text(encoding="utf-8", errors="replace")
     sec = dict(SECTION.findall(text))
     try:
-        meta = json.loads(re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.S).group(1))
-    except Exception:
+        meta = json.loads(re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.DOTALL).group(1))
+    except Exception:  # noqa: BLE001
         meta = {}
     rec = {"file": p.name, "ts": parse_ts(meta["logged_at"]) if meta.get("logged_at") else ts, "model": (meta.get("model") or "").removeprefix("sprintsight-"),
            "team": meta.get("team_id"), "dim": meta.get("dimension"), "error": sec.get("CLIENT ERROR", "").strip(),
@@ -128,7 +135,7 @@ for p in AUD.iterdir():
         rec["completion_tokens"] = (body.get("usage") or {}).get("completion_tokens")
         rec["finish"] = body["choices"][0].get("finish_reason")
         rec["content"] = body["choices"][0]["message"]["content"]
-    except Exception:
+    except Exception:  # noqa: BLE001
         rec["prompt_tokens"] = rec["completion_tokens"] = rec["finish"] = rec["content"] = None
     audit.append(rec)
 
@@ -136,7 +143,7 @@ def prompt_text(rec):
     try:
         body = json.loads(dict(SECTION.findall(rec["path"].read_text(encoding="utf-8", errors="replace")))["INPUT SENT TO OLLAMA"])
         return "\n".join(m["content"] for m in body["messages"] if m["role"] == "user")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return ""
 
 def cite_found(ident, prompt):
@@ -322,9 +329,9 @@ for m in MODEL_ORDER:
         # accuracy vs reference
         present_all = [d for d in DIMS if all(r["scores"][d] is not None for r in rs)]
         row["dims_in_every_run"] = present_all
-        def mae(dims):
-            e = [r["scores"][d] - GOLD[r["bundle"]][d] for r in rs for d in dims]
-            b = [BASELINE - GOLD[r["bundle"]][d] for r in rs for d in dims]
+        def mae(dims, _rs=rs):
+            e = [r["scores"][d] - GOLD[r["bundle"]][d] for r in _rs for d in dims]
+            b = [BASELINE - GOLD[r["bundle"]][d] for r in _rs for d in dims]
             return {"n": len(e), "mae": round(st.mean(abs(x) for x in e), 3) if e else None, "bias": round(st.mean(e), 3) if e else None,
                     "baseline_mae": round(st.mean(abs(x) for x in b), 3) if b else None}
         row["acc_all"] = mae(present_all)
@@ -438,9 +445,7 @@ result["gold_order_violations"] = [k for k, v in gold_order.items() if not v]
 L = ["# Run health: local-LLM grading batch", "",
      f"Generated {result['generated']} by `research/dashboard/analyze.py` (read-only on `results/` and `audit_logs/`).", "",
      f"Files analysed from `ai-engine/results/`: **{len(batch_files)}** (filters: since={args.since or 'none'}, experiment={args.experiment or 'none'}). Excluded by filters: {len(older_files)}. Judge-only sessions skipped: {len(judge_only)}.", "",
-     "Each invocation writes 3 files sharing one session timestamp (`services/save_results.py`: `_SESSION_TS` is set once per process): "
-     "`raw_results_<experiment>_<ts>.jsonl`, `summary_<experiment>_<ts>.json` and `raw_judge_results_<experiment>_<ts>.jsonl`. "
-     "Nothing is overwritten on re-run unless two processes start in the same second.", "",
+     "Each invocation writes 3 files sharing one session timestamp (`services/save_results.py`: `_SESSION_TS` is set once per process): `raw_results_<experiment>_<ts>.jsonl`, `summary_<experiment>_<ts>.json` and `raw_judge_results_<experiment>_<ts>.jsonl`. Nothing is overwritten on re-run unless two processes start in the same second.", "",
      "| Script | Model | Session | Files | Runs (expected / raw lines / summary) | Repeats per bundle | Dims scored | Complete runs | Judge rows | Median s | Verdict | Reason |",
      "|---|---|---|---|---|---|---|---|---|---|---|---|"]
 for h in health:

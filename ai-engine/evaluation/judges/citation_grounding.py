@@ -16,12 +16,8 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from pydantic import BaseModel, Field, field_validator, model_validator
-
-from evaluation.judges.config import configured_judge_model
-from evaluation.judges.evidence import fit_judge_bundle
-from evaluation.judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
+from pydantic import BaseModel, Field, field_validator, model_validator
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
@@ -34,6 +30,10 @@ from services.llm_client import (
     audit_scope,
     create_llm_client,
 )
+
+from evaluation.judges.config import configured_judge_model
+from evaluation.judges.evidence import fit_judge_bundle
+from evaluation.judges.trace_adapters import read_candidate
 
 # V2 adds severity labels to partially_grounded and hallucinated, and clarifies that the judge should not grade the student, only check facts.
 log = logging.getLogger(__name__)

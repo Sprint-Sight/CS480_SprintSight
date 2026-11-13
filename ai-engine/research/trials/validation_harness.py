@@ -66,10 +66,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import evaluation.benchmarks.synthetic_v1 as fixtures_module
 import mlflow
 from dotenv import load_dotenv
-
-import evaluation.benchmarks.synthetic_v1 as fixtures_module
 from evaluation.benchmarks.expected_orders import (
     COLLABORATION_ORDER,
     GENERAL_ORDER,

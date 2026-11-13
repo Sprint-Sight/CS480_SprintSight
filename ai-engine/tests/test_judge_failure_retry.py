@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-
 from evaluation.judges.flagging import (
     HALLUCINATION_COL,
     JUDGE_FAILURE_CLASS_COL,

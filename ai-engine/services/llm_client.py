@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 from instructor.core import IncompleteOutputException
 from mlflow.entities import SpanType
 from openai import AsyncOpenAI
-
 from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import MODEL_CHARS_PER_TOKEN, MODEL_NUM_CTX
@@ -29,6 +28,7 @@ from schemas.rubrics_dimension_score import (
     RubricDimensionScore,
 )
 from schemas.sprint_feedback import SprintFeedback
+
 from services.audit_logger import write_audit_record, write_request_marker
 from services.evidence_packer import (
     CHARS_PER_TOKEN,

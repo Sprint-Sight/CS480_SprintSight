@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import ModelOutput

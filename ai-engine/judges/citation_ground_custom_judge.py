@@ -1,7 +1,11 @@
-import asyncio, os, time
+import asyncio
+import os
+import time
 from typing import Literal
 
 import mlflow
+from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
+from evaluation.judges.trace_adapters import read_candidate
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
@@ -10,11 +14,8 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from pydantic import BaseModel, Field, model_validator, create_model
-
-from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
-from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
+from pydantic import BaseModel, Field, create_model, model_validator
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
@@ -260,8 +261,8 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
                      rationale=f"{n} judged citations (weight sum {wsum}) plus {dropped} code-removed fabrications at weight {CODE_DROP_WEIGHT}")]
 
 def _fixture_bundle(team: str | None):
-    from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
-    from research.fixtures import FIXTURES_TEAMS
+    from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
+    from evaluation.benchmarks.synthetic_v2 import FIXTURES_TEAMS
     return {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE, *FIXTURES_TEAMS)}.get(team)
 
 def _bundle_of(trace: Trace, team: str | None) -> ArtifactBundle:

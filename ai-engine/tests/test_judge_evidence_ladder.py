@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-
 from evaluation.judges import citation_grounding as judge
 from evaluation.judges.evidence import (
     MAX_LEVEL,

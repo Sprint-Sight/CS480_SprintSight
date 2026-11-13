@@ -12,12 +12,10 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import mlflow
-from fastapi import APIRouter, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
-
-from api.disconnect import ClientDisconnected, run_unless_disconnected
 from evaluation.online.scheduler import get_arbiter, get_judge_queue
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from llmops import experiments
+from pydantic import BaseModel, Field
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
 from schemas.jira import JiraTicket
@@ -26,6 +24,8 @@ from schemas.peer_evaluation import PeerEvaluation
 from schemas.repo_snapshot import RepoSnapshot
 from schemas.sprint_assessment import SprintAssessment
 from services.evaluator import evaluate_sprint
+
+from api.disconnect import ClientDisconnected, run_unless_disconnected
 
 log = logging.getLogger("sprintsight.router.assessment")
 

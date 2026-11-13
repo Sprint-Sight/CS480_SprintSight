@@ -22,14 +22,13 @@ from contextlib import (
 
 import instructor
 import uvicorn
+from api import assessment
 from dotenv import load_dotenv
+from evaluation.online.scheduler import start_judge_worker, stop_judge_worker
 from fastapi import FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
-from api import assessment
-from evaluation.online.scheduler import start_judge_worker, stop_judge_worker
 from llmops import experiments
 from llmops.mlflow_config import start_mlflow
 from llmops.prompt_registry import register_all_dimension_prompts

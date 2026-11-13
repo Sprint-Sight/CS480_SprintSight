@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from instructor.core import IncompleteOutputException
-
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.modelname import ModelName
 from services import audit_logger, evaluator, llm_client
