@@ -4,7 +4,14 @@ import threading
 
 import mlflow
 import pandas as pd
+from llmops.prompt_registry import (
+    PRODUCTION_ALIAS,
+    assign_prompt_alias,
+    get_production_prompt,
+)
 from mlflow import MlflowClient, MlflowException
+from prompts.dimension_criteria import DIMENSIONS
+from schemas.failure_class import is_transient
 
 from evaluation.judges.flagging import (
     JUDGE_FAILURE_CLASS_COL,
@@ -12,13 +19,6 @@ from evaluation.judges.flagging import (
 )
 from evaluation.online.run_judges import run_judge_evaluation
 from evaluation.stats import paired_bootstrap_diff
-from llmops.prompt_registry import (
-    PRODUCTION_ALIAS,
-    assign_prompt_alias,
-    get_production_prompt,
-)
-from prompts.dimension_criteria import DIMENSIONS
-from schemas.failure_class import is_transient
 
 JUDGE_RESULTS_TAG = "judge_results"       # JSON on each prompt version: {"team|sprint|model": {"abs_error": x, "hallucination": y, "severity_weighted": z, "citation_count": n}}
 PROMOTION_MAE_THRESHOLD = 2.0             # absolute gate: never promote a prompt whose per-dimension error is above this

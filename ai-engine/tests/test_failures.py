@@ -10,7 +10,6 @@ from instructor.core.exceptions import (
     InstructorRetryException,
 )
 from pydantic import ValidationError
-
 from schemas.failure_class import FailureClass, describe_failure, is_transient
 from schemas.rubrics_dimension_score import ModelOutput
 from services.failures import (

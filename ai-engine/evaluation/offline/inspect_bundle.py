@@ -38,10 +38,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from evaluation.offline.datasets import load_dataset
 from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
 from services import llm_client
 from services.evidence_packer import estimate_tokens
+
+from evaluation.offline.datasets import load_dataset
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("evaluation.offline.inspect")

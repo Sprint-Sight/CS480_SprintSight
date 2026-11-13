@@ -40,7 +40,6 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-
 from services.llm_client import find_loaded_model, parse_loaded_models
 
 _METADATA_HEADER = "METADATA\n--------\n"

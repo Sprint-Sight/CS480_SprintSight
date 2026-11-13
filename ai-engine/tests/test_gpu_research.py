@@ -3,7 +3,6 @@ import sys
 
 import pandas as pd
 import pytest
-
 from research.gpu import bench as gpu_bench
 from research.gpu import report as gpu_report
 from services import audit_logger

@@ -6,7 +6,6 @@ import re
 from types import SimpleNamespace
 
 import pytest
-
 from evaluation.judges import citation_grounding as judge
 from evaluation.judges.citation_grounding import (
     GROUNDING_SYSTEM_PROMPT,

@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-
 from evaluation.online import promote
 from evaluation.online.promote import (
     JUDGE_RESULTS_TAG,

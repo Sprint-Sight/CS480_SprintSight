@@ -14,8 +14,12 @@ from typing import Any, Literal
 
 import mlflow
 import pandas as pd
+from llmops.mlflow_config import configure_mlflow, get_experiment_id
 from mlflow.metrics import make_metric
 from mlflow.metrics.base import MetricValue
+from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
+from schemas.artifact_bundle import ArtifactBundle
+from schemas.sprint_assessment import SprintAssessment
 
 from evaluation.offline.judge_study.artifacts import _log_run_artifacts
 from evaluation.offline.judge_study.config import (
@@ -51,10 +55,6 @@ from evaluation.offline.judge_study.specs import (
 )
 from evaluation.offline.metrics import summarise_example
 from evaluation.offline.provenance import git_sha, model_digest
-from llmops.mlflow_config import configure_mlflow, get_experiment_id
-from prompts.dimension_criteria import DIMENSION_PROMPTS, DIMENSIONS
-from schemas.artifact_bundle import ArtifactBundle
-from schemas.sprint_assessment import SprintAssessment
 
 log = logging.getLogger(__name__)
 

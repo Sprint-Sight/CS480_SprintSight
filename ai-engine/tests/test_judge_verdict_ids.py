@@ -4,7 +4,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from evaluation.judges import citation_grounding as judge
 from evaluation.judges.citation_grounding import (
     _PREVIEW_CHARS,

@@ -1,10 +1,10 @@
 # Create rubric score schema for each dimension of the rubric
 
 
-from pydantic import BaseModel
-
 # Rubric criteria now lives in prompts/dimension_criteria.py
 from prompts.dimension_criteria import DIMENSIONS
+from pydantic import BaseModel
+
 from schemas.rubrics_dimension_score import RubricDimensionScore
 
 

@@ -7,14 +7,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import mlflow
-from mlflow.entities import SpanEvent, SpanType
-
 from llmops.prompt_registry import (
     register_all_dimension_prompts,
     register_sprint_feedback_prompt,
 )
 from llmops.review_queue import add_to_review_queue
 from llmops.run_tracking import TrackedRun, exclusive_trace_destination, tracked_run
+from mlflow.entities import SpanEvent, SpanType
 from prompts.dimension_criteria import (
     DIMENSION_PROMPTS,
     DIMENSIONS,
@@ -28,6 +27,7 @@ from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
+
 from services.failures import classify_failure, failure_detail
 from services.llm_client import (
     evaluate_dimension,

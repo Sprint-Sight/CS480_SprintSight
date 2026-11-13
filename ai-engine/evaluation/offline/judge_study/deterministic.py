@@ -11,10 +11,11 @@ import textwrap
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from evaluation.judges.grade_accuracy import numeric_grade_accuracy
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.sprint_assessment import SprintAssessment
+
+from evaluation.judges.grade_accuracy import numeric_grade_accuracy
 
 log = logging.getLogger(__name__)
 
