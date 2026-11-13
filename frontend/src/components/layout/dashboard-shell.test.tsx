@@ -3,6 +3,9 @@ import { fireEvent, screen } from "@testing-library/react";
 
 import { renderComponent } from "@/test-utils";
 import DashboardShell from "@/components/layout/dashboard-shell";
+import { writeScope } from "@/features/ingestion/scope-store";
+
+let loadScopeProjects: () => Promise<unknown[]> = async () => [];
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
@@ -21,7 +24,7 @@ vi.mock("@/features/auth/login-api", () => ({
 }));
 
 vi.mock("@/features/projects/course-projects-api", () => ({
-  scopeProjectsQueryOptions: () => ({ queryKey: ["scope-projects"], queryFn: async () => [] }),
+  scopeProjectsQueryOptions: () => ({ queryKey: ["scope-projects"], queryFn: () => loadScopeProjects() }),
 }));
 
 vi.mock("@/features/ingestion/scope-store", () => ({
@@ -91,6 +94,24 @@ describe("DashboardShell sidebar header", () => {
     expect(closeButton).toHaveClass("absolute");
     expect(closeButton).toHaveClass("right-2");
     expect(closeButton).toHaveClass("md:hidden");
+  });
+});
+
+describe("DashboardShell saved scope", () => {
+  beforeEach(() => {
+    stubViewport(true);
+    vi.mocked(writeScope).mockClear();
+  });
+
+  it("does not overwrite the saved team or sprint with empty values before scope loads", async () => {
+    loadScopeProjects = () => new Promise(() => {});
+    renderComponent(<DashboardShell><div>content</div></DashboardShell>);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const writes = vi.mocked(writeScope).mock.calls.map(([patch]) => patch);
+    expect(writes.some((patch) => patch.selectedProjectId === "" || patch.selectedCourseId === "")).toBe(false);
+    expect(writes.some((patch) => patch.selectedSprintId === "sprint-1")).toBe(false);
   });
 });
 
