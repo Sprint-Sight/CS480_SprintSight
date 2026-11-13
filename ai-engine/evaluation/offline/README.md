@@ -47,7 +47,7 @@ Two directions of flow:
 #    judge_quality_score` finally has data.
 python -m evaluation.offline.judge_study evaluate \
     --run-id <run id from runner.run_evaluation> \
-    --judge-model phi4:14b \
+    --judge-model sprintsight-judge-phi \
     --human-annotations evaluation/benchmarks/data/human_baseline.csv
 
 python -m evaluation.offline.attach_judge_scores \
@@ -75,10 +75,9 @@ The judge **must not share a model family with the candidates under test**.
 `assert_judge_independence` enforces this and will refuse to run; override only
 to deliberately measure the bias:
 
-```bash
-ollama pull phi4:14b              # default, ~9 GB, non-llama
-ollama pull qwen2.5:14b-instruct  # alternative
-```
+The default is `sprintsight-judge-phi` (phi4:14b, ~9 GB, non-llama, built from
+`models/Modelfile.phi` by compose and the HPC job). The alternative is
+`qwen2.5:14b-instruct`; give it a Modelfile and a `MODEL_NUM_CTX` entry first.
 
 ## Typical invocation
 
@@ -153,7 +152,7 @@ python -m evaluation.offline.cli analyze \
 Use the `phase` tag. Default is `preliminary`. When Dataset 2 and 3 land
 and you redo the sweep, pass `--phase deep_eval` or `--phase final`. The
 analysis layer accepts a `--filter` string, so a report-worthy run uses
-`--filter 'tags.phase = "final"'`.
+`--filter 'params.phase = "final"'`.
 
 Experiment names, dataset names, and phases together give you three
 independent axes to carve by — in practice `phase` is the one you'll use

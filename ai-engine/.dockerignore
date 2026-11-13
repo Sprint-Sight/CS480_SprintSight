@@ -35,4 +35,8 @@ research/eval_inspection/
 research/judge_eval_report/
 research/validation_results/
 
+# Real-sprint exports hold student data and are kept out of the repository; the container sees
+# them through the compose bind mount, so they never need to be baked into the image.
+evaluation/benchmarks/data/real_sprints/*.json
+
 tests/fixtures/

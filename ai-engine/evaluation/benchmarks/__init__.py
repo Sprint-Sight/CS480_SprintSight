@@ -6,7 +6,8 @@
     cs203            two real CS203 sprints + gold. Online judge, trials and the judge canary.
     expected_orders  the ranking the synthetic_v1 teams should get.
     data/            the JSON the modules above load, plus data/real_sprints/ (the d_real_sprints
-                     dataset, written by backend/scripts/export_eval_bundles.py).
+                     dataset, written locally by backend/scripts/export_eval_bundles.py and not
+                     committed: it holds student data).
 
 synthetic_v1 and synthetic_v2 reuse the same team_ids (Team_Alpha, ...) for different bundles and
 gold. `online_gold` and `online_bundles` cover synthetic_v2 and cs203 only: the teams the

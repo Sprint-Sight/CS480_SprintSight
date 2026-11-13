@@ -1,7 +1,5 @@
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  return children;
+import { AuthShell } from "@/features/auth/components/auth-shell";
+
+export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  return <AuthShell>{children}</AuthShell>;
 }

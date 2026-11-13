@@ -118,9 +118,14 @@ services: # Separate containers to run
       image: sprintsight-mlflow:3.16.1
       # --backend-store-uri points to the Postgres container; the driver is named so the dialect
       # does not depend on the SQLAlchemy version's default for plain `postgresql://`.
-      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql+psycopg2://user:pass@db:5432/sprintsight
-      environment: 
+      # Run metadata lives in Postgres; artifacts (per_example.jsonl, raw outputs, figures) are
+      # proxied by this server to --artifacts-destination, which is the mlflow_artifacts volume.
+      # Without the volume they were written inside the container and lost when it was recreated.
+      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql+psycopg2://user:pass@db:5432/sprintsight --artifacts-destination /mlartifacts
+      environment:
         - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}
+      volumes:
+        - mlflow_artifacts:/mlartifacts
       ports:
         - "5000:5000"
       restart: unless-stopped
@@ -151,3 +156,4 @@ services: # Separate containers to run
 volumes: # Named volumes for data persistence (not to be deleted)
   ollama_models:
   postgres_data:
+  mlflow_artifacts:
