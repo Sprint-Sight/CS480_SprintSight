@@ -216,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 print(
                     "To merge these into the model-comparison run:"
-                    + '\n' + "  python -m "
+                    "\n  python -m "
                     "evaluation.offline.attach_judge_scores --judge-file "
                     f"{exported} --run-id <runner run_id>"
                 )

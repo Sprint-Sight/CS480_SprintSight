@@ -17,9 +17,9 @@ from typing import Any, cast
 
 import mlflow
 import pandas as pd
-from schemas.run_record import normalize_run_record
 
 from evaluation.offline.attach_judge_scores import load_judge_scores, merge_judge_scores
+from schemas.run_record import normalize_run_record
 
 log = logging.getLogger(__name__)
 

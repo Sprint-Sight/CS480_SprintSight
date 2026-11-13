@@ -1,6 +1,7 @@
 """groundedness_rate must count citations the engine dropped as fabricated."""
 
 import pytest
+
 from evaluation.offline import metrics
 from evaluation.offline.metrics import (
     citations_dropped,

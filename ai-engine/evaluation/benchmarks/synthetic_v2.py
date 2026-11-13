@@ -3,6 +3,7 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
 
+from evaluation.benchmarks import DATA_DIR
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo, FileDiff
 from schemas.jira import JiraTicket
@@ -11,8 +12,6 @@ from schemas.peer_evaluation import PeerEvaluation
 from schemas.rubrics_dimension_score import RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
-
-from evaluation.benchmarks import DATA_DIR
 
 '''
 Gold scores live in evaluation/benchmarks/data/gold/<team>_GOLD.json (loaded at the bottom).

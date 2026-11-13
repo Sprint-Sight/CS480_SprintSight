@@ -25,6 +25,7 @@ from instructor.core.exceptions import (
     ValidationError as InstructorValidationError,
 )
 from pydantic import ValidationError as PydanticValidationError
+
 from schemas.failure_class import FailureClass
 
 # Long enough to keep a full validation report or HTTP error body, short enough that one

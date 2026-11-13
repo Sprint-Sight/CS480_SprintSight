@@ -23,7 +23,6 @@ from collections.abc import Mapping
 from typing import Any
 
 from prompts.dimension_criteria import DIMENSIONS
-
 from schemas.failure_class import FailureClass
 
 _FAILURE_CLASSES = {failure_class.value for failure_class in FailureClass}

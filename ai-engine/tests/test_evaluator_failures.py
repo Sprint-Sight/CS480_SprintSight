@@ -9,10 +9,11 @@ import mlflow
 import openai
 import pytest
 from instructor.core.exceptions import InstructorRetryException
-from llmops import mlflow_config
 from mlflow import MlflowClient
-from prompts.dimension_criteria import DIMENSIONS
 from pydantic import ValidationError
+
+from llmops import mlflow_config
+from prompts.dimension_criteria import DIMENSIONS
 from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.rubrics_dimension_score import ModelOutput, RubricDimensionScore

@@ -7,13 +7,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import mlflow
+from mlflow.entities import SpanEvent, SpanType
+
 from llmops.prompt_registry import (
     register_all_dimension_prompts,
     register_sprint_feedback_prompt,
 )
 from llmops.review_queue import add_to_review_queue
 from llmops.run_tracking import TrackedRun, exclusive_trace_destination, tracked_run
-from mlflow.entities import SpanEvent, SpanType
 from prompts.dimension_criteria import (
     DIMENSION_PROMPTS,
     DIMENSIONS,
@@ -27,7 +28,6 @@ from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
 from schemas.sprint_assessment import SprintAssessment
-
 from services.failures import classify_failure, failure_detail
 from services.llm_client import (
     evaluate_dimension,
@@ -232,7 +232,7 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
             failed_dimensions: dict[str, str] = {}    # dimension -> "<failure_class>: <full error>"
             failure_classes: dict[str, str] = {}      # dimension -> failure_class
 
-            for dim, result in zip(DIMENSIONS, results):
+            for dim, result in zip(DIMENSIONS, results, strict=False):
                 if isinstance(result, BaseException):
                     # Classified, not truncated: a transient infrastructure failure (timeout,
                     # server down) and a schema failure call for different follow-up, and the
@@ -261,9 +261,9 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
                 else:
                     scores_by_dim[dim] = result
 
-        except Exception as e:  # noqa: BLE001 - translate concurrent-task failure into a domain error
+        except Exception as e:
             # mlflow.set_tag("error", str(e))
-            raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
+            raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}") from e
 
         await _log_gpu_offload(model_name, run)
 

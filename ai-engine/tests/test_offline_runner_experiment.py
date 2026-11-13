@@ -9,9 +9,10 @@ MLFLOW_EXPERIMENT_NAME the way compose does.
 
 import mlflow
 import pytest
+from mlflow import MlflowClient
+
 from evaluation.offline import analysis, runner
 from llmops import mlflow_config
-from mlflow import MlflowClient
 
 COMPOSE_DEFAULT = "sprintsight_experiment"
 

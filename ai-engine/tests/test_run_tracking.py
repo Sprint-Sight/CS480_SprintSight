@@ -11,11 +11,12 @@ import time
 
 import mlflow
 import pytest
-from llmops import mlflow_config
-from llmops.run_tracking import exclusive_trace_destination, tracked_run
 from mlflow import MlflowClient
 from mlflow.tracing.constant import TraceMetadataKey
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
+
+from llmops import mlflow_config
+from llmops.run_tracking import exclusive_trace_destination, tracked_run
 
 
 @pytest.fixture

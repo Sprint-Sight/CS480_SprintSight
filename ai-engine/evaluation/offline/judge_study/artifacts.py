@@ -12,7 +12,6 @@ from typing import Any
 import mlflow
 import numpy as np
 import pandas as pd
-from prompts.dimension_criteria import DIMENSIONS
 
 from evaluation.offline.judge_study.config import (
     JUDGE_BUNDLE_CHAR_BUDGET,
@@ -25,6 +24,7 @@ from evaluation.offline.judge_study.meta import calibration_table
 from evaluation.offline.judge_study.specs import JUDGE_METRIC_NAMES, JUDGE_METRIC_SPECS
 from evaluation.offline.provenance import git_sha, model_digest
 from evaluation.stats import is_nan
+from prompts.dimension_criteria import DIMENSIONS
 
 log = logging.getLogger(__name__)
 

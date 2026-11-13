@@ -66,9 +66,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import evaluation.benchmarks.synthetic_v1 as fixtures_module
 import mlflow
 from dotenv import load_dotenv
+
+import evaluation.benchmarks.synthetic_v1 as fixtures_module
 from evaluation.benchmarks.expected_orders import (
     COLLABORATION_ORDER,
     GENERAL_ORDER,
@@ -219,7 +220,7 @@ Compute pearson to measure cross-model agreement. Returns NaN if either input is
 def _pearson(x: list[float], y: list[float]) -> float:
     n = len(x)
     mean_x, mean_y = sum(x) / n, sum(y) / n
-    cov = sum((a - mean_x) * (b - mean_y) for a, b in zip(x, y))
+    cov = sum((a - mean_x) * (b - mean_y) for a, b in zip(x, y, strict=False))
     std_x = sum((a - mean_x) ** 2 for a in x) ** 0.5
     std_y = sum((b - mean_y) ** 2 for b in y) ** 0.5
     if std_x == 0 or std_y == 0:

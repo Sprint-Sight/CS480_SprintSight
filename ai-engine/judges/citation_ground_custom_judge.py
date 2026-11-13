@@ -1,11 +1,9 @@
 import asyncio
 import os
 import time
-from typing import Literal
+from typing import Any, Literal
 
 import mlflow
-from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
-from evaluation.judges.trace_adapters import read_candidate
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
@@ -14,8 +12,11 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from prompts.dimension_criteria import DIMENSIONS
 from pydantic import BaseModel, Field, create_model, model_validator
+
+from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
+from evaluation.judges.trace_adapters import read_candidate
+from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
@@ -94,13 +95,22 @@ def make_grounding_verdict_model(expected_ids: set[str]) -> type[GroundingVerdic
     
     id_type = Literal[tuple(sorted(expected_ids))]  # type: ignore[valid-type]  # runtime-built enum of the allowed ids
 
+    verdict_fields: dict[str, Any] = {
+        "citation_id": (
+            id_type,
+            Field(description="Exactly the claim id (C1, C2, ...). Never a commit SHA or ticket key."),
+        ),
+    }
     verdict_cls = create_model(
         "_Verdict", __base__=CitationVerdict,
-        citation_id=(id_type, Field(description="Exactly the claim id (C1, C2, ...). Never a commit SHA or ticket key.")),
+        **verdict_fields,
     )
-    base = create_model("_CheckedBase", __base__=GroundingVerdict, citation_verdicts=(list[verdict_cls], ...))
+    checked_fields: dict[str, Any] = {
+        "citation_verdicts": (list[verdict_cls], ...),  # type: ignore[valid-type]
+    }
+    base = create_model("_CheckedBase", __base__=GroundingVerdict, **checked_fields)
 
-    class _Checked(base):
+    class _Checked(base):  # type: ignore[misc, valid-type]
         @model_validator(mode="after")
         def _every_id_exactly_once(self):
             seen = [v.citation_id for v in self.citation_verdicts]
@@ -223,9 +233,18 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
                          "sprint_id": trace.info.tags.get("sprint_id"), "candidate_model": model,
                          "judge_model": judge_model, "judge_provider": judge_provider})
         
+        trace_tags = {
+            "judge_model": judge_model,
+            "judge_provider": judge_provider,
+            "dimension": "judge_grounding",
+        }
+        if team is not None:
+            trace_tags["team_id"] = team
+        if model is not None:
+            trace_tags["model"] = model
         mlflow.update_current_trace(
             request_preview=f"llm_judge_citation_grounding on {model} / {team}",
-            tags={"team_id": team, "model": model, "judge_model": judge_model, "judge_provider": judge_provider, "dimension": "judge_grounding"},
+            tags=trace_tags,
         )
 
         try:
@@ -261,6 +280,8 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
                      rationale=f"{n} judged citations (weight sum {wsum}) plus {dropped} code-removed fabrications at weight {CODE_DROP_WEIGHT}")]
 
 def _fixture_bundle(team: str | None):
+    if team is None:
+        return None
     from evaluation.benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
     from evaluation.benchmarks.synthetic_v2 import FIXTURES_TEAMS
     return {b.team_id: b for b in (CS203G6_BUNDLE, CS203JY_BUNDLE, *FIXTURES_TEAMS)}.get(team)

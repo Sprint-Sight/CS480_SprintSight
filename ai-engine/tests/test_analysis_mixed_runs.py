@@ -1,6 +1,7 @@
 """`cli analyze` says when the runs it pools should not be averaged together."""
 
 import pandas as pd
+
 from evaluation.offline.analysis import mixed_run_warnings, run_summary
 
 

@@ -3,6 +3,7 @@
 import json
 
 import pytest
+
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.rubrics_dimension_score import RubricDimensionScore
 from schemas.run_record import base_record

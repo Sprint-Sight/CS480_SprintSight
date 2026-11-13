@@ -19,6 +19,7 @@ import math
 import re
 import statistics as st
 from pathlib import Path
+from typing import Any
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--since", help="only sessions on or after this date, YYYY-MM-DD")
@@ -36,7 +37,10 @@ BASELINE = 5.5
 # expected orders: load the module straight from its file (it only imports typing)
 BENCH = ROOT / "evaluation" / "benchmarks"     # moved here by the ai-engine layout refactor
 spec = importlib.util.spec_from_file_location("expected_orders", BENCH / "expected_orders.py")
-eo = importlib.util.module_from_spec(spec); spec.loader.exec_module(eo)
+if spec is None or spec.loader is None:
+    raise ImportError(f"Unable to load expected-order definitions from {BENCH / 'expected_orders.py'}")
+eo = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(eo)
 ARCHETYPE = {"Team_Alpha": "high_performing", "Team_Delta": "good_collab_low_output", "Team_Epsilon": "imbalanced_high_output",
              "Team_Theta": "lone_contributor_poor_outcome", "Team_Gamma": "struggling"}   # evaluation/benchmarks/synthetic_v2.py
 BUNDLE_LABEL = {"cs203g6": "CS203 G6", "fa7d4476-78fd-4013-8d66-1e290a65fe1c": "CS203 JY", **{k: k.removeprefix("Team_") for k in ARCHETYPE}}
@@ -55,17 +59,21 @@ GOLD = load_gold()
 
 # ---------------- batch files ----------------
 now = dt.datetime.now(dt.UTC)
-def session_of(p): return re.search(r"_(\d{8}T\d{6})\.json", p.name).group(1)
+def session_of(p):
+    match = re.search(r"_(\d{8}T\d{6})\.json", p.name)
+    if match is None:
+        raise ValueError(f"Could not find a session timestamp in {p.name!r}")
+    return match.group(1)
 
-def keep(p):
+def matches_filter(p):
     if args.experiment and args.experiment not in p.name: return False
     return not (args.since and session_of(p)[:8] < args.since.replace("-", ""))
 
 all_files = sorted(p for p in RES.iterdir() if p.name.startswith(("raw_", "summary_")))
-batch_files = [p for p in all_files if keep(p)]
-older_files = [p.name for p in all_files if not keep(p)]   # files excluded by --since / --experiment
+batch_files = [p for p in all_files if matches_filter(p)]
+older_files = [p.name for p in all_files if not matches_filter(p)]   # files excluded by --since / --experiment
 
-invocations = {}
+invocations: dict[str, dict[str, Any]] = {}
 for p in batch_files:
     s = session_of(p)
     inv = invocations.setdefault(s, {"session": s, "files": {}})
@@ -80,7 +88,7 @@ judge_only = [s for s, i in invocations.items() if "raw" not in i["files"]]
 for s in judge_only: del invocations[s]
 batch_files = [p for p in batch_files if session_of(p) not in judge_only]
 
-def parse_ts(s): return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+def parse_ts(s): return dt.datetime.fromisoformat(s)
 
 # ---------------- runs ----------------
 runs = []
@@ -88,7 +96,7 @@ for s, inv in sorted(invocations.items()):
     raw = inv["files"].get("raw")
     lines = raw.read_text().splitlines() if raw else []
     inv["raw_lines"], inv["bad_json"] = len(lines), 0
-    rep = collections.Counter()
+    rep: collections.Counter[str] = collections.Counter()
     for i, line in enumerate(lines, 1):
         try:
             r = json.loads(line)
@@ -114,16 +122,19 @@ for p in AUD.iterdir():
     m = re.match(r"llm_(\d{8}T\d{6})", p.name)
     if not m:
         continue
-    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.timezone.utc)
+    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.UTC)
     if not (t0 - dt.timedelta(hours=1) <= ts <= t1 + dt.timedelta(hours=1)):
         continue
     text = p.read_text(encoding="utf-8", errors="replace")
     sec = dict(SECTION.findall(text))
     try:
-        meta = json.loads(re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.DOTALL).group(1))
+        meta_match = re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.DOTALL)
+        if meta_match is None:
+            raise ValueError(f"Missing metadata section in {p.name}")
+        meta = json.loads(meta_match.group(1))
     except Exception:  # noqa: BLE001
         meta = {}
-    rec = {"file": p.name, "ts": parse_ts(meta["logged_at"]) if meta.get("logged_at") else ts, "model": (meta.get("model") or "").removeprefix("sprintsight-"),
+    rec: dict[str, Any] = {"file": p.name, "ts": parse_ts(meta["logged_at"]) if meta.get("logged_at") else ts, "model": (meta.get("model") or "").removeprefix("sprintsight-"),
            "team": meta.get("team_id"), "dim": meta.get("dimension"), "error": sec.get("CLIENT ERROR", "").strip(),
            "est": meta.get("estimated_prompt_tokens"), "num_ctx": meta.get("num_ctx"), "jira": meta.get("jira_ticket_count"),
            "peer": meta.get("peer_evaluation_count"), "path": p}
@@ -175,7 +186,7 @@ for r in runs:
                     ok = (a, json.loads(a["content"])); break
                 except json.JSONDecodeError:
                     continue
-        info = {"attempts": len(calls), "errors": sum(1 for a in calls if a["error"]), "citations": None, "found": None, "audit_score": None}
+        info: dict[str, Any] = {"attempts": len(calls), "errors": sum(1 for a in calls if a["error"]), "citations": None, "found": None, "audit_score": None}
         if ok and d not in r["failed"]:      # a failed dimension's last output parsed but did not validate
             a, out = ok
             cits = out.get("evidence_citations") or []
@@ -198,10 +209,10 @@ def classify(msg):
     if "timed out" in m or "timeout" in m: return "timeout"
     return "other"
 
-med = {}
+durations_by_model: dict[tuple[str, str], list[float]] = {}
 for r in runs:
-    med.setdefault((r["model"], r["script"]), []).append(r["duration"])
-med = {k: st.median(v) for k, v in med.items()}
+    durations_by_model.setdefault((r["model"], r["script"]), []).append(r["duration"])
+med = {k: st.median(v) for k, v in durations_by_model.items()}
 for r in runs:
     r["spiral"] = r["duration"] > 3 * med[(r["model"], r["script"])]
     r["instant"] = r["duration"] < 2
@@ -209,7 +220,7 @@ for r in runs:
 
 # ---------------- judge rows ----------------
 judge = {}
-for s, inv in invocations.items():
+for inv in invocations.values():
     p = inv["files"].get("judge")
     rows = [json.loads(l) for l in p.read_text().splitlines() if l.strip()] if p else []
     inv["judge_rows"] = len(rows)
@@ -233,7 +244,7 @@ def pearson(a, b):
     if len(a) < 5: return None
     ma, mb = st.mean(a), st.mean(b)
     va, vb = sum((x - ma) ** 2 for x in a), sum((y - mb) ** 2 for y in b)
-    return round(sum((x - ma) * (y - mb) for x, y in zip(a, b)) / math.sqrt(va * vb), 3) if va and vb else None
+    return round(sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=False)) / math.sqrt(va * vb), 3) if va and vb else None
 
 models = list(dict.fromkeys(r["model"] for r in sorted(runs, key=lambda r: r["session"])))
 MODEL_ORDER = [m for m in ["qwen25-32b", "qwen", "gemma", "r1-32b", "coder-32b"] if m in models] + [m for m in models if m not in ["qwen25-32b", "qwen", "gemma", "r1-32b", "coder-32b"]]
@@ -289,13 +300,16 @@ trunc = {"calls": len(batch_calls),
          "median_reported_over_estimate": round(st.median([a["prompt_tokens"] / a["est"] for a in batch_calls if a["est"]] or [0]), 3),
          "think_tags": sum(1 for a in audit if a["think"])}
 after = [a for a in audit if a["ts"] > max(r["end"] for r in runs) + dt.timedelta(minutes=20)]
-out_of_batch = {"calls_after_batch": len(after), "by": collections.Counter(f"{a['model']} | {a['error'][:40] or 'ok'}" for a in after),
+out_of_batch: dict[str, Any] = {"calls_after_batch": len(after), "by": collections.Counter(f"{a['model']} | {a['error'][:40] or 'ok'}" for a in after),
                 "first": min((a["ts"] for a in after), default=None), "last": max((a["ts"] for a in after), default=None)}
-judge_calls = collections.Counter(a["model"] for a in audit if t0 <= a["ts"] <= t1 and a["model"] in ("gpt-4o-mini", "judge-phi"))
+judge_calls: collections.Counter[str] = collections.Counter(a["model"] for a in audit if t0 <= a["ts"] <= t1 and a["model"] in ("gpt-4o-mini", "judge-phi"))
 
 # ---------------- STEP 2: analysis ----------------
 def valid_scores(rs, d): return [r["scores"][d] for r in rs if r["scores"][d] is not None]
-scorecard, cs_cells, fx_cells, ordering = [], [], [], []
+scorecard: list[dict[str, Any]] = []
+cs_cells: list[dict[str, Any]] = []
+fx_cells: list[dict[str, Any]] = []
+ordering: list[dict[str, Any]] = []
 for m in MODEL_ORDER:
     for script in ("cs203", "fixture"):
         rs = [r for r in runs if r["model"] == m and r["script"] == script]
@@ -400,9 +414,9 @@ for i, a in enumerate(MODEL_ORDER):
     for b in MODEL_ORDER[i + 1:]:
         keys = sorted({(x[1], x[2]) for x in cell_mean if x[0] == a} & {(x[1], x[2]) for x in cell_mean if x[0] == b})
         xa, xb = [cell_mean[(a, *k)] for k in keys], [cell_mean[(b, *k)] for k in keys]
-        keep = [(x, y) for x, y in zip(xa, xb) if not (x == 1 and y == 1)]
-        agreement.append({"a": a, "b": b, "n": len(keys), "r": pearson(xa, xb), "shared_ones": len(keys) - len(keep),
-                          "n_excl": len(keep), "r_excl_shared_ones": pearson([k[0] for k in keep], [k[1] for k in keep])})
+        matched_pairs = [(x, y) for x, y in zip(xa, xb, strict=False) if not (x == 1 and y == 1)]
+        agreement.append({"a": a, "b": b, "n": len(keys), "r": pearson(xa, xb), "shared_ones": len(keys) - len(matched_pairs),
+                          "n_excl": len(matched_pairs), "r_excl_shared_ones": pearson([pair[0] for pair in matched_pairs], [pair[1] for pair in matched_pairs])})
 
 # ---------------- tidy table ----------------
 tidy = []
@@ -431,7 +445,7 @@ explorer = [{"script": r["script"], "model": r["model"], "bundle": r["bundle_lab
              "retries": sum(max(0, r["dims"][d]["attempts"] - 1) for d in DIMS)}
             for r in sorted(runs, key=lambda r: (r["script"], MODEL_ORDER.index(r["model"]), r["bundle"], r["repeat"]))]
 
-result = {"generated": now.isoformat(timespec="seconds"), "dims": DIMS, "models": MODEL_ORDER, "gold": GOLD,
+result: dict[str, Any] = {"generated": now.isoformat(timespec="seconds"), "dims": DIMS, "models": MODEL_ORDER, "gold": GOLD,
           "batch_files": [p.name for p in batch_files], "older_files": older_files, "health": health, "truncation": trunc,
           "out_of_batch": {**out_of_batch, "by": dict(out_of_batch["by"]), "first": str(out_of_batch["first"]), "last": str(out_of_batch["last"])},
           "judge_calls_in_window": dict(judge_calls), "score_mismatch_audit_vs_raw": score_mismatch,

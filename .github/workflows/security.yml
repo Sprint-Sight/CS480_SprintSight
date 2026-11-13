@@ -82,10 +82,12 @@ jobs:
           sudo install -m 0755 trivy /usr/local/bin/trivy
 
       - name: Scan Frontend Files & npm Dependencies
-        run: trivy fs frontend --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+        run: trivy fs frontend --skip-dirs frontend/.next,frontend/node_modules --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
 
       - name: Build Frontend Docker Image
-        run: docker build -t sprintsight-frontend:security-scan --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 ./frontend
+        run: |
+          docker pull node:20-bookworm-slim
+          docker build --pull -t sprintsight-frontend:security-scan --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 ./frontend
 
       - name: Scan Frontend Container Image
         run: trivy image sprintsight-frontend:security-scan --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
