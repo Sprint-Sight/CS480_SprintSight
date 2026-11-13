@@ -27,8 +27,8 @@ export function InitialPasswordChangeForm({
   const errorId = useId();
 
   return (
-    <div className="min-h-dvh flex items-start justify-center bg-slate-50 p-4 sm:items-center">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-6 sm:p-8">
+    <div className="min-h-dvh flex items-start justify-center p-4 sm:items-center">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] lg:shadow-[0_24px_64px_-16px_rgb(11,32,70,0.35)] p-6 sm:p-8">
         <h2 className="text-xl font-semibold text-slate-900 mb-2">Set Your Password</h2>
         <p className="text-sm text-slate-600 mb-6">
           This account has a temporary password. Set a new password to continue.
