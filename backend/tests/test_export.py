@@ -404,7 +404,8 @@ def test_export_csv_generates_download_url(override_user_repository) -> None:
         download_token = data["download_url"].split("/")[-1]
         file_bytes, _, fmt = _EXPORT_STORE[download_token]
         assert fmt.value == "csv"
-        content = file_bytes.decode("utf-8")
+        assert file_bytes.startswith(b"\xef\xbb\xbf")
+        content = file_bytes.decode("utf-8-sig")
         assert "rpt-export-1" in content
         assert "85.0" in content
         assert "Grade" not in content
@@ -417,8 +418,10 @@ def test_export_csv_generates_download_url(override_user_repository) -> None:
         rubric_header = rows.index(["Dimension", "Score", "Justification", "Evidence"])
         requirements_row = rows[rubric_header + 1]
         assert requirements_row[0] == "requirements"
-        assert "src/app.py:L10-L14 — validates the request" in requirements_row[3]
-        assert "commit abc123 — adds validation" in requirements_row[3]
+        assert requirements_row[3] == (
+            "src/app.py:L10-L14 — validates the request,\n"
+            "    commit abc123 — adds validation"
+        )
     finally:
         _clear_overrides()
 

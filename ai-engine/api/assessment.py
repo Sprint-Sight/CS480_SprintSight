@@ -6,9 +6,12 @@ Gets back SprintAssessment object from evaluator, which FastAPI serializes to JS
 
 from __future__ import annotations
 
-import logging, mlflow, os
+import logging
+import os
 from datetime import datetime
 from typing import Annotated, Any
+
+import mlflow
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 

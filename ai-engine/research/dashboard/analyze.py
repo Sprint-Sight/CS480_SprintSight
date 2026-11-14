@@ -9,8 +9,17 @@ Optional filters:   --since 2026-11-11        only sessions on or after this dat
 Note: the scorecard pools sessions of the same model and script, so use a filter when the folder mixes
 experiments with different prompts or judges.
 """
-import argparse, csv, datetime as dt, importlib.util, json, math, re, statistics as st, collections
+import argparse
+import collections
+import csv
+import datetime as dt
+import importlib.util
+import json
+import math
+import re
+import statistics as st
 from pathlib import Path
+from typing import Any
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--since", help="only sessions on or after this date, YYYY-MM-DD")
@@ -28,6 +37,7 @@ BASELINE = 5.5
 # expected orders: load the module straight from its file (it only imports typing)
 BENCH = ROOT / "evaluation" / "benchmarks"     # moved here by the ai-engine layout refactor
 spec = importlib.util.spec_from_file_location("expected_orders", BENCH / "expected_orders.py")
+assert spec is not None and spec.loader is not None
 eo = importlib.util.module_from_spec(spec); spec.loader.exec_module(eo)
 ARCHETYPE = {"Team_Alpha": "high_performing", "Team_Delta": "good_collab_low_output", "Team_Epsilon": "imbalanced_high_output",
              "Team_Theta": "lone_contributor_poor_outcome", "Team_Gamma": "struggling"}   # evaluation/benchmarks/synthetic_v2.py
@@ -46,19 +56,21 @@ def load_gold():
 GOLD = load_gold()
 
 # ---------------- batch files ----------------
-now = dt.datetime.now()
-def session_of(p): return re.search(r"_(\d{8}T\d{6})\.json", p.name).group(1)
+now = dt.datetime.now(dt.UTC)
+def session_of(p):
+    m = re.search(r"_(\d{8}T\d{6})\.json", p.name)
+    assert m is not None
+    return m.group(1)
 
 def keep(p):
     if args.experiment and args.experiment not in p.name: return False
-    if args.since and session_of(p)[:8] < args.since.replace("-", ""): return False
-    return True
+    return not (args.since and session_of(p)[:8] < args.since.replace("-", ""))
 
 all_files = sorted(p for p in RES.iterdir() if p.name.startswith(("raw_", "summary_")))
 batch_files = [p for p in all_files if keep(p)]
 older_files = [p.name for p in all_files if not keep(p)]   # files excluded by --since / --experiment
 
-invocations = {}
+invocations: dict[str, dict[str, Any]] = {}
 for p in batch_files:
     s = session_of(p)
     inv = invocations.setdefault(s, {"session": s, "files": {}})
@@ -73,7 +85,7 @@ judge_only = [s for s, i in invocations.items() if "raw" not in i["files"]]
 for s in judge_only: del invocations[s]
 batch_files = [p for p in batch_files if session_of(p) not in judge_only]
 
-def parse_ts(s): return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+def parse_ts(s): return dt.datetime.fromisoformat(s)
 
 # ---------------- runs ----------------
 runs = []
@@ -81,7 +93,7 @@ for s, inv in sorted(invocations.items()):
     raw = inv["files"].get("raw")
     lines = raw.read_text().splitlines() if raw else []
     inv["raw_lines"], inv["bad_json"] = len(lines), 0
-    rep = collections.Counter()
+    rep: collections.Counter[str] = collections.Counter()
     for i, line in enumerate(lines, 1):
         try:
             r = json.loads(line)
@@ -98,7 +110,7 @@ for s, inv in sorted(invocations.items()):
     inv["model"] = runs[-1]["model"] if runs and runs[-1]["session"] == s else None
 
 # ---------------- audit logs (calls inside the batch window) ----------------
-SECTION = re.compile(r"\n([A-Z][A-Z /]+)\n-+\n(.*?)(?=\n[A-Z][A-Z /]+\n-+\n|\Z)", re.S)
+SECTION = re.compile(r"\n([A-Z][A-Z /]+)\n-+\n(.*?)(?=\n[A-Z][A-Z /]+\n-+\n|\Z)", re.DOTALL)
 if not runs: raise SystemExit("No runs found for these filters.")
 t0 = min(r["start"] for r in runs) - dt.timedelta(minutes=5)
 t1 = max(r["end"] for r in runs) + dt.timedelta(minutes=30)
@@ -107,14 +119,16 @@ for p in AUD.iterdir():
     m = re.match(r"llm_(\d{8}T\d{6})", p.name)
     if not m:
         continue
-    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.timezone.utc)
+    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.UTC)
     if not (t0 - dt.timedelta(hours=1) <= ts <= t1 + dt.timedelta(hours=1)):
         continue
     text = p.read_text(encoding="utf-8", errors="replace")
     sec = dict(SECTION.findall(text))
     try:
-        meta = json.loads(re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.S).group(1))
-    except Exception:
+        _m = re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.DOTALL)
+        assert _m is not None
+        meta = json.loads(_m.group(1))
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError, OSError, re.error, ValueError):
         meta = {}
     rec = {"file": p.name, "ts": parse_ts(meta["logged_at"]) if meta.get("logged_at") else ts, "model": (meta.get("model") or "").removeprefix("sprintsight-"),
            "team": meta.get("team_id"), "dim": meta.get("dimension"), "error": sec.get("CLIENT ERROR", "").strip(),
@@ -128,7 +142,7 @@ for p in AUD.iterdir():
         rec["completion_tokens"] = (body.get("usage") or {}).get("completion_tokens")
         rec["finish"] = body["choices"][0].get("finish_reason")
         rec["content"] = body["choices"][0]["message"]["content"]
-    except Exception:
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError, OSError, re.error, ValueError):
         rec["prompt_tokens"] = rec["completion_tokens"] = rec["finish"] = rec["content"] = None
     audit.append(rec)
 
@@ -136,7 +150,7 @@ def prompt_text(rec):
     try:
         body = json.loads(dict(SECTION.findall(rec["path"].read_text(encoding="utf-8", errors="replace")))["INPUT SENT TO OLLAMA"])
         return "\n".join(m["content"] for m in body["messages"] if m["role"] == "user")
-    except Exception:
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError, OSError, re.error, ValueError):
         return ""
 
 def cite_found(ident, prompt):
@@ -168,7 +182,7 @@ for r in runs:
                     ok = (a, json.loads(a["content"])); break
                 except json.JSONDecodeError:
                     continue
-        info = {"attempts": len(calls), "errors": sum(1 for a in calls if a["error"]), "citations": None, "found": None, "audit_score": None}
+        info: dict[str, Any] = {"attempts": len(calls), "errors": sum(1 for a in calls if a["error"]), "citations": None, "found": None, "audit_score": None}
         if ok and d not in r["failed"]:      # a failed dimension's last output parsed but did not validate
             a, out = ok
             cits = out.get("evidence_citations") or []
@@ -191,7 +205,7 @@ def classify(msg):
     if "timed out" in m or "timeout" in m: return "timeout"
     return "other"
 
-med = {}
+med: dict[Any, Any] = {}
 for r in runs:
     med.setdefault((r["model"], r["script"]), []).append(r["duration"])
 med = {k: st.median(v) for k, v in med.items()}
@@ -282,13 +296,16 @@ trunc = {"calls": len(batch_calls),
          "median_reported_over_estimate": round(st.median([a["prompt_tokens"] / a["est"] for a in batch_calls if a["est"]] or [0]), 3),
          "think_tags": sum(1 for a in audit if a["think"])}
 after = [a for a in audit if a["ts"] > max(r["end"] for r in runs) + dt.timedelta(minutes=20)]
-out_of_batch = {"calls_after_batch": len(after), "by": collections.Counter(f"{a['model']} | {a['error'][:40] or 'ok'}" for a in after),
+out_of_batch: dict[str, Any] = {"calls_after_batch": len(after), "by": collections.Counter(f"{a['model']} | {a['error'][:40] or 'ok'}" for a in after),
                 "first": min((a["ts"] for a in after), default=None), "last": max((a["ts"] for a in after), default=None)}
-judge_calls = collections.Counter(a["model"] for a in audit if t0 <= a["ts"] <= t1 and a["model"] in ("gpt-4o-mini", "judge-phi"))
+judge_calls: collections.Counter[str] = collections.Counter(a["model"] for a in audit if t0 <= a["ts"] <= t1 and a["model"] in ("gpt-4o-mini", "judge-phi"))
 
 # ---------------- STEP 2: analysis ----------------
 def valid_scores(rs, d): return [r["scores"][d] for r in rs if r["scores"][d] is not None]
-scorecard, cs_cells, fx_cells, ordering = [], [], [], []
+scorecard: list[Any] = []
+cs_cells: list[Any] = []
+fx_cells: list[Any] = []
+ordering: list[Any] = []
 for m in MODEL_ORDER:
     for script in ("cs203", "fixture"):
         rs = [r for r in runs if r["model"] == m and r["script"] == script]
@@ -322,7 +339,7 @@ for m in MODEL_ORDER:
         # accuracy vs reference
         present_all = [d for d in DIMS if all(r["scores"][d] is not None for r in rs)]
         row["dims_in_every_run"] = present_all
-        def mae(dims):
+        def mae(dims, rs=rs):
             e = [r["scores"][d] - GOLD[r["bundle"]][d] for r in rs for d in dims]
             b = [BASELINE - GOLD[r["bundle"]][d] for r in rs for d in dims]
             return {"n": len(e), "mae": round(st.mean(abs(x) for x in e), 3) if e else None, "bias": round(st.mean(e), 3) if e else None,
@@ -393,9 +410,9 @@ for i, a in enumerate(MODEL_ORDER):
     for b in MODEL_ORDER[i + 1:]:
         keys = sorted({(x[1], x[2]) for x in cell_mean if x[0] == a} & {(x[1], x[2]) for x in cell_mean if x[0] == b})
         xa, xb = [cell_mean[(a, *k)] for k in keys], [cell_mean[(b, *k)] for k in keys]
-        keep = [(x, y) for x, y in zip(xa, xb) if not (x == 1 and y == 1)]
-        agreement.append({"a": a, "b": b, "n": len(keys), "r": pearson(xa, xb), "shared_ones": len(keys) - len(keep),
-                          "n_excl": len(keep), "r_excl_shared_ones": pearson([k[0] for k in keep], [k[1] for k in keep])})
+        kept = [(x, y) for x, y in zip(xa, xb) if not (x == 1 and y == 1)]
+        agreement.append({"a": a, "b": b, "n": len(keys), "r": pearson(xa, xb), "shared_ones": len(keys) - len(kept),
+                          "n_excl": len(kept), "r_excl_shared_ones": pearson([k[0] for k in kept], [k[1] for k in kept])})
 
 # ---------------- tidy table ----------------
 tidy = []
@@ -438,9 +455,9 @@ result["gold_order_violations"] = [k for k, v in gold_order.items() if not v]
 L = ["# Run health: local-LLM grading batch", "",
      f"Generated {result['generated']} by `research/dashboard/analyze.py` (read-only on `results/` and `audit_logs/`).", "",
      f"Files analysed from `ai-engine/results/`: **{len(batch_files)}** (filters: since={args.since or 'none'}, experiment={args.experiment or 'none'}). Excluded by filters: {len(older_files)}. Judge-only sessions skipped: {len(judge_only)}.", "",
-     "Each invocation writes 3 files sharing one session timestamp (`services/save_results.py`: `_SESSION_TS` is set once per process): "
-     "`raw_results_<experiment>_<ts>.jsonl`, `summary_<experiment>_<ts>.json` and `raw_judge_results_<experiment>_<ts>.jsonl`. "
-     "Nothing is overwritten on re-run unless two processes start in the same second.", "",
+     ("Each invocation writes 3 files sharing one session timestamp (`services/save_results.py`: `_SESSION_TS` is set once per process): "
+      "`raw_results_<experiment>_<ts>.jsonl`, `summary_<experiment>_<ts>.json` and `raw_judge_results_<experiment>_<ts>.jsonl`. "
+      "Nothing is overwritten on re-run unless two processes start in the same second."), "",
      "| Script | Model | Session | Files | Runs (expected / raw lines / summary) | Repeats per bundle | Dims scored | Complete runs | Judge rows | Median s | Verdict | Reason |",
      "|---|---|---|---|---|---|---|---|---|---|---|---|"]
 for h in health:
