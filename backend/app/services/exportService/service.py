@@ -546,7 +546,7 @@ class ExportService:
         writer.writerow(["Dimension", "Score", "Justification", "Evidence"])
         if report.rubric_scores:
             for dimension, detail in report.rubric_scores.items():
-                evidence = "\n".join(f"- {citation}" for citation in detail.evidence_citations)
+                evidence = ",\n    ".join(detail.evidence_citations)
                 writer.writerow([dimension, detail.score, detail.justification or "", evidence])
         else:
             writer.writerow(["No rubric scores available", "", "", ""])
@@ -595,7 +595,7 @@ class ExportService:
         else:
             writer.writerow(["No recommendations available"])
 
-        return buffer.getvalue().encode("utf-8")
+        return buffer.getvalue().encode("utf-8-sig")
 
 
 class RateLimitError(Exception):

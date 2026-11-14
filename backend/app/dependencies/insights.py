@@ -18,9 +18,11 @@ from app.services.insightsService.mlflow_gateway import MlflowGateway
 
 '''
 Dependencies for the Insights API.
-Dependencies are functions that FastAPI calls to provide arguments to route handlers. 
-They can also be used as decorators on route handlers to enforce authentication, authorization, and other preconditions.
-This file contains dependencies that are specific to the Insights API, such as getting the Insights repository,
+Dependencies are functions that FastAPI calls to provide arguments to route handlers.
+They can also be used as decorators on route handlers to enforce authentication,
+authorization, and other preconditions.
+This file contains dependencies that are specific to the Insights API, such as
+getting the Insights repository,
 '''
 
 def get_insights_repository(request: Request) -> InsightsRepository:

@@ -10,9 +10,12 @@ Usage:
         docker compose exec sprintsight_ai python -m research.trials.run_fixture_trial --model "$m"
     done
 """
-import argparse, asyncio, json, mlflow
+import argparse
+import asyncio
+import json
 from pathlib import Path
 
+import mlflow
 from fastapi import BackgroundTasks
 
 from evaluation.benchmarks.synthetic_v2 import FIXTURES_TEAMS
@@ -37,7 +40,7 @@ async def run_fixture_trial(model_name: str, experiment_name: str = "Fixture tes
             trace_ids: list[str] = []  # fresh per run so a judge task only sees its own traces
             try:
                 assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, KeyError, TypeError, AttributeError) as e:
                 print(f"  Error evaluating '{model_name}' against {bundle.team_id}: {e}, SKIPPED")
                 continue
             print(f"  trace_ids={trace_ids}  overall_score={assessment.overall_score}")

@@ -1,7 +1,11 @@
-import asyncio, os, time
+import asyncio
+import os
+import time
 from typing import Literal
 
 import mlflow
+from benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
+from judges.trace_adapters import read_candidate
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
@@ -10,11 +14,9 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
-from pydantic import BaseModel, Field, model_validator, create_model
+from pydantic import BaseModel, Field, create_model, model_validator
 
-from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
-from benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
