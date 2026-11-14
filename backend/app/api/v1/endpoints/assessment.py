@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
@@ -23,7 +24,9 @@ from app.dependencies.auth import (
     require_instructor,
     require_student_or_faculty,
 )
+from app.dependencies.insights import get_optional_insights_repository
 from app.repositories.in_memory import job_repo
+from app.repositories.insights import InsightsRepository
 from app.repositories.interfaces import (
     ActionAuditRepository,
     AssessmentRepository,
@@ -61,10 +64,12 @@ from app.services.assessmentService.service import (
     update_manual_assessment,
 )
 from app.services.auditLogService.service import append_action_audit, append_override_audit
+from app.services.insightsService.overrides import record_override
 from app.services.notificationService.service import EmailTransport
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
+logger = logging.getLogger(__name__)
 
 
 def _authorize_report_access(
@@ -320,6 +325,9 @@ def patch_assessment_report(
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
+    insights_repository: Annotated[
+        InsightsRepository | None, Depends(get_optional_insights_repository)
+    ],
 ) -> AssessmentReport:
     if assessment_repository is None:
         raise HTTPException(
@@ -333,6 +341,10 @@ def patch_assessment_report(
         assessment_repository,
         projects,
     )
+    try:
+        record_override(report, instructor_user.id, insights_repository)
+    except Exception:
+        logger.exception("Could not record assessment override for report %s", report_id)
     append_action_audit(
         action_audits,
         actor_id=instructor_user.id,

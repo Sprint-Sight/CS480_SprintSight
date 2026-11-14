@@ -80,7 +80,7 @@ judge_only = [s for s, i in invocations.items() if "raw" not in i["files"]]
 for s in judge_only: del invocations[s]
 batch_files = [p for p in batch_files if session_of(p) not in judge_only]
 
-def parse_ts(s): return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+def parse_ts(s): return dt.datetime.fromisoformat(s)
 
 # ---------------- runs ----------------
 runs = []
@@ -114,7 +114,7 @@ for p in AUD.iterdir():
     m = re.match(r"llm_(\d{8}T\d{6})", p.name)
     if not m:
         continue
-    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.timezone.utc)
+    ts = dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=dt.UTC)
     if not (t0 - dt.timedelta(hours=1) <= ts <= t1 + dt.timedelta(hours=1)):
         continue
     text = p.read_text(encoding="utf-8", errors="replace")
