@@ -16,6 +16,7 @@ from app.repositories.in_memory import (
     InMemoryExportLogRepository,
     InMemoryPeerEvaluationRepository,
 )
+from app.repositories.insights import PostgresInsightsRepository, ensure_insights_schema
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresActionAuditRepository,
@@ -48,6 +49,8 @@ from app.repositories.postgres import (
     ensure_user_schema,
 )
 from app.schemas.auth import Role
+from app.services.insightsService.label_sync import LabelSyncWorker
+from app.services.insightsService.mlflow_gateway import RealMlflowGateway
 from app.services.notificationService.queue import EmailDispatcher, EmailQueue
 from app.services.notificationService.service import build_email_transport
 
@@ -95,6 +98,8 @@ async def lifespan(app: FastAPI):
     ensure_instructor_model_selection_schema(pool)
     ensure_instructor_jira_credentials_schema(pool)
     ensure_peer_evaluation_schema(pool)
+    # After the users, courses and assessment tables exist: it alters assessment_reports.
+    ensure_insights_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
     app.state.project_repository = PostgresProjectRepository(pool)
     app.state.metrics_repository = PostgresMetricsRepository(pool)
@@ -115,6 +120,18 @@ async def lifespan(app: FastAPI):
     )
     app.state.export_log_repository = InMemoryExportLogRepository()
     app.state.peer_evaluation_repository = PostgresPeerEvaluationRepository(pool)
+    app.state.insights_repository = PostgresInsightsRepository(pool)
+    app.state.mlflow_gateway = RealMlflowGateway(
+        settings.mlflow_tracking_uri, settings.mlflow_timeout_seconds
+    )
+    app.state.label_sync_worker = LabelSyncWorker(
+        app.state.insights_repository,
+        app.state.mlflow_gateway,
+        settings.insights_label_sync_interval_seconds,
+        settings.insights_judge_stale_minutes,
+    )
+    if settings.insights_enabled:
+        app.state.label_sync_worker.start()
     app.state.email_outbox_repository = PostgresEmailOutboxRepository(pool)
     app.state.notification_service = EmailQueue(
         app.state.email_outbox_repository,
@@ -159,6 +176,9 @@ async def lifespan(app: FastAPI):
     dispatcher = getattr(app.state, "email_dispatcher", None)
     if dispatcher is not None:
         dispatcher.stop()
+    worker = getattr(app.state, "label_sync_worker", None)
+    if worker is not None:
+        worker.stop()
     pool.close()
 
 

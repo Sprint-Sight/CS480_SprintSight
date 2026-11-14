@@ -456,3 +456,80 @@ BEGIN
     END IF;
 END;
 $$;
+-- ---------------------------------------------------------------------------
+-- AI Insights (mirrors _SCHEMA_STATEMENTS in app/repositories/insights.py).
+-- assessment_reports.trace_id, defined above, is the link to the MLflow trace.
+-- ---------------------------------------------------------------------------
+ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS ai_rubric_scores_original JSONB;
+ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS judge_status VARCHAR(16) NOT NULL
+    DEFAULT 'unknown'
+    CHECK (judge_status IN ('unknown','pending','complete','failed','stale','no_trace'));
+ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS judge_checked_at TIMESTAMPTZ;
+ALTER TABLE assessment_reports ADD COLUMN IF NOT EXISTS judge_summary JSONB;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assessment_reports_trace
+    ON assessment_reports(trace_id) WHERE trace_id IS NOT NULL;
+
+-- Backfill: never-overridden reports still hold the AI's original scores. A dimension the AI
+-- failed to assess carries a placeholder score, so it is left out.
+UPDATE assessment_reports
+SET ai_rubric_scores_original = (
+    SELECT jsonb_object_agg(key, (value->>'score')::numeric)
+    FROM jsonb_each(rubric_scores)
+    WHERE NOT COALESCE((value->>'evaluation_failed')::boolean, FALSE))
+WHERE ai_rubric_scores_original IS NULL AND override = FALSE
+  AND rubric_scores <> '{}'::jsonb;
+UPDATE assessment_reports SET judge_status = 'no_trace'
+WHERE trace_id IS NULL AND judge_status = 'unknown';
+
+CREATE TABLE IF NOT EXISTS report_view_log (
+    report_id UUID NOT NULL REFERENCES assessment_reports(report_id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    first_viewed_at TIMESTAMPTZ NOT NULL DEFAULT now(),   -- opened the evidence (blind step)
+    first_score_seen_at TIMESTAMPTZ,                      -- first exposure to AI scores or judge results
+    PRIMARY KEY (report_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS instructor_labels (
+    label_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),  -- also the feedback_id in MLflow metadata
+    report_id UUID NOT NULL REFERENCES assessment_reports(report_id) ON DELETE CASCADE,
+    instructor_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    dimension VARCHAR(32) NOT NULL CHECK (dimension IN
+        ('requirements','code_quality','testing','documentation','collaboration','cicd')),
+    score SMALLINT NOT NULL CHECK (score BETWEEN 1 AND 10),
+    reason VARCHAR(1000),
+    ai_score_snapshot NUMERIC(4, 2),                      -- from ai_rubric_scores_original at submit
+    is_blind BOOLEAN NOT NULL,
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sync_status VARCHAR(10) NOT NULL DEFAULT 'pending'
+        CHECK (sync_status IN ('pending','synced','failed','no_trace')),
+    mlflow_assessment_id VARCHAR(64),
+    sync_attempts INTEGER NOT NULL DEFAULT 0,
+    last_sync_error TEXT,
+    UNIQUE (report_id, instructor_id, dimension)
+);
+CREATE INDEX IF NOT EXISTS idx_instructor_labels_sync
+    ON instructor_labels(sync_status, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_instructor_labels_instructor
+    ON instructor_labels(instructor_id, submitted_at DESC);
+
+-- Override gate mode (INSIGHTS_MODE=override_gate): the instructor's override per dimension on the
+-- AI's 0-10 scale. Mirrors _SCHEMA_STATEMENTS in app/repositories/insights.py.
+CREATE TABLE IF NOT EXISTS report_overrides (
+    override_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),   -- feedback_id in MLflow metadata
+    report_id UUID NOT NULL REFERENCES assessment_reports(report_id) ON DELETE CASCADE,
+    dimension VARCHAR(32) NOT NULL CHECK (dimension IN
+        ('requirements','code_quality','testing','documentation','collaboration','cicd')),
+    instructor_id UUID REFERENCES users(user_id) ON DELETE SET NULL,   -- last saver
+    ai_score NUMERIC(4, 2),                     -- snapshot; NULL when the AI did not assess it
+    override_score NUMERIC(4, 2) NOT NULL CHECK (override_score BETWEEN 0 AND 10),
+    changed BOOLEAN NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sync_status VARCHAR(12) NOT NULL DEFAULT 'not_needed'
+        CHECK (sync_status IN ('pending','synced','failed','no_trace','not_needed')),
+    mlflow_assessment_id VARCHAR(64),
+    sync_attempts INTEGER NOT NULL DEFAULT 0,
+    last_sync_error TEXT,
+    UNIQUE (report_id, dimension)
+);
+CREATE INDEX IF NOT EXISTS idx_report_overrides_sync
+    ON report_overrides(sync_status, updated_at);
