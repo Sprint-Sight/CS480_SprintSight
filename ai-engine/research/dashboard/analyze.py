@@ -19,6 +19,7 @@ import math
 import re
 import statistics as st
 from pathlib import Path
+from typing import Any
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--since", help="only sessions on or after this date, YYYY-MM-DD")
@@ -36,6 +37,7 @@ BASELINE = 5.5
 # expected orders: load the module straight from its file (it only imports typing)
 BENCH = ROOT / "evaluation" / "benchmarks"     # moved here by the ai-engine layout refactor
 spec = importlib.util.spec_from_file_location("expected_orders", BENCH / "expected_orders.py")
+assert spec is not None and spec.loader is not None
 eo = importlib.util.module_from_spec(spec); spec.loader.exec_module(eo)
 ARCHETYPE = {"Team_Alpha": "high_performing", "Team_Delta": "good_collab_low_output", "Team_Epsilon": "imbalanced_high_output",
              "Team_Theta": "lone_contributor_poor_outcome", "Team_Gamma": "struggling"}   # evaluation/benchmarks/synthetic_v2.py
@@ -55,7 +57,10 @@ GOLD = load_gold()
 
 # ---------------- batch files ----------------
 now = dt.datetime.now(dt.UTC)
-def session_of(p): return re.search(r"_(\d{8}T\d{6})\.json", p.name).group(1)
+def session_of(p):
+    m = re.search(r"_(\d{8}T\d{6})\.json", p.name)
+    assert m is not None
+    return m.group(1)
 
 def keep(p):
     if args.experiment and args.experiment not in p.name: return False
@@ -65,7 +70,7 @@ all_files = sorted(p for p in RES.iterdir() if p.name.startswith(("raw_", "summa
 batch_files = [p for p in all_files if keep(p)]
 older_files = [p.name for p in all_files if not keep(p)]   # files excluded by --since / --experiment
 
-invocations = {}
+invocations: dict[str, dict[str, Any]] = {}
 for p in batch_files:
     s = session_of(p)
     inv = invocations.setdefault(s, {"session": s, "files": {}})
@@ -88,7 +93,7 @@ for s, inv in sorted(invocations.items()):
     raw = inv["files"].get("raw")
     lines = raw.read_text().splitlines() if raw else []
     inv["raw_lines"], inv["bad_json"] = len(lines), 0
-    rep = collections.Counter()
+    rep: collections.Counter[str] = collections.Counter()
     for i, line in enumerate(lines, 1):
         try:
             r = json.loads(line)
@@ -120,7 +125,9 @@ for p in AUD.iterdir():
     text = p.read_text(encoding="utf-8", errors="replace")
     sec = dict(SECTION.findall(text))
     try:
-        meta = json.loads(re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.DOTALL).group(1))
+        _m = re.search(r"METADATA\n-+\n(\{.*?\n\})\n", text, re.DOTALL)
+        assert _m is not None
+        meta = json.loads(_m.group(1))
     except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError, OSError, re.error, ValueError):
         meta = {}
     rec = {"file": p.name, "ts": parse_ts(meta["logged_at"]) if meta.get("logged_at") else ts, "model": (meta.get("model") or "").removeprefix("sprintsight-"),
@@ -175,7 +182,7 @@ for r in runs:
                     ok = (a, json.loads(a["content"])); break
                 except json.JSONDecodeError:
                     continue
-        info = {"attempts": len(calls), "errors": sum(1 for a in calls if a["error"]), "citations": None, "found": None, "audit_score": None}
+        info: dict[str, Any] = {"attempts": len(calls), "errors": sum(1 for a in calls if a["error"]), "citations": None, "found": None, "audit_score": None}
         if ok and d not in r["failed"]:      # a failed dimension's last output parsed but did not validate
             a, out = ok
             cits = out.get("evidence_citations") or []
@@ -198,7 +205,7 @@ def classify(msg):
     if "timed out" in m or "timeout" in m: return "timeout"
     return "other"
 
-med = {}
+med: dict[Any, Any] = {}
 for r in runs:
     med.setdefault((r["model"], r["script"]), []).append(r["duration"])
 med = {k: st.median(v) for k, v in med.items()}
@@ -289,13 +296,16 @@ trunc = {"calls": len(batch_calls),
          "median_reported_over_estimate": round(st.median([a["prompt_tokens"] / a["est"] for a in batch_calls if a["est"]] or [0]), 3),
          "think_tags": sum(1 for a in audit if a["think"])}
 after = [a for a in audit if a["ts"] > max(r["end"] for r in runs) + dt.timedelta(minutes=20)]
-out_of_batch = {"calls_after_batch": len(after), "by": collections.Counter(f"{a['model']} | {a['error'][:40] or 'ok'}" for a in after),
+out_of_batch: dict[str, Any] = {"calls_after_batch": len(after), "by": collections.Counter(f"{a['model']} | {a['error'][:40] or 'ok'}" for a in after),
                 "first": min((a["ts"] for a in after), default=None), "last": max((a["ts"] for a in after), default=None)}
-judge_calls = collections.Counter(a["model"] for a in audit if t0 <= a["ts"] <= t1 and a["model"] in ("gpt-4o-mini", "judge-phi"))
+judge_calls: collections.Counter[str] = collections.Counter(a["model"] for a in audit if t0 <= a["ts"] <= t1 and a["model"] in ("gpt-4o-mini", "judge-phi"))
 
 # ---------------- STEP 2: analysis ----------------
 def valid_scores(rs, d): return [r["scores"][d] for r in rs if r["scores"][d] is not None]
-scorecard, cs_cells, fx_cells, ordering = [], [], [], []
+scorecard: list[Any] = []
+cs_cells: list[Any] = []
+fx_cells: list[Any] = []
+ordering: list[Any] = []
 for m in MODEL_ORDER:
     for script in ("cs203", "fixture"):
         rs = [r for r in runs if r["model"] == m and r["script"] == script]
@@ -400,9 +410,9 @@ for i, a in enumerate(MODEL_ORDER):
     for b in MODEL_ORDER[i + 1:]:
         keys = sorted({(x[1], x[2]) for x in cell_mean if x[0] == a} & {(x[1], x[2]) for x in cell_mean if x[0] == b})
         xa, xb = [cell_mean[(a, *k)] for k in keys], [cell_mean[(b, *k)] for k in keys]
-        keep = [(x, y) for x, y in zip(xa, xb) if not (x == 1 and y == 1)]
-        agreement.append({"a": a, "b": b, "n": len(keys), "r": pearson(xa, xb), "shared_ones": len(keys) - len(keep),
-                          "n_excl": len(keep), "r_excl_shared_ones": pearson([k[0] for k in keep], [k[1] for k in keep])})
+        kept = [(x, y) for x, y in zip(xa, xb) if not (x == 1 and y == 1)]
+        agreement.append({"a": a, "b": b, "n": len(keys), "r": pearson(xa, xb), "shared_ones": len(keys) - len(kept),
+                          "n_excl": len(kept), "r_excl_shared_ones": pearson([k[0] for k in kept], [k[1] for k in kept])})
 
 # ---------------- tidy table ----------------
 tidy = []
