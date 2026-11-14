@@ -97,7 +97,7 @@ def make_grounding_verdict_model(expected_ids: set[str]) -> type[GroundingVerdic
 
     verdict_cls = create_model(
         "_Verdict", __base__=CitationVerdict,
-        citation_id=(id_type, Field(description="Exactly the claim id (C1, C2, ...). Never a commit SHA or ticket key.")),
+        citation_id=(id_type, Field(description="Exactly the claim id (C1, C2, ...). Never a commit SHA or ticket key.")),  # type: ignore[arg-type]
     )
     base = create_model("_CheckedBase", __base__=GroundingVerdict, citation_verdicts=(list[verdict_cls], ...))  # type: ignore[valid-type]
 
