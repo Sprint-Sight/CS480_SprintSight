@@ -248,6 +248,13 @@ def convert_ai_result_to_assessment_report(
         return deduplicated
 
     deduped_recommendations = deduplicate(recommendations)
+    # Snapshot for AI Insights. A failed dimension carries a placeholder score, not an
+    # assessment, so it is left out rather than compared against instructor labels.
+    original_scores = {
+        dimension: float(detail.score)
+        for dimension, detail in rubric_scores.items()
+        if dimension not in failed_dimensions
+    }
 
     return AssessmentReport(
         report_id=f"rpt-{uuid4()}",
@@ -271,6 +278,7 @@ def convert_ai_result_to_assessment_report(
         trace_id=ai_result.get("trace_id") or None,
         evaluation_failed=bool(failed_dimensions),
         failed_dimensions=failed_dimensions,
+        ai_rubric_scores_original=original_scores or None,
     )
 
 

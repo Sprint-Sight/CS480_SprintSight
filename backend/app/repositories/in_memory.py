@@ -186,6 +186,9 @@ class InMemoryProjectRepository(ProjectRepository):
     def is_instructor_assigned(self, course_id: str, user_id: str) -> bool:
         return (course_id, user_id) in self._instructors
 
+    def list_instructor_course_ids(self, user_id: str) -> list[str]:
+        return [course_id for course_id, uid in self._instructors if uid == user_id]
+
     def enroll_student(self, course_id: str, user_id: str) -> bool:
         if (course_id, user_id) in self._enrollments:
             return False
