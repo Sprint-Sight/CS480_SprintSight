@@ -20,6 +20,7 @@ import {
   Menu,
   MessageSquare,
   Settings,
+  Sparkles,
   User,
   Loader2,
   X,
@@ -68,6 +69,7 @@ const instructorNavItems: NavItem[] = [
   { label: "Artifact Viewer", href: "/artifact-viewer", icon: Eye },
   { label: "Collaboration", href: "/collaboration", icon: BarChart3 },
   { label: "Assessment Report", href: "/assessment-report", icon: FileText },
+  { label: "AI Insights", href: "/insights", icon: Sparkles },
   { label: "Peer Evaluation", href: "/peer-evaluation", icon: MessageSquare },
   { label: "Progress", href: "/progress", icon: GitCompare },
   { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
@@ -121,7 +123,13 @@ export default function DashboardShell({ children }: DashboardShellProps) {
   const isProjectsRoot = pathname === "/projects";
   const showsInstructorScope = instructorScopeRoutes.has(pathname);
   const showsSprintScope = showsInstructorScope && !routesWithoutSprintScope.has(pathname);
-  const isRestrictedForStudent = pathname === "/projects" || pathname === "/settings" || pathname === "/audit-log";
+  // The API also returns 403 for students on /insights; this keeps them off a broken page.
+  const isRestrictedForStudent =
+    pathname === "/projects" ||
+    pathname === "/settings" ||
+    pathname === "/audit-log" ||
+    pathname === "/insights" ||
+    pathname.startsWith("/insights/");
   const menuRef = useRef<HTMLDivElement | null>(null);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);

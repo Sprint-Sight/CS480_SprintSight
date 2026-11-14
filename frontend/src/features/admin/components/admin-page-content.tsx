@@ -15,6 +15,7 @@ import {
   Users,
   UserCheck,
   FolderGit2,
+  Sparkles,
   Upload,
 } from "lucide-react";
 import { UserAccount, CreateUserData, EditUserData } from "@/features/admin/types";
@@ -285,6 +286,13 @@ export function AdminPageContent() {
           >
             <ClipboardList className="w-4 h-4 text-slate-500" />
             Audit Log
+          </Link>
+          <Link
+            href="/admin/insights"
+            className="inline-flex items-center gap-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
+          >
+            <Sparkles className="w-4 h-4 text-slate-500" />
+            Evaluation Insights
           </Link>
           {courses.length > 0 && (
             <select
