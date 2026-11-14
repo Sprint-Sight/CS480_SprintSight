@@ -33,6 +33,17 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       LOCAL_REPOSITORY_ROOT: /app/repo
+      # AI Insights: the backend reads traces from, and writes instructor labels to, the
+      # local MLflow server of the ai-engine stack. Telemetry off, short timeout, no retries
+      # so a stopped MLflow degrades the Insights pages instead of hanging them.
+      MLFLOW_TRACKING_URI: http://host.docker.internal:5000
+      MLFLOW_DISABLE_TELEMETRY: "true"
+      MLFLOW_HTTP_REQUEST_TIMEOUT: "5"
+      MLFLOW_HTTP_REQUEST_MAX_RETRIES: "0"
+      INSIGHTS_ENABLED: "true"
+      INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS: "10"
+      INSIGHTS_MODE: 'override_gate'
+    extra_hosts: ["host.docker.internal:host-gateway"]  # no-op on macOS, needed on Linux
     depends_on:
       db:
         condition: service_healthy

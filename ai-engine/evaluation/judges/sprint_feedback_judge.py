@@ -3,32 +3,21 @@ LLM judge: do the justification, strengths, weaknesses & recomendations make sen
 Are they consistent with the scores? Are they consistent with each other?
 '''
 
-import asyncio
+import asyncio, mlflow
+from mlflow.entities import SpanType
 from typing import Literal
 
-import mlflow
-from mlflow.entities import (
-    AssessmentSource,
-    AssessmentSourceType,
-    Feedback,
-    SpanType,
-    Trace,
-)
+from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, Trace
 from mlflow.genai.scorers import scorer
 from pydantic import BaseModel, Field, model_validator
 
-from judges.citation_ground_custom_judge import FIXTURE_JUDGE_MODEL, judge_model_for
+from evaluation.judges.citation_grounding import judge_model_for, judge_provider_for, remote_judge_error
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.modelname import MODEL_NUM_CTX
-from services.llm_client import (
-    LLM_TEMPERATURE,
-    _request_extra_body,
-    audit_scope,
-    create_llm_client,
-)
+from services.llm_client import LLM_TEMPERATURE, _request_extra_body, audit_scope, create_llm_client
 
 SPRINT_FEEDBACK_JUDGE_PROMPT_VERSION = "sprint_feedback_judge_v1"
-SPRINT_FEEDBACK_JUDGE_PROMPT = """You check a grading report for INTERNAL consistency. You do NOT grade the students.
+SPRINT_FEEDBACK_JUDGE_PROMPT = f"""You check a grading report for INTERNAL consistency. You do NOT grade the students.
 Scores are 1-10: 1-2 very poor, 3-5 weak, 6-8 good, 9-10 excellent. Each ITEM names a kind in brackets.
 Give every item one label:
 - contradicts:
@@ -96,8 +85,10 @@ def _clip(s: str, n: int = 900) -> str:
 @scorer(name="llm_judge_sprint_feedback_consistency")
 def llm_judge_sprint_feedback_consistency(trace: Trace) -> list[Feedback]:
     judge_model = judge_model_for(trace)
-    judge_provider = "openai" if judge_model == FIXTURE_JUDGE_MODEL else "ollama"
+    judge_provider = judge_provider_for(judge_model)
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
+    if (blocked := remote_judge_error(judge_provider)) is not None: # can't check consistency if judge is blocked
+        return [Feedback(name="narrative_contradiction_count", error=blocked, source=source)]
     root = next((s for s in trace.data.spans if s.parent_id is None), None)
     a = root.outputs if root is not None and isinstance(root.outputs, dict) and "rubric_scores" in root.outputs else None
     if a is None:   # older traces have no stored sprint-level feedback
@@ -111,7 +102,7 @@ def llm_judge_sprint_feedback_consistency(trace: Trace) -> list[Feedback]:
         mlflow.update_current_trace(request_preview=_clip(f"{judge_model} consistency check on {trace.info.trace_id}"))
         try:
             r = asyncio.run(judge_sprint_feedback(a, judge_model, judge_provider))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             span.set_outputs({"error_type": type(e).__name__, "error": str(e)[:1500]})
             span.set_status("ERROR")
             mlflow.update_current_trace(response_preview=_clip(f"Error {type(e).__name__}: {e}"))

@@ -866,6 +866,13 @@ class PostgresProjectRepository(ProjectRepository):
             ).fetchone()
         return row is not None
 
+    def list_instructor_course_ids(self, user_id: str) -> list[str]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT course_id FROM course_instructors WHERE user_id = %s", (UUID(user_id),)
+            ).fetchall()
+        return [str(row["course_id"]) for row in rows]
+
     def enroll_student(self, course_id: str, user_id: str) -> bool:
         with self._pool.connection() as connection:
             # A student can enroll in a course code only once, across terms and sections.
@@ -1677,8 +1684,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
                 (report_id, model_name, mode, course_id, project_id,
                  sprint_id, generated_at, rubric_weights, team_score,
                  individual_scores, recommendations, rubric_scores,
-                 strengths, weaknesses, trace_id, evaluation_failed, failed_dimensions)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 strengths, weaknesses, trace_id, evaluation_failed, failed_dimensions,
+                 ai_rubric_scores_original)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (report_id)
                 DO UPDATE SET model_name = EXCLUDED.model_name,
                               mode = EXCLUDED.mode,
@@ -1695,7 +1703,11 @@ class PostgresAssessmentRepository(AssessmentRepository):
                               weaknesses = EXCLUDED.weaknesses,
                               trace_id = EXCLUDED.trace_id,
                               evaluation_failed = EXCLUDED.evaluation_failed,
-                              failed_dimensions = EXCLUDED.failed_dimensions""",
+                              failed_dimensions = EXCLUDED.failed_dimensions,
+                              -- write-once: an existing snapshot is never replaced
+                              ai_rubric_scores_original = COALESCE(
+                                  assessment_reports.ai_rubric_scores_original,
+                                  EXCLUDED.ai_rubric_scores_original)""",
                 (
                     UUID(report.report_id.replace("rpt-", ""))
                     if report.report_id.startswith("rpt-")
@@ -1716,6 +1728,9 @@ class PostgresAssessmentRepository(AssessmentRepository):
                     report.trace_id,
                     report.evaluation_failed,
                     Json(report.failed_dimensions),
+                    Json(report.ai_rubric_scores_original)
+                    if report.ai_rubric_scores_original is not None
+                    else None,
                 ),
             )
 
@@ -1850,6 +1865,7 @@ class PostgresAssessmentRepository(AssessmentRepository):
             code_quality_justification=row.get("code_quality_justification"),
             documentation_justification=row.get("documentation_justification"),
             collaboration_justification=row.get("collaboration_justification"),
+            ai_rubric_scores_original=row.get("ai_rubric_scores_original"),
         )
 
 

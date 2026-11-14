@@ -1,13 +1,7 @@
-import asyncio
-import logging
-import os
-import re
-import time
+import asyncio, httpx, logging, mlflow, os, re, time
 from dataclasses import dataclass
 from typing import Literal
 
-import httpx
-import mlflow
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
@@ -90,6 +84,25 @@ Return exactly one verdict for EVERY claim id given. Never skip or repeat one. c
 
 JUDGE_MODEL = configured_judge_model()  # evaluation/judges/config.py: the one default for prod and research
 
+# Research fixtures (traces tagged fixture=true) are judged by OpenAI. Everything else, and so
+# every trace the deployed stack produces, is judged by the local Ollama model.
+FIXTURE_JUDGE_MODEL = "gpt-4o-mini"
+# The deployment is local-only: a judge call that would leave the machine is refused unless
+# this is set to 1, which only research runs do.
+ALLOW_REMOTE_JUDGE_ENV = "SPRINTSIGHT_ALLOW_REMOTE_JUDGE"
+
+def judge_model_for(trace: Trace) -> str:
+    return FIXTURE_JUDGE_MODEL if trace.info.tags.get("fixture") == "true" else JUDGE_MODEL
+
+def judge_provider_for(judge_model: str) -> str:
+    return "openai" if judge_model == FIXTURE_JUDGE_MODEL else "ollama"
+
+def remote_judge_error(judge_provider: str) -> RuntimeError | None:
+    """The error to report when the judge would call a remote provider without the opt-in."""
+    if judge_provider == "ollama" or os.getenv(ALLOW_REMOTE_JUDGE_ENV) == "1":
+        return None
+    return RuntimeError(f"Remote judge disabled; set {ALLOW_REMOTE_JUDGE_ENV}=1 for research runs only.")
+
 FEEDBACK_NAMES = {"coverage": "judge_coverage", "hallucination_rate": "citation_hallucination_rate",
                   "grounded_rate": "citation_grounded_rate", "citation_count": "citation_count"}
 CODE_SOURCE = AssessmentSource(source_type=AssessmentSourceType.CODE, source_id="find_ungrounded_citations")
@@ -126,7 +139,6 @@ class JudgeContextTruncated(PromptTruncatedError):
     fabricated; they are discarded rather than scored."""
 
 _LEADING_ID = re.compile(r"\s*[Cc](\d+)\b")
-
 
 class CitationVerdict(BaseModel):
     citation_id: str                       # "C3", the label WE gave it
@@ -195,7 +207,7 @@ def summarize_verdict(citations: dict, verdict: GroundingVerdict) -> dict:
         "severity_weighted_rate": round(sum(verdict_weight(v.label, v.severity) for v in judged.values()) / n, 4) if n else None,
     }
 
-# ---- how much context the judge really has ------------------------------------------------
+# how much context the judge really has
 
 # The window is shared by the prompt AND the verdicts the judge writes back (a sentence of
 # reasoning, a label and a severity per claim), so room is reserved for them.
@@ -204,7 +216,6 @@ _OUTPUT_TOKENS_PER_CLAIM = 100
 HOSTED_JUDGE_CONTEXT = 128_000  # gpt-4o-mini's context window
 
 _server_context: dict[str, int] = {}
-
 
 async def _server_context_limit(model: str) -> int | None:
     """The context Ollama will really give `model`: the smaller of the Modelfile's num_ctx and
@@ -248,7 +259,7 @@ async def _judge_context(judge_model: str, judge_provider: str) -> int:
     return configured
 
 
-# ---- splitting the claims so each call fits ------------------------------------------------
+# splitting the claims so each call fits
 
 @dataclass(frozen=True)
 class _Batch:
@@ -257,17 +268,14 @@ class _Batch:
     bundle_json: str
     evidence_level: int
 
-
 def _claims_text(citations: dict, ids: list[str]) -> str:
     return "\n".join(f'{cid} [{citations[cid]["dimension"]}]: {citations[cid]["text"]}' for cid in ids)
-
 
 def _budget_chars(ctx: int, n_claims: int, claims_chars: int) -> int:
     """Characters left for the evidence: 85% of the window less the verdicts to be written, the
     instructions and the claims, at the ~4 characters per token used throughout."""
     reserve_tokens = _OUTPUT_FIXED_TOKENS + _OUTPUT_TOKENS_PER_CLAIM * n_claims
     return int((ctx * 0.85 - reserve_tokens) * 4) - len(GROUNDING_SYSTEM_PROMPT) - claims_chars - 200
-
 
 def plan_batches(bundle: ArtifactBundle, citations: dict, ctx: int, ids: list[str] | None = None) -> list[_Batch]:
     """Split the claims into the fewest calls that each fit the window.
@@ -291,7 +299,6 @@ def plan_batches(bundle: ArtifactBundle, citations: dict, ctx: int, ids: list[st
         )
     middle = len(ids) // 2
     return plan_batches(bundle, citations, ctx, ids[:middle]) + plan_batches(bundle, citations, ctx, ids[middle:])
-
 
 async def _judge_batch(bundle: ArtifactBundle, batch: _Batch, judge_model: str, judge_provider: str,
                        ctx: int, extra_body: dict) -> GroundingVerdict:
@@ -325,7 +332,6 @@ async def _judge_batch(bundle: ArtifactBundle, batch: _Batch, judge_model: str, 
             "discarding its verdicts."
         )
     return verdict
-
 
 # Main entry point for the grounding judge, get the judge's verdict and the per-citation rows for logging.
 async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str, judge_provider: str = 'ollama') -> GroundingVerdict:
@@ -388,11 +394,12 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
     7. If the judge succeeds, compute the number of judged citations and the weighted sum of their severities.
     8. Return a list of Feedback objects with the judge's verdict and any citations dropped by code.
     '''
-    is_fixture = trace.info.tags.get("fixture") == "true"
-    judge_model = "gpt-4o-mini" if is_fixture else JUDGE_MODEL
-    judge_provider = "openai" if is_fixture else "ollama"
+    judge_model = judge_model_for(trace)
+    judge_provider = judge_provider_for(judge_model)
 
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
+    if (blocked := remote_judge_error(judge_provider)) is not None:
+        return [Feedback(name="citation_hallucination_rate", error=blocked, source=source)]
     team, model = trace.info.tags.get("team_id"), trace.info.tags.get("model")
     print(f"\n[judge] {judge_model} (using {judge_provider}) checking {model} / {team}...", flush=True)
 

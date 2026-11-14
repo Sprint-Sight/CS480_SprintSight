@@ -8,12 +8,8 @@ triggered here genuinely exercises the same path the live endpoint uses.
 Usage:
     docker compose exec sprintsight_ai python -m research.trials.run_cs203_trial --model sprintsight-qwen
 """
-import argparse
-import asyncio
-import json
+import argparse, asyncio, json, mlflow
 from pathlib import Path
-
-import mlflow
 from fastapi import BackgroundTasks
 
 from evaluation.online.promote import judge_and_promote_trace

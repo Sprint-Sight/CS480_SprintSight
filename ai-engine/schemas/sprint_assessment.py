@@ -22,6 +22,8 @@ class SprintAssessment(BaseModel):
     # report can later be joined to its judge verdict (the judge runs after this
     # response is sent, so the verdict cannot travel in the response itself).
     trace_id: str | None = None
+    # MLflow experiment that trace lives in. Set by api/assessment.py; research scripts leave it unset.
+    experiment_name: str | None = None
     # failed_dimensions: list[str] = Field(default_factory=list) REPLACED W THE @property BELOW
 
     @computed_field  # type: ignore[prop-decorator]

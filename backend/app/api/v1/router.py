@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     export,
     health,
     ingestion,
+    insights,
     jira_outlier,
     manual_text,
     models,
@@ -18,6 +19,7 @@ from app.api.v1.endpoints import (
     settings,
     users,
 )
+from app.core.config import get_settings
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -37,3 +39,5 @@ api_router.include_router(documents.router)
 api_router.include_router(notifications.router)
 api_router.include_router(export.router, prefix="/export")
 api_router.include_router(peer_evaluation.router, prefix="/peer-evaluation")
+if get_settings().insights_enabled:  # INSIGHTS_ENABLED=false is the AI Insights kill switch
+    api_router.include_router(insights.router)

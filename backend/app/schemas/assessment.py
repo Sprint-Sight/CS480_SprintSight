@@ -236,6 +236,10 @@ class AssessmentReport(BaseModel):
     code_quality_justification: str | None = Field(default=None, max_length=500)
     documentation_justification: str | None = Field(default=None, max_length=500)
     collaboration_justification: str | None = Field(default=None, max_length=500)
+    # AI Insights: {dimension: score} exactly as the AI produced them, without dimensions it
+    # failed to assess. Written once when the report is created and never updated, so an
+    # instructor override of rubric_scores cannot change agreement statistics.
+    ai_rubric_scores_original: dict[str, float] | None = None
 
 
 class ManualAssessmentPatch(BaseModel):

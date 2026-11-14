@@ -226,3 +226,51 @@ sets a transaction-local flag and deletes only the verified primary-key list.
 This is a guard against accidental application mutations, not a security
 boundary against the current Compose `postgres` superuser; strict separation
 requires separate runtime and retention database roles.
+
+## AI Insights (MLflow in the UI)
+
+Instructors grades on their own first, then compares their graded scores with the AI grader's to see how trustworthy the AI's output was. Admin has access to pipeline health.
+
+**Instructor flow** (left menu **AI Insights*, `/insights`):
+
+1. The list shows each grading run. The AI score & citation check will be hidden until the instructor has scored all 6 dimensions.
+2. Open a run: you see raw evidence only (commits, Jira, documents, peer data), no AI output.
+3. Score each dimension 1-10 before submitting. The server then reveals the AI result.
+4. The reveal page shows AI vs the instructor's given score per dimension, 6 judge checks, the citations the judge did not fully accept, a trace timeline & the prompt versions used. Labels lock after the reveal.
+
+**Adimin:** *Admin → Evaluation Insights* (`/admin/insigths`) shows MLflow reachability, client & server version match, whether telemetry is off, labels waiting to sync and reports waiting for the judge.
+
+**Where the data lives**
+
+| Data | Stored in |
+| --- | --- |
+| Reports, original AI scores, your labels, who has seen which scores | Postgres (`assessment_reports`, `instructor_labels`, `report_view_log`) |
+| Judge results, trace timings, prompt versions | MLflow, read by trace ID only |
+| Your labels | Postgres first, then copied to MLflow as `sprintsight.instructor.<dimension>` human assessments by a background worker (retried every `INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS`, no duplicates) |
+
+If MLflow goes down, pages will show a notification. Lists and scores will still load from Postgres. Pending labels sync when it is back online.
+
+**Rules enforced on the server**
+
+- Only instructors & admins can call `/insights/*`; students get 403.
+- An instructor only sees reports from courses they are assigned to; anything else is 404.
+- AI scores & judge results are returned only after all 6 dimensions are labelled (409 before that). A label made after seeing a score elsewhere is stored with `is_blind = false`.
+- The original AI scores are saved once and never change, so manual overrides cannot alter comparison.
+
+**Configurations** (`backend/docker-compose.yml`)
+
+| Variable | Purpose |
+| --- | --- |
+| `MLFLOW_TRACKING_URI` | MLflow server (default `http://host.docker.internal:5000`) |
+| `MLFLOW_HTTP_REQUEST_TIMEOUT` / `MLFLOW_HTTP_REQUEST_MAX_RETRIES` | 5 s and no retries, so a stopped MLflow cannot hang a page |
+| `MLFLOW_DISABLE_TELEMETRY` | `true`: no MLflow usage telemetry |
+| `INSIGHTS_ENABLED` | `false` turns the whole feature off (kill switch); restart the backend |
+| `INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS` | How often pending labels and judge statuses are synced |
+| `INSIGHTS_JUDGE_STALE_MINUTES` | After this long without a judge result, the chip shows "Did not finish" (default 30) |
+
+The MLflow server and the `mlflow` and `mlflow-skinny` clients must be the same version
+(3.16.1; see `ai-engine/mlflow-server/Dockerfile`, `ai-engine/requirements.txt` and
+`backend/pyproject.toml`). Run artifacts are kept in the `mlflow_artifacts` Docker volume.
+
+Optional demo helper: `docker exec sprintsight-backend python -m scripts.seed_insights_demo
+--instructor <email>` is a dry run; add `--apply` to write seeded blind labels.

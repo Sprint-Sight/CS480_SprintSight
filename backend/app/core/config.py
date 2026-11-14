@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -124,6 +125,22 @@ class Settings(BaseSettings):
     # Read timeout for one whole assessment (six LLM calls plus retries on a local GPU).
     ai_engine_timeout_seconds: float = Field(default=3600.0, alias="AI_ENGINE_TIMEOUT_SECONDS")
 
+    # AI Insights / MLflow (read by trace ID only; see services/insightsService).
+    # mlflow_timeout_seconds reads the env var MLflow itself uses, so there is one knob.
+    mlflow_tracking_uri: str = Field(
+        default="http://host.docker.internal:5000", alias="MLFLOW_TRACKING_URI"
+    )
+    mlflow_timeout_seconds: float = Field(default=5.0, alias="MLFLOW_HTTP_REQUEST_TIMEOUT")
+    insights_enabled: bool = Field(default=True, alias="INSIGHTS_ENABLED")
+    insights_label_sync_interval_seconds: float = Field(
+        default=30.0, alias="INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS"
+    )
+    insights_judge_stale_minutes: int = Field(default=30, alias="INSIGHTS_JUDGE_STALE_MINUTES")
+    # blind_label: Tier 1 blind flow. override_gate: Insights unlock once an override is saved.
+    insights_mode: Literal["blind_label", "override_gate"] = Field(
+        default="blind_label", alias="INSIGHTS_MODE"
+    )
+
     audit_log_path: str = Field(default="logs/audit.log", alias="AUDIT_LOG_PATH")
     audit_hot_retention_days: int = Field(default=168, alias="AUDIT_HOT_RETENTION_DAYS", ge=1)
     audit_action_archive_retention_days: int = Field(
@@ -159,7 +176,6 @@ class Settings(BaseSettings):
             f"host={self.postgres_server} port=5432 dbname={self.postgres_db} "
             f"user={self.postgres_user} password={self.postgres_password}"
         )
-
 
 @lru_cache
 def get_settings() -> Settings:
