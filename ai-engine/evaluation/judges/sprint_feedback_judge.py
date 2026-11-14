@@ -11,7 +11,7 @@ from mlflow.entities import AssessmentSource, AssessmentSourceType, Feedback, Tr
 from mlflow.genai.scorers import scorer
 from pydantic import BaseModel, Field, model_validator
 
-from judges.citation_ground_custom_judge import FIXTURE_JUDGE_MODEL, judge_model_for
+from evaluation.judges.citation_grounding import judge_model_for, judge_provider_for, remote_judge_error
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.modelname import MODEL_NUM_CTX
 from services.llm_client import LLM_TEMPERATURE, _request_extra_body, audit_scope, create_llm_client
@@ -85,8 +85,10 @@ def _clip(s: str, n: int = 900) -> str:
 @scorer(name="llm_judge_sprint_feedback_consistency")
 def llm_judge_sprint_feedback_consistency(trace: Trace) -> list[Feedback]:
     judge_model = judge_model_for(trace)
-    judge_provider = "openai" if judge_model == FIXTURE_JUDGE_MODEL else "ollama"
+    judge_provider = judge_provider_for(judge_model)
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
+    if (blocked := remote_judge_error(judge_provider)) is not None: # can't check consistency if judge is blocked
+        return [Feedback(name="narrative_contradiction_count", error=blocked, source=source)]
     root = next((s for s in trace.data.spans if s.parent_id is None), None)
     a = root.outputs if root is not None and isinstance(root.outputs, dict) and "rubric_scores" in root.outputs else None
     if a is None:   # older traces have no stored sprint-level feedback

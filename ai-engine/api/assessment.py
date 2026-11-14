@@ -6,12 +6,9 @@ Gets back SprintAssessment object from evaluator, which FastAPI serializes to JS
 
 from __future__ import annotations
 
-import logging
-import os
+import logging, mlflow, os
 from datetime import datetime
 from typing import Annotated, Any
-
-import mlflow
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
@@ -125,7 +122,7 @@ async def assess_backend_data_endpoint(
         trace_id = trace_ids[-1]
         # The backend stores this next to the report: it is the join key to the judge verdict,
         # which does not exist yet because the judge runs after this response.
-        assessment = assessment.model_copy(update={"trace_id": trace_id})
+        assessment = assessment.model_copy(update={"trace_id": trace_id, "experiment_name": experiment_name})
 
         # Durable, not BackgroundTasks: the job is a row, so a restart does not lose it.
         _enqueue_judge(experiment_name, trace_id, bundle, prompt_versions_registered)

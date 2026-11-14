@@ -9,6 +9,7 @@ from mlflow.genai.scorers import scorer
 from evaluation.benchmarks import online_gold
 from evaluation.judges.citation_grounding import (
     JUDGE_MODEL,
+    judge_model_for,
     llm_judge_citation_grounding,
 )
 from evaluation.judges.flagging import (
@@ -18,6 +19,7 @@ from evaluation.judges.flagging import (
     research_reasons,
 )
 from evaluation.judges.grade_accuracy import numeric_grade_accuracy
+from evaluation.judges.sprint_feedback_judge import llm_judge_sprint_feedback_consistency
 from evaluation.judges.trace_adapters import read_candidate
 from llmops.review_queue import add_to_review_queue
 from prompts.dimension_criteria import DIMENSIONS
