@@ -96,6 +96,11 @@ services: # Separate containers to run
 
         # Prevent Python from writing .pyc files to disk (not needed in Docker)
         - PYTHONDONTWRITEBYTECODE=1
+
+        # Local-only deployment: the MLflow client sends no usage telemetry, and the judge's
+        # OpenAI path (research fixtures only) stays off unless this is set to 1.
+        - MLFLOW_DISABLE_TELEMETRY=true
+        - SPRINTSIGHT_ALLOW_REMOTE_JUDGE=${SPRINTSIGHT_ALLOW_REMOTE_JUDGE:-0}
       volumes:
         - ./:/app
         - ./audit_logs:/app/audit_logs
@@ -118,13 +123,14 @@ services: # Separate containers to run
       image: sprintsight-mlflow:3.16.1
       # --backend-store-uri points to the Postgres container; the driver is named so the dialect
       # does not depend on the SQLAlchemy version's default for plain `postgresql://`.
-      # Run metadata lives in Postgres; artifacts (per_example.jsonl, raw outputs, figures) are
-      # proxied by this server to --artifacts-destination, which is the mlflow_artifacts volume.
-      # Without the volume they were written inside the container and lost when it was recreated.
-      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql+psycopg2://user:pass@db:5432/sprintsight --artifacts-destination /mlartifacts
+      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql+psycopg2://user:pass@db:5432/sprintsight
       environment:
         - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}
+        - MLFLOW_DISABLE_TELEMETRY=true
+        - DO_NOT_TRACK=true
       volumes:
+        # The server's working directory is "/", so its default artifact dir is /mlartifacts.
+        # Without a volume, run artifacts are lost whenever the container is recreated.
         - mlflow_artifacts:/mlartifacts
       ports:
         - "5000:5000"

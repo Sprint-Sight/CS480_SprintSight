@@ -22,7 +22,10 @@ dependencies = [
   "PyDriller>=2.7,<3.0",
   "pdfplumber>=0.11.0,<1.0.0",
   "reportlab>=4.0,<6.0",
-  "defusedxml>=0.7.1,<1.0.0"
+  "defusedxml>=0.7.1,<1.0.0",
+  # AI Insights. Keep equal to `mlflow` in ai-engine/requirements.txt and the server image
+  # tag in ai-engine/mlflow-server/Dockerfile: client and server must match.
+  "mlflow-skinny==3.16.1"
 ]
 
 [project.optional-dependencies]
