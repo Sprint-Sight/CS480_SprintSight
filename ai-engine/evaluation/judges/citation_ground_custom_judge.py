@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, model_validator, create_model
 
 from judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
-from research.cs203_groundtruth import CS203G6_BUNDLE, CS203JY_BUNDLE
+from benchmarks.cs203 import CS203G6_BUNDLE, CS203JY_BUNDLE
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
 from schemas.modelname import MODEL_NUM_CTX
