@@ -12,7 +12,6 @@ import argparse, asyncio, json, mlflow
 from pathlib import Path
 from fastapi import BackgroundTasks
 
-from evaluation.benchmarks import DATA_DIR
 from evaluation.online.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
 from prompts.dimension_criteria import DIMENSIONS

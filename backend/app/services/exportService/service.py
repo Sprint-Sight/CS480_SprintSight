@@ -5,13 +5,28 @@ rate limiting, and export logging.
 from __future__ import annotations
 
 import csv
+import html
 import io
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
+import reportlab  # type: ignore
+from reportlab.lib import colors  # type: ignore
+from reportlab.lib.enums import TA_RIGHT  # type: ignore
 from reportlab.lib.pagesizes import letter  # type: ignore
-from reportlab.lib.utils import simpleSplit  # type: ignore
+from reportlab.lib.styles import ParagraphStyle  # type: ignore
+from reportlab.pdfbase import pdfmetrics  # type: ignore
+from reportlab.pdfbase.ttfonts import TTFont  # type: ignore
 from reportlab.pdfgen import canvas  # type: ignore
+from reportlab.platypus import (  # type: ignore
+    HRFlowable,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from app.repositories.interfaces import (
     AssessmentRepository,
@@ -31,6 +46,18 @@ from app.services.auditLogService.service import append_action_audit
 EXPORT_RATE_LIMIT = 5
 EXPORT_RATE_WINDOW_SECONDS = 60
 DOWNLOAD_LINK_TTL_SECONDS = 3600  # 1 hour
+_PDF_FONT = "SprintSightSans"
+_PDF_FONT_BOLD = "SprintSightSans-Bold"
+_PDF_FONT_DIR = Path(reportlab.__file__).parent / "fonts"
+pdfmetrics.registerFont(TTFont(_PDF_FONT, str(_PDF_FONT_DIR / "Vera.ttf")))
+pdfmetrics.registerFont(TTFont(_PDF_FONT_BOLD, str(_PDF_FONT_DIR / "VeraBd.ttf")))
+pdfmetrics.registerFontFamily(
+    _PDF_FONT,
+    normal=_PDF_FONT,
+    bold=_PDF_FONT_BOLD,
+    italic=_PDF_FONT,
+    boldItalic=_PDF_FONT_BOLD,
+)
 
 
 class ExportService:
@@ -168,100 +195,324 @@ class ExportService:
         include_student_emails: bool,
     ) -> bytes:
         buffer = io.BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=letter)
-        width, height = letter
+        page_width, _ = letter
+        left_margin = 58
+        right_margin = 58
+        content_width = page_width - left_margin - right_margin
+        neutral = colors.HexColor("#777777")
+        light_neutral = colors.HexColor("#D1D1D1")
+        pale_neutral = colors.HexColor("#F3F3F3")
 
-        # --- Header ---
-        pdf.setFont("Helvetica-Bold", 16)
-        pdf.drawString(50, height - 60, "SprintSight Assessment Report")
-        pdf.setFont("Helvetica", 10)
-        pdf.drawString(50, height - 80, f"Report ID: {report.report_id}")
-        pdf.drawString(50, height - 95, f"Course: {report.course_id}")
-        pdf.drawString(50, height - 110, f"Project: {report.project_id}")
-        pdf.drawString(50, height - 125, f"Sprint: {report.sprint_id}")
-        pdf.drawString(
-            50,
-            height - 140,
-            f"Generated: {report.generated_at.strftime('%Y-%m-%d %H:%M UTC')}",
+        styles = {
+            "title": ParagraphStyle(
+                "ExportTitle",
+                fontName=_PDF_FONT_BOLD,
+                fontSize=17,
+                leading=21,
+                textColor=colors.black,
+                spaceAfter=8,
+            ),
+            "section": ParagraphStyle(
+                "ExportSection",
+                fontName=_PDF_FONT_BOLD,
+                fontSize=12,
+                leading=15,
+                textColor=colors.black,
+                spaceBefore=12,
+                spaceAfter=6,
+                keepWithNext=True,
+            ),
+            "category": ParagraphStyle(
+                "ExportCategory",
+                fontName=_PDF_FONT_BOLD,
+                fontSize=10,
+                leading=13,
+                textColor=colors.black,
+            ),
+            "score": ParagraphStyle(
+                "ExportScore",
+                fontName=_PDF_FONT_BOLD,
+                fontSize=9,
+                leading=12,
+                alignment=TA_RIGHT,
+                textColor=colors.black,
+            ),
+            "body": ParagraphStyle(
+                "ExportBody",
+                fontName=_PDF_FONT,
+                fontSize=9,
+                leading=13,
+                textColor=colors.black,
+                splitLongWords=1,
+            ),
+            "evidence": ParagraphStyle(
+                "ExportEvidence",
+                fontName=_PDF_FONT,
+                fontSize=8,
+                leading=11,
+                leftIndent=8,
+                rightIndent=6,
+                spaceBefore=3,
+                spaceAfter=3,
+                borderPadding=4,
+                backColor=pale_neutral,
+                textColor=colors.black,
+                splitLongWords=1,
+            ),
+            "meta": ParagraphStyle(
+                "ExportMeta",
+                fontName=_PDF_FONT,
+                fontSize=8,
+                leading=11,
+                textColor=colors.black,
+                splitLongWords=1,
+            ),
+            "card": ParagraphStyle(
+                "ExportCard",
+                fontName=_PDF_FONT,
+                fontSize=9,
+                leading=13,
+                textColor=colors.black,
+                splitLongWords=1,
+            ),
+        }
+
+        def paragraph(value: object, style_name: str = "body") -> Paragraph:
+            escaped = html.escape(str(value or "")).replace("\n", "<br/>")
+            return Paragraph(escaped or " ", styles[style_name])
+
+        def labeled_paragraph(
+            label: str,
+            value: object,
+            style_name: str,
+        ) -> Paragraph:
+            escaped = html.escape(str(value or "")).replace("\n", "<br/>")
+            return Paragraph(
+                f"<b>{html.escape(label)}</b> {escaped or ' '}",
+                styles[style_name],
+            )
+
+        def section_heading(title: str) -> list[object]:
+            return [
+                Paragraph(html.escape(title), styles["section"]),
+                HRFlowable(
+                    width="100%",
+                    thickness=0.6,
+                    color=light_neutral,
+                    spaceAfter=7,
+                ),
+            ]
+
+        def draw_footer(pdf_canvas: canvas.Canvas, _document) -> None:
+            pdf_canvas.saveState()
+            pdf_canvas.setStrokeColor(light_neutral)
+            pdf_canvas.setLineWidth(0.5)
+            pdf_canvas.line(left_margin, 38, page_width - right_margin, 38)
+            pdf_canvas.setFont(_PDF_FONT, 8)
+            pdf_canvas.setFillColor(neutral)
+            pdf_canvas.drawString(left_margin, 25, "SprintSight Assessment Report")
+            pdf_canvas.drawRightString(
+                page_width - right_margin,
+                25,
+                f"Page {pdf_canvas.getPageNumber()}",
+            )
+            pdf_canvas.restoreState()
+
+        story: list[object] = [
+            Paragraph("SprintSight Assessment Report", styles["title"]),
+        ]
+        generated_at = report.generated_at.strftime("%Y-%m-%d %H:%M UTC")
+        metadata = [
+            [
+                paragraph(f"Report ID: {report.report_id}", "meta"),
+                paragraph(f"Course: {report.course_id}", "meta"),
+            ],
+            [
+                paragraph(f"Project: {report.project_id}", "meta"),
+                paragraph(f"Sprint: {report.sprint_id}", "meta"),
+            ],
+            [
+                paragraph(f"Generated: {generated_at}", "meta"),
+                paragraph("", "meta"),
+            ],
+        ]
+        metadata_card = Table(
+            metadata,
+            colWidths=[content_width / 2, content_width / 2],
+            hAlign="LEFT",
+        )
+        metadata_card.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.6, light_neutral),
+                    ("BACKGROUND", (0, 0), (-1, -1), pale_neutral),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            )
+        )
+        story.extend([metadata_card, Spacer(1, 5)])
+
+        story.extend(section_heading("Team Score"))
+        team_score_header = Table(
+            [[paragraph(f"Score: {report.team_score.score}", "category")]],
+            colWidths=[content_width],
+        )
+        team_score_header.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), pale_neutral),
+                    ("LINEBELOW", (0, 0), (-1, -1), 0.6, light_neutral),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        story.extend(
+            [
+                team_score_header,
+                Spacer(1, 5),
+                labeled_paragraph("Rationale:", report.team_score.rationale, "card"),
+            ]
         )
 
-        y = height - 180
-
-        # --- Team score ---
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(50, y, "Team Score")
-        y -= 18
-        pdf.setFont("Helvetica", 10)
-        pdf.drawString(
-            70,
-            y,
-            f"Score: {report.team_score.score}  |  Grade: "
-            f"{report.team_score.overall_grade or 'N/A'}",
-        )
-        pdf.drawString(70, y - 14, f"Rationale: {report.team_score.rationale}")
-        y -= 40
-
-        # --- Rubric breakdown ---
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(50, y, "Rubric Breakdown")
-        y -= 18
-        pdf.setFont("Helvetica", 10)
+        story.extend(section_heading("Rubric Breakdown"))
         if report.rubric_scores:
+            labels = {
+                "requirements": "Requirements",
+                "code_quality": "Code Quality",
+                "testing": "Testing",
+                "documentation": "Documentation",
+                "collaboration": "Collaboration",
+                "cicd": "CI/CD",
+                "delivery": "Delivery",
+                "quality": "Quality",
+            }
             for dimension, detail in report.rubric_scores.items():
-                score = detail.score
-                justification = detail.justification or ""
-                pdf.drawString(70, y, f"{dimension}: {score}")
-                wrapped = simpleSplit(justification, "Helvetica", 8, width - 140)
-                for line in wrapped[:2]:
-                    y -= 12
-                    pdf.drawString(90, y, line)
-                y -= 8
+                label = labels.get(
+                    dimension.lower(),
+                    dimension.replace("_", " ").title(),
+                )
+                category_header = Table(
+                    [
+                        [
+                            paragraph(label, "category"),
+                            paragraph(f"Score: {detail.score}", "score"),
+                        ]
+                    ],
+                    colWidths=[content_width * 0.78, content_width * 0.22],
+                )
+                category_header.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), pale_neutral),
+                            ("LINEBELOW", (0, 0), (-1, 0), 0.6, light_neutral),
+                            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                            ("TOPPADDING", (0, 0), (-1, -1), 6),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                        ]
+                    )
+                )
+                story.extend(
+                    [
+                        category_header,
+                        Spacer(1, 5),
+                        labeled_paragraph(
+                            "Justification:",
+                            detail.justification or "",
+                            "card",
+                        ),
+                        Spacer(1, 4),
+                    ]
+                )
+                if detail.evidence_citations:
+                    story.extend(
+                        labeled_paragraph("Evidence:", citation, "evidence")
+                        for citation in detail.evidence_citations
+                    )
+                story.append(Spacer(1, 10))
         else:
-            pdf.drawString(70, y, "No rubric scores available.")
-            y -= 14
-        y -= 10
+            story.append(paragraph("No rubric scores available."))
 
-        # --- Individual scores ---
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(50, y, "Individual Scores")
-        y -= 18
-        pdf.setFont("Helvetica", 10)
+        for title, items, empty_message in (
+            ("Strengths", report.strengths, "No strengths available."),
+            ("Weaknesses", report.weaknesses, "No weaknesses available."),
+        ):
+            story.extend(section_heading(title))
+            if items:
+                for index, item in enumerate(items, start=1):
+                    story.append(paragraph(f"{index}. {item}"))
+                    story.append(Spacer(1, 4))
+            else:
+                story.append(paragraph(empty_message))
+
+        story.extend(section_heading("Individual Scores"))
         if report.individual_scores:
             for score in report.individual_scores:
                 email = ""
                 if include_student_emails and self._user_repository is not None:
                     user = self._user_repository.get_by_id(score.student_id)
                     email = f" ({user.email})" if user else ""
-                line = f"Student {score.student_id}{email}: {score.score}"
-                pdf.drawString(70, y, line)
-                wrapped = simpleSplit(score.rationale, "Helvetica", 8, width - 140)
-                for line in wrapped[:2]:
-                    y -= 12
-                    pdf.drawString(90, y, line)
-                y -= 8
+                student_header = Table(
+                    [
+                        [
+                            paragraph(
+                                f"Student {score.student_id}{email}: {score.score}",
+                                "category",
+                            )
+                        ]
+                    ],
+                    colWidths=[content_width],
+                )
+                student_header.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, -1), pale_neutral),
+                            ("LINEBELOW", (0, 0), (-1, -1), 0.6, light_neutral),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                            ("TOPPADDING", (0, 0), (-1, -1), 6),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                        ]
+                    )
+                )
+                story.extend(
+                    [
+                        student_header,
+                        Spacer(1, 5),
+                        labeled_paragraph("Rationale:", score.rationale, "card"),
+                        Spacer(1, 8),
+                    ]
+                )
         else:
-            pdf.drawString(70, y, "No individual scores available.")
-            y -= 14
-        y -= 10
+            story.append(paragraph("No individual scores available."))
 
-        # --- Recommendations ---
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(50, y, "Recommendations")
-        y -= 18
-        pdf.setFont("Helvetica", 10)
+        story.extend(section_heading("Recommendations"))
         if report.recommendations:
-            for rec in report.recommendations:
-                wrapped = simpleSplit(f"- {rec}", "Helvetica", 10, width - 120)
-                for line in wrapped:
-                    y -= 14
-                    pdf.drawString(70, y, line)
-                y -= 6
+            for index, recommendation in enumerate(report.recommendations, start=1):
+                story.append(paragraph(f"{index}. {recommendation}"))
+                story.append(Spacer(1, 4))
         else:
-            pdf.drawString(70, y, "No recommendations available.")
-            y -= 14
+            story.append(paragraph("No recommendations available."))
 
-        pdf.showPage()
-        pdf.save()
+        document = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            leftMargin=left_margin,
+            rightMargin=right_margin,
+            topMargin=54,
+            bottomMargin=58,
+            title="SprintSight Assessment Report",
+            author="SprintSight",
+        )
+        document.build(story, onFirstPage=draw_footer, onLaterPages=draw_footer)
         return buffer.getvalue()
 
     # ------------------------------------------------------------------
@@ -287,18 +538,35 @@ class ExportService:
         # Team score.
         writer.writerow(["Team Score"])
         writer.writerow(["Score", report.team_score.score])
-        writer.writerow(["Grade", report.team_score.overall_grade or "N/A"])
         writer.writerow(["Rationale", report.team_score.rationale])
         writer.writerow([])
 
         # Rubric breakdown.
         writer.writerow(["Rubric Breakdown"])
-        writer.writerow(["Dimension", "Score", "Justification"])
+        writer.writerow(["Dimension", "Score", "Justification", "Evidence"])
         if report.rubric_scores:
             for dimension, detail in report.rubric_scores.items():
-                writer.writerow([dimension, detail.score, detail.justification or ""])
+                evidence = "\n".join(f"- {citation}" for citation in detail.evidence_citations)
+                writer.writerow([dimension, detail.score, detail.justification or "", evidence])
         else:
-            writer.writerow(["No rubric scores available", "", ""])
+            writer.writerow(["No rubric scores available", "", "", ""])
+        writer.writerow([])
+
+        # Strengths and weaknesses.
+        writer.writerow(["Strengths"])
+        if report.strengths:
+            for strength in report.strengths:
+                writer.writerow([strength])
+        else:
+            writer.writerow(["No strengths available"])
+        writer.writerow([])
+
+        writer.writerow(["Weaknesses"])
+        if report.weaknesses:
+            for weakness in report.weaknesses:
+                writer.writerow([weakness])
+        else:
+            writer.writerow(["No weaknesses available"])
         writer.writerow([])
 
         # Individual scores.

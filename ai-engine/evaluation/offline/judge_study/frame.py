@@ -551,10 +551,7 @@ def _column_metric(
                 scores=numeric.tolist(),
                 aggregate_results={"n": 0.0},
             )
-        if aggregate == "sum":
-            point = float(usable.sum())
-        else:
-            point = float(usable.mean())
+        point = float(usable.sum()) if aggregate == "sum" else float(usable.mean())
         results = {
             aggregate if aggregate != "rate" else "mean": point,
             "n": float(usable.shape[0]),

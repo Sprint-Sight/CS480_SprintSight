@@ -232,7 +232,7 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
             failed_dimensions: dict[str, str] = {}    # dimension -> "<failure_class>: <full error>"
             failure_classes: dict[str, str] = {}      # dimension -> failure_class
 
-            for dim, result in zip(DIMENSIONS, results):
+            for dim, result in zip(DIMENSIONS, results, strict=False):
                 if isinstance(result, BaseException):
                     # Classified, not truncated: a transient infrastructure failure (timeout,
                     # server down) and a schema failure call for different follow-up, and the
@@ -261,9 +261,9 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
                 else:
                     scores_by_dim[dim] = result
 
-        except Exception as e:  # noqa: BLE001 - translate concurrent-task failure into a domain error
+        except Exception as e:
             # mlflow.set_tag("error", str(e))
-            raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}")
+            raise RuntimeError(f"Failed to evaluate dimensions concurrently: {e}") from e
 
         await _log_gpu_offload(model_name, run)
 

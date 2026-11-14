@@ -237,7 +237,7 @@ async def run_benchmark(args: argparse.Namespace) -> list[dict[str, Any]]:
             wall_s = time.perf_counter() - wall_start
             loaded = await _loaded_model(client, args.base_url, args.model)
 
-            for prompt, result in zip(prompts * args.repeat, results):
+            for prompt, result in zip(prompts * args.repeat, results, strict=False):
                 rows.append({
                     "run_id": run_id,
                     "source": "gpu_bench",

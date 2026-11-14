@@ -47,7 +47,7 @@ def get_experiment_id(experiment_name: str) -> str:
             except mlflow.exceptions.MlflowException: # Lost creation race with another process
                 experiment = client.get_experiment_by_name(experiment_name) # Try to get the experiment again
                 if experiment is None: # If it still doesn't exist, raise an error
-                    raise RuntimeError(f"Failed to create or retrieve experiment '{experiment_name}'")
+                    raise RuntimeError(f"Failed to create or retrieve experiment '{experiment_name}'") from None
                 experiment_id = experiment.experiment_id # Use the existing experiment ID
         else: # If the experiment exists, check if it's deleted
             if experiment.lifecycle_stage == "deleted": # If the experiment is deleted, raise an error

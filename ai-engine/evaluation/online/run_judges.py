@@ -21,6 +21,7 @@ from evaluation.judges.flagging import (
 from evaluation.judges.grade_accuracy import numeric_grade_accuracy
 from evaluation.judges.sprint_feedback_judge import llm_judge_sprint_feedback_consistency
 from evaluation.judges.trace_adapters import read_candidate
+from judges.citation_ground_custom_judge import judge_model_for
 from llmops.review_queue import add_to_review_queue
 from prompts.dimension_criteria import DIMENSIONS
 from services.save_results import save_judge_results
