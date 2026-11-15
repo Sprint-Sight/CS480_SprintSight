@@ -427,15 +427,15 @@ export default function DashboardShell({ children }: DashboardShellProps) {
             }`}
           >
             <div className="flex h-full flex-col">
-              {/* Logo + Close Button */}
-              <div className="relative flex items-center justify-center border-b border-slate-200 px-4 py-3">
+              {/* Logo + Close Button. Same fixed height as the top bar row, so their bottom borders meet. */}
+              <div className="relative flex h-[72px] shrink-0 items-center justify-center border-b border-slate-200 px-4">
                 <Image
                   src="/logo.png"
                   alt="SprintSight Logo"
                   width={160}
                   height={60}
                   priority
-                  className="h-14 w-auto max-w-full object-contain"
+                  className="h-12 w-auto max-w-full object-contain"
                 />
                 <button
                   ref={closeSidebarRef}
@@ -482,8 +482,9 @@ export default function DashboardShell({ children }: DashboardShellProps) {
           </aside>
 
           <section ref={mainRef} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-            <header className="min-w-0 shrink-0 border-b border-slate-200 bg-white px-3 py-3 sm:px-6">
-              <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
+            <header className="min-w-0 shrink-0 bg-white">
+              {/* Top row: fixed 72px with its own bottom border, lining up with the sidebar logo strip. */}
+              <div className="flex h-[72px] min-w-0 items-center justify-between gap-3 border-b border-slate-200 px-3 sm:gap-4 sm:px-6">
                 {/* Mobile Menu Button */}
                 <button
                   ref={menuToggleRef}
@@ -583,88 +584,90 @@ export default function DashboardShell({ children }: DashboardShellProps) {
               </div>
 
               {isRestored && role === "instructor" && showsInstructorScope && (
-                <div className="mt-4 flex min-w-0 flex-row flex-wrap items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
-                  <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 flex-shrink-0">
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                    Scope
-                  </div>
-
-                  {isLoadingScope ? (
-                    <div className="flex items-center gap-2 px-3 text-xs text-slate-500">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading Scope...
+                <div data-testid="scope-strip" className="border-b border-slate-200 px-3 py-3 sm:px-6">
+                  <div className="flex min-w-0 flex-row flex-wrap items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 flex-shrink-0">
+                      <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+                      Scope
                     </div>
-                  ) : (
-                    <>
-                      {/* Semester Select */}
-                      {semesterOptions.length > 0 && (
-                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
-                          <select
-                            value={selectedSemester}
-                            onChange={(e) => handleSemesterChange(e.target.value)}
-                            className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                          >
-                            {semesterOptions.map((semester) => (
-                              <option key={semester} value={semester}>
-                                {semester}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        </div>
-                      )}
 
-                      {/* Section Select */}
-                      {sectionsInSemester.length > 0 && (
-                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
-                          <select
-                            value={selectedSectionId}
-                            onChange={(e) => setSelectedSectionId(e.target.value)}
-                            className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                          >
-                            {sectionsInSemester.map((section) => (
-                              <option key={section.id} value={section.id}>
-                                {section.code} — {section.name}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        </div>
-                      )}
-
-                      {/* Team Select */}
-                      {teamsInSelectedSection.length > 0 && (
-                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
-                          <select
-                            value={selectedTeamId}
-                            onChange={(e) => setSelectedTeamId(e.target.value)}
-                            className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                          >
-                            {teamsInSelectedSection.map((team) => (
-                              <option key={team.id} value={team.id}>
-                                {team.name}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        </div>
-                      )}
-                      {showsSprintScope && sprintOptions.length > 0 && (
-                        <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
-                          <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
-                            {sprintOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  <div className="ml-auto flex min-w-0 max-w-full items-center gap-3 sm:flex-shrink-0">
-                    {currentTeamStats && (
-                      <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs text-blue-700 sm:text-sm">
-                        <span className="truncate">{currentTeamStats.studentCount} students</span>
+                    {isLoadingScope ? (
+                      <div className="flex items-center gap-2 px-3 text-xs text-slate-500">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading Scope...
                       </div>
+                    ) : (
+                      <>
+                        {/* Semester Select */}
+                        {semesterOptions.length > 0 && (
+                          <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
+                            <select
+                              value={selectedSemester}
+                              onChange={(e) => handleSemesterChange(e.target.value)}
+                              className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            >
+                              {semesterOptions.map((semester) => (
+                                <option key={semester} value={semester}>
+                                  {semester}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          </div>
+                        )}
+
+                        {/* Section Select */}
+                        {sectionsInSemester.length > 0 && (
+                          <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
+                            <select
+                              value={selectedSectionId}
+                              onChange={(e) => setSelectedSectionId(e.target.value)}
+                              className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            >
+                              {sectionsInSemester.map((section) => (
+                                <option key={section.id} value={section.id}>
+                                  {section.code} — {section.name}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          </div>
+                        )}
+
+                        {/* Team Select */}
+                        {teamsInSelectedSection.length > 0 && (
+                          <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
+                            <select
+                              value={selectedTeamId}
+                              onChange={(e) => setSelectedTeamId(e.target.value)}
+                              className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            >
+                              {teamsInSelectedSection.map((team) => (
+                                <option key={team.id} value={team.id}>
+                                  {team.name}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          </div>
+                        )}
+                        {showsSprintScope && sprintOptions.length > 0 && (
+                          <div className="relative w-full min-w-0 max-w-full sm:w-auto sm:min-w-[140px] sm:max-w-xs">
+                            <select value={selectedSprintId} onChange={(event) => setSelectedSprintId(event.target.value)} className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
+                              {sprintOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          </div>
+                        )}
+                      </>
                     )}
+
+                    <div className="ml-auto flex min-w-0 max-w-full items-center gap-3 sm:flex-shrink-0">
+                      {currentTeamStats && (
+                        <div className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs text-blue-700 sm:text-sm">
+                          <span className="truncate">{currentTeamStats.studentCount} students</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

@@ -26,9 +26,9 @@ export function InsightsPageContent() {
   const pages = runs.data ? Math.max(1, Math.ceil(runs.data.total / filters.pageSize)) : 1;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <header>
-        <h1 className="text-2xl font-semibold text-slate-900">AI grading insights</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">AI grading insights</h1>
         <p className="text-sm text-slate-600">
           {override
             ? "Review the AI's scores and override them on the Assessment Report page. The judge checks, flagged citations and trace for a report unlock once you have saved your override."

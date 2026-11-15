@@ -14,7 +14,7 @@ export function ReportHeader({ title, subtitle, step }: ReportHeaderProps) {
       <Link href="/insights" className="text-sm text-indigo-600 hover:underline">
         ← All runs
       </Link>
-      <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">{title}</h1>
       <p className="text-sm text-slate-600">{subtitle}</p>
       {step && <p className="text-sm font-medium text-slate-700">{step}</p>}
     </header>

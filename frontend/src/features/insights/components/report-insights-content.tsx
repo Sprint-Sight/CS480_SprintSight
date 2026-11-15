@@ -123,10 +123,17 @@ function OverrideReportContent({ reportId }: { reportId: string }) {
 
 export function ReportInsightsContent({ reportId }: { reportId: string }) {
   const config = useInsightsConfig();
-  if (config.isLoading) return <p className="text-sm text-slate-500">Loading…</p>;
-  return config.data?.mode === "override_gate" ? (
-    <OverrideReportContent reportId={reportId} />
-  ) : (
-    <BlindReportContent reportId={reportId} />
+  // The dashboard shell's <main> has no padding; each page adds the shared p-4/6/8 itself.
+  // Wrapping here pads every state (loading, not found, locked, error and the report).
+  return (
+    <div className="p-4 sm:p-6 lg:p-8">
+      {config.isLoading ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : config.data?.mode === "override_gate" ? (
+        <OverrideReportContent reportId={reportId} />
+      ) : (
+        <BlindReportContent reportId={reportId} />
+      )}
+    </div>
   );
 }

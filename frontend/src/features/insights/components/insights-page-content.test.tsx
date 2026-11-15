@@ -36,6 +36,13 @@ describe("InsightsPageContent", () => {
     expect(screen.queryByText("override stats")).not.toBeInTheDocument();
   });
 
+  it("uses the same bold navy page title as the other dashboard tabs", () => {
+    hooks.useInsightsConfig.mockReturnValue({ data: { mode: "blind_label" } });
+    render(<InsightsPageContent />);
+    const title = screen.getByRole("heading", { level: 1, name: "AI grading insights" });
+    expect(title).toHaveClass("font-bold tracking-tight text-blue-950 sm:text-3xl");
+  });
+
   it("loads override statistics in the container and passes them down in override_gate mode", () => {
     hooks.useInsightsConfig.mockReturnValue({ data: { mode: "override_gate" } });
     render(<InsightsPageContent />);
