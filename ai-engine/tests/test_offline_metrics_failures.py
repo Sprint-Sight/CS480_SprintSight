@@ -1,10 +1,10 @@
 """Failure classes reach per_example rows, including when every dimension failed."""
 
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 
+from evaluation.offline.datasets import DatasetItem
 from evaluation.offline import metrics, runner
 from evaluation.offline.metrics import summarise_example
 from prompts.dimension_criteria import DIMENSIONS
@@ -69,7 +69,7 @@ def test_all_dimensions_failed_keeps_the_classes_from_the_exception(monkeypatch)
         raise AllDimensionsFailedError(failed)
 
     monkeypatch.setattr(runner, "evaluate_sprint", all_fail)
-    item = SimpleNamespace(id="ex1", bundle=BUNDLE)
+    item = DatasetItem(id="ex1", bundle=BUNDLE)
 
     row, raw, error = asyncio.run(runner._run_one_example(item, "fake-model", "exp"))
 
