@@ -100,11 +100,13 @@ export function useJudgeStatus(reportId: string) {
   return query;
 }
 
-export function useInsightsHealth() {
+/** `enabled` lets the admin page wait until the admin check has passed before fetching. */
+export function useInsightsHealth(enabled = true) {
   return useQuery({
     queryKey: insightsKeys.health(),
     queryFn: fetchInsightsHealth,
     refetchInterval: 30_000,
+    enabled,
   });
 }
 
@@ -117,6 +119,7 @@ export function useInsightsConfig() {
   });
 }
 
-export function useOverrideStats() {
-  return useQuery({ queryKey: insightsKeys.overrideStats(), queryFn: fetchOverrideStats });
+/** `enabled` keeps blind_label deployments from requesting override-only statistics. */
+export function useOverrideStats(enabled = true) {
+  return useQuery({ queryKey: insightsKeys.overrideStats(), queryFn: fetchOverrideStats, enabled });
 }

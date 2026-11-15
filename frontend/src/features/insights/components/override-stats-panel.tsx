@@ -1,8 +1,4 @@
-"use client";
-
 import { DIMENSION_LABELS, type OverrideStats } from "@/features/insights/types";
-import { useOverrideStats } from "@/features/insights/hooks/use-insights";
-import { getErrorMessage } from "@/lib/api/client";
 
 const pct = (value: number | null) => (value == null ? "—" : `${Math.round(value * 100)}%`);
 const signed = (value: number | null) =>
@@ -52,13 +48,4 @@ export function OverrideStatsView({ stats }: { stats: OverrideStats }) {
       <p className="text-xs text-slate-500">{stats.notice}</p>
     </section>
   );
-}
-
-export function OverrideStatsPanel() {
-  const stats = useOverrideStats();
-  if (stats.isLoading)
-    return <p className="text-sm text-slate-500">Loading override statistics…</p>;
-  if (stats.error || !stats.data)
-    return <p className="text-sm text-red-700">{getErrorMessage(stats.error)}</p>;
-  return <OverrideStatsView stats={stats.data} />;
 }

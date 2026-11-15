@@ -107,6 +107,59 @@ describe("Structural Architecture Tests", () => {
   });
 });
 
+describe("Insights feature architecture (AI insights PR 127)", () => {
+  const insightsRoutes = [
+    "src/app/(dashboard)/insights/page.tsx",
+    "src/app/(dashboard)/insights/reports/[reportId]/page.tsx",
+    "src/app/admin/insights/page.tsx",
+  ];
+
+  // Everything in features/insights/components except the three page containers.
+  const insightsPresentational = [
+    "blind-label-form",
+    "chips",
+    "course-cards",
+    "evidence-panel",
+    "health-panel",
+    "insights-locked-notice",
+    "override-stats-panel",
+    "report-header",
+    "reveal-panels",
+    "reveal-report",
+    "run-filters",
+    "runs-pagination",
+    "runs-table",
+  ].map((name) => `src/features/insights/components/${name}.tsx`);
+
+  it("keeps insights route files thin, with no state, effects or fetching", () => {
+    insightsRoutes.forEach((filePath) => {
+      const content = readFile(path.join(process.cwd(), filePath));
+      const lines = content.split("\n").filter((line) => line.trim().length > 0);
+      expect(lines.length, `${filePath} has ${lines.length} lines`).toBeLessThanOrEqual(15);
+      expect(content, filePath).not.toMatch(/useState|useEffect|fetch\s*\(|apiRequest/);
+    });
+  });
+
+  it("keeps insights presentational components free of data fetching and side effects", () => {
+    insightsPresentational.forEach((filePath) => {
+      const content = readFile(path.join(process.cwd(), filePath));
+      expect(content, filePath).not.toMatch(/@\/features\/insights\/hooks\//);
+      expect(content, filePath).not.toMatch(/@\/features\/insights\/insights-api/);
+      expect(content, filePath).not.toMatch(/@tanstack\/react-query/);
+      expect(content, filePath).not.toMatch(/restoreSession|useEffect|useRouter/);
+      expect(content, filePath).not.toMatch(/fetch\s*\(|apiRequest|sessionStorage|localStorage/);
+    });
+  });
+
+  it("keeps the admin access check in a hook, not inline in the insights container", () => {
+    const content = readFile(
+      path.join(process.cwd(), "src/features/insights/components/admin-insights-content.tsx"),
+    );
+    expect(content).toMatch(/useRequireAdmin\(/);
+    expect(content).not.toMatch(/restoreSession|useEffect/);
+  });
+});
+
 describe("Tooling configuration", () => {
   it("lints with the jsx-a11y recommended rules on top of next/core-web-vitals", () => {
     const eslintConfig = readFile(".eslintrc.json");

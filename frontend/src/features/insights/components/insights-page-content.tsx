@@ -3,9 +3,15 @@
 import { useState } from "react";
 import { CourseCards } from "@/features/insights/components/course-cards";
 import { RunFiltersBar } from "@/features/insights/components/run-filters";
-import { OverrideStatsPanel } from "@/features/insights/components/override-stats-panel";
+import { OverrideStatsView } from "@/features/insights/components/override-stats-panel";
+import { RunsPagination } from "@/features/insights/components/runs-pagination";
 import { RunsTable } from "@/features/insights/components/runs-table";
-import { useInsightsConfig, useMyCourses, useRuns } from "@/features/insights/hooks/use-insights";
+import {
+  useInsightsConfig,
+  useMyCourses,
+  useOverrideStats,
+  useRuns,
+} from "@/features/insights/hooks/use-insights";
 import type { RunFilters } from "@/features/insights/types";
 import { getErrorMessage } from "@/lib/api/client";
 
@@ -16,6 +22,7 @@ export function InsightsPageContent() {
   const override = mode === "override_gate";
   const courses = useMyCourses();
   const runs = useRuns(filters);
+  const overrideStats = useOverrideStats(override);
   const pages = runs.data ? Math.max(1, Math.ceil(runs.data.total / filters.pageSize)) : 1;
 
   return (
@@ -36,7 +43,14 @@ export function InsightsPageContent() {
           mode={mode}
         />
       )}
-      {override && <OverrideStatsPanel />}
+      {override &&
+        (overrideStats.isLoading ? (
+          <p className="text-sm text-slate-500">Loading override statistics…</p>
+        ) : overrideStats.error || !overrideStats.data ? (
+          <p className="text-sm text-red-700">{getErrorMessage(overrideStats.error)}</p>
+        ) : (
+          <OverrideStatsView stats={overrideStats.data} />
+        ))}
       <RunFiltersBar
         filters={filters}
         facets={runs.data?.facets}
@@ -46,28 +60,12 @@ export function InsightsPageContent() {
       {runs.isLoading && <p className="text-sm text-slate-500">Loading runs…</p>}
       {runs.error && <p className="text-sm text-red-700">{getErrorMessage(runs.error)}</p>}
       {runs.data && <RunsTable items={runs.data.items} mode={mode} />}
-      {runs.data && pages > 1 && (
-        <nav className="flex items-center justify-end gap-2 text-sm" aria-label="Pagination">
-          <button
-            type="button"
-            disabled={filters.page <= 1}
-            onClick={() => setFilters({ ...filters, page: filters.page - 1 })}
-            className="rounded border px-2 py-1 disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <span>
-            Page {filters.page} of {pages}
-          </span>
-          <button
-            type="button"
-            disabled={filters.page >= pages}
-            onClick={() => setFilters({ ...filters, page: filters.page + 1 })}
-            className="rounded border px-2 py-1 disabled:opacity-50"
-          >
-            Next
-          </button>
-        </nav>
+      {runs.data && (
+        <RunsPagination
+          page={filters.page}
+          pages={pages}
+          onPageChange={(page) => setFilters({ ...filters, page })}
+        />
       )}
     </div>
   );
