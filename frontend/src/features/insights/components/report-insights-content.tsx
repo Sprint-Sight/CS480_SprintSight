@@ -5,16 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { BlindLabelForm } from "@/features/insights/components/blind-label-form";
-import { JudgeChip } from "@/features/insights/components/chips";
 import { EvidencePanel } from "@/features/insights/components/evidence-panel";
-import {
-  DegradedNotice,
-  JudgeTiles,
-  PromptVersionsList,
-  RevealComparison,
-  TraceTimeline,
-  UnacceptedCitationsTable,
-} from "@/features/insights/components/reveal-panels";
+import { InsightsLockedNotice } from "@/features/insights/components/insights-locked-notice";
+import { ReportHeader } from "@/features/insights/components/report-header";
+import { RevealReport } from "@/features/insights/components/reveal-report";
 import {
   useEvidence,
   useInsightsConfig,
@@ -25,6 +19,10 @@ import {
 } from "@/features/insights/hooks/use-insights";
 import { getErrorMessage } from "@/lib/api/client";
 
+const NOT_FOUND = "Report not found, or not in your courses.";
+const httpStatus = (error: unknown) => (error as { status?: number } | null)?.status;
+
+/** Loads the AI results, judge status and trace for a report; RevealReport draws them. */
 function RevealStep({ reportId }: { reportId: string }) {
   const reveal = useReveal(reportId, true);
   const judge = useJudgeStatus(reportId);
@@ -32,61 +30,16 @@ function RevealStep({ reportId }: { reportId: string }) {
   if (reveal.isLoading) return <p className="text-sm text-slate-500">Loading AI results…</p>;
   if (reveal.error || !reveal.data)
     return <p className="text-sm text-red-700">{getErrorMessage(reveal.error)}</p>;
-  const r = reveal.data;
-  const status = judge.data?.judgeStatus ?? r.judgeStatus;
-  const override = r.comparison === "override";
   return (
-    <div className="space-y-6">
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold">
-          {override ? "AI vs instructor override" : "AI vs your scores"}
-        </h2>
-        <p className="text-sm text-slate-600">
-          Overall AI score {r.overallAiScore.toFixed(1)} / 10 · model{" "}
-          <span className="font-mono">{r.modelName}</span>
-        </p>
-        <RevealComparison dimensions={r.dimensions} mode={r.comparison} />
-      </section>
-      <section className="space-y-2">
-        <h2 className="flex items-center gap-2 text-lg font-semibold">
-          Judge checks <JudgeChip status={status} />
-        </h2>
-        {status === "pending" && (
-          <p className="text-sm text-slate-600">
-            The judge is still running; this updates automatically.
-          </p>
-        )}
-        <DegradedNotice notice={r.judge.notice} />
-        <JudgeTiles tiles={r.judge.tiles} />
-      </section>
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Citations the judge did not fully accept</h2>
-        {r.judge.available ? (
-          <UnacceptedCitationsTable
-            rows={r.judge.unacceptedCitations}
-            truncated={r.judge.citationsTruncated}
-          />
-        ) : (
-          <DegradedNotice notice={r.judge.notice} />
-        )}
-      </section>
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Trace timeline</h2>
-        {trace.data &&
-          (trace.data.available ? (
-            <TraceTimeline trace={trace.data} />
-          ) : (
-            <DegradedNotice notice={trace.data.notice} />
-          ))}
-      </section>
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Prompt versions used</h2>
-        <PromptVersionsList versions={r.promptVersions} />
-      </section>
-    </div>
+    <RevealReport
+      reveal={reveal.data}
+      judgeStatus={judge.data?.judgeStatus ?? reveal.data.judgeStatus}
+      trace={trace.data}
+    />
   );
 }
 
+/** INSIGHTS_MODE=blind_label: score blind from the evidence (step 1), then compare (step 2). */
 function BlindReportContent({ reportId }: { reportId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -95,10 +48,9 @@ function BlindReportContent({ reportId }: { reportId: string }) {
 
   if (evidence.isLoading) return <p className="text-sm text-slate-500">Loading evidence…</p>;
   if (evidence.error || !evidence.data) {
-    const notFound = (evidence.error as { status?: number } | null)?.status === 404;
     return (
       <p className="text-sm text-red-700">
-        {notFound ? "Report not found, or not in your courses." : getErrorMessage(evidence.error)}
+        {httpStatus(evidence.error) === 404 ? NOT_FOUND : getErrorMessage(evidence.error)}
       </p>
     );
   }
@@ -107,20 +59,15 @@ function BlindReportContent({ reportId }: { reportId: string }) {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <Link href="/insights" className="text-sm text-indigo-600 hover:underline">
-          ← All runs
-        </Link>
-        <h1 className="text-2xl font-semibold text-slate-900">{ev.teamName}</h1>
-        <p className="text-sm text-slate-600">
-          {ev.courseCode} {ev.section} · {ev.sprintId}
-        </p>
-        <p className="text-sm font-medium text-slate-700">
-          {showReveal
+      <ReportHeader
+        title={ev.teamName}
+        subtitle={`${ev.courseCode} ${ev.section} · ${ev.sprintId}`}
+        step={
+          showReveal
             ? "Step 2 of 2: Compare with the AI"
-            : "Step 1 of 2: Score blind from the evidence"}
-        </p>
-      </header>
+            : "Step 1 of 2: Score blind from the evidence"
+        }
+      />
       {showReveal ? (
         <RevealStep reportId={reportId} />
       ) : (
@@ -156,52 +103,19 @@ function BlindReportContent({ reportId }: { reportId: string }) {
   );
 }
 
-export const LOCKED_MESSAGE =
-  "AI Insights unlock after this report's scores are saved on the Assessment Report page. Saving notifies the team's students.";
-
 /** INSIGHTS_MODE=override_gate: no evidence step and no labels; the reveal is the whole page. */
 function OverrideReportContent({ reportId }: { reportId: string }) {
   const reveal = useReveal(reportId, true);
   if (reveal.isLoading) return <p className="text-sm text-slate-500">Loading AI results…</p>;
-  const status = (reveal.error as { status?: number } | null)?.status;
-  if (status === 404)
-    return <p className="text-sm text-red-700">Report not found, or not in your courses.</p>;
-  if (status === 409) {
-    return (
-      <div className="space-y-3">
-        <Link href="/insights" className="text-sm text-indigo-600 hover:underline">
-          ← All runs
-        </Link>
-        <div
-          role="status"
-          className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
-        >
-          <p className="font-medium">AI Insights are locked for this report</p>
-          <p>{LOCKED_MESSAGE}</p>
-          <Link
-            href="/assessment-report"
-            className="inline-block font-medium text-indigo-700 hover:underline"
-          >
-            Open Assessment Report
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const status = httpStatus(reveal.error);
+  if (status === 404) return <p className="text-sm text-red-700">{NOT_FOUND}</p>;
+  if (status === 409) return <InsightsLockedNotice />;
   if (reveal.error || !reveal.data)
     return <p className="text-sm text-red-700">{getErrorMessage(reveal.error)}</p>;
   const r = reveal.data;
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <Link href="/insights" className="text-sm text-indigo-600 hover:underline">
-          ← All runs
-        </Link>
-        <h1 className="text-2xl font-semibold text-slate-900">{r.teamName}</h1>
-        <p className="text-sm text-slate-600">
-          {r.courseCode} · {r.sprintId}
-        </p>
-      </header>
+      <ReportHeader title={r.teamName} subtitle={`${r.courseCode} · ${r.sprintId}`} />
       <RevealStep reportId={reportId} />
     </div>
   );
@@ -209,10 +123,17 @@ function OverrideReportContent({ reportId }: { reportId: string }) {
 
 export function ReportInsightsContent({ reportId }: { reportId: string }) {
   const config = useInsightsConfig();
-  if (config.isLoading) return <p className="text-sm text-slate-500">Loading…</p>;
-  return config.data?.mode === "override_gate" ? (
-    <OverrideReportContent reportId={reportId} />
-  ) : (
-    <BlindReportContent reportId={reportId} />
+  // The dashboard shell's <main> has no padding; each page adds the shared p-4/6/8 itself.
+  // Wrapping here pads every state (loading, not found, locked, error and the report).
+  return (
+    <div className="p-4 sm:p-6 lg:p-8">
+      {config.isLoading ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : config.data?.mode === "override_gate" ? (
+        <OverrideReportContent reportId={reportId} />
+      ) : (
+        <BlindReportContent reportId={reportId} />
+      )}
+    </div>
   );
 }

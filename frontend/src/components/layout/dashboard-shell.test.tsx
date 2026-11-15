@@ -95,6 +95,32 @@ describe("DashboardShell sidebar header", () => {
     expect(closeButton).toHaveClass("right-2");
     expect(closeButton).toHaveClass("md:hidden");
   });
+
+  it("gives the logo strip and the top bar row the same height and bottom border, so the lines meet", async () => {
+    renderComponent(<DashboardShell><div>content</div></DashboardShell>);
+
+    const logoStrip = (await screen.findByAltText("SprintSight Logo")).parentElement as HTMLElement;
+    const topRow = screen.getByRole("button", { name: "Toggle sidebar" }).parentElement as HTMLElement;
+
+    for (const strip of [logoStrip, topRow]) {
+      expect(strip).toHaveClass("h-[72px]");
+      expect(strip).toHaveClass("border-b");
+      expect(strip).not.toHaveClass("py-3"); // content padding would change the height again
+    }
+    // The header itself draws no border, or it would sit 1px below the sidebar's line.
+    expect(topRow.closest("header")).not.toHaveClass("border-b");
+  });
+
+  it("keeps the Scope bar in its own strip below the top row on scope pages", async () => {
+    renderComponent(<DashboardShell><div>content</div></DashboardShell>);
+
+    const scopeStrip = await screen.findByTestId("scope-strip");
+    const topRow = screen.getByRole("button", { name: "Toggle sidebar" }).parentElement as HTMLElement;
+
+    expect(topRow.contains(scopeStrip)).toBe(false);
+    expect(topRow.nextElementSibling).toBe(scopeStrip);
+    expect(scopeStrip).toHaveClass("border-b");
+  });
 });
 
 describe("DashboardShell saved scope", () => {
