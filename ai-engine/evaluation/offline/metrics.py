@@ -114,6 +114,26 @@ def per_dimension_scores(assessment: SprintAssessment) -> dict[str, float | None
     return out
 
 
+def failure_summary(assessment: SprintAssessment) -> dict[str, dict[str, str]]:
+    """{failure_classes, failure_details} for every dimension the evaluator gave up on.
+
+    Both are keyed by dimension. Only values the evaluator actually recorded are copied, so a
+    failed dimension without a class (a placeholder from an older run) still appears in
+    `failed_dimension_names` but not in `failure_classes`.
+    """
+    classes: dict[str, str] = {}
+    details: dict[str, str] = {}
+    for dim in DIMENSIONS:
+        score = getattr(assessment.rubric_scores, dim, None)
+        if score is None or not score.evaluation_failed:
+            continue
+        if score.failure_class:
+            classes[dim] = score.failure_class
+        if score.error_detail:
+            details[dim] = score.error_detail
+    return {"failure_classes": classes, "failure_details": details}
+
+
 def summarise_example(bundle: ArtifactBundle, assessment: SprintAssessment | None, error: str | None) -> dict:
     """Produce the per-example row that lands in per_example.jsonl.
 
@@ -136,4 +156,5 @@ def summarise_example(bundle: ArtifactBundle, assessment: SprintAssessment | Non
         row["trace_id"] = getattr(assessment, "trace_id", None)
         row.update(score_summary(assessment))
         row.update(per_dimension_scores(assessment))
+        row.update(failure_summary(assessment))
     return row

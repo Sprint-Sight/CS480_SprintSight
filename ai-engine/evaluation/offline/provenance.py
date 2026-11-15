@@ -48,15 +48,23 @@ def _show(model: str) -> Any:
 
 
 def model_digest(model: str) -> str | None:
-    """First 16 characters of the Ollama manifest digest, or None if unknown.
+    """First 16 hex characters of the Ollama model digest, or None if unknown.
 
     A model TAG is not provenance: the same tag can be re-pulled at a different quantisation,
     which changes behaviour while leaving every run name identical. The digest pins the weights.
+
+    Ollama reports the digest in `GET /api/tags` (`models[].digest`), not in `/api/show`. A name
+    without a tag is the `:latest` tag, so `sprintsight-mistral` matches `sprintsight-mistral:latest`.
     """
+    wanted = {model} if ":" in model else {model, f"{model}:latest"}
     try:
-        payload = _show(model)
-        digest = payload.get("digest") or payload.get("model_info", {}).get("general.digest")
-        return (digest or "")[:16] or None
+        response = httpx.get(f"{_ollama_base()}/api/tags", timeout=10.0)
+        response.raise_for_status()
+        for entry in response.json().get("models") or []:
+            if entry.get("name") in wanted or entry.get("model") in wanted:
+                digest = str(entry.get("digest") or "").removeprefix("sha256:")
+                return digest[:16] or None
+        return None
     except Exception:  # noqa: BLE001 - absence of Ollama is not an eval failure
         return None
 

@@ -47,3 +47,43 @@ def test_runs_from_before_the_phase_was_recorded_still_summarise() -> None:
 
     assert mixed_run_warnings(df) == []
     assert list(run_summary(df).columns) == ["mlflow_run_id", "model", "dataset_name", "n_examples"]
+
+
+def _with(df: pd.DataFrame, **columns) -> pd.DataFrame:
+    for name, value in columns.items():
+        df[name] = value
+    return df
+
+
+def test_one_model_with_two_prompt_hashes_is_flagged() -> None:
+    df = pd.concat([
+        _with(pd.DataFrame(_rows("old")), prompt_hash="aaa"),
+        _with(pd.DataFrame(_rows("new")), prompt_hash="bbb"),
+    ])
+
+    [warning] = mixed_run_warnings(df)
+
+    assert "model m was run with 2 different prompt text" in warning
+    assert "params.prompt_hash" in warning
+
+
+def test_one_model_with_two_digests_is_flagged() -> None:
+    df = pd.concat([
+        _with(pd.DataFrame(_rows("a")), model_digest="d1"),
+        _with(pd.DataFrame(_rows("b")), model_digest="d2"),
+    ])
+
+    [warning] = mixed_run_warnings(df)
+
+    assert "model weights" in warning and "params.model_digest" in warning
+
+
+def test_different_models_or_unrecorded_hashes_are_not_flagged() -> None:
+    df = pd.concat([
+        _with(pd.DataFrame(_rows("a", model="x")), prompt_hash="aaa"),
+        _with(pd.DataFrame(_rows("b", model="y")), prompt_hash="bbb"),   # another model: fine
+        _with(pd.DataFrame(_rows("c", model="x")), prompt_hash=None),    # predates the param: ignored
+        _with(pd.DataFrame(_rows("d", model="x")), prompt_hash="None"),  # MLflow's stringified None
+    ])
+
+    assert mixed_run_warnings(df) == []

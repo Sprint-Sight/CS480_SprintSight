@@ -471,6 +471,24 @@ from you beyond what is written; **caveats** are limits to state in the report.
     `grade_abs_error_overall` were blank on every judge run. Both are filled
     again, with their original definitions; judge runs from before have no
     values for them.
+12. **Offline-run fidelity fixes (`fix/offline-eval-fidelity`).** Runs from
+    before have these gaps; re-run them if the report relies on the affected
+    column.
+    * `per_example.jsonl` `failure_classes` / `failure_details` were always
+      `{}`. They are now filled, including for sprints where every dimension
+      failed (`AllDimensionsFailedError`).
+    * `model_digest` was always empty (Ollama reports it in `/api/tags`, not
+      `/api/show`). It is now the first 16 hex characters of the digest.
+    * The CLI forces UTF-8 on stdout/stderr, so MLflow's emoji "View run"
+      line no longer leaves runs stuck in `RUNNING` on a cp1252 Windows
+      console.
+    * **`prompt_hash` values are not comparable with older runs.** It used
+      to mix in the `--prompt-version` label and skipped the sprint-feedback
+      prompt; it now hashes only the rendered dimension prompts plus the
+      sprint-feedback prompt. `analyze` warns when one model spans more than
+      one `prompt_hash` or `model_digest` (runs without a value are ignored),
+      so old and new runs of the same model will trigger that warning: filter
+      to one with `--filter 'params.prompt_hash = "<hash>"'`.
 
 ---
 

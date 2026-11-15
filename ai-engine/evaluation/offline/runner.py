@@ -45,7 +45,9 @@ from evaluation.offline.provenance import git_sha, model_digest, ollama_version
 from llmops import experiments
 from llmops.mlflow_config import get_experiment_id
 from prompts.dimension_criteria import DIMENSION_PROMPTS
-from prompts.templates import render_dimension_prompt
+from prompts.templates import render_dimension_prompt, render_sprint_feedback_prompt
+from schemas.all_dimensions_failed_error import AllDimensionsFailedError
+from schemas.run_record import split_failure_text
 from services.evaluator import evaluate_sprint
 from services.llm_client import _token_accumulator, new_token_accumulator
 
@@ -56,15 +58,23 @@ DEFAULT_EXPERIMENT = experiments.MODEL_COMPARISON
 
 # ---------- Reproducibility helpers ----------------------------------------
 
-def _prompt_hash(prompt_version: str) -> str:
-    """Hash the ACTUAL rendered dimension prompts for the current prompt
-    version so a textual tweak in prompts/templates.py produces a new hash
-    without anyone having to remember to bump prompt_version."""
+def _prompt_hash() -> str:
+    """Hash the ACTUAL rendered prompts (every dimension prompt plus the sprint-feedback prompt),
+    with placeholders for the per-sprint inputs, so a textual tweak in prompts/ produces a new
+    hash without anyone having to remember to bump prompt_version.
+
+    The `--prompt-version` label is deliberately NOT part of the hash: it is logged on its own,
+    and mixing it in made two runs of identical prompt text look different (and vice versa).
+    """
     hasher = hashlib.sha256()
-    hasher.update(prompt_version.encode())
     for dim, criteria in sorted(DIMENSION_PROMPTS.items()):
         rendered = render_dimension_prompt(dim, criteria, "<bundle>", "<facts>", "<context>")
         hasher.update(rendered.encode("utf-8"))
+    hasher.update(
+        render_sprint_feedback_prompt(
+            "<team_id>", "<sprint_id>", "<scores>", "<instructor_expectations>", "<context>"
+        ).encode("utf-8")
+    )
     return hasher.hexdigest()[:16]
 
 
@@ -86,6 +96,19 @@ class RunConfig:
 
 # ---------- The runner ------------------------------------------------------
 
+def _failures_from_error(exc: AllDimensionsFailedError) -> tuple[dict[str, str], dict[str, str]]:
+    """({dimension: failure_class}, {dimension: detail}) from the exception's
+    "<class>: <detail>" texts, in the shape of a normal row's failure columns."""
+    classes: dict[str, str] = {}
+    details: dict[str, str] = {}
+    for dimension, text in exc.failed_dimensions.items():
+        failure_class, detail = split_failure_text(str(text))
+        if failure_class:
+            classes[dimension] = failure_class
+        details[dimension] = detail
+    return classes, details
+
+
 async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) -> tuple[dict, Any, str | None]:
     """Evaluate ONE example on the given model. Returns (per_example_row,
     raw_assessment_json_or_None, error_or_None).
@@ -106,6 +129,8 @@ async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) 
     t0 = time.perf_counter()
     error: str | None = None
     assessment = None
+    failure_classes: dict[str, str] = {}
+    failure_details: dict[str, str] = {}
     trace_ids: list[str] = []  # filled by evaluate_sprint even when it raises, so a failed run keeps its trace id
     try:
         assessment, _ = await evaluate_sprint(
@@ -115,6 +140,11 @@ async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) 
             mlflow.MlflowClient(),
             trace_ids,
         )
+    except AllDimensionsFailedError as exc:
+        # No assessment exists, but the exception carries "<class>: <detail>" per dimension.
+        error = f"{type(exc).__name__}: {exc}"
+        failure_classes, failure_details = _failures_from_error(exc)
+        log.exception("evaluate_sprint failed for example=%s model=%s", item.id, model)
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         log.exception("evaluate_sprint failed for example=%s model=%s", item.id, model)
@@ -123,6 +153,9 @@ async def _run_one_example(item: DatasetItem, model: str, experiment_name: str) 
     latency_s = time.perf_counter() - t0
 
     row = summarise_example(item.bundle, assessment, error)
+    if failure_classes or failure_details:
+        row["failure_classes"] = failure_classes
+        row["failure_details"] = failure_details
     row["example_id"] = item.id
     row["trace_id"] = row.get("trace_id") or (trace_ids[0] if trace_ids else None)  # the key attach_judge_scores joins on
     row["latency_s"] = latency_s
@@ -215,7 +248,7 @@ def run_evaluation(
             "dataset_description": ds_spec.description,
             "dataset_subset_size": len(items),
             "prompt_version": prompt_version,
-            "prompt_hash": _prompt_hash(prompt_version),
+            "prompt_hash": _prompt_hash(),
             "seed": seed if seed is not None else "unset",
             "repeats": repeats,
             "git_sha": git_sha(),
