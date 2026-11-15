@@ -129,7 +129,7 @@ def score_fields(scores: Mapping[str, Any]) -> dict[str, Any]:
     return fields
 
 
-def _split_failure_text(text: str) -> tuple[str | None, str]:
+def split_failure_text(text: str) -> tuple[str | None, str]:
     """'timeout: ReadTimeout: ...' -> ('timeout', 'ReadTimeout: ...'); legacy text has no class."""
     head, separator, rest = text.partition(": ")
     if separator and head in _FAILURE_CLASSES:
@@ -153,7 +153,7 @@ def normalize_run_record(row: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(failed, Mapping):  # {dimension: error text}
         classes, details = dict(record["failure_classes"]), dict(record["failure_details"])
         for dimension, text in failed.items():
-            failure_class, detail = _split_failure_text(str(text))
+            failure_class, detail = split_failure_text(str(text))
             if failure_class:
                 classes.setdefault(dimension, failure_class)
             details.setdefault(dimension, detail)

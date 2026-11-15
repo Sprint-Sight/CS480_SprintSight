@@ -152,7 +152,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _use_utf8_streams() -> None:
+    """MLflow prints emoji ("🏃 View run ..."); on Windows a cp1252 stdout raises
+    UnicodeEncodeError inside MLflow before it marks the run FINISHED, leaving it RUNNING."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _use_utf8_streams()
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

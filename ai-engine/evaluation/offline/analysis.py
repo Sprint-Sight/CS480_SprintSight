@@ -72,7 +72,8 @@ def load_runs(
         # Propagate selected run-level columns so filtering by model /
         # dataset is cheap during analysis.
         for col in ("params.model_name", "params.dataset_name", "params.dataset_hash",
-                    "params.prompt_version", "params.seed", "params.phase"):
+                    "params.prompt_version", "params.prompt_hash", "params.model_digest",
+                    "params.git_sha", "params.seed", "params.phase"):
             if col in run_row:
                 df[col.replace("params.", "")] = run_row[col]
         frames.append(df)
@@ -152,6 +153,24 @@ def mixed_run_warnings(df: pd.DataFrame) -> list[str]:
             f"runs from {len(phases)} phases are pooled ({', '.join(phases)}); report the final "
             f"sweep alone with --filter 'params.phase = \"final\"'"
         )
+    # One model measured with different prompts or different weights is two systems under one name.
+    for column, what, param in (
+        ("prompt_hash", "prompt text", "params.prompt_hash"),
+        ("model_digest", "model weights", "params.model_digest"),
+    ):
+        if not {"model", column} <= set(df.columns):
+            continue
+        # No value = the run predates the column (NaN) or MLflow stringified a None ("None")
+        known = df.dropna(subset=[column])
+        known = known[known[column].astype(str) != "None"]
+        for name, group in known.groupby("model", dropna=False):
+            values = sorted(map(str, group[column].unique()))
+            if len(values) > 1:
+                warnings.append(
+                    f"model {name} was run with {len(values)} different {what} "
+                    f"({column}: {', '.join(values)}); analyse one with "
+                    f"--filter 'params.model_name = \"{name}\" and {param} = \"{values[-1]}\"'"
+                )
     return warnings
 
 
