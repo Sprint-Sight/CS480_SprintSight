@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from evaluation.offline.datasets import DatasetItem
 from evaluation.offline import metrics, runner
+from evaluation.offline.datasets import DatasetItem
 from evaluation.offline.metrics import summarise_example
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.all_dimensions_failed_error import AllDimensionsFailedError
