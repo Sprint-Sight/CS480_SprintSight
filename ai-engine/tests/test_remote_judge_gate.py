@@ -2,9 +2,11 @@
 
 import contextlib
 from types import SimpleNamespace
+from typing import cast
 
 import pandas as pd
 import pytest
+from mlflow.entities import Trace
 
 from evaluation.judges import citation_grounding as grounding
 from evaluation.judges import sprint_feedback_judge as feedback_judge
@@ -21,11 +23,11 @@ from schemas.failure_class import FailureClass, describe_failure, is_transient
 ENV = grounding.ALLOW_REMOTE_JUDGE_ENV
 
 
-def fixture_trace() -> SimpleNamespace:
+def fixture_trace() -> Trace:
     """Just what the scorers read: tags (fixture-tagged, so the hosted judge is chosen) and spans."""
     root = SimpleNamespace(parent_id=None, inputs={}, outputs={"rubric_scores": {DIMENSIONS[0]: {"score": 8, "justification": "Solid work overall."}}})
-    return SimpleNamespace(info=SimpleNamespace(trace_id="tr-1", tags={"fixture": "true", "team_id": "t1", "model": "m"}),
-                           data=SimpleNamespace(spans=[root]))
+    return cast(Trace, SimpleNamespace(info=SimpleNamespace(trace_id="tr-1", tags={"fixture": "true", "team_id": "t1", "model": "m"}),
+                                       data=SimpleNamespace(spans=[root])))
 
 
 def by_name(feedbacks) -> dict:
@@ -49,7 +51,7 @@ def test_the_new_class_is_permanent_and_described() -> None:
 def test_citation_judge_gate_reports_error_and_failure_class(monkeypatch) -> None:
     monkeypatch.delenv(ENV, raising=False)
 
-    feedbacks = by_name(grounding.llm_judge_citation_grounding(fixture_trace()))
+    feedbacks = by_name(grounding.llm_judge_citation_grounding(trace=fixture_trace()))
 
     assert feedbacks["citation_hallucination_rate"].error is not None
     assert feedbacks["citation_judge_failure_class"].value == "remote_judge_disabled"
@@ -58,7 +60,7 @@ def test_citation_judge_gate_reports_error_and_failure_class(monkeypatch) -> Non
 def test_feedback_judge_gate_reports_error_and_failure_class(monkeypatch) -> None:
     monkeypatch.delenv(ENV, raising=False)
 
-    feedbacks = by_name(feedback_judge.llm_judge_sprint_feedback_consistency(fixture_trace()))
+    feedbacks = by_name(feedback_judge.llm_judge_sprint_feedback_consistency(trace=fixture_trace()))
 
     assert feedbacks["narrative_contradiction_count"].error is not None
     assert feedbacks["judge_failure_class"].value == "remote_judge_disabled"
@@ -66,7 +68,7 @@ def test_feedback_judge_gate_reports_error_and_failure_class(monkeypatch) -> Non
 
 def test_with_the_opt_in_the_citation_judge_runs_on_the_hosted_provider(monkeypatch, no_mlflow_tracing) -> None:
     monkeypatch.setenv(ENV, "1")
-    seen = {}
+    seen: dict[str, str] = {}
 
     async def fake_judge(bundle, rubric, judge_model, judge_provider="ollama"):
         seen.update(model=judge_model, provider=judge_provider)
@@ -76,7 +78,7 @@ def test_with_the_opt_in_the_citation_judge_runs_on_the_hosted_provider(monkeypa
     monkeypatch.setattr(grounding, "read_candidate", lambda trace, bundle: (object(), 0))
     monkeypatch.setattr(grounding, "judge_assessment_detailed", fake_judge)
 
-    feedbacks = by_name(grounding.llm_judge_citation_grounding(fixture_trace()))
+    feedbacks = by_name(grounding.llm_judge_citation_grounding(trace=fixture_trace()))
 
     assert seen == {"model": grounding.FIXTURE_JUDGE_MODEL, "provider": "openai"}
     assert "citation_judge_failure_class" not in feedbacks
@@ -93,7 +95,7 @@ def test_with_the_opt_in_a_judge_failure_is_still_classified(monkeypatch, no_mlf
     monkeypatch.setattr(grounding, "read_candidate", lambda trace, bundle: (object(), 0))
     monkeypatch.setattr(grounding, "judge_assessment_detailed", timing_out)
 
-    feedbacks = by_name(grounding.llm_judge_citation_grounding(fixture_trace()))
+    feedbacks = by_name(grounding.llm_judge_citation_grounding(trace=fixture_trace()))
 
     assert feedbacks["citation_judge_failure_class"].value == "timeout"
 
@@ -135,7 +137,7 @@ def test_a_failing_feedback_judge_records_its_class(monkeypatch, no_mlflow_traci
 
     monkeypatch.setattr(feedback_judge, "judge_sprint_feedback", timing_out)
 
-    feedbacks = by_name(feedback_judge.llm_judge_sprint_feedback_consistency(fixture_trace()))
+    feedbacks = by_name(feedback_judge.llm_judge_sprint_feedback_consistency(trace=fixture_trace()))
 
     assert feedbacks["narrative_contradiction_count"].error is not None
     assert feedbacks["judge_failure_class"].value == "timeout"
