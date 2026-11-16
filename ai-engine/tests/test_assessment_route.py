@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from api import assessment as route
 from evaluation.online.job_queue import JudgeJobQueue
+from llmops import experiments
 from schemas.modelname import ModelName
 from schemas.rubrics_dimension_score import RubricDimensionScore
 from schemas.rubrics_score import RubricsScore
@@ -68,6 +69,7 @@ def test_response_carries_the_trace_id_and_failure_flags(client, queue, monkeypa
     assert response.status_code == 200
     body = response.json()
     assert body["trace_id"] == "tr-abc"
+    assert body["experiment_name"] == experiments.PRODUCTION  # the default: the caller passed none
     assert body["evaluation_failed"] is True
     assert body["failed_dimensions"] == ["testing"]
     assert body["rubric_scores"]["testing"]["failure_class"] == "timeout"
@@ -90,7 +92,7 @@ def test_judging_is_queued_durably_after_grading(client, queue, monkeypatch) -> 
     job = queue.claim_next()
     assert job is not None
     assert (job.trace_id, job.team_id, job.sprint_id) == ("tr-abc", "team-a", "s1")
-    assert job.experiment_name == "SprintSight Evaluations"
+    assert job.experiment_name == experiments.PRODUCTION
     assert job.prompt_versions == VERSIONS
 
 

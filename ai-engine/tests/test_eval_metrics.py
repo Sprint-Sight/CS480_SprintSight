@@ -1,4 +1,8 @@
-"""groundedness_rate must count citations the engine dropped as fabricated."""
+"""groundedness_rate must count citations the engine dropped as fabricated, and be NaN (not 1.0)
+when there is nothing to check."""
+
+import json
+import math
 
 import pytest
 
@@ -76,8 +80,21 @@ def test_surviving_but_ungrounded_citations_still_count_against_it() -> None:
     assert rate == 0.25
 
 
-def test_no_citations_at_all_is_one_with_a_zero_total() -> None:
-    assert groundedness_rate(BUNDLE, _assessment()) == (1.0, 0, 0)  # "nothing to check", total says so
+def test_no_citations_at_all_is_nan_with_a_zero_total() -> None:
+    # Was 1.0 ("perfect grounding"), which let a model that cites nothing outrank one that cites
+    # and gets a few wrong. NaN drops out of every mean; the total says how many rows did.
+    rate, grounded, total = groundedness_rate(BUNDLE, _assessment())
+    assert math.isnan(rate)
+    assert (grounded, total) == (0, 0)
+
+
+def test_the_example_row_for_zero_citations_is_null_with_the_old_value_kept_as_legacy() -> None:
+    row = summarise_example(BUNDLE, _assessment(), None)
+
+    assert row["groundedness_rate"] is None
+    assert row["groundedness_rate_legacy"] == 1.0
+    assert row["groundedness_citations_total"] == 0
+    assert "NaN" not in json.dumps(row)  # the row is written to per_example.jsonl; it must stay valid JSON
 
 
 def test_citations_dropped_sums_over_dimensions() -> None:
@@ -89,6 +106,7 @@ def test_the_example_row_reports_drops_and_the_join_keys() -> None:
 
     assert row["citations_dropped"] == 1
     assert row["groundedness_rate"] == 0.5
+    assert row["groundedness_rate_legacy"] == 0.5  # the two only differ when there are no citations
     assert (row["trace_id"], row["team_id"], row["sprint_id"]) == ("tr-1", "t", "s1")
     assert row["format_valid"] is True
 

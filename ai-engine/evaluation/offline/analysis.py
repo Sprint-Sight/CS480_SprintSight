@@ -80,7 +80,29 @@ def load_runs(
     if not frames:
         return pd.DataFrame()
     combined = pd.concat(frames, ignore_index=True)
-    return combined
+    return normalize_groundedness(combined)
+
+
+def normalize_groundedness(df: pd.DataFrame) -> pd.DataFrame:
+    """Make `groundedness_rate` NaN wherever the assessment made no citations.
+
+    Rows written before metrics.groundedness_rate returned NaN hold 1.0 for "nothing to check";
+    averaging those in credits a model for citing nothing. The old value is kept as
+    `groundedness_rate_legacy` (rows written since carry it already) so earlier tables can be
+    reproduced. Safe to call twice.
+    """
+    if "groundedness_rate" not in df.columns:
+        return df
+    out = df.copy()
+    rate = pd.to_numeric(out["groundedness_rate"], errors="coerce")
+    legacy = pd.to_numeric(out["groundedness_rate_legacy"], errors="coerce") if "groundedness_rate_legacy" in out else rate
+    out["groundedness_rate_legacy"] = legacy.fillna(rate)
+    if "groundedness_citations_total" in out.columns:
+        total = pd.to_numeric(out["groundedness_citations_total"], errors="coerce")
+        # 1.0 with zero citations is only ever the old "nothing to check" value
+        rate = rate.mask((total == 0) & (rate == 1.0))
+    out["groundedness_rate"] = rate
+    return out
 
 
 def load_engine_results(
@@ -100,7 +122,7 @@ def load_engine_results(
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    frame = pd.DataFrame(rows)
+    frame = normalize_groundedness(pd.DataFrame(rows))
     if frame.empty or not judge:
         return frame
     judge_files = sorted(root.glob("raw_judge_results_*.jsonl"))
@@ -194,17 +216,54 @@ DEFAULT_METRICS: list[MetricSpec] = [
     MetricSpec("latency_s", "Latency (s)", False),
 ]
 
+# Shown in `comparison_table` next to the headline metrics so the old numbers stay reproducible.
+LEGACY_METRICS: list[MetricSpec] = [
+    MetricSpec("groundedness_rate_legacy", "Citation groundedness, no citations = 1.0 (legacy)", True),
+]
 
-def comparison_table(df: pd.DataFrame, metrics: Iterable[MetricSpec] = tuple(DEFAULT_METRICS)) -> pd.DataFrame:
+
+def _is_complete(df: pd.DataFrame) -> pd.Series:
+    """Rows whose assessment scored every dimension (`format_valid` is True)."""
+    if "format_valid" not in df:
+        return pd.Series(False, index=df.index)
+    return df["format_valid"].eq(True)
+
+
+def _is_partial(df: pd.DataFrame) -> pd.Series:
+    """Rows that scored some but not all dimensions. Their `overall_score` is an average over
+    the scored dimensions only (services/evaluator.py), so it is not comparable with a complete
+    assessment's."""
+    if {"dimensions_present", "dimensions_total"} <= set(df.columns):
+        present = pd.to_numeric(df["dimensions_present"], errors="coerce")
+        total = pd.to_numeric(df["dimensions_total"], errors="coerce")
+        return (present > 0) & (present < total)
+    if "overall_score" in df:
+        return ~_is_complete(df) & pd.to_numeric(df["overall_score"], errors="coerce").notna()
+    return pd.Series(False, index=df.index)
+
+
+def comparison_table(df: pd.DataFrame, metrics: Iterable[MetricSpec] | None = None) -> pd.DataFrame:
     """Model × metric mean (± SD, n).
 
     Missing values are dropped per metric so a model that didn't produce
     an overall_score for some examples still has a defensible mean on the
     examples where it did produce one — but the `n` column reveals that.
+
+    Groundedness is NaN for an assessment with no citations, so its `n` is the number of rows
+    that cited something. `n_partial` counts the rows that scored only some dimensions; their
+    overall_score is pooled here, which `comparison_table_complete` avoids. `overall_score` on a
+    dataset without gold labels (d_real_sprints) is the engine's own grade, not accuracy.
     """
+    metrics = tuple(metrics) if metrics is not None else (*DEFAULT_METRICS, *LEGACY_METRICS)
+    df = normalize_groundedness(df)
+    partial = _is_partial(df)
     out_rows = []
     for model, group in df.groupby("model"):
-        row: dict[str, Any] = {"model": model, "n_examples": group["example_id"].nunique()}
+        row: dict[str, Any] = {
+            "model": model,
+            "n_examples": group["example_id"].nunique(),
+            "n_partial": int(partial.loc[group.index].sum()),
+        }
         for spec in metrics:
             if spec.column not in group:
                 row[f"{spec.label} mean"] = None
@@ -216,7 +275,39 @@ def comparison_table(df: pd.DataFrame, metrics: Iterable[MetricSpec] = tuple(DEF
             row[f"{spec.label} sd"] = float(vals.std(ddof=1)) if len(vals) >= 2 else None
             row[f"{spec.label} n"] = int(vals.shape[0])
         out_rows.append(row)
+    if not out_rows:
+        return pd.DataFrame(columns=["model", "n_examples", "n_partial"]).set_index("model")
     return pd.DataFrame(out_rows).set_index("model").sort_index()
+
+
+def comparison_table_complete(df: pd.DataFrame, metrics: Iterable[MetricSpec] | None = None) -> pd.DataFrame:
+    """`comparison_table` over `format_valid == True` rows only, i.e. assessments that scored
+    every dimension, so each overall_score is an average over the same set of dimensions.
+
+    `n_partial` is the number of partially scored rows left out (some dimensions scored, some
+    failed), and `n_rows_total` all rows the model produced, so a model that mostly fails does
+    not look good on the few rows that worked. Models with no complete row stay in the table
+    with n = 0. The format-validity rate is dropped: it is 1.0 here by construction.
+    """
+    df = normalize_groundedness(df)
+    if metrics is None:
+        metrics = [m for m in (*DEFAULT_METRICS, *LEGACY_METRICS) if m.column != "format_valid"]
+    complete = df[_is_complete(df)]
+    table = comparison_table(complete, metrics)
+    partial = _is_partial(df)
+    counts = pd.DataFrame({
+        "n_partial": partial.groupby(df["model"]).sum().astype(int),
+        "n_rows_total": df.groupby("model").size(),
+    })
+    n_examples = table["n_examples"].reindex(counts.index).fillna(0).astype(int)
+    table = table.drop(columns=["n_examples", "n_partial"]).reindex(counts.index)
+    for column in table.columns[table.columns.str.endswith(" n")]:
+        table[column] = table[column].fillna(0).astype(int)  # a model with no complete row has n = 0
+    table.insert(0, "n_examples", n_examples)
+    table.insert(1, "n_partial", counts["n_partial"])
+    table.insert(2, "n_rows_total", counts["n_rows_total"])
+    table.index.name = "model"
+    return table
 
 
 # ---------- Consistency (within-model, across repeats) ---------------------
