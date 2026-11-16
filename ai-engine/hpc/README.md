@@ -58,8 +58,12 @@ Keep this connection open while you use the AI engine.
 In `ai-engine/.env`:
 
 ```env
-OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+SPRINTSIGHT_AI_OLLAMA_URL=http://host.docker.internal:11434/v1
 ```
+
+(`SPRINTSIGHT_AI_OLLAMA_URL`, not `OLLAMA_BASE_URL`: compose maps it to the
+container's `OLLAMA_BASE_URL`, so a host-side `OLLAMA_BASE_URL=http://localhost:...`
+export can't break the container.)
 
 Then start the stack **without** the local `ollama`/`model-init` services:
 
@@ -81,7 +85,7 @@ curl.exe http://localhost:8001/health
 - Community `project`/`student` queues can be pre-empted; a long-running
   Ollama job may be killed early. Re-run `sbatch` if that happens — models
   are already cached in `~/sprintsight/ollama_data`.
-- To switch back to a fully local stack, revert `OLLAMA_BASE_URL` and run
+- To switch back to a fully local stack, remove `SPRINTSIGHT_AI_OLLAMA_URL` from `.env` and run
   `docker compose up -d --build sprintsight_ai` (with its normal deps).
 
 ## Command reference (origami)
