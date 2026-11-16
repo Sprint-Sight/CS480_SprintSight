@@ -117,7 +117,7 @@ services: # Separate containers to run
         model-init:
           condition: service_completed_successfully
         mlflow_service:
-          condition: service_started
+          condition: service_healthy
 
     mlflow_service:
       # Built from ./mlflow-server: MLflow pinned to the client's version (requirements.txt) with
