@@ -474,7 +474,7 @@ L += ["", "## Checks", "",
       f"- `<think>` tags in raw model output: {trunc['think_tags']}. Calls at the num_ctx ceiling: {trunc['at_ceiling']}; largest prompt = {trunc['max_prompt_over_ctx']:.0%} of num_ctx.",
       f"- Calls that trip the 'prompt most likely truncated' warning (reported < 75% of estimate): {trunc['shrunk_flag']} of {trunc['calls']}; median reported/estimate = {trunc['median_reported_over_estimate']}. None is near the context limit, so these warnings are false positives from the chars/4 estimate.",
       f"- Instant failures (< 2 s): {sum(h['instant_runs'] for h in health)}. Retry spirals (> 3x model median): {sum(h['spiral_runs'] for h in health)}.",
-      f"- Judge calls in the batch window: {dict(judge_calls)}. Fixture traces are judged by gpt-4o-mini through OpenAI (`judges/citation_ground_custom_judge.py:199-201`), although the judge files label every row `sprintsight-judge-phi`.",
+      f"- Judge calls in the batch window: {dict(judge_calls)}. Fixture traces are judged by gpt-4o-mini through OpenAI (`evaluation/judges/citation_grounding.py:95-104`), although the judge files label every row `sprintsight-judge-phi`.",
       f"- Activity after the batch: {out_of_batch['calls_after_batch']} calls {dict(out_of_batch['by'])} between {out_of_batch['first']} and {out_of_batch['last']} UTC, with no result files.",
       f"- Expected-order links the team-authored gold itself violates: {', '.join(result['gold_order_violations']) or 'none'}."]
 (HERE / "run_health.md").write_text("\n".join(L) + "\n")

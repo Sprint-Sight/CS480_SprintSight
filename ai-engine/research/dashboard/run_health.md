@@ -58,6 +58,6 @@ Each invocation writes 3 files sharing one session timestamp (`services/save_res
 - `<think>` tags in raw model output: 0. Calls at the num_ctx ceiling: 0; largest prompt = 55% of num_ctx.
 - Calls that trip the 'prompt most likely truncated' warning (reported < 75% of estimate): 148 of 838; median reported/estimate = 0.796. None is near the context limit, so these warnings are false positives from the chars/4 estimate.
 - Instant failures (< 2 s): 0. Retry spirals (> 3x model median): 1.
-- Judge calls in the batch window: {'judge-phi': 140, 'gpt-4o-mini': 177}. Fixture traces are judged by gpt-4o-mini through OpenAI (`judges/citation_ground_custom_judge.py:199-201`), although the judge files label every row `sprintsight-judge-phi`.
+- Judge calls in the batch window: {'judge-phi': 140, 'gpt-4o-mini': 177}. Fixture traces are judged by gpt-4o-mini through OpenAI (`evaluation/judges/citation_grounding.py:95-104`), although the judge files label every row `sprintsight-judge-phi`.
 - Activity after the batch: 36 calls {'qwen25-32b | Connection error.': 36} between 2026-11-11 15:28:48.204916+00:00 and 2026-11-11 15:29:28.009972+00:00 UTC, with no result files.
 - Expected-order links the team-authored gold itself violates: collaboration|lone_contributor_poor_outcome > struggling.

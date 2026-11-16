@@ -340,7 +340,7 @@ ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 90ch; }
   const T = D.truncation, O = D.out_of_batch;
   const cav = [
     `Small pilot: 2 real sprints and 5 synthetic fixtures, 3 repeats each. No significance claims; read every number with its n.`,
-    `Fixture runs were judged by gpt-4o-mini through the OpenAI API (judges/citation_ground_custom_judge.py lines 199-201), which breaks the local-only constraint. The judge files label every row sprintsight-judge-phi, so the label is wrong for fixtures. Judge calls in the batch window: ${Object.entries(D.judge_calls_in_window).map(([k, v]) => `${k} ${v}`).join(', ')}.`,
+    `Fixture runs were judged by gpt-4o-mini through the OpenAI API (evaluation/judges/citation_grounding.py lines 95-104), which breaks the local-only constraint. The judge files label every row sprintsight-judge-phi, so the label is wrong for fixtures. Judge calls in the batch window: ${Object.entries(D.judge_calls_in_window).map(([k, v]) => `${k} ${v}`).join(', ')}.`,
     `Both CS203 bundles contain no Jira tickets and no peer evaluations, yet the reference scores requirements and collaboration (G6: 3 and 4, JY: 7 and 6). Error on those two dimensions measures a missing-data policy, not grading skill.`,
     `Every model scored requirements 1 on all 30 CS203 runs, almost always with zero citations.`,
     `The expected order "lone_contributor > struggling" on collaboration is broken by the team-authored gold itself (Theta 1, Gamma 3), so that link cannot be passed while agreeing with the gold.`,
