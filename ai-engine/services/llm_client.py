@@ -851,7 +851,10 @@ def create_llm_client(provider="ollama"):
 
     client = instructor.from_openai( # Wrap OpenAI client with instructor to return Pydantic models instead of raw JSON
         raw_client, # The raw OpenAI-compatible client pointing at Ollama
-        mode=instructor.Mode.JSON, # ensures that the response is parsed as JSON, returned as a Pydantic model
+        # Honour LLM_STRUCTURED_OUTPUT_MODE. JSON mode only describes the schema in the
+        # prompt, so weak models invent keys or echo the schema back; JSON_SCHEMA mode
+        # constrains Ollama's decoding to the real schema. Unknown values fall back to JSON.
+        mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
     )
     return client
 
@@ -876,21 +879,6 @@ async def _create_with_length_reask(client: Any, prompt: str, **kwargs: Any) -> 
             content = prompt + _LENGTH_REASK_NOTE
     raise AssertionError("unreachable")
 
-
-# # Each child span of the parent span (Evaluate_Complete_Sprint)
-# @mlflow.trace(name="Evaluate_Dimension", span_type=SpanType.LLM)
-# async def evaluate_dimension(bundle: ArtifactBundle, dimension_name: str, model_name: str) -> RubricDimensionScore:
-#     # Asynchronously evaluates a single rubric dimension to ensure fast concurrent processing.
-#     # bundle_data = bundle.model_dump_json(indent=2) # json representation of the bundle for logging and debugging
-#         raw_client,
-#         # Actually honor LLM_STRUCTURED_OUTPUT_MODE instead of always using
-#         # JSON mode -- JSON mode only describes the schema in the prompt, so
-#         # weak models can literally echo the schema back as their "answer"
-#         # instead of an instance of it. JSON_SCHEMA mode constrains Ollama's
-#         # decoding to the real schema and avoids that failure mode.
-#         mode=_INSTRUCTOR_MODES.get(_STRUCTURED_OUTPUT_MODE, instructor.Mode.JSON),
-#     )
-#     return client
 
 # Each child span of the parent span (Evaluate_Complete_Sprint)
 async def evaluate_dimension(
