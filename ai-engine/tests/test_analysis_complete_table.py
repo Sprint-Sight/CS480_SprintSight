@@ -1,5 +1,7 @@
 """comparison_table_complete leaves partial assessments out; zero-citation groundedness is NaN."""
 
+import math
+
 import pandas as pd
 
 from evaluation.offline.analysis import (
@@ -7,6 +9,11 @@ from evaluation.offline.analysis import (
     comparison_table_complete,
     normalize_groundedness,
 )
+
+
+def _is_nan(value: object) -> bool:
+    """NaN or None; takes `object` so it type-checks the same with or without pandas-stubs."""
+    return value is None or (isinstance(value, float) and math.isnan(value))
 
 
 def _row(model, example, *, valid=True, present=6, overall=8.0, rate=1.0, total=4, **extra):
@@ -52,7 +59,7 @@ def test_a_model_with_no_complete_row_stays_in_the_complete_table() -> None:
 
     assert table.loc["c", "n_examples"] == 0
     assert table.loc["c", "n_partial"] == 1
-    assert pd.isna(table.loc["c", "Overall score (0–10) mean"])
+    assert _is_nan(table.loc["c", "Overall score (0–10) mean"])
 
 
 def test_no_complete_row_at_all_gives_an_empty_table_not_an_error() -> None:
@@ -68,11 +75,11 @@ def test_old_rows_with_one_point_zero_and_no_citations_become_nan_but_keep_the_o
 
     out = normalize_groundedness(df)
 
-    assert pd.isna(out.loc[0, "groundedness_rate"]) and out.loc[1, "groundedness_rate"] == 0.5
+    assert _is_nan(out.loc[0, "groundedness_rate"]) and out.loc[1, "groundedness_rate"] == 0.5
     assert list(out["groundedness_rate_legacy"]) == [1.0, 0.5]
     # idempotent
     again = normalize_groundedness(out)
-    assert pd.isna(again.loc[0, "groundedness_rate"]) and list(again["groundedness_rate_legacy"]) == [1.0, 0.5]
+    assert _is_nan(again.loc[0, "groundedness_rate"]) and list(again["groundedness_rate_legacy"]) == [1.0, 0.5]
 
 
 def test_a_perfect_rate_with_citations_is_not_touched() -> None:
@@ -95,4 +102,4 @@ def test_new_rows_with_null_groundedness_use_their_own_legacy_value() -> None:
 
     out = normalize_groundedness(df)
 
-    assert pd.isna(out.loc[0, "groundedness_rate"]) and out.loc[0, "groundedness_rate_legacy"] == 1.0
+    assert _is_nan(out.loc[0, "groundedness_rate"]) and out.loc[0, "groundedness_rate_legacy"] == 1.0
