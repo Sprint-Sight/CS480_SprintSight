@@ -280,6 +280,28 @@ with the filter to use when the pooled runs should not be averaged together:
   export, or analyse one version with `--filter 'params.dataset_hash = "<hash>"'`;
 * **more than one phase**, e.g. `preliminary` runs next to the `final` sweep.
 
+`analyze` writes two comparison tables. Use `comparison_table_complete.csv`
+for `overall_score`:
+
+* `comparison_table.csv` pools every row. `overall_score` of a **partial**
+  assessment (some dimensions scored, the rest failed) is the mean over the
+  dimensions that did score, so it is not comparable with a complete
+  assessment's. The `n_partial` column says how many such rows each model has,
+  and `analyze` prints a NOTE when it is not zero.
+* `comparison_table_complete.csv` keeps only rows with `format_valid == True`
+  (all six dimensions scored). `n_partial` and `n_rows_total` show what was
+  left out, so a model that fails often cannot look good on the rows that
+  worked. A model with no complete row stays in the table with `n_examples` 0.
+* `overall_score` on `d_real_sprints` is the engine's own grade: there is no
+  gold, so it measures agreement between models, not accuracy.
+* **Citation groundedness is NaN for an assessment with no citations** (it used
+  to be 1.0, "nothing to check" counted as perfect), so the mean and its `n`
+  cover only rows that cited something. Rows already in MLflow with 1.0 and
+  zero citations are converted on load. The old definition stays available as
+  `groundedness_rate_legacy` / "Citation groundedness, no citations = 1.0
+  (legacy)", so earlier tables can be reproduced; numbers quoted from before
+  this change are higher for models that sometimes cite nothing.
+
 Filter on `params.phase`, not `tags.phase`: until the dataset's own label was
 renamed `dataset_phase`, it overwrote the `phase` tag (every run was tagged
 `smoke_test` or `preliminary` whatever `--phase` said).
