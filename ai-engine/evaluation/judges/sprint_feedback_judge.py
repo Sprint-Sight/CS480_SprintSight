@@ -23,7 +23,9 @@ from evaluation.judges.citation_grounding import (
     remote_judge_error,
 )
 from prompts.dimension_criteria import DIMENSIONS
+from schemas.failure_class import FailureClass
 from schemas.modelname import MODEL_NUM_CTX
+from services.failures import classify_failure, failure_detail
 from services.llm_client import (
     LLM_TEMPERATURE,
     _request_extra_body,
@@ -77,14 +79,13 @@ async def judge_sprint_feedback(a: dict, judge_model: str, judge_provider: str='
     scores = "\n".join(f"{d}: {s['score']}/10" for d, s in _scored(a).items())
     user = f"SCORES:\n{scores}\n\nITEMS:\n" + "\n".join(f"{k}: {v}" for k, v in items.items())
     ctx = MODEL_NUM_CTX.get(judge_model) if judge_provider == 'ollama' else None
-    if judge_provider == 'ollama' and ctx is None:
+    if judge_provider == 'ollama' and ctx is None:  # hosted judges size their own context; only Ollama needs num_ctx
         raise ValueError(f"Add '{judge_model}' to MODEL_NUM_CTX")
-    if ctx is None:
-        raise ValueError(f"Add '{judge_model}' to MODEL_NUM_CTX")
+    extra_body = _request_extra_body(ctx) if judge_provider == 'ollama' else {}
     with audit_scope(team_id=a.get('team_id'), sprint_id=a.get('sprint_id'), dimension="judge_sprint_feedback", model=judge_model, prompt_version=SPRINT_FEEDBACK_JUDGE_PROMPT_VERSION):
         report = await create_llm_client(provider=judge_provider).chat.completions.create(
             model=judge_model, response_model=make_sprint_feedback_model(set(items)), temperature=LLM_TEMPERATURE,
-            max_retries=3, extra_body=_request_extra_body(ctx),
+            max_retries=3, extra_body=extra_body,
             messages=[{"role": "system", "content": SPRINT_FEEDBACK_JUDGE_PROMPT}, {"role": "user", "content": user}])
     contradictory_scores = [v for v in report.verdicts if v.label == "contradicts"] # contradictory scores are bad
     judged = [v for v in report.verdicts if v.label != "not_addressed"]
@@ -103,7 +104,9 @@ def llm_judge_sprint_feedback_consistency(trace: Trace) -> list[Feedback]:
     judge_provider = judge_provider_for(judge_model)
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
     if (blocked := remote_judge_error(judge_provider)) is not None: # can't check consistency if judge is blocked
-        return [Feedback(name="narrative_contradiction_count", error=blocked, source=source)]
+        return [Feedback(name="narrative_contradiction_count", error=blocked, source=source),
+                Feedback(name="judge_failure_class", value=FailureClass.REMOTE_JUDGE_DISABLED.value, source=source,
+                         rationale=failure_detail(blocked))]
     root = next((s for s in trace.data.spans if s.parent_id is None), None)
     a = root.outputs if root is not None and isinstance(root.outputs, dict) and "rubric_scores" in root.outputs else None
     if a is None:   # older traces have no stored sprint-level feedback
@@ -121,7 +124,11 @@ def llm_judge_sprint_feedback_consistency(trace: Trace) -> list[Feedback]:
             span.set_outputs({"error_type": type(e).__name__, "error": str(e)[:1500]})
             span.set_status("ERROR")
             mlflow.update_current_trace(response_preview=_clip(f"Error {type(e).__name__}: {e}"))
-            return [Feedback(name="narrative_contradiction_count", error=e, source=source)]
+            # MLflow swallows a scorer's error; the class travels as its own feedback so the job
+            # queue can retry what is transient (see evaluation/online/promote.py).
+            return [Feedback(name="narrative_contradiction_count", error=e, source=source),
+                    Feedback(name="judge_failure_class", value=classify_failure(e).value, source=source,
+                             rationale=failure_detail(e))]
         span.set_outputs(r)
         mlflow.update_current_trace(response_preview=_clip(
             f"contradictions: justification={r['justification'][0]} narrative={r['narrative'][0]} of {r['items']} items"))

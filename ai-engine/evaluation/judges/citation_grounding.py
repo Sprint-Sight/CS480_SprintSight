@@ -24,6 +24,7 @@ from evaluation.judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
+from schemas.failure_class import FailureClass
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
 from services.failures import PromptTruncatedError, classify_failure, failure_detail
@@ -405,7 +406,10 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
 
     source = AssessmentSource(source_type=AssessmentSourceType.LLM_JUDGE, source_id=f"{judge_provider}:/{judge_model}")
     if (blocked := remote_judge_error(judge_provider)) is not None:
-        return [Feedback(name="citation_hallucination_rate", error=blocked, source=source)]
+        # Without a class the job queue sees no failure at all and the job completes silently.
+        return [Feedback(name="citation_hallucination_rate", error=blocked, source=source),
+                Feedback(name="citation_judge_failure_class", value=FailureClass.REMOTE_JUDGE_DISABLED.value, source=source,
+                         rationale=failure_detail(blocked))]
     team, model = trace.info.tags.get("team_id"), trace.info.tags.get("model")
     print(f"\n[judge] {judge_model} (using {judge_provider}) checking {model} / {team}...", flush=True)
 

@@ -7,6 +7,7 @@ import pandas as pd
 from mlflow import MlflowClient, MlflowException
 
 from evaluation.judges.flagging import (
+    FEEDBACK_JUDGE_FAILURE_CLASS_COL,
     JUDGE_FAILURE_CLASS_COL,
     MAX_SEVERITY_WEIGHTED_RATE,
 )
@@ -39,15 +40,25 @@ class JudgeTransientFailure(RuntimeError):
     """The judge call failed for a reason that may pass (see schemas.failure_class)."""
 
 
-def judge_transient_failures(results) -> set[str]:
-    """Transient failure classes recorded by the judge scorer across `results`."""
+_FAILURE_CLASS_COLS = (JUDGE_FAILURE_CLASS_COL, FEEDBACK_JUDGE_FAILURE_CLASS_COL)  # citation judge, sprint-feedback judge
+
+
+def judge_failure_classes(results) -> set[str]:
+    """Every failure class recorded by either judge scorer across `results`."""
     found: set[str] = set()
     for result in results:
         frame = getattr(result, "result_df", None)
-        if frame is None or JUDGE_FAILURE_CLASS_COL not in frame.columns:
+        if frame is None:
             continue
-        found |= {str(value) for value in frame[JUDGE_FAILURE_CLASS_COL].dropna() if is_transient(value)}
+        for column in _FAILURE_CLASS_COLS:
+            if column in frame.columns:
+                found |= {str(value) for value in frame[column].dropna()}
     return found
+
+
+def judge_transient_failures(results) -> set[str]:
+    """Transient failure classes recorded by the judge scorers across `results`."""
+    return {value for value in judge_failure_classes(results) if is_transient(value)}
 
 
 def run_judge_and_promotion(experiment_name: str, trace_id: str, team_id: str, prompt_versions_registered: dict, client: MlflowClient, sprint_id: str | None = None):
@@ -69,6 +80,8 @@ def run_judge_and_promotion(experiment_name: str, trace_id: str, team_id: str, p
         transient = judge_transient_failures(results)
         if transient:
             raise JudgeTransientFailure(f"judge failed for trace {trace_id}: {', '.join(sorted(transient))}")
+        if permanent := judge_failure_classes(results):
+            log.warning("Judge for trace %s recorded non-retryable failure(s): %s", trace_id, ", ".join(sorted(permanent)))
         for result in results:
             try:
                 _determine_promotion(result, trace_id, team_id, sprint_id, prompt_versions_registered, client, failed)

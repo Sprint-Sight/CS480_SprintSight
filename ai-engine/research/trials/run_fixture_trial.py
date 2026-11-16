@@ -17,11 +17,13 @@ from pathlib import Path
 
 import mlflow
 from fastapi import BackgroundTasks
+from mlflow.exceptions import MlflowException
 
 from evaluation.benchmarks.synthetic_v2 import FIXTURES_TEAMS
 from evaluation.online.promote import judge_and_promote_trace
 from llmops.prompt_registry import get_production_prompt
 from prompts.dimension_criteria import DIMENSIONS
+from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
 from services.evaluator import evaluate_sprint
 
@@ -40,7 +42,7 @@ async def run_fixture_trial(model_name: str, experiment_name: str = "Fixture tes
             trace_ids: list[str] = []  # fresh per run so a judge task only sees its own traces
             try:
                 assessment, prompt_versions_registered = await evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, prompts)
-            except (RuntimeError, ValueError, OSError, KeyError, TypeError, AttributeError) as e:
+            except (AllDimensionsFailedError, MlflowException, RuntimeError, ValueError, OSError, KeyError, TypeError, AttributeError) as e:
                 print(f"  Error evaluating '{model_name}' against {bundle.team_id}: {e}, SKIPPED")
                 continue
             print(f"  trace_ids={trace_ids}  overall_score={assessment.overall_score}")

@@ -29,6 +29,7 @@ Audience = Literal["production", "research"]
 GRADE_COL = "grade_penalised_mae/value"
 HALLUCINATION_COL = "citation_hallucination_rate/value"
 JUDGE_FAILURE_CLASS_COL = "citation_judge_failure_class/value"  # set only when the judge call failed
+FEEDBACK_JUDGE_FAILURE_CLASS_COL = "judge_failure_class/value"   # same, from the sprint-feedback judge
 SEVERITY_WEIGHTED_COL = "citation_severity_weighted_rate/value"
 SEVERITY_WEIGHTED_INCL_DROPPED_COL = "citation_severity_weighted_rate_incl_dropped/value"
 CITATION_COUNT_COL = "citation_count/value"
