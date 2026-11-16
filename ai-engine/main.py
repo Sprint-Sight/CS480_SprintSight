@@ -30,8 +30,7 @@ from fastapi.responses import JSONResponse
 
 from api import assessment
 from evaluation.online.scheduler import start_judge_worker, stop_judge_worker
-from llmops import experiments
-from llmops.mlflow_config import start_mlflow
+from llmops.mlflow_config import configure_mlflow
 from llmops.prompt_registry import register_all_dimension_prompts
 from services.llm_client import (
     check_ollama_health,
@@ -59,16 +58,13 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager # Allows us to define startup and shutdown logic for the FastAPI app
 async def lifespan(app: FastAPI): # Initialise things that should exist for the app's entire lifetime
-    start_mlflow(
-        experiment_name=experiments.STARTUP,
-        name="sprint_assessment_prompt", 
-        template="""\
-You are an expert agile coach evaluating team performance.
-Analyze the following sprint bundle and output a score:
-{{ bundle_data }}
-""", 
-        commit_message="Initial prompt bootstrap"
-    )
+    try:
+        # Only points the MLflow client at the tracking server; it registers nothing. The old
+        # "sprint_assessment_prompt" bootstrap added a prompt version on every restart and
+        # nothing ever read it. Real prompts are versioned by register_all_dimension_prompts().
+        configure_mlflow()
+    except Exception:
+        log.exception("Failed to configure MLflow; tracking and prompt versioning may be unavailable.")
 
     try:
         # Versions every rubric dimension's live prompt in MLflow before any
