@@ -300,10 +300,10 @@ considerable time on local hardware.
 The main environment variables are:
 
 ```text
-OLLAMA_BASE_URL=http://ollama:11434/v1
+SPRINTSIGHT_AI_OLLAMA_URL=http://ollama:11434/v1   # container's OLLAMA_BASE_URL; set in .env (HPC: host.docker.internal)
 OLLAMA_TIMEOUT_SECONDS=300
 DEFAULT_MODEL_NAME=sprintsight-qwen
-MLFLOW_TRACKING_URI=http://mlflow_service:5000
+# MLFLOW_TRACKING_URI is fixed to http://mlflow_service:5000 inside the container
 MLFLOW_EXPERIMENT_NAME=sprintsight_experiment
 LLM_AUDIT_LOG_DIR=/app/audit_logs
 LLM_EVIDENCE_MODE=packed            # or legacy (30-commit JSON sample)

@@ -78,11 +78,15 @@ services: # Separate containers to run
       # IMPROVEMENT: Add restart policy
       restart: unless-stopped
       environment:
-        # Fallback to the Docker service name 'ollama' instead of localhost
-        - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434/v1}
-        
-        # Fallback to the Docker service name 'mlflow' instead of localhost
-        - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow_service:5000}
+        # Container-side Ollama URL. Deliberately NOT read from OLLAMA_BASE_URL: that name is what
+        # the host-side research CLIs export (http://localhost:11435/v1), and inside the container
+        # localhost is the container itself, so every dimension would fail with infra_unavailable.
+        # Set SPRINTSIGHT_AI_OLLAMA_URL in .env for HPC mode (hpc-dev.sh writes it).
+        - OLLAMA_BASE_URL=${SPRINTSIGHT_AI_OLLAMA_URL:-http://ollama:11434/v1}
+
+        # Always the compose service name: no interpolation, so a host-side
+        # MLFLOW_TRACKING_URI=http://localhost:5000 can never leak into the container.
+        - MLFLOW_TRACKING_URI=http://mlflow_service:5000
         
         # Add missing model variable (defaults to llama3 if not in .env)
         - DEFAULT_MODEL_NAME=${DEFAULT_MODEL_NAME:-sprintsight-qwen}
@@ -123,14 +127,15 @@ services: # Separate containers to run
       image: sprintsight-mlflow:3.16.1
       # --backend-store-uri points to the Postgres container; the driver is named so the dialect
       # does not depend on the SQLAlchemy version's default for plain `postgresql://`.
-      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql+psycopg2://user:pass@db:5432/sprintsight
+      command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*' --backend-store-uri postgresql+psycopg2://user:pass@db:5432/sprintsight --artifacts-destination /mlartifacts
       environment:
         - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME:-sprintsight_experiment}
         - MLFLOW_DISABLE_TELEMETRY=true
         - DO_NOT_TRACK=true
       volumes:
-        # The server's working directory is "/", so its default artifact dir is /mlartifacts.
-        # Without a volume, run artifacts are lost whenever the container is recreated.
+        # --artifacts-destination /mlartifacts (see command) names the directory explicitly, so
+        # this volume does not depend on the server's working directory. Without the volume,
+        # run artifacts are lost whenever the container is recreated.
         - mlflow_artifacts:/mlartifacts
       ports:
         - "5000:5000"

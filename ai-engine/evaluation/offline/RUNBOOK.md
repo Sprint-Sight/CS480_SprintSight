@@ -15,8 +15,8 @@ cd ai-engine
 
 | Variable | Why | Value |
 |---|---|---|
-| `OLLAMA_BASE_URL` | **The #1 gotcha.** `.env` holds the value the *Docker container* uses (`http://host.docker.internal:11435/v1`). The research CLIs run on the **host**, where that name does not resolve. | host + HPC tunnel: `http://localhost:11435/v1`<br>host + local Ollama: `http://localhost:11434/v1` |
-| `MLFLOW_TRACKING_URI` | Defaults to `http://localhost:5000` (`llmops/mlflow_config.py`). MLflow 3.16 **refuses** a bare `./mlruns` file store. | `http://localhost:5000` (server), or `sqlite:///mlflow.db` offline |
+| `OLLAMA_BASE_URL` | **The #1 gotcha.** `.env` holds the *Docker container's* value under a different name, `SPRINTSIGHT_AI_OLLAMA_URL` (`http://host.docker.internal:11435/v1`), so exporting this variable on the host is safe for `docker compose up`. The research CLIs run on the **host**, where `host.docker.internal` does not resolve. | host + HPC tunnel: `http://localhost:11435/v1`<br>host + local Ollama: `http://localhost:11434/v1` |
+| `MLFLOW_TRACKING_URI` | Defaults to `http://localhost:5000` (`llmops/mlflow_config.py`). MLflow 3.16 **refuses** a bare `./mlruns` file store. The container ignores this variable (compose pins it to `http://mlflow_service:5000`). | `http://localhost:5000` (server), or `sqlite:///mlflow.db` offline |
 | `SPRINTSIGHT_JUDGE_MODEL` | Judge tag. Must not be a llama derivative — see §2. | leave unset: `sprintsight-judge-phi` |
 | `SPRINTSIGHT_JUDGE_BUNDLE_CHARS` | Budget for the evidence view (default 32000). The judge is shown the *candidate's* sampled commits, not the raw bundle, so this rarely bites. Do **not** raise it to "fix" truncation — the full real-sprint bundle renders at up to 2.4 MB. | leave |
 | `SPRINTSIGHT_JUDGE_NUM_CTX` | **Required, and easy to miss.** Sent as Ollama `options.num_ctx`. Ollama applies a small default and truncates an over-long prompt *silently*, which would defeat every budget above. Must not exceed the judge's real ceiling. | `16384` for sprintsight-judge-phi<br>`32768` for qwen2.5:14b-instruct<br>`0` to let Ollama decide |
