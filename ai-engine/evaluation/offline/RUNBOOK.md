@@ -15,8 +15,8 @@ cd ai-engine
 
 | Variable | Why | Value |
 |---|---|---|
-| `OLLAMA_BASE_URL` | **The #1 gotcha.** `.env` holds the value the *Docker container* uses (`http://host.docker.internal:11435/v1`). The research CLIs run on the **host**, where that name does not resolve. | host + HPC tunnel: `http://localhost:11435/v1`<br>host + local Ollama: `http://localhost:11434/v1` |
-| `MLFLOW_TRACKING_URI` | Defaults to `http://localhost:5000` (`llmops/mlflow_config.py`). MLflow 3.16 **refuses** a bare `./mlruns` file store. | `http://localhost:5000` (server), or `sqlite:///mlflow.db` offline |
+| `OLLAMA_BASE_URL` | **The #1 gotcha.** `.env` holds the *Docker container's* value under a different name, `SPRINTSIGHT_AI_OLLAMA_URL` (`http://host.docker.internal:11435/v1`), so exporting this variable on the host is safe for `docker compose up`. The research CLIs run on the **host**, where `host.docker.internal` does not resolve. | host + HPC tunnel: `http://localhost:11435/v1`<br>host + local Ollama: `http://localhost:11434/v1` |
+| `MLFLOW_TRACKING_URI` | Defaults to `http://localhost:5000` (`llmops/mlflow_config.py`). MLflow 3.16 **refuses** a bare `./mlruns` file store. The container ignores this variable (compose pins it to `http://mlflow_service:5000`). | `http://localhost:5000` (server), or `sqlite:///mlflow.db` offline |
 | `SPRINTSIGHT_JUDGE_MODEL` | Judge tag. Must not be a llama derivative — see §2. | leave unset: `sprintsight-judge-phi` |
 | `SPRINTSIGHT_JUDGE_BUNDLE_CHARS` | Budget for the evidence view (default 32000). The judge is shown the *candidate's* sampled commits, not the raw bundle, so this rarely bites. Do **not** raise it to "fix" truncation — the full real-sprint bundle renders at up to 2.4 MB. | leave |
 | `SPRINTSIGHT_JUDGE_NUM_CTX` | **Required, and easy to miss.** Sent as Ollama `options.num_ctx`. Ollama applies a small default and truncates an over-long prompt *silently*, which would defeat every budget above. Must not exceed the judge's real ceiling. | `16384` for sprintsight-judge-phi<br>`32768` for qwen2.5:14b-instruct<br>`0` to let Ollama decide |
@@ -279,6 +279,28 @@ with the filter to use when the pooled runs should not be averaged together:
   runs, so the examples differ. Re-run the older conditions on the current
   export, or analyse one version with `--filter 'params.dataset_hash = "<hash>"'`;
 * **more than one phase**, e.g. `preliminary` runs next to the `final` sweep.
+
+`analyze` writes two comparison tables. Use `comparison_table_complete.csv`
+for `overall_score`:
+
+* `comparison_table.csv` pools every row. `overall_score` of a **partial**
+  assessment (some dimensions scored, the rest failed) is the mean over the
+  dimensions that did score, so it is not comparable with a complete
+  assessment's. The `n_partial` column says how many such rows each model has,
+  and `analyze` prints a NOTE when it is not zero.
+* `comparison_table_complete.csv` keeps only rows with `format_valid == True`
+  (all six dimensions scored). `n_partial` and `n_rows_total` show what was
+  left out, so a model that fails often cannot look good on the rows that
+  worked. A model with no complete row stays in the table with `n_examples` 0.
+* `overall_score` on `d_real_sprints` is the engine's own grade: there is no
+  gold, so it measures agreement between models, not accuracy.
+* **Citation groundedness is NaN for an assessment with no citations** (it used
+  to be 1.0, "nothing to check" counted as perfect), so the mean and its `n`
+  cover only rows that cited something. Rows already in MLflow with 1.0 and
+  zero citations are converted on load. The old definition stays available as
+  `groundedness_rate_legacy` / "Citation groundedness, no citations = 1.0
+  (legacy)", so earlier tables can be reproduced; numbers quoted from before
+  this change are higher for models that sometimes cite nothing.
 
 Filter on `params.phase`, not `tags.phase`: until the dataset's own label was
 renamed `dataset_phase`, it overwrote the `phase` tag (every run was tagged

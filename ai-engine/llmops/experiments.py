@@ -14,10 +14,6 @@ Not listed:
 # Assessment runs, their traces and the judge runs for those traces all live here.
 PRODUCTION = "SprintSight Evaluations"
 
-# Passed to start_mlflow() at application startup. start_mlflow() registers the bootstrap
-# prompt only and does not set the experiment (it is process-global, see run_tracking.py).
-STARTUP = "Sprintsight evaluation"
-
 # evaluation/offline: model-comparison runs (runner, cli run/analyze).
 MODEL_COMPARISON = "sprintsight-model-comparison"
 

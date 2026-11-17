@@ -153,7 +153,7 @@ def attach_llm_grounding(
 
         from evaluation.judges.citation_grounding import judge_assessment
     except Exception:
-        log.warning("citation_ground_custom_judge unavailable; skipping.", exc_info=True)
+        log.warning("citation_grounding judge unavailable; skipping.", exc_info=True)
         return frame
 
     enriched = frame.copy()

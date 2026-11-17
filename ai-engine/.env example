@@ -1,18 +1,28 @@
 ## CREATE COPY OF THIS FILE
 ## RENAME to .env
 
-# ── Local mode (Ollama runs in Docker Compose) ──
-OLLAMA_BASE_URL="http://ollama:11434/v1"
+# ── Ollama URL used by the sprintsight_ai CONTAINER ──
+# docker-compose.yaml reads SPRINTSIGHT_AI_OLLAMA_URL (not OLLAMA_BASE_URL) so that the
+# OLLAMA_BASE_URL / MLFLOW_TRACKING_URI you export in a host shell for the research CLIs
+# (http://localhost:...) can never leak into the container, where localhost is the container itself.
+# Local mode (Ollama runs in Docker Compose) is the default; leave it unset or:
+# SPRINTSIGHT_AI_OLLAMA_URL="http://ollama:11434/v1"
 OLLAMA_API_KEY=<CREATE_YOUR_OWN_OLLAMA_API_KEY>
 
 # ── HPC mode (Ollama on the GPU cluster via SSH tunnel) ──
-# Uncomment these and comment out the local-mode line above.
+# Uncomment this (hpc/hpc-dev.sh writes it for you).
 # The port must match LOCAL_OLLAMA_PORT in .env.hpc (default 11435).
-# OLLAMA_BASE_URL="http://host.docker.internal:11435/v1"
+# SPRINTSIGHT_AI_OLLAMA_URL="http://host.docker.internal:11435/v1"
 
 # MLflow
+# The container always uses http://mlflow_service:5000 (fixed in docker-compose.yaml).
+# MLFLOW_TRACKING_URI below is only for host-side tools run outside Docker.
 MLFLOW_TRACKING_URI="http://localhost:5000"
 MLFLOW_EXPERIMENT_NAME="sprintsight"
+
+# Research only (offline evaluation): lets the citation-grounding judge use an OpenAI
+# endpoint on research fixtures. Default 0 = off; leave it off for the running service.
+# SPRINTSIGHT_ALLOW_REMOTE_JUDGE=0
 
 # Debug: print full ingested bundle on /assess/sprint/data
 LOG_BUNDLE_DISPLAY=false

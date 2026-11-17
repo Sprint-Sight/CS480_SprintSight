@@ -41,10 +41,11 @@ def citations_dropped(assessment: SprintAssessment) -> int:
 
 
 def groundedness_rate(bundle: ArtifactBundle, assessment: SprintAssessment) -> tuple[float, int, int]:
-    """Return (rate, grounded, total). Rate is 1.0 if there are no
-    citations — that is NOT "perfect grounding", it's "nothing to check";
-    callers that want to count no-citations as a failure should look at
-    `total` directly.
+    """Return (rate, grounded, total). Rate is NaN if there are no citations:
+    "nothing to check" is not "perfect grounding", and a model that cites nothing
+    must not outrank one that cites and gets some wrong. Averages skip NaN, and
+    `total` (0 here) says how many rows were skipped. Before this was NaN the rate
+    was 1.0, which the analysis layer still exposes as `groundedness_rate_legacy`.
 
     `total` is every citation the model produced: the ones still on the assessment plus the
     ones the engine dropped as fabricated. The engine filters with the same identifier check
@@ -65,7 +66,7 @@ def groundedness_rate(bundle: ArtifactBundle, assessment: SprintAssessment) -> t
     dropped = citations_dropped(assessment)
     total = surviving + dropped
     grounded = surviving - ungrounded
-    rate = (grounded / total) if total else 1.0
+    rate = (grounded / total) if total else float("nan")
     return rate, grounded, total
 
 
@@ -149,7 +150,10 @@ def summarise_example(bundle: ArtifactBundle, assessment: SprintAssessment | Non
     if assessment is not None:
         row.update(format_validity(assessment))
         rate, grounded, total = groundedness_rate(bundle, assessment)
-        row["groundedness_rate"] = rate
+        # None, not NaN: json.dumps writes a bare `NaN` token, which is not valid JSON, and this
+        # row goes to per_example.jsonl. pandas reads null back as NaN.
+        row["groundedness_rate"] = None if total == 0 else rate
+        row["groundedness_rate_legacy"] = 1.0 if total == 0 else rate  # old "no citations = 1.0"
         row["groundedness_citations_grounded"] = grounded
         row["groundedness_citations_total"] = total
         row["citations_dropped"] = citations_dropped(assessment)

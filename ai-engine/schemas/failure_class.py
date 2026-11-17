@@ -18,6 +18,7 @@ class FailureClass(StrEnum):
     TIMEOUT = "timeout"                        # no response inside the client timeout (transient)
     INFRA_UNAVAILABLE = "infra_unavailable"    # connection refused, 5xx, rate limited (transient)
     CONTEXT_TRUNCATED = "context_truncated"    # the prompt did not fit / was silently cut by the server
+    REMOTE_JUDGE_DISABLED = "remote_judge_disabled"  # judge would call a remote provider without SPRINTSIGHT_ALLOW_REMOTE_JUDGE=1 (config, not transient)
     UNKNOWN = "unknown"
 
 
@@ -42,6 +43,7 @@ FAILURE_DESCRIPTIONS: dict[FailureClass, str] = {
     FailureClass.TIMEOUT: "the model did not respond in time",
     FailureClass.INFRA_UNAVAILABLE: "the model service was unavailable",
     FailureClass.CONTEXT_TRUNCATED: "the evidence did not fit in the model's context window",
+    FailureClass.REMOTE_JUDGE_DISABLED: "the hosted judge is disabled in this deployment",
     FailureClass.UNKNOWN: "an unexpected error occurred",
 }
 

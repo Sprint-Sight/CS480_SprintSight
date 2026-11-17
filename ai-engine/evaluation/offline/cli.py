@@ -69,6 +69,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     from evaluation.offline.analysis import (
         DEFAULT_METRICS,
         comparison_table,
+        comparison_table_complete,
         consistency_summary,
         load_runs,
         mixed_run_warnings,
@@ -95,6 +96,15 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     table_path = out_dir / "comparison_table.csv"
     table.to_csv(table_path)
     print(f"Wrote {table_path}")
+
+    complete_table = comparison_table_complete(df)
+    complete_path = out_dir / "comparison_table_complete.csv"
+    complete_table.to_csv(complete_path)
+    print(f"Wrote {complete_path} (rows that scored every dimension only)")
+    partial_total = int(table["n_partial"].sum())
+    if partial_total:
+        print(f"NOTE: {partial_total} partially scored row(s) are pooled in comparison_table.csv; "
+              f"cite comparison_table_complete.csv for overall_score.")
 
     for spec in DEFAULT_METRICS:
         pw = pairwise_ci_table(df, metric=spec.column)

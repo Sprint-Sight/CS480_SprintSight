@@ -23,7 +23,7 @@ model-comparison harness and feeds the final report.
 |---|---|
 | `datasets.py` | Named + hashed datasets. `d1_fixtures` wraps the existing 5-fixture set; add `d2_*`/`d3_*` by appending to `DATASETS`. |
 | `runner.py` | `run_evaluation(...)` — ONE condition per MLflow run (model × dataset × prompt × seed). Judge-independent metrics computed inline. |
-| `metrics.py` | Per-example scoring: format validity, groundedness, dimension completion, overall score. All without the external judge. |
+| `metrics.py` | Per-example scoring: format validity, groundedness (NaN when the assessment cites nothing; the old 1.0 is `groundedness_rate_legacy`), dimension completion, overall score. All without the external judge. |
 | `analysis.py` | Loads per-example rows from MLflow runs, builds comparison tables, computes paired bootstrap CIs. |
 | `plots.py` | Four report-ready plots (latency, format-validity, token distribution, pairwise CIs). |
 | `cli.py` | `python -m evaluation.offline.cli …` driver. |
@@ -138,7 +138,8 @@ python -m evaluation.offline.cli analyze \
   ollama_version, dataset_hash, prompt_hash, git_sha, python_version,
   seed, repeats, phase). Params are immutable per run.
 - **Metrics:** run-level aggregates only (`format_validity_rate`,
-  `latency_mean_s`, `latency_p95_s`, `groundedness_rate_mean`,
+  `latency_mean_s`, `latency_p95_s`, `groundedness_rate_mean` (over rows that
+  cited something),
   `overall_score_mean`, `dimension_completion_rate_mean`,
   `error_rate`, `n_examples`). Per-example numbers stay in the artifact.
 - **Tags:** filters you'll actually use (`model`, `dataset`,
