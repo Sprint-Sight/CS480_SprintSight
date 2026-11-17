@@ -22,7 +22,7 @@ Dependencies are functions that FastAPI calls to provide arguments to route hand
 They can also be used as decorators on route handlers to enforce authentication,
 authorization, and other preconditions.
 This file contains dependencies that are specific to the Insights API, such as
-getting the Insights repository,
+getting the Insights repository,   
 '''
 
 def get_insights_repository(request: Request) -> InsightsRepository:
