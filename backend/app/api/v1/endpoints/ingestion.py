@@ -9,9 +9,10 @@ from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.core.credential_crypto import CredentialDecryptionError, decrypt_secret
-from app.core.storage import storage
 from app.dependencies.auth import (
+    ensure_course_access,
     get_action_audit_repository,
+    get_git_identity_repository,
     get_instructor_jira_credentials_repository,
     get_jira_ingestion_repository,
     get_metrics_repository,
@@ -21,6 +22,7 @@ from app.dependencies.auth import (
 )
 from app.repositories.interfaces import (
     ActionAuditRepository,
+    GitIdentityRepository,
     InstructorJiraCredentialsRepository,
     JiraIngestionRunRecord,
     JiraIngestionRunRepository,
@@ -37,11 +39,18 @@ from app.schemas.assessment import (
     JiraRawSyncRequest,
     PaginationMetadata,
 )
-from app.schemas.auth import Role
 from app.schemas.jira_burndown import JiraBurndownResponse
 from app.services.auditLogService.service import append_action_audit
 from app.services.gitlabGithub.service import ingest_github_metrics, resolve_local_repository_path
-from app.services.jiraService.normalizer import JiraNormalizationError, normalize_jira_envelope
+from app.services.identityService.service import (
+    apply_to_commits,
+    apply_to_snapshot,
+    build_resolver,
+    normalize_identity_value,
+    normalize_run,
+    relink_project,
+)
+from app.services.jiraService.normalizer import JiraNormalizationError
 from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
 
 router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
@@ -189,6 +198,7 @@ def process_jira_run(
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
 ) -> JiraIngestionRun:
     project = _authorized_project(project_id, current_user, projects)
     run = runs.get_run(project_id, sprint_id, run_id)
@@ -197,53 +207,8 @@ def process_jira_run(
             status_code=status.HTTP_404_NOT_FOUND, detail="Jira ingestion run not found."
         )
     try:
-        envelope = json.loads(storage.download(run.raw_bucket, run.raw_object_key))
-        # Build student lookup maps from project members only (active students
-        # who belong to this specific project).
-        member_ids = projects.list_member_ids(project.id)
-        project_member_ids: set[str] = set()
-        users_by_id: dict[str, UserRecord] = {}
-        ids_by_email: dict[str, list[str]] = {}
-        ids_by_name: dict[str, list[str]] = {}
-        for member_id in member_ids:
-            user = users.get_by_id(member_id)
-            if user and user.is_active and user.role == Role.STUDENT:
-                project_member_ids.add(member_id)
-                users_by_id[member_id] = user
-                if user.email:
-                    ids_by_email.setdefault(user.email.strip().lower(), []).append(member_id)
-                if user.full_name:
-                    ids_by_name.setdefault(user.full_name.strip().lower(), []).append(member_id)
-        snapshot = normalize_jira_envelope(
-            envelope,
-            story_points_field=(
-                envelope.get("story_points_field") or get_settings().jira_story_points_field or None
-            ),
-            sprint_field=(
-                envelope.get("sprint_field")
-                or get_settings().jira_sprint_field
-                or "customfield_10020"
-            ),
-            completion_date_field=(
-                envelope.get("completion_date_field")
-                or get_settings().jira_completed_date_field
-                or None
-            ),
-            sprint_start_date_field=(
-                envelope.get("sprint_start_date_field")
-                or get_settings().jira_sprint_start_date_field
-                or None
-            ),
-            sprint_end_date_field=(
-                envelope.get("sprint_end_date_field")
-                or get_settings().jira_sprint_end_date_field
-                or None
-            ),
-            users_by_id=users_by_id,
-            ids_by_email=ids_by_email,
-            ids_by_name=ids_by_name,
-            project_member_ids=project_member_ids,
-        )
+        resolver = build_resolver(project.id, projects, users, identities)
+        snapshot = normalize_run(run, resolver)
     except (json.JSONDecodeError, UnicodeDecodeError, JiraNormalizationError) as exc:
         runs.update_processed_run(
             project_id, sprint_id, run_id, "failed", datetime.now(UTC), None, str(exc), None
@@ -291,6 +256,7 @@ def reprocess_all_jira_runs(
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
 ) -> list[ReprocessRunResult]:
     """Re-process all Jira ingestion runs for a project with the current
     student-matching logic.
@@ -306,61 +272,13 @@ def reprocess_all_jira_runs(
         return []
 
     results: list[ReprocessRunResult] = []
+    resolver = build_resolver(project.id, projects, users, identities)
 
     for run in all_runs:
         run_id = run.id
         sprint_id = run.sprint_id
         try:
-            envelope = json.loads(storage.download(run.raw_bucket, run.raw_object_key))
-
-            # Build student lookup maps from project members only
-            member_ids = projects.list_member_ids(project.id)
-            project_member_ids: set[str] = set()
-            users_by_id: dict[str, UserRecord] = {}
-            ids_by_email: dict[str, list[str]] = {}
-            ids_by_name: dict[str, list[str]] = {}
-            for member_id in member_ids:
-                user = users.get_by_id(member_id)
-                if user and user.is_active and user.role == Role.STUDENT:
-                    project_member_ids.add(member_id)
-                    users_by_id[member_id] = user
-                    if user.email:
-                        ids_by_email.setdefault(user.email.strip().lower(), []).append(member_id)
-                    if user.full_name:
-                        ids_by_name.setdefault(user.full_name.strip().lower(), []).append(member_id)
-
-            snapshot = normalize_jira_envelope(
-                envelope,
-                story_points_field=(
-                    envelope.get("story_points_field")
-                    or get_settings().jira_story_points_field
-                    or None
-                ),
-                sprint_field=(
-                    envelope.get("sprint_field")
-                    or get_settings().jira_sprint_field
-                    or "customfield_10020"
-                ),
-                completion_date_field=(
-                    envelope.get("completion_date_field")
-                    or get_settings().jira_completed_date_field
-                    or None
-                ),
-                sprint_start_date_field=(
-                    envelope.get("sprint_start_date_field")
-                    or get_settings().jira_sprint_start_date_field
-                    or None
-                ),
-                sprint_end_date_field=(
-                    envelope.get("sprint_end_date_field")
-                    or get_settings().jira_sprint_end_date_field
-                    or None
-                ),
-                users_by_id=users_by_id,
-                ids_by_email=ids_by_email,
-                ids_by_name=ids_by_name,
-                project_member_ids=project_member_ids,
-            )
+            snapshot = normalize_run(run, resolver)
 
             runs.update_processed_run(
                 project_id,
@@ -420,6 +338,8 @@ def get_cleaned_jira_run(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
 ) -> JiraCleanedSnapshot:
     _authorized_project(project_id, current_user, projects)
     run = runs.get_run(project_id, sprint_id, run_id)
@@ -432,7 +352,11 @@ def get_cleaned_jira_run(
             status_code=status.HTTP_409_CONFLICT,
             detail="Jira ingestion run has not been processed.",
         )
-    return run.cleaned_snapshot
+    # Re-resolve ticket owners against the team as it is now, so a student who joined (or left)
+    # after the snapshot was stored is attributed correctly without re-syncing.
+    snapshot = run.cleaned_snapshot.model_copy(deep=True)
+    apply_to_snapshot(snapshot, build_resolver(project_id, projects, users, identities))
+    return snapshot
 
 
 # Diffs are captured for the AI engine only. Leaving them out of API
@@ -502,6 +426,8 @@ def get_repo_ingestion_data(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
     pagination: bool = Query(default=False),
     limit: int | None = Query(default=None, ge=1, le=200),
     offset: int | None = Query(default=None, ge=0),
@@ -560,6 +486,8 @@ def get_repo_ingestion_data(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Ingestion data not found."
         )
+    # Attribution is resolved from the team as it is now, not from what was stored at sync time.
+    apply_to_commits(metrics.commits, build_resolver(project_id, projects, users, identities))
     return IngestionDataResponse(
         course_id=metrics.course_id,
         project_id=metrics.project_id,
@@ -591,6 +519,7 @@ def sync_repository_ingestion(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
     if not project:
@@ -599,6 +528,7 @@ def sync_repository_ingestion(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course."
         )
+    ensure_course_access(faculty_user, project.course_id, projects)
     if not project.local_repo_path:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -609,7 +539,7 @@ def sync_repository_ingestion(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     github_metrics = ingest_github_metrics(
-        payload, repository_path, metrics_repository, projects, users
+        payload, repository_path, metrics_repository, projects, users, identities
     )
     jira_metrics = enrich_jira_metrics(payload)
     append_action_audit(
@@ -631,3 +561,93 @@ def sync_repository_ingestion(
         },
         "jira_metrics": jira_metrics,
     }
+
+
+class GitIdentityIn(BaseModel):
+    kind: str  # "email" or "name"
+    value: str
+    student_id: str
+
+
+def _identity_json(record) -> dict:
+    return {
+        "id": record.id,
+        "kind": record.kind,
+        "value": record.value,
+        "student_id": record.student_id,
+    }
+
+
+@router.get("/identities/{project_id}")
+def list_git_identities(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+) -> dict:
+    """Overrides set for this team, plus commit authors nobody could be matched to."""
+    project = _authorized_project(project_id, current_user, projects)
+    resolver = build_resolver(project.id, projects, users, identities)
+    unmatched = [
+        stat
+        for stat in metrics_repository.list_author_stats(project.id)
+        if resolver.resolve(stat["author"], stat["author_email"]) is None
+    ]
+    return {
+        "identities": [_identity_json(r) for r in identities.list_identities(project.id)],
+        "unmatched_authors": sorted(unmatched, key=lambda e: (-e["commits"], e["author"])),
+        "members": [
+            {"id": user.id, "full_name": user.full_name} for user in resolver.members.values()
+        ],
+    }
+
+
+@router.put("/identities/{project_id}")
+def put_git_identity(
+    project_id: str,
+    payload: GitIdentityIn,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+) -> dict:
+    project = _authorized_project(project_id, current_user, projects)
+    if payload.kind not in ("email", "name"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="kind must be email or name."
+        )
+    value = normalize_identity_value(payload.kind, payload.value)
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="value must not be empty."
+        )
+    if payload.student_id not in projects.list_member_ids(project.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The student must be a member of this project.",
+        )
+    record = identities.upsert_identity(project.id, payload.kind, value, payload.student_id)
+    relink_project(project.id, projects, users, identities, metrics_repository, jira_runs)
+    return _identity_json(record)
+
+
+@router.delete("/identities/{project_id}/{identity_id}")
+def delete_git_identity(
+    project_id: str,
+    identity_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+    metrics_repository: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+) -> dict:
+    project = _authorized_project(project_id, current_user, projects)
+    if not identities.delete_identity(project.id, identity_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found.")
+    relink_project(project.id, projects, users, identities, metrics_repository, jira_runs)
+    return {"deleted": identity_id}

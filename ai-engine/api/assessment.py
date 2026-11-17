@@ -12,20 +12,23 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import mlflow
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from api.auth import require_service_token
 from api.disconnect import ClientDisconnected, run_unless_disconnected
 from evaluation.online.scheduler import get_arbiter, get_judge_queue
 from llmops import experiments
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.commit_info import CommitInfo
+from schemas.failure_class import describe_failure
 from schemas.jira import JiraTicket
 from schemas.modelname import ModelName
 from schemas.peer_evaluation import PeerEvaluation
 from schemas.repo_snapshot import RepoSnapshot
 from schemas.sprint_assessment import SprintAssessment
 from services.evaluator import evaluate_sprint
+from services.failures import classify_failure
 
 log = logging.getLogger("sprintsight.router.assessment")
 
@@ -34,7 +37,8 @@ LOG_BUNDLE_DISPLAY = os.getenv("LOG_BUNDLE_DISPLAY", "false").strip().lower() in
 
 router = APIRouter( # Create router (defines path group)
     prefix="/assess",
-    tags=["Sprint Assessment"]
+    tags=["Sprint Assessment"],
+    dependencies=[Depends(require_service_token)],
 )
 
 class BackendSprintContext(BaseModel):
@@ -138,4 +142,14 @@ async def assess_backend_data_endpoint(
         raise HTTPException(status_code=499, detail="Client disconnected; assessment cancelled.") from None
     except Exception as exc:
         log.exception("AI-engine backend assessment failed.")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # The full error stays in this log. The caller gets a failure class and a fixed sentence:
+        # exception text can carry URLs, prompts and student data.
+        failure_class = classify_failure(exc)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "assessment_failed",
+                "failure_class": failure_class.value,
+                "message": f"The assessment failed: {describe_failure(failure_class)}.",
+            },
+        ) from exc

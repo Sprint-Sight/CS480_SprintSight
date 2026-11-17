@@ -135,6 +135,35 @@ def test_send_assessment_to_ai_engine_uses_single_transport_call_with_bounded_ti
     assert called["timeout"].read is not None and called["timeout"].read > 0
 
 
+def test_send_assessment_sends_the_service_token_when_configured(monkeypatch) -> None:
+    seen = {}
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {}
+
+    def fake_post(url, json=None, timeout=None, headers=None):
+        seen["headers"] = headers
+        return DummyResponse()
+
+    monkeypatch.setattr("app.services.middleManService.service.httpx.post", fake_post)
+    monkeypatch.setattr(
+        "app.services.middleManService.service.get_settings",
+        lambda: SimpleNamespace(
+            ai_engine_url="http://engine:8001",
+            default_model_name="m",
+            ai_engine_service_token="s3cret",
+        ),
+    )
+
+    send_assessment_to_ai_engine({"sprint_context": {"project_id": "demo"}}, "m")
+
+    assert seen["headers"] == {"X-Service-Token": "s3cret"}
+
+
 def test_assess_and_override_writes_audit(
     monkeypatch, tmp_path: Path, override_user_repository
 ) -> None:
@@ -164,6 +193,7 @@ def test_assess_and_override_writes_audit(
     )
     monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(repository_root))
     get_settings.cache_clear()
+    override_user_repository.assign_instructor("cs480", "u-faculty-1")
     override_user_repository.create_project(
         ProjectRecord(
             id="proj-a",
@@ -424,6 +454,7 @@ def test_assessment_job_contract_returns_accepted_and_job_id(
     )
     monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(repository_root))
     get_settings.cache_clear()
+    override_user_repository.assign_instructor("cs480", "u-faculty-1")
     override_user_repository.create_project(
         ProjectRecord(
             id="proj-a",

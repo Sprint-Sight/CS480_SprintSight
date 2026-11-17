@@ -18,6 +18,7 @@ from app.repositories.in_memory import (
 from app.repositories.interfaces import (
     AssessmentRepository,
     DocumentRepository,
+    GitIdentityRepository,
     InstructorModelSelectionRepository,
     JiraIngestionRunRepository,
     ManualTextRepository,
@@ -392,6 +393,7 @@ def run_assessment_job(
     user_repository: UserRepository | None = None,
     project_repository: ProjectRepository | None = None,
     notification_service: EmailTransport | None = None,
+    identity_repository: GitIdentityRepository | None = None,
     mlflow_gateway: "MlflowGateway | None" = None,
 ) -> None:
     """Background worker that collects the same input that the old synchronous endpoint used,
@@ -421,7 +423,16 @@ def run_assessment_job(
         job_repo.update_job(
             job_id, status="collecting_data", progress=30, current_stage="collecting_data"
         )
-        metrics = ingest_github_metrics(payload, repository_path, metrics_repository)
+        # Pass the member/user repositories so re-saving the run re-links commits to students
+        # instead of replacing earlier attribution with NULL.
+        metrics = ingest_github_metrics(
+            payload,
+            repository_path,
+            metrics_repository,
+            project_repository,
+            user_repository,
+            identity_repository,
+        )
         _ = enrich_jira_metrics(payload)
         # `artifact_metrics` is reserved for future numeric signals extracted
         # from uploaded artifacts (demo completeness, documentation quality,

@@ -24,6 +24,12 @@ MLFLOW_EXPERIMENT_NAME="sprintsight"
 # endpoint on research fixtures. Default 0 = off; leave it off for the running service.
 # SPRINTSIGHT_ALLOW_REMOTE_JUDGE=0
 
+# Service-to-service secret. If set, /assess/* requires the header X-Service-Token with this value
+# (the backend sends AI_ENGINE_SERVICE_TOKEN from backend/.env). Empty = open, for a local demo only.
+AI_ENGINE_SERVICE_TOKEN=
+# Browser origins allowed to call the engine (comma separated). Empty = none; the backend is not a browser.
+# AI_ENGINE_CORS_ORIGINS=
+
 # Debug: print full ingested bundle on /assess/sprint/data
 LOG_BUNDLE_DISPLAY=false
 

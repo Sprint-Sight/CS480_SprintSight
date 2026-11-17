@@ -31,6 +31,9 @@ JUDGE_OPEN_STATUSES = ("unknown", "pending")
 # The ai-engine's judge queue retries transient failures (Ollama down, a timeout) and a re-run
 # replaces the failed assessments, so a recent 'failed' is re-checked for this long.
 JUDGE_FAILED_RECHECK_HOURS = 24
+# 'stale' and 'no_trace' can be wrong (a judge that finished late, a trace exported late), so recent
+# ones are re-checked, but not on every tick.
+JUDGE_LATE_RECHECK_MINUTES = 5
 MAX_SYNC_ATTEMPTS = 10
 
 def canonical_report_id(report_id: str) -> str:
@@ -319,10 +322,13 @@ class PostgresInsightsRepository:
         with self._pool.connection() as connection:
             rows = connection.execute(
                 _RUN_SELECT + " WHERE r.judge_status IN ('unknown','pending')"
-                " OR (r.judge_status = 'failed'"
-                "     AND r.generated_at > now() - make_interval(hours => %s))"
+                " OR (r.judge_status IN ('failed','stale','no_trace')"
+                "     AND r.trace_id IS NOT NULL"
+                "     AND r.generated_at > now() - make_interval(hours => %s)"
+                "     AND (r.judge_checked_at IS NULL"
+                "          OR r.judge_checked_at < now() - make_interval(mins => %s)))"
                 " ORDER BY r.generated_at DESC LIMIT %s",
-                (JUDGE_FAILED_RECHECK_HOURS, limit),
+                (JUDGE_FAILED_RECHECK_HOURS, JUDGE_LATE_RECHECK_MINUTES, limit),
             ).fetchall()
         return [_run(row) for row in rows]
 
@@ -596,7 +602,14 @@ class InMemoryInsightsRepository: # in-memory (tests)
             generated = run.generated_at
             if generated.tzinfo is None:
                 generated = generated.replace(tzinfo=UTC)
-            return run.judge_status == "failed" and generated > recent
+            if run.trace_id and run.judge_status in ("failed", "stale", "no_trace"):
+                checked = run.judge_checked_at
+                if checked is not None and checked.tzinfo is None:
+                    checked = checked.replace(tzinfo=UTC)
+                quiet = timedelta(minutes=JUDGE_LATE_RECHECK_MINUTES)
+                not_checked_lately = checked is None or checked < datetime.now(UTC) - quiet
+                return generated > recent and not_checked_lately
+            return False
 
         return [run for run in self.list_runs(None) if due(run)][:limit]
 

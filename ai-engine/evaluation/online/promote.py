@@ -73,6 +73,7 @@ def run_judge_and_promotion(experiment_name: str, trace_id: str, team_id: str, p
         failed = _failed_dimensions(client.get_trace(trace_id))
         if len(failed) == len(DIMENSIONS):
             log.info("All dimensions failed for trace %s; skipping judge + promotion.", trace_id)
+            _tag_skipped(client, trace_id)
             return
         results = run_judge_evaluation(experiment_name, client, trace_ids=[trace_id], team_id=team_id, with_judge=True, run_name=f"judge_{trace_id}")
         # MLflow swallows a scorer's error, so "the judge ran" does not mean "the judge worked".
@@ -88,6 +89,17 @@ def run_judge_and_promotion(experiment_name: str, trace_id: str, team_id: str, p
                 _determine_promotion(result, trace_id, team_id, sprint_id, prompt_versions_registered, client, failed)
             except Exception:
                 log.exception("Failed to determine promotion for trace %s", trace_id)
+
+SKIPPED_TAG = "judge.skipped"
+
+
+def _tag_skipped(client: MlflowClient, trace_id: str) -> None:
+    """Without a mark, a skipped trace has no judge result and looks like a judge that never ran."""
+    try:
+        client.set_trace_tag(trace_id, SKIPPED_TAG, "all_dimensions_failed")
+    except Exception:
+        log.exception("Could not tag trace %s as skipped.", trace_id)
+
 
 def judge_and_promote_trace(experiment_name: str, trace_id: str, team_id: str, prompt_versions_registered: dict, client: MlflowClient, sprint_id: str | None = None):
     """Fire-and-forget form kept for the research trial scripts (they pass it to their own

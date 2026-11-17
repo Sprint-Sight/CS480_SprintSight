@@ -365,6 +365,9 @@ def test_score_override_emails_the_affected_student(monkeypatch) -> None:
         recommendations=[],
     )
     app.dependency_overrides[get_assessment_repository]().save_report(report)
+    app.dependency_overrides[get_project_repository]().assign_instructor(
+        "course-email-test", "u-faculty-1"
+    )
     token = client.post(
         "/api/v1/auth/login",
         json={"email": "faculty@sprintsight.edu", "password": "password123"},

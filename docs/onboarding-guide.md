@@ -105,8 +105,7 @@ git clone <sprintsight-repo-url> CS480_SprintSight
 cd CS480_SprintSight
 cp "ai-engine/.env example" ai-engine/.env
 cp ai-engine/.env.hpc.example ai-engine/.env.hpc     # set HPC_USER / HPC_LOGIN_HOST if different
-# backend/.env: create from the variable list in backend/README.md
-# TODO: commit a backend/.env.example (backend/README.md links to one that is missing)
+cp backend/.env.example backend/.env                  # then fill in the secrets
 ```
 
 **Build the AI-engine image while off the VPN.** The VPN blocks Docker Hub

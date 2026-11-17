@@ -9,13 +9,14 @@ from pydriller import Repository  # type: ignore[import-untyped]
 
 from app.repositories.in_memory import metrics_repo
 from app.repositories.interfaces import (
+    GitIdentityRepository,
     IngestionMetricBundle,
     MetricsRepository,
     ProjectRepository,
     UserRepository,
 )
 from app.schemas.assessment import AssessRequest, CommitInfo, FileDiff, IngestionRequest
-from app.schemas.auth import Role
+from app.services.identityService.service import apply_to_commits, build_resolver
 
 # Diff caps keep one huge commit (e.g. an initial scaffold) from bloating the
 # ingestion_commits rows and the AI payload. The AI engine budgets what it
@@ -166,22 +167,29 @@ def _link_commit_authors_to_students(
     project_id: str,
     projects: ProjectRepository,
     users: UserRepository,
+    identities: GitIdentityRepository | None = None,
 ) -> None:
-    member_ids = set(projects.list_member_ids(project_id))
-    resolved_by_email: dict[str, str | None] = {}
+    """Set student_id on each commit from the project's *current* members (see identityService)."""
+    apply_to_commits(commits, build_resolver(project_id, projects, users, identities))
+
+
+def _carry_over_existing_links(
+    commits: list[CommitInfo], metrics_repository: MetricsRepository, payload
+) -> None:
+    """When commits cannot be resolved here (no member/user repositories available), keep the
+    attribution already stored for the same SHA instead of overwriting it with NULL."""
+    try:
+        previous = metrics_repository.get_metrics(
+            payload.course_id, payload.project_id, payload.sprint_id
+        )
+    except Exception:  # noqa: BLE001 - best effort; a missing run simply has nothing to keep
+        return
+    if not previous:
+        return
+    known = {commit.sha: commit.student_id for commit in previous.commits if commit.student_id}
     for commit in commits:
-        normalized_email = _normalize_email(commit.author_email)
-        if not normalized_email:
-            continue
-        commit.author_email = normalized_email
-        if normalized_email not in resolved_by_email:
-            user = users.get_by_email(normalized_email)
-            resolved_by_email[normalized_email] = (
-                user.id
-                if user and user.is_active and user.role == Role.STUDENT and user.id in member_ids
-                else None
-            )
-        commit.student_id = resolved_by_email[normalized_email]
+        if commit.student_id is None and commit.sha in known:
+            commit.student_id = known[commit.sha]
 
 
 def resolve_local_repository_path(local_repo_path: str | None) -> Path | None:
@@ -204,10 +212,14 @@ def ingest_github_metrics(
     metrics_repository: MetricsRepository | None = None,
     projects: ProjectRepository | None = None,
     users: UserRepository | None = None,
+    identities: GitIdentityRepository | None = None,
 ) -> IngestionMetricBundle:
     commits = extract_local_commits(repository_path) if repository_path else []
     if projects and users:
-        _link_commit_authors_to_students(commits, payload.project_id, projects, users)
+        _link_commit_authors_to_students(commits, payload.project_id, projects, users, identities)
+    else:
+        # An assessment re-saves the run; without this it would erase the links a sync made.
+        _carry_over_existing_links(commits, metrics_repository or metrics_repo, payload)
     metrics = IngestionMetricBundle(
         course_id=payload.course_id,
         project_id=payload.project_id,

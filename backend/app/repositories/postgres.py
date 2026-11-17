@@ -1,5 +1,5 @@
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
@@ -14,6 +14,7 @@ from app.repositories.interfaces import (
     DocumentRepository,
     EmailOutboxRecord,
     EmailOutboxRepository,
+    GitIdentityRecord,
     IngestionMetricBundle,
     InstructorJiraCredentialsRecord,
     InstructorJiraCredentialsRepository,
@@ -37,6 +38,8 @@ from app.repositories.interfaces import (
 )
 from app.schemas.assessment import (
     ActionAuditRecord,
+    AssessmentJobEvent,
+    AssessmentJobRecord,
     AssessmentReport,
     AuditRecord,
     JiraCleanedSnapshot,
@@ -1305,6 +1308,26 @@ def ensure_instructor_jira_credentials_schema(pool: ConnectionPool) -> None:
         )
 
 
+def ensure_git_identity_schema(pool: ConnectionPool) -> None:
+    """Instructor overrides that map a Git author email or name to a project member."""
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS project_git_identities (
+                identity_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                kind VARCHAR(8) NOT NULL CHECK (kind IN ('email', 'name')),
+                value VARCHAR(255) NOT NULL,
+                student_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (project_id, kind, value)
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_git_identities_student "
+            "ON project_git_identities(student_id)"
+        )
+
+
 def ensure_peer_evaluation_schema(pool: ConnectionPool) -> None:
     with pool.connection() as connection:
         connection.execute(
@@ -1742,6 +1765,22 @@ class PostgresAssessmentRepository(AssessmentRepository):
             ).fetchone()
             return self._report(row) if row else None
 
+    def get_reports(self, report_ids: list[str]) -> list[AssessmentReport]:
+        """Many reports in one query (the callers used to call get_report once per id)."""
+        ids = []
+        for report_id in report_ids:
+            try:
+                ids.append(UUID(report_id.removeprefix("rpt-")))
+            except ValueError:
+                continue
+        if not ids:
+            return []
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM assessment_reports WHERE report_id = ANY(%s)", (ids,)
+            ).fetchall()
+        return [self._report(row) for row in rows]
+
     def update_manual_assessment(
         self, report_id: str, patch: dict[str, object]
     ) -> AssessmentReport | None:
@@ -1986,6 +2025,46 @@ class PostgresMetricsRepository(MetricsRepository):
             captured_at=row["captured_at"],
         )
 
+    def list_author_stats(self, project_id: str) -> list[dict]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT c.author, c.author_email, COUNT(DISTINCT c.sha) AS commits
+                   FROM ingestion_commits c
+                   JOIN ingestion_runs r ON r.ingestion_run_id = c.ingestion_run_id
+                   WHERE r.project_id = %s
+                   GROUP BY c.author, c.author_email""",
+                (UUID(project_id),),
+            ).fetchall()
+        return [
+            {"author": r["author"], "author_email": r["author_email"], "commits": int(r["commits"])}
+            for r in rows
+        ]
+
+    def relink_commits(self, project_id: str, resolve) -> int:
+        changed = 0
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                authors = connection.execute(
+                    """SELECT DISTINCT c.author, c.author_email
+                       FROM ingestion_commits c
+                       JOIN ingestion_runs r ON r.ingestion_run_id = c.ingestion_run_id
+                       WHERE r.project_id = %s""",
+                    (UUID(project_id),),
+                ).fetchall()
+                for row in authors:
+                    resolved = resolve(row["author"], row["author_email"])
+                    value = UUID(resolved) if resolved else None
+                    cursor = connection.execute(
+                        """UPDATE ingestion_commits SET student_id = %s
+                           WHERE author = %s AND author_email IS NOT DISTINCT FROM %s
+                             AND student_id IS DISTINCT FROM %s
+                             AND ingestion_run_id IN (
+                                 SELECT ingestion_run_id FROM ingestion_runs WHERE project_id = %s)""",
+                        (value, row["author"], row["author_email"], value, UUID(project_id)),
+                    )
+                    changed += cursor.rowcount
+        return changed
+
     def get_metrics_page(
         self,
         course_id: str,
@@ -2056,6 +2135,212 @@ class PostgresMetricsRepository(MetricsRepository):
             head_sha=row["head_sha"],
             captured_at=row["captured_at"],
         ), total
+
+
+TERMINAL_JOB_STATUSES = ("completed", "failed")
+
+
+def ensure_assessment_job_schema(pool: ConnectionPool) -> None:
+    """Assessment jobs and their progress events, so a restart does not lose them."""
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS assessment_jobs (
+                job_id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                sprint_id TEXT NOT NULL,
+                model_name TEXT,
+                status TEXT NOT NULL DEFAULT 'queued',
+                progress INTEGER NOT NULL DEFAULT 0,
+                current_stage TEXT NOT NULL DEFAULT 'queued',
+                report_id TEXT,
+                error_message TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS assessment_job_events (
+                event_id BIGSERIAL PRIMARY KEY,
+                job_id TEXT NOT NULL REFERENCES assessment_jobs(job_id) ON DELETE CASCADE,
+                event TEXT NOT NULL,
+                data JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_assessment_job_events_job "
+            "ON assessment_job_events(job_id, event_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_assessment_jobs_status ON assessment_jobs(status)"
+        )
+
+
+class PostgresAssessmentJobRepository:
+    """Same interface as InMemoryAssessmentJobRepository."""
+
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _record(row) -> AssessmentJobRecord:
+        return AssessmentJobRecord(
+            job_id=row["job_id"],
+            course_id=row["course_id"],
+            project_id=row["project_id"],
+            sprint_id=row["sprint_id"],
+            model_name=row["model_name"],
+            status=row["status"],
+            progress=row["progress"],
+            current_stage=row["current_stage"],
+            report_id=row["report_id"],
+            error_message=row["error_message"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def create_job(self, payload) -> AssessmentJobRecord:
+        job_id = f"job-{uuid4().hex[:12]}"
+        with self._pool.connection() as connection, connection.transaction():
+            row = connection.execute(
+                """INSERT INTO assessment_jobs
+                   (job_id, course_id, project_id, sprint_id, model_name)
+                   VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+                (job_id, payload.course_id, payload.project_id, payload.sprint_id, payload.model_name),
+            ).fetchone()
+            connection.execute(
+                "INSERT INTO assessment_job_events (job_id, event, data) VALUES (%s, %s, %s)",
+                (job_id, "started", Json({"status": "started", "message": "Assessment has started."})),
+            )
+        return self._record(row)
+
+    def get_job(self, job_id: str) -> AssessmentJobRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM assessment_jobs WHERE job_id = %s", (job_id,)
+            ).fetchone()
+        return self._record(row) if row else None
+
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        progress: int | None = None,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE assessment_jobs SET
+                       status = COALESCE(%s, status),
+                       progress = COALESCE(%s, progress),
+                       current_stage = COALESCE(%s, current_stage),
+                       report_id = COALESCE(%s, report_id),
+                       error_message = COALESCE(%s, error_message),
+                       updated_at = now()
+                   WHERE job_id = %s RETURNING *""",
+                (status, progress, current_stage, report_id, error_message, job_id),
+            ).fetchone()
+        return self._record(row) if row else None
+
+    def append_event(self, job_id: str, event: str, data: dict) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                "INSERT INTO assessment_job_events (job_id, event, data) "
+                "SELECT %s, %s, %s WHERE EXISTS (SELECT 1 FROM assessment_jobs WHERE job_id = %s)",
+                (job_id, event, Json(data), job_id),
+            )
+
+    def list_events(self, job_id: str) -> list[AssessmentJobEvent]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT event, data FROM assessment_job_events WHERE job_id = %s ORDER BY event_id",
+                (job_id,),
+            ).fetchall()
+        return [AssessmentJobEvent(event=row["event"], data=row["data"]) for row in rows]
+
+    def fail_interrupted_jobs(self, message: str) -> int:
+        """At startup nothing can still be running: close every unfinished job as a transient
+        failure so its page shows "retry" instead of waiting forever."""
+        data = Json(
+            {
+                "status": "failed",
+                "message": "The assessment failed.",
+                "error_message": message,
+                "transient": True,
+                "error_kind": "interrupted",
+            }
+        )
+        with self._pool.connection() as connection, connection.transaction():
+            rows = connection.execute(
+                """UPDATE assessment_jobs SET status = 'failed', progress = 100,
+                       current_stage = 'failed', error_message = %s, updated_at = now()
+                   WHERE status <> ALL(%s) RETURNING job_id""",
+                (message, list(TERMINAL_JOB_STATUSES)),
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    "INSERT INTO assessment_job_events (job_id, event, data) VALUES (%s, 'failed', %s)",
+                    (row["job_id"], data),
+                )
+        return len(rows)
+
+    def prune(self, older_than_days: int) -> int:
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM assessment_jobs WHERE status = ANY(%s) "
+                "AND updated_at < now() - make_interval(days => %s)",
+                (list(TERMINAL_JOB_STATUSES), older_than_days),
+            )
+        return cursor.rowcount
+
+
+class PostgresGitIdentityRepository:
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _record(row) -> GitIdentityRecord:
+        return GitIdentityRecord(
+            id=str(row["identity_id"]),
+            project_id=str(row["project_id"]),
+            kind=row["kind"],
+            value=row["value"],
+            student_id=str(row["student_id"]),
+            created_at=row["created_at"],
+        )
+
+    def list_identities(self, project_id: str) -> list[GitIdentityRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM project_git_identities WHERE project_id = %s ORDER BY kind, value",
+                (UUID(project_id),),
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def upsert_identity(
+        self, project_id: str, kind: str, value: str, student_id: str
+    ) -> GitIdentityRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO project_git_identities (project_id, kind, value, student_id)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (project_id, kind, value) DO UPDATE SET student_id = EXCLUDED.student_id
+                   RETURNING *""",
+                (UUID(project_id), kind, value.strip().casefold(), UUID(student_id)),
+            ).fetchone()
+        return self._record(row)
+
+    def delete_identity(self, project_id: str, identity_id: str) -> bool:
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM project_git_identities WHERE project_id = %s AND identity_id = %s",
+                (UUID(project_id), UUID(identity_id)),
+            )
+        return cursor.rowcount > 0
 
 
 class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):

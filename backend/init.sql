@@ -533,3 +533,45 @@ CREATE TABLE IF NOT EXISTS report_overrides (
 );
 CREATE INDEX IF NOT EXISTS idx_report_overrides_sync
     ON report_overrides(sync_status, updated_at);
+
+
+-- Git identity overrides: instructor-set mapping from a commit author email or name to a project
+-- member. Mirrors ensure_git_identity_schema in app/repositories/postgres.py.
+CREATE TABLE IF NOT EXISTS project_git_identities (
+    identity_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    kind VARCHAR(8) NOT NULL CHECK (kind IN ('email', 'name')),
+    value VARCHAR(255) NOT NULL,          -- trimmed and case-folded
+    student_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (project_id, kind, value)
+);
+CREATE INDEX IF NOT EXISTS idx_project_git_identities_student
+    ON project_git_identities(student_id);
+
+
+-- Assessment jobs and their progress events (survive a backend restart). Mirrors
+-- ensure_assessment_job_schema in app/repositories/postgres.py.
+CREATE TABLE IF NOT EXISTS assessment_jobs (
+    job_id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    sprint_id TEXT NOT NULL,
+    model_name TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    progress INTEGER NOT NULL DEFAULT 0,
+    current_stage TEXT NOT NULL DEFAULT 'queued',
+    report_id TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS assessment_job_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES assessment_jobs(job_id) ON DELETE CASCADE,
+    event TEXT NOT NULL,
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_assessment_job_events_job ON assessment_job_events(job_id, event_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_jobs_status ON assessment_jobs(status);

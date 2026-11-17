@@ -122,6 +122,12 @@ class Settings(BaseSettings):
     assessment_mode: str = Field(default="mock", alias="ASSESSMENT_MODE")
     default_model_name: str = Field(default="sprintsight-qwen", alias="DEFAULT_MODEL_NAME")
     ai_engine_url: str = Field(default="http://host.docker.internal:8001", alias="AI_ENGINE_URL")
+    # Shared secret sent as X-Service-Token; must equal the engine's AI_ENGINE_SERVICE_TOKEN.
+    ai_engine_service_token: str = Field(default="", alias="AI_ENGINE_SERVICE_TOKEN")
+    # Browser origins allowed to call this API (comma separated).
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000", alias="CORS_ALLOWED_ORIGINS"
+    )
     # Read timeout for one whole assessment (six LLM calls plus retries on a local GPU).
     ai_engine_timeout_seconds: float = Field(default=3600.0, alias="AI_ENGINE_TIMEOUT_SECONDS")
 
@@ -135,7 +141,9 @@ class Settings(BaseSettings):
     insights_label_sync_interval_seconds: float = Field(
         default=30.0, alias="INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS"
     )
-    insights_judge_stale_minutes: int = Field(default=30, alias="INSIGHTS_JUDGE_STALE_MINUTES")
+    # Longer than the engine's judge limits (scorer timeout 60 min), so a slow judge is "pending",
+    # not "stale". Stale and missing-trace reports are re-checked for 24 h anyway.
+    insights_judge_stale_minutes: int = Field(default=120, alias="INSIGHTS_JUDGE_STALE_MINUTES")
     # blind_label: Tier 1 blind flow. override_gate: Insights unlock once an override is saved.
     insights_mode: Literal["blind_label", "override_gate"] = Field(
         default="blind_label", alias="INSIGHTS_MODE"

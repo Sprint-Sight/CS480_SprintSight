@@ -30,12 +30,17 @@ services:
       - ./logs:/app/logs
       - .:/app
       - ../repo:/app/repo:ro
+    # --reload restarts the backend whenever a file under the bind mount changes. Assessment jobs
+    # are stored in Postgres, so a restart closes in-flight ones as retryable failures; drop
+    # --reload (and the ".:/app" mount) for anything long-running.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       LOCAL_REPOSITORY_ROOT: /app/repo
       # AI Insights: the backend reads traces from, and writes instructor labels to, the
       # local MLflow server of the ai-engine stack. Telemetry off, short timeout, no retries
       # so a stopped MLflow degrades the Insights pages instead of hanging them.
+      # Fixed on purpose (no ${...} interpolation): a host-side MLFLOW_TRACKING_URI=localhost
+      # exported for research tools must never leak into the container.
       MLFLOW_TRACKING_URI: http://host.docker.internal:5000
       MLFLOW_DISABLE_TELEMETRY: "true"
       MLFLOW_HTTP_REQUEST_TIMEOUT: "5"

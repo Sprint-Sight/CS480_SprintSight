@@ -105,6 +105,9 @@ services: # Separate containers to run
         # OpenAI path (research fixtures only) stays off unless this is set to 1.
         - MLFLOW_DISABLE_TELEMETRY=true
         - SPRINTSIGHT_ALLOW_REMOTE_JUDGE=${SPRINTSIGHT_ALLOW_REMOTE_JUDGE:-0}
+
+        # Shared secret the backend sends as X-Service-Token. Empty = /assess stays open (local demo).
+        - AI_ENGINE_SERVICE_TOKEN=${AI_ENGINE_SERVICE_TOKEN:-}
       volumes:
         - ./:/app
         - ./audit_logs:/app/audit_logs

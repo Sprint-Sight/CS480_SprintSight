@@ -11,6 +11,7 @@ from app.repositories.in_memory import (
     InMemoryEmailOutboxRepository,
     audit_action_repo,
     audit_repo,
+    git_identity_repo,
     instructor_jira_credentials_repo,
     instructor_model_selection_repo,
     jira_ingestion_repo,
@@ -25,6 +26,7 @@ from app.repositories.interfaces import (
     AuditRetentionConfigRepository,
     DocumentRepository,
     ExportLogRepository,
+    GitIdentityRepository,
     InstructorJiraCredentialsRepository,
     InstructorModelSelectionRepository,
     JiraIngestionRunRepository,
@@ -71,6 +73,10 @@ def get_project_repository(request: Request) -> ProjectRepository:
 
 def get_metrics_repository(request: Request) -> MetricsRepository:
     return getattr(request.app.state, "metrics_repository", metrics_repo)
+
+
+def get_git_identity_repository(request: Request) -> GitIdentityRepository:
+    return getattr(request.app.state, "git_identity_repository", git_identity_repo)
 
 
 def get_document_repository(request: Request) -> DocumentRepository:
@@ -196,3 +202,14 @@ def require_admin(current_user=Depends(require_password_changed)):
     if current_user.role != Role.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required.")
     return current_user
+
+
+def ensure_course_access(user, course_id: str, projects: ProjectRepository) -> None:
+    """Staff may act on a course only if they teach it (admins may act on any course)."""
+    if user.role == Role.ADMIN:
+        return
+    if user.role == Role.INSTRUCTOR and projects.is_instructor_assigned(course_id, user.id):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course."
+    )

@@ -263,3 +263,25 @@ def test_patch_keeps_ai_evidence_details_the_editor_does_not_send(override_user_
     assert detail["score"] == 9
     assert detail["justification"] == "Instructor raised the score."
     assert detail["evidence_details"][0]["line_start"] == 3
+
+
+def test_patch_notifies_the_team_even_though_grading_has_no_individual_scores(
+    override_user_repository, stub_notification_service
+) -> None:
+    """Scores are team-level, so report.individual_scores is empty: the old code mailed nobody."""
+    setup_project(override_user_repository)
+    team_report = report()
+    team_report.individual_scores = []
+    assessment_repository = InMemoryAssessmentRepository()
+    assessment_repository.save_report(team_report)
+    app.dependency_overrides[get_assessment_repository] = lambda: assessment_repository
+
+    response = client.patch(
+        "/api/v1/assessments/reports/rpt-manual-1",
+        json=payload(),
+        headers=headers("faculty@sprintsight.edu"),
+    )
+
+    assert response.status_code == 200
+    recipients = [recipient for recipient, _, _ in stub_notification_service.messages]
+    assert recipients == ["student@sprintsight.edu"]

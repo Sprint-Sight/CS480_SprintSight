@@ -14,6 +14,7 @@ from app.repositories.interfaces import (
     EmailOutboxRepository,
     ExportLogRecord,
     ExportLogRepository,
+    GitIdentityRecord,
     IngestionMetricBundle,
     InstructorJiraCredentialsRecord,
     InstructorJiraCredentialsRepository,
@@ -515,6 +516,9 @@ class InMemoryAssessmentRepository(AssessmentRepository):
     def get_report(self, report_id: str) -> AssessmentReport | None:
         return self._reports.get(report_id)
 
+    def get_reports(self, report_ids: list[str]) -> list[AssessmentReport]:
+        return [self._reports[i] for i in report_ids if i in self._reports]
+
     def update_manual_assessment(
         self, report_id: str, patch: dict[str, object]
     ) -> AssessmentReport | None:
@@ -814,6 +818,29 @@ class InMemoryMetricsRepository(MetricsRepository):
             captured_at=metrics.captured_at,
         )
 
+    def list_author_stats(self, project_id: str) -> list[dict]:
+        shas: dict[tuple[str, str | None], set[str]] = {}
+        for (_, run_project_id, _), metrics in self._metrics.items():
+            if run_project_id == project_id:
+                for commit in metrics.commits:
+                    shas.setdefault((commit.author, commit.author_email), set()).add(commit.sha)
+        return [
+            {"author": author, "author_email": email, "commits": len(found)}
+            for (author, email), found in shas.items()
+        ]
+
+    def relink_commits(self, project_id: str, resolve) -> int:
+        changed = 0
+        for (_, run_project_id, _), metrics in self._metrics.items():
+            if run_project_id != project_id:
+                continue
+            for commit in metrics.commits:
+                resolved = resolve(commit.author, commit.author_email)
+                if commit.student_id != resolved:
+                    commit.student_id = resolved
+                    changed += 1
+        return changed
+
     def get_metrics_page(
         self,
         course_id: str,
@@ -937,8 +964,63 @@ class InMemoryExportLogRepository(ExportLogRepository):
         )
 
 
+
+class InMemoryGitIdentityRepository:
+    def __init__(self) -> None:
+        self._rows: dict[str, GitIdentityRecord] = {}
+
+    def list_identities(self, project_id: str) -> list[GitIdentityRecord]:
+        return sorted(
+            (row for row in self._rows.values() if row.project_id == project_id),
+            key=lambda row: (row.kind, row.value),
+        )
+
+    def upsert_identity(
+        self, project_id: str, kind: str, value: str, student_id: str
+    ) -> GitIdentityRecord:
+        value = value.strip().casefold()
+        for row in self._rows.values():
+            if row.project_id == project_id and row.kind == kind and row.value == value:
+                row.student_id = student_id
+                return row
+        record = GitIdentityRecord(
+            id=str(uuid4()),
+            project_id=project_id,
+            kind=kind,
+            value=value,
+            student_id=student_id,
+            created_at=datetime.now(UTC),
+        )
+        self._rows[record.id] = record
+        return record
+
+    def delete_identity(self, project_id: str, identity_id: str) -> bool:
+        row = self._rows.get(identity_id)
+        if row is None or row.project_id != project_id:
+            return False
+        del self._rows[identity_id]
+        return True
+
+
+git_identity_repo = InMemoryGitIdentityRepository()
 jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
-job_repo = InMemoryAssessmentJobRepository()
+
+
+class _JobRepositoryProxy:
+    """The module-level job store. In-memory until the app starts against Postgres (main.py
+    calls use()), so jobs survive a backend restart in a real deployment."""
+
+    def __init__(self) -> None:
+        self._target = InMemoryAssessmentJobRepository()
+
+    def use(self, repository) -> None:
+        self._target = repository
+
+    def __getattr__(self, name: str):
+        return getattr(self._target, name)
+
+
+job_repo = _JobRepositoryProxy()
 export_log_repo = InMemoryExportLogRepository()
 
 
