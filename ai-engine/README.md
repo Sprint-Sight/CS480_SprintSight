@@ -295,6 +295,16 @@ considerable time on local hardware.
 | `research/README.md` | GPU benchmark, figure and trial scripts |
 | `docker-compose.yaml` | Ollama, FastAPI, MLflow, and PostgreSQL services |
 
+**Which prompt grades?** Grading uses the prompt text in `prompts/dimension_criteria.py`. Each new
+text is registered as the `challenger` alias, and its version is stored on the trace
+(`prompt.Evaluate_<dimension>`). The `production` alias is only the promotion gate's research
+baseline: `evaluation/online/promote.py` and `research/trials/*` read it, the grading API does not.
+The gate needs 3+ shared inputs with gold scores, so on real course data it does not promote.
+
+**Review queues.** Flagged traces go to one shared custom queue named `flagged_runs` per experiment
+(`llmops/review_queue.py`), for admin and research use only. Instructors review flagged runs from the
+SprintSight Insights page ("Needs attention"), never from the MLflow UI, which shows raw prompts.
+
 ## Configuration
 
 The main environment variables are:

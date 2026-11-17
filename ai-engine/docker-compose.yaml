@@ -133,7 +133,7 @@ services: # Separate containers to run
         # Without a volume, run artifacts are lost whenever the container is recreated.
         - mlflow_artifacts:/mlartifacts
       ports:
-        - "5000:5000"
+        - "127.0.0.1:5000:5000" # 127 limits access to your own machine
       restart: unless-stopped
       depends_on:
         db:
