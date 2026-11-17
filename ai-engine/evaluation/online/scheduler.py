@@ -29,7 +29,7 @@ import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 
-from evaluation.online.job_queue import JudgeJob, JudgeJobQueue
+from evaluation.online.job_queue import DEAD, JudgeJob, JudgeJobQueue
 from services.failures import classify_failure, failure_detail
 
 log = logging.getLogger("sprintsight.judges.scheduler")
@@ -130,7 +130,9 @@ class JudgeWorker:
         poll_seconds: float = JUDGE_POLL_SECONDS,
         slot_wait_seconds: float = JUDGE_SLOT_WAIT_SECONDS,
         retry_delay_seconds: float = JUDGE_RETRY_DELAY_SECONDS,
+        on_dead: Callable[[str, str], None] | None = None,
     ) -> None:
+        self.on_dead = on_dead
         self.queue = queue
         self.runner = runner
         self.arbiter = arbiter
@@ -164,6 +166,8 @@ class JudgeWorker:
                 f"{failure_class.value}: {failure_detail(exc)}",
                 retry_delay=self.retry_delay_seconds,
             )
+            if status == DEAD:
+                self._report_dead(job.trace_id, failure_class.value)
             log.exception(
                 "Judge job for trace %s failed (attempt %d, %s); status now '%s'.",
                 job.trace_id, job.attempts, failure_class.value, status,
@@ -172,6 +176,20 @@ class JudgeWorker:
             self.queue.complete(job.job_id)
             log.info("Judge job for trace %s completed (attempt %d).", job.trace_id, job.attempts)
 
+    def _report_dead(self, trace_id: str, reason: str) -> None:
+        """Best effort: the judge gave up on this trace, so say so where the backend can read it."""
+        if self.on_dead is None:
+            return
+        try:
+            self.on_dead(trace_id, reason)
+        except Exception:
+            log.exception("Could not tag trace %s as given up on.", trace_id)
+
+    def _drain_dead(self) -> None:
+        dead, self.queue.newly_dead = self.queue.newly_dead, []
+        for trace_id, error in dead:
+            self._report_dead(trace_id, error.split(":", 1)[0] or "retries_exhausted")
+
     def _loop(self) -> None:
         recovered = self.queue.requeue_running()
         if recovered:
@@ -179,6 +197,7 @@ class JudgeWorker:
         while not self._stop.is_set():
             try:
                 worked = self.run_once()
+                self._drain_dead()
             except Exception:
                 log.exception("Judge worker loop error; continuing.")
                 worked = False
@@ -196,6 +215,16 @@ class JudgeWorker:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout)
+
+
+DEAD_TAG = "judge.dead"
+
+
+def tag_trace_dead(trace_id: str, reason: str) -> None:
+    """Write the reason a judge job was abandoned onto its trace (read by the backend)."""
+    from mlflow import MlflowClient
+
+    MlflowClient().set_trace_tag(trace_id, DEAD_TAG, reason[:100])
 
 
 def run_judge_job(job: JudgeJob) -> None:
@@ -242,7 +271,7 @@ def start_judge_worker() -> JudgeWorker | None:
     if os.getenv("JUDGE_WORKER_ENABLED", "1").strip().lower() in {"0", "false", "no"}:
         log.info("Judge worker disabled by JUDGE_WORKER_ENABLED.")
         return None
-    worker = JudgeWorker(get_judge_queue(), run_judge_job, get_arbiter())
+    worker = JudgeWorker(get_judge_queue(), run_judge_job, get_arbiter(), on_dead=tag_trace_dead)
     worker.start()
     _worker = worker
     return worker

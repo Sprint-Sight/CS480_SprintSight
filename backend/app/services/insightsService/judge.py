@@ -19,12 +19,46 @@ SUMMARY_FIELDS = {
     "citation_count": "citation_count",
 }
 
+# Safe, short sentences for the engine's failure codes (mirrors ai-engine schemas/failure_class.py).
+FAILURE_DESCRIPTIONS = {
+    "schema_validation": "The judge model's answer did not match the required format.",
+    "output_length": "The judge model's answer kept exceeding the length limit.",
+    "timeout": "The judge model did not respond in time.",
+    "infra_unavailable": "The judge model service was unavailable.",
+    "context_truncated": "The evidence did not fit in the judge model's context window.",
+    "remote_judge_disabled": "The judge model is not configured for this deployment.",
+    "skipped_all_dimensions_failed": "Every rubric dimension failed, so nothing was judged.",
+    "retries_exhausted": "The judge gave up after repeated attempts.",
+    "unknown": "The judge failed for an unexpected reason.",
+}
+SKIPPED_TAG, DEAD_TAG = "judge.skipped", "judge.dead"
+
+
+def failure_class(summary: TraceSummary) -> str | None:
+    """Why the judge did not finish, as a short code, or None when nothing says it failed."""
+    recorded = summary.assessment("citation_judge_failure_class")
+    if recorded and recorded.text:
+        return recorded.text
+    if SKIPPED_TAG in summary.judge_tags:
+        return "skipped_all_dimensions_failed"
+    if DEAD_TAG in summary.judge_tags:
+        return summary.judge_tags[DEAD_TAG] or "retries_exhausted"
+    return None
+
+
+def failure_description(code: str | None) -> str | None:
+    if not code:
+        return None
+    return FAILURE_DESCRIPTIONS.get(code, FAILURE_DESCRIPTIONS["unknown"])
+
+
 def judge_values(summary: TraceSummary) -> dict:
     values: dict = {}
     for key, name in SUMMARY_FIELDS.items():
         assessment = summary.assessment(name)
         values[key] = assessment.value if assessment else None
     values["trace_duration_ms"] = summary.duration_ms
+    values["failure_class"] = failure_class(summary)
     return values
 
 def derive_judge_status(
@@ -39,6 +73,8 @@ def derive_judge_status(
         return "failed"
     if all(m is not None for m in markers):
         return "complete"
+    if SKIPPED_TAG in summary.judge_tags or DEAD_TAG in summary.judge_tags:
+        return "failed"  # the engine skipped this trace or gave up on it: it will not finish
     if now - generated_at > stale_after:
         return "stale"  # the judge job never ran, died for good, or skipped this trace
     return "pending"

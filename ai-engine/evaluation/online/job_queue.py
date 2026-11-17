@@ -78,6 +78,9 @@ class JudgeJobQueue:
         self.max_attempts = max_attempts
         self.lease_seconds = lease_seconds
         self._clock = clock
+        # (trace_id, error) of jobs claim_next declared dead; drained by the worker, which tags
+        # the trace so the backend can tell "gave up" from "still waiting".
+        self.newly_dead: list[tuple[str, str]] = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as db:
             db.execute("PRAGMA journal_mode=WAL")
@@ -147,6 +150,7 @@ class JudgeJobQueue:
                             (DEAD, row["last_error"] or "attempts exhausted (worker lost)", now, row["job_id"]),
                         )
                         log.error("Judge job for trace %s is dead after %d attempts.", row["trace_id"], row["attempts"])
+                        self.newly_dead.append((row["trace_id"], row["last_error"] or "retries_exhausted"))
                         continue
                     db.execute(
                         """UPDATE judge_jobs SET status = ?, attempts = attempts + 1,

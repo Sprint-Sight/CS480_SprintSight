@@ -7,6 +7,7 @@ import logging
 import os
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -15,6 +16,7 @@ import httpx
 from app.services.insightsService.trace_summary import TraceSummary, summarize_trace
 
 log = logging.getLogger(__name__)
+MAX_CACHED_TRACES = 256
 LABEL_PREFIX = "sprintsight.instructor."
 OVERRIDE_PREFIX = "sprintsight.override."
 
@@ -79,7 +81,7 @@ class RealMlflowGateway:
         os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "true")
         self._uri = tracking_uri.rstrip("/")
         self._ttl = cache_ttl_seconds
-        self._cache: dict[str, tuple[float, TraceSummary]] = {}
+        self._cache: OrderedDict[str, tuple[float, TraceSummary]] = OrderedDict()
         self._lock = threading.Lock()
         self._client = None
 
@@ -99,10 +101,12 @@ class RealMlflowGateway:
             _, client = self._mlflow()
             return client.get_trace(trace_id, display=False)
         except Exception as exc:  # noqa: BLE001 - MLflow raises many types
-            text = str(exc)
-            if "RESOURCE_DOES_NOT_EXIST" in text or "not found" in text.lower():
+            # Only MLflow's own "no such trace" code means the trace is missing. Matching on the
+            # words "not found" would also catch a wrong URL or a version mismatch (404) and
+            # report every trace as missing.
+            if getattr(exc, "error_code", None) == "RESOURCE_DOES_NOT_EXIST":
                 raise TraceNotFound(trace_id) from exc
-            raise MlflowUnavailable(text) from exc
+            raise MlflowUnavailable(str(exc)) from exc
 
     def get_trace_summary(self, trace_id: str) -> TraceSummary:
         now = time.monotonic()
@@ -110,7 +114,11 @@ class RealMlflowGateway:
         if cached and now - cached[0] < self._ttl:
             return cached[1]
         summary = summarize_trace(self._get_trace(trace_id))
-        self._cache[trace_id] = (now, summary)
+        with self._lock:
+            self._cache[trace_id] = (now, summary)
+            self._cache.move_to_end(trace_id)
+            while len(self._cache) > MAX_CACHED_TRACES:
+                self._cache.popitem(last=False)  # bounded: oldest entry out
         return summary
 
     def find_label(

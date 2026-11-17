@@ -38,6 +38,7 @@ from app.services.insightsService.judge import (
     build_tiles,
     citation_check,
     derive_judge_status,
+    failure_description,
     judge_values,
 )
 from app.services.insightsService.mlflow_gateway import (
@@ -83,6 +84,12 @@ JUDGE_REFRESH_MIN_SECONDS = 10
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _age(value: datetime) -> timedelta:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return datetime.now(UTC) - value
 
 def original_ai_scores(report: AssessmentReport) -> dict[str, float] | None:
     """The AI's own per-dimension scores, without dimensions it failed to assess."""
@@ -150,6 +157,11 @@ def refresh_judge_status(
     try:
         summary = gateway.get_trace_summary(run.trace_id)
     except TraceNotFound:
+        # A fresh trace may simply not be exported yet. Only call it missing once the judge
+        # window has passed; the sync loop keeps re-checking missing traces after that too.
+        if _age(run.generated_at) < timedelta(minutes=stale_minutes):
+            insights.set_judge_status(run.report_id, "pending", None)
+            return "pending"
         insights.set_judge_status(run.report_id, "no_trace", None)
         return "no_trace"
     return _store_judge(run, summary, insights, stale_minutes)[0]
@@ -435,6 +447,10 @@ def _judge_panel(
         "tiles": build_tiles(run.judge_summary),
         "unaccepted_citations": [],
         "citations_truncated": False,
+        "failure_class": (run.judge_summary or {}).get("failure_class"),
+        "failure_description": failure_description(
+            (run.judge_summary or {}).get("failure_class")
+        ),
     }
     if not run.trace_id:
         return {**base, "notice": NO_TRACE_NOTICE}, [], "no_trace"
@@ -453,6 +469,8 @@ def _judge_panel(
         "tiles": build_tiles(values),
         "unaccepted_citations": [asdict(r) for r in rows],
         "citations_truncated": truncated,
+        "failure_class": values.get("failure_class"),
+        "failure_description": failure_description(values.get("failure_class")),
     }
     versions = [{"name": k, "version": v} for k, v in summary.prompt_versions.items()]
     return panel, versions, status_
@@ -565,7 +583,14 @@ def judge_status_view(
             checked = now
         except MlflowUnavailable:
             pass
-    return {"report_id": run.report_id, "judge_status": status_, "checked_at": _iso(checked)}
+    code = ((run.judge_summary or {}).get("failure_class")) if status_ == "failed" else None
+    return {
+        "report_id": run.report_id,
+        "judge_status": status_,
+        "checked_at": _iso(checked),
+        "failure_class": code,
+        "failure_description": failure_description(code),
+    }
 
 def health(gateway: MlflowGateway, insights: InsightsRepository) -> dict:
     h = gateway.health()

@@ -35,6 +35,9 @@ ALLOWED_ASSESSMENTS = frozenset(
         "narrative_contradiction_count",
         "narrative_contradiction_rate",
         "narrative_item_count",
+        # The engine records WHY a judge run failed as a short code (timeout, infra_unavailable,
+        # context_truncated, remote_judge_disabled, ...). The code is safe to show; nothing else is.
+        "citation_judge_failure_class",
     }
 )
 
@@ -51,6 +54,7 @@ class JudgeAssessment:
     name: str
     value: float | None
     source: str
+    text: str | None = None  # string-valued assessments (the failure class)
     rationale: str | None = None
     error: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
@@ -64,6 +68,8 @@ class TraceSummary:
     assessments: tuple[JudgeAssessment, ...] = ()
     prompt_versions: dict[str, str] = field(default_factory=dict)
     claims: dict[str, str] = field(default_factory=dict)  # "C3" -> "identifier | reason"
+    # judge.* trace tags written by the engine when it skips or gives up on a trace
+    judge_tags: dict[str, str] = field(default_factory=dict)
 
     def assessment(self, name: str) -> JudgeAssessment | None:
         return next((a for a in self.assessments if a.name == name), None)
@@ -105,6 +111,7 @@ def summarize_trace(trace: Any) -> TraceSummary:
         assessments=tuple(_assessments(getattr(info, "assessments", None) or [])),
         prompt_versions=_prompt_versions(getattr(info, "tags", None) or {}, root),
         claims=collect_claims(root.outputs if root is not None else None),
+        judge_tags=_judge_tags(getattr(info, "tags", None) or {}),
     )
 
 def collect_claims(outputs: Any) -> dict[str, str]:
@@ -146,6 +153,10 @@ def _prompt_versions(tags: dict, root: Any) -> dict[str, str]:
         versions["Generate_Sprint_Feedback"] = str(attrs["sprint_feedback_prompt"])
     return dict(sorted(versions.items()))
 
+def _judge_tags(tags: dict) -> dict[str, str]:
+    return {key: str(value) for key, value in tags.items() if key.startswith("judge.")}
+
+
 def _number(value: Any) -> float | None:
     if isinstance(value, bool):
         return float(value)
@@ -156,6 +167,7 @@ def _number(value: Any) -> float | None:
 def _assessments(raw: list) -> list[JudgeAssessment]:
     out: list[JudgeAssessment] = []
     for a in raw:
+        raw_value = getattr(a, "value", None)
         if a.name not in ALLOWED_ASSESSMENTS or getattr(a, "valid", True) is False:
             continue
         error = getattr(a, "error", None)
@@ -164,6 +176,7 @@ def _assessments(raw: list) -> list[JudgeAssessment]:
             JudgeAssessment(
                 name=a.name,
                 value=_number(getattr(a, "value", None)),
+                text=raw_value if isinstance(raw_value, str) else None,
                 source=str(getattr(source_type, "value", source_type) or ""),
                 rationale=getattr(a, "rationale", None),
                 error=(getattr(error, "error_message", None) or str(error)) if error else None,

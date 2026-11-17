@@ -135,7 +135,9 @@ class Settings(BaseSettings):
     insights_label_sync_interval_seconds: float = Field(
         default=30.0, alias="INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS"
     )
-    insights_judge_stale_minutes: int = Field(default=30, alias="INSIGHTS_JUDGE_STALE_MINUTES")
+    # Longer than the engine's judge limits (scorer timeout 60 min), so a slow judge is "pending",
+    # not "stale". Stale and missing-trace reports are re-checked for 24 h anyway.
+    insights_judge_stale_minutes: int = Field(default=120, alias="INSIGHTS_JUDGE_STALE_MINUTES")
     # blind_label: Tier 1 blind flow. override_gate: Insights unlock once an override is saved.
     insights_mode: Literal["blind_label", "override_gate"] = Field(
         default="blind_label", alias="INSIGHTS_MODE"
