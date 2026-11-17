@@ -119,3 +119,34 @@ def test_an_unavailable_queue_does_not_fail_the_assessment(client, monkeypatch) 
 
     assert response.status_code == 200
     assert response.json()["trace_id"] == "tr-abc"
+
+
+# ---- service token and error shape
+def test_assess_requires_the_service_token_when_one_is_configured(client, monkeypatch) -> None:
+    monkeypatch.setenv("AI_ENGINE_SERVICE_TOKEN", "s3cret")
+    monkeypatch.setattr(route, "evaluate_sprint", _fake_evaluate(_assessment()))
+
+    assert client.post(URL, json=BODY).status_code == 401
+    assert client.post(URL, json=BODY, headers={"X-Service-Token": "wrong"}).status_code == 401
+    assert client.post(URL, json=BODY, headers={"X-Service-Token": "s3cret"}).status_code == 200
+
+
+def test_assess_stays_open_when_no_token_is_configured(client, monkeypatch) -> None:
+    monkeypatch.delenv("AI_ENGINE_SERVICE_TOKEN", raising=False)
+    monkeypatch.setattr(route, "evaluate_sprint", _fake_evaluate(_assessment()))
+
+    assert client.post(URL, json=BODY).status_code == 200
+
+
+def test_a_failed_assessment_returns_a_failure_class_not_the_exception_text(client, monkeypatch) -> None:
+    async def explode(*args, **kwargs):
+        raise ConnectionError("http://internal-ollama:11434 refused; prompt=SECRET STUDENT DATA")
+
+    monkeypatch.setattr(route, "evaluate_sprint", explode)
+
+    response = client.post(URL, json=BODY)
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail["failure_class"] == "infra_unavailable"
+    assert "SECRET" not in response.text and "internal-ollama" not in response.text

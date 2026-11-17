@@ -94,7 +94,9 @@ def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -
     try:
         # One-shot transport: the engine already retries each dimension, and resending a
         # whole assessment from here would only multiply GPU time. The timeout is bounded.
-        response = httpx.post(request_url, json=payload, timeout=timeout)  # nosec B113
+        token = getattr(settings, "ai_engine_service_token", "")
+        extra = {"headers": {"X-Service-Token": token}} if token else {}
+        response = httpx.post(request_url, json=payload, timeout=timeout, **extra)  # nosec B113
         response.raise_for_status()
     except httpx.TimeoutException as exc:
         raise AIEngineError(
@@ -106,12 +108,12 @@ def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -
         status_code = exc.response.status_code
         if status_code >= 500:
             raise AIEngineError(
-                f"AI engine failed with HTTP {status_code}: {exc.response.text}",
+                f"AI engine failed with HTTP {status_code}: {exc.response.text[:500]}",
                 kind="engine_error",
                 transient=status_code in _TRANSIENT_STATUS_CODES,
             ) from exc
         raise AIEngineError(
-            f"AI engine rejected the assessment payload: {exc.response.text}",
+            f"AI engine rejected the assessment payload: {exc.response.text[:500]}",
             kind="rejected",
             transient=False,
         ) from exc

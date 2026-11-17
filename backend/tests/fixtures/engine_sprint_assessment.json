@@ -1,0 +1,225 @@
+{
+  "sprint_id": "sprint-1",
+  "team_id": "proj-1",
+  "overall_score": 7.0,
+  "rubric_scores": {
+    "code_quality": {
+      "justification": "code_quality justification text.",
+      "evidence_citations": [
+        {
+          "identifier": "src/app.py:L10-L24@abc1234",
+          "reason": "code_quality cites a real change in the app.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        },
+        {
+          "identifier": "PROJ-7",
+          "reason": "code_quality cites a closed ticket for this work.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        }
+      ],
+      "score": 7,
+      "dimension": "code_quality",
+      "evaluation_failed": false,
+      "failure_class": null,
+      "error_detail": null,
+      "citations_dropped": 0,
+      "strengths": [],
+      "areas_for_improvement": [],
+      "prompt_version": null
+    },
+    "documentation": {
+      "justification": "documentation justification text.",
+      "evidence_citations": [
+        {
+          "identifier": "src/app.py:L10-L24@abc1234",
+          "reason": "documentation cites a real change in the app.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        },
+        {
+          "identifier": "PROJ-7",
+          "reason": "documentation cites a closed ticket for this work.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        }
+      ],
+      "score": 7,
+      "dimension": "documentation",
+      "evaluation_failed": false,
+      "failure_class": null,
+      "error_detail": null,
+      "citations_dropped": 0,
+      "strengths": [],
+      "areas_for_improvement": [],
+      "prompt_version": null
+    },
+    "testing": {
+      "justification": "testing justification text.",
+      "evidence_citations": [
+        {
+          "identifier": "src/app.py:L10-L24@abc1234",
+          "reason": "testing cites a real change in the app.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        },
+        {
+          "identifier": "PROJ-7",
+          "reason": "testing cites a closed ticket for this work.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        }
+      ],
+      "score": 7,
+      "dimension": "testing",
+      "evaluation_failed": false,
+      "failure_class": null,
+      "error_detail": null,
+      "citations_dropped": 0,
+      "strengths": [],
+      "areas_for_improvement": [],
+      "prompt_version": null
+    },
+    "requirements": {
+      "justification": "requirements justification text.",
+      "evidence_citations": [
+        {
+          "identifier": "src/app.py:L10-L24@abc1234",
+          "reason": "requirements cites a real change in the app.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        },
+        {
+          "identifier": "PROJ-7",
+          "reason": "requirements cites a closed ticket for this work.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        }
+      ],
+      "score": 7,
+      "dimension": "requirements",
+      "evaluation_failed": false,
+      "failure_class": null,
+      "error_detail": null,
+      "citations_dropped": 0,
+      "strengths": [],
+      "areas_for_improvement": [],
+      "prompt_version": null
+    },
+    "collaboration": {
+      "justification": "collaboration justification text.",
+      "evidence_citations": [
+        {
+          "identifier": "src/app.py:L10-L24@abc1234",
+          "reason": "collaboration cites a real change in the app.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        },
+        {
+          "identifier": "PROJ-7",
+          "reason": "collaboration cites a closed ticket for this work.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        }
+      ],
+      "score": 7,
+      "dimension": "collaboration",
+      "evaluation_failed": false,
+      "failure_class": null,
+      "error_detail": null,
+      "citations_dropped": 0,
+      "strengths": [],
+      "areas_for_improvement": [],
+      "prompt_version": null
+    },
+    "cicd": {
+      "justification": "cicd justification text.",
+      "evidence_citations": [
+        {
+          "identifier": "src/app.py:L10-L24@abc1234",
+          "reason": "cicd cites a real change in the app.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        },
+        {
+          "identifier": "PROJ-7",
+          "reason": "cicd cites a closed ticket for this work.",
+          "kind": "other",
+          "file_path": null,
+          "line_start": null,
+          "line_end": null,
+          "commit_sha": null
+        }
+      ],
+      "score": 1,
+      "dimension": "cicd",
+      "evaluation_failed": true,
+      "failure_class": "timeout",
+      "error_detail": null,
+      "citations_dropped": 0,
+      "strengths": [],
+      "areas_for_improvement": [],
+      "prompt_version": null
+    }
+  },
+  "member_contributions": [],
+  "executive_summary": "A solid sprint.",
+  "strengths": [
+    "Good tests"
+  ],
+  "weaknesses": [
+    "No CI"
+  ],
+  "key_recommendations": [
+    "Add a CI pipeline."
+  ],
+  "prompt_version": null,
+  "trace_id": "tr-golden",
+  "experiment_name": "sprintsight",
+  "failed_dimensions": [
+    "cicd"
+  ],
+  "evaluation_failed": true,
+  "contract_dimension_order": [
+    "code_quality",
+    "testing",
+    "documentation",
+    "requirements",
+    "collaboration",
+    "cicd"
+  ]
+}

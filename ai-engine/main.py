@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api import assessment
+from api.auth import service_token_configured
 from evaluation.online.scheduler import start_judge_worker, stop_judge_worker
 from llmops.mlflow_config import configure_mlflow
 from llmops.prompt_registry import register_all_dimension_prompts
@@ -77,6 +78,11 @@ async def lifespan(app: FastAPI): # Initialise things that should exist for the 
     global _llm_client
  
     log.info("AI Assessment Service starting up...")
+    if not service_token_configured():
+        log.warning(
+            "AI_ENGINE_SERVICE_TOKEN is not set: /assess accepts requests from anyone who can "
+            "reach this port. Set it (and the same value in the backend) outside a local demo."
+        )
     log.info("Ollama URL: %s", os.getenv("OLLAMA_BASE_URL"))
  
     # Create the Ollama client once — reused across all requests
@@ -113,10 +119,14 @@ async def request_validation_exception_handler(request, exc: RequestValidationEr
 
 app.include_router(assessment.router) # Register the assessment router with the FastAPI app
 
-app.add_middleware( # CORS middleware to allow cross-origin requests from any local port
+# Only the backend calls this API (server to server), so browsers need no cross-origin access by
+# default. AI_ENGINE_CORS_ORIGINS (comma separated) opens specific origins, e.g. a local dashboard.
+_CORS_ORIGINS = [o.strip() for o in os.getenv("AI_ENGINE_CORS_ORIGINS", "").split(",") if o.strip()]
+
+app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows calls from any local ports, LATER CHANGE TO DATA AND/OR FRONTEND ORIGIN only
-    allow_credentials=True,
+    allow_origins=_CORS_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
