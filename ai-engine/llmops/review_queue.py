@@ -40,4 +40,9 @@ def _experiment_id_for(trace_id: str) -> str:
         return client.get_trace(trace_id).info.experiment_id
     except MlflowException:
         log.warning("Could not read trace %s; using the production experiment.", trace_id)
-        return client.get_experiment_by_name(experiments.PRODUCTION).experiment_id
+        experiment = client.get_experiment_by_name(experiments.PRODUCTION)
+        if experiment is None:
+            raise MlflowException(
+                f"Production experiment {experiments.PRODUCTION!r} does not exist."
+            )
+        return experiment.experiment_id

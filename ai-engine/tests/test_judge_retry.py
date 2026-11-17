@@ -1,6 +1,7 @@
 """A dropped connection to the judge model is retried per call, so one blip does not fail the judge."""
 
 import asyncio
+from typing import Any, cast
 
 import httpx
 import openai
@@ -10,7 +11,9 @@ from evaluation.judges import citation_grounding as cg
 
 
 def _dropped_connection() -> openai.APIConnectionError:
-    return openai.APIConnectionError(request=httpx.Request("POST", "http://judge.invalid"))
+    return openai.APIConnectionError(
+        request=cast(Any, httpx.Request("POST", "http://judge.invalid"))
+    )
 
 
 def test_a_dropped_connection_is_retried_then_succeeds(monkeypatch):
