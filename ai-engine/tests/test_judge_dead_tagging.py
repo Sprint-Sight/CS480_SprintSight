@@ -2,6 +2,9 @@
 "failed: <reason>" instead of a trace that looks like the judge never ran (stale)."""
 
 from types import SimpleNamespace
+from typing import cast
+
+from mlflow import MlflowClient
 
 from evaluation.online import promote
 from evaluation.online.job_queue import JudgeJobQueue
@@ -84,6 +87,6 @@ def test_a_trace_with_every_dimension_failed_is_tagged_skipped(monkeypatch) -> N
     monkeypatch.setattr(promote.mlflow, "flush_trace_async_logging", lambda: None)
     monkeypatch.setattr(promote, "run_judge_evaluation", lambda *a, **k: (_ for _ in ()).throw(AssertionError("judge must not run")))
 
-    promote.run_judge_and_promotion("exp", "tr-9", "team", {}, Client(), "s1")
+    promote.run_judge_and_promotion("exp", "tr-9", "team", {}, cast(MlflowClient, Client()), "s1")
 
     assert tags == [("tr-9", "judge.skipped", "all_dimensions_failed")]
