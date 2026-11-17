@@ -35,6 +35,10 @@ from app.repositories.in_memory import (
     InMemoryUserRepository,
 )
 
+EXPECTED_TILES = [
+    'citation_grounding', 'citations_removed', 'justification_integrity',
+    'narrative_contradictions', 'coverage'
+]
 
 class StubNotificationService:
     """Records outbound email instead of delivering it over SMTP.

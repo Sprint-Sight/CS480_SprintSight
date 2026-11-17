@@ -60,7 +60,8 @@ class RunRow:
     judge_status: str
     judge_checked_at: datetime | None
     judge_summary: dict | None
-    overridden: bool = False  # an instructor saved the Assessment Report editor
+    overridden: bool = False # instructor saved the Assessment Report editor
+    has_failed_dimension: bool = False # True if any dimension failed to be assessed by the AI
 
 @dataclass(frozen=True)
 class LabelInput:
@@ -214,20 +215,21 @@ _SCHEMA_STATEMENTS = (
        ON report_overrides(sync_status, updated_at)""",
 )
 
-
 def ensure_insights_schema(pool: ConnectionPool) -> None:
     with pool.connection() as connection:
         for statement in _SCHEMA_STATEMENTS:
             connection.execute(statement)
 
-
-# ----------------------------------------------------------------- Postgres
+# Postgres SELECT for all runs, joined to the project and course for display.
 _RUN_SELECT = """
 SELECT r.report_id, r.course_id, c.code AS course_code, c.name AS course_name, c.section,
        r.project_id, p.team_name, r.sprint_id, r.model_name, r.generated_at,
        COALESCE((r.team_score->>'score')::float, 0) AS team_score,
        r.trace_id, r.judge_status, r.judge_checked_at, r.judge_summary,
-       r.override AS overridden
+       r.override AS overridden,
+       EXISTS (SELECT 1 FROM jsonb_each(r.rubric_scores) e
+            WHERE COALESCE((e.value->>'evaluation_failed')::boolean, FALSE)) 
+            AS has_failed_dimensions
 FROM assessment_reports r
 JOIN projects p ON p.project_id = r.project_id
 JOIN courses c ON c.course_id = r.course_id"""
@@ -250,6 +252,7 @@ def _run(row: dict) -> RunRow:
         judge_checked_at=row["judge_checked_at"],
         judge_summary=row["judge_summary"],
         overridden=bool(row["overridden"]),
+        has_failed_dimension=bool(row["has_failed_dimensions"]),
     )
 
 def _label(row: dict) -> LabelRow:
@@ -536,8 +539,7 @@ class PostgresInsightsRepository:
             ).fetchone()
         return int(row["n"])
 
-# in-memory (tests)
-class InMemoryInsightsRepository:
+class InMemoryInsightsRepository: # in-memory (tests)
     """Test double that reads reports/projects from the in-memory repositories it wraps."""
 
     def __init__(self, assessments, projects) -> None:
@@ -570,6 +572,10 @@ class InMemoryInsightsRepository:
             judge_checked_at=checked,
             judge_summary=summary,
             overridden=bool(report.override),
+            has_failed_dimension=any(
+                getattr(score, "evaluation_failed", False) 
+                for score in (report.rubric_scores or {}).values()
+            ),
         )
 
     def list_runs(self, course_ids):

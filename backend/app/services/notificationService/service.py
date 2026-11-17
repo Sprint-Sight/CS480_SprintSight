@@ -82,11 +82,11 @@ def _is_transient_error(exc: Exception) -> bool:
     if isinstance(exc, smtplib.SMTPResponseException):
         # 4xx is "temporary problem", 5xx is "permanent".
         return 400 <= exc.smtp_code < 500
-    if isinstance(exc, (smtplib.SMTPAuthenticationError, smtplib.SMTPHeloError)):
+    if isinstance(exc, smtplib.SMTPAuthenticationError | smtplib.SMTPHeloError):
         return False
-    if isinstance(exc, (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused)):
+    if isinstance(exc, smtplib.SMTPRecipientsRefused | smtplib.SMTPSenderRefused):
         return False
-    if isinstance(exc, (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, OSError)):
+    if isinstance(exc, smtplib.SMTPConnectError | smtplib.SMTPServerDisconnected | OSError):
         return True
     return False
 

@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from app.services.insightsService.citations import parse_citation_rationale
 from app.services.insightsService.judge import derive_judge_status
 from app.services.insightsService.trace_summary import (
@@ -22,12 +24,10 @@ def test_parses_real_rationale_format_with_continuation_and_claims():
     assert rows[1].claim == "README.md | Added docs" and rows[0].claim is None
     assert truncated is False
 
-
 def test_marks_truncated_rationale_and_ignores_all_grounded_message():
     rows, truncated = parse_citation_rationale("C1 [testing] hallucinated/major_misattribution: x" * 60, {})
     assert truncated is True
     assert parse_citation_rationale("every judged citation was grounded", {}) == ([], False)
-
 
 def test_claim_numbering_matches_ai_engine_order_and_skips_failed_dimensions():
     outputs = {"rubric_scores": {
@@ -37,7 +37,6 @@ def test_claim_numbering_matches_ai_engine_order_and_skips_failed_dimensions():
         "requirements": {"evidence_citations": [{"identifier": "r1", "reason": "done"}]},
     }}
     assert collect_claims(outputs) == {"C1": "c1 | clean", "C2": "t1 | tests", "C3": "r1 | done"}
-
 
 def test_judge_status_rules():
     now = datetime.now(UTC)
@@ -52,13 +51,11 @@ def test_judge_status_rules():
     assert derive_judge_status(empty, now, now, stale) == "pending"
     assert derive_judge_status(empty, now - timedelta(hours=1), now, stale) == "stale"
 
-
 def _span(span_id, name, parent, start_ms, end_ms, outputs=None, attrs=None):
     return SimpleNamespace(span_id=span_id, name=name, parent_id=parent, start_time_ns=start_ms * 1_000_000,
                            end_time_ns=end_ms * 1_000_000, status=SimpleNamespace(status_code="OK"),
                            outputs=outputs, inputs={"bundle": "STUDENT CODE"},
                            get_attribute=lambda key, attrs=attrs: (attrs or {}).get(key))
-
 
 def test_summarize_trace_strips_payloads_and_collapses_llm_calls():
     root = _span("r", "Evaluate_Complete_Sprint", None, 0, 9000,
@@ -83,3 +80,11 @@ def test_summarize_trace_strips_payloads_and_collapses_llm_calls():
     assert summary.prompt_versions == {"Evaluate_testing": "3", "Generate_Sprint_Feedback": "2"}
     assert summary.claims == {"C1": "a | b"}
     assert "STUDENT CODE" not in repr(summary)
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("13/22", (13, 22)), ("0/5", (0, 5)), ("5/5", (5, 5)),
+    ("x", None), ("3/2", None), ("1/0", None), (None, None), ('', None),
+])
+def test_judge_progress_tag(raw, expected):
+    from app.services.insightsService.trace_summary import _judge_progress
+    assert _judge_progress({} if raw is None else {"judge.progress": raw}) == expected

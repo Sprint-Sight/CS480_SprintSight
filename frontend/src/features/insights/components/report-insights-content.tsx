@@ -34,6 +34,7 @@ function RevealStep({ reportId }: { reportId: string }) {
     <RevealReport
       reveal={reveal.data}
       judgeStatus={judge.data?.judgeStatus ?? reveal.data.judgeStatus}
+      judgeProgress={judge.data}
       trace={trace.data}
     />
   );

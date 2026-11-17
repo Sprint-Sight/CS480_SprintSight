@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 import httpx
 
 from app.core.config import get_settings
@@ -84,11 +86,16 @@ def _ai_engine_timeout(settings: object) -> httpx.Timeout:
     )
 
 
-def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None) -> dict:
+
+def send_assessment_to_ai_engine(
+    payload: dict, model_name: str | None = None, correlation_id: str | None = None
+) -> dict:
     settings = get_settings()
     base_url = settings.ai_engine_url.rstrip("/")
     selected_model = model_name or settings.default_model_name
     request_url = f"{base_url}/assess/sprint/data?modelname={selected_model}"
+    if correlation_id:
+        request_url += f"&correlation_id={quote(correlation_id, safe='')}"
     timeout = _ai_engine_timeout(settings)
 
     try:

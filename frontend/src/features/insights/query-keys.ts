@@ -13,4 +13,8 @@ export const insightsKeys = {
   health: () => [...insightsKeys.all, "health"] as const,
   config: () => [...insightsKeys.all, "config"] as const,
   overrideStats: () => [...insightsKeys.all, "override-stats"] as const,
+  promptDetail: (id: string, name: string) => [...insightsKeys.report(id), "prompt", name] as const,
+  promptRegistry: () => [...insightsKeys.all, "prompt-registry"] as const,
+  promptVersion: (name: string, version: number) =>
+    [...insightsKeys.all, "prompt-version", name, version] as const,
 };

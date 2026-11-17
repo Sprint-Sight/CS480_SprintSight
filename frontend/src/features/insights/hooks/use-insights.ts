@@ -10,6 +10,9 @@ import {
   fetchJudgeStatus,
   fetchMyCourses,
   fetchOverrideStats,
+  fetchPromptDetail,
+  fetchPromptRegistry,
+  fetchPromptVersion,
   fetchReveal,
   fetchRuns,
   fetchTrace,
@@ -61,6 +64,10 @@ export function useSaveLabels(reportId: string) {
       void queryClient.invalidateQueries({ queryKey: insightsKeys.myCourses() });
     },
   });
+}
+
+export function usePromptRegistry() {
+  return useQuery({ queryKey: insightsKeys.promptRegistry(), queryFn: fetchPromptRegistry });
 }
 
 export function useReveal(reportId: string, enabled: boolean) {
@@ -122,4 +129,24 @@ export function useInsightsConfig() {
 /** `enabled` keeps blind_label deployments from requesting override-only statistics. */
 export function useOverrideStats(enabled = true) {
   return useQuery({ queryKey: insightsKeys.overrideStats(), queryFn: fetchOverrideStats, enabled });
+}
+
+/** Admin registry: one registered version (template is immutable, aliases are not). */
+export function usePromptVersion(name: string, version: number, enabled: boolean) {
+  return useQuery({
+    queryKey: insightsKeys.promptVersion(name, version),
+    queryFn: () => fetchPromptVersion(name, version),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function usePromptDetail(reportId: string, name: string, enabled: boolean) {
+  return useQuery({
+    queryKey: insightsKeys.promptDetail(reportId, name),
+    queryFn: () => fetchPromptDetail(reportId, name),
+    enabled,
+    staleTime: 5 * 60_000,        // template is immutable, but aliases can move
+    retry: (count, error) => !isConflict(error) && count < 1,
+  });
 }

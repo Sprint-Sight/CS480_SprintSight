@@ -4,6 +4,7 @@ import pytest
 
 from app.services.insightsService.label_sync import sync_pending_overrides
 from app.services.insightsService.override_stats import NOTICE, override_stats
+from tests.conftest import EXPECTED_TILES
 from tests.insights_support import (
     ADMIN,
     AI_SCORES,
@@ -19,21 +20,17 @@ from tests.insights_support import (
 
 PATCH_URL = "/api/v1/assessments/reports/r-in"
 
-
 @pytest.fixture
 def env(override_user_repository, monkeypatch):
     environment = build_env(override_user_repository, monkeypatch, "override_gate")
     yield environment
     environment.cleanup()
 
-
 def _reveal(report_id="r-in", who=FACULTY):
     return client.get(f"{API}/reports/{report_id}/reveal", headers=headers(who))
 
-
 def test_config_reports_the_mode(env):
     assert client.get(f"{API}/config", headers=headers(FACULTY)).json() == {"mode": "override_gate"}
-
 
 def test_reveal_and_trace_are_locked_until_an_override_is_saved(env):
     h = headers(FACULTY)
@@ -43,7 +40,6 @@ def test_reveal_and_trace_are_locked_until_an_override_is_saved(env):
         assert "Assessment Report" in response.json()["error"]["message"]
     assert _reveal(who=ADMIN).status_code == 200  # admin sees everything, as before
     assert client.get(f"{API}/reports/r-in/judge-status", headers=h).status_code == 200  # status only
-
 
 def test_runs_show_the_score_but_gate_judge_checks(env):
     h = headers(FACULTY)
@@ -70,9 +66,9 @@ def test_override_unlocks_and_compares_on_a_single_scale(env):
     assert rows["code_quality"]["diff"] == 0 and rows["code_quality"]["overridden"] is False
     assert rows["requirements"]["overridden"] is True
     assert all(d["within_1"] is None for d in body["dimensions"])  # never an accuracy claim
-    assert body["judge"]["available"] is True and len(body["judge"]["tiles"]) == 6
+    assert body["judge"]["available"] is True
+    assert [t['key'] for t in body["judge"]["tiles"]] == EXPECTED_TILES
     assert client.get(f"{API}/reports/r-in/trace", headers=h).status_code == 200
-
 
 def test_save_without_changes_still_unlocks_but_records_no_change(env):
     h = headers(FACULTY)
@@ -85,10 +81,8 @@ def test_save_without_changes_still_unlocks_but_records_no_change(env):
     assert stats["reports_overridden"] == 1 and stats["reports_with_changes"] == 0
     assert all(d["changed"] == 0 for d in stats["by_dimension"])
 
-
 def test_blind_labelling_is_switched_off(env):
     assert client.put(f"{API}/reports/r-in/labels", json=six(), headers=headers(FACULTY)).status_code == 409
-
 
 def test_overrides_sync_to_mlflow_once_even_if_a_response_is_lost(env):
     h = headers(FACULTY)
@@ -106,7 +100,6 @@ def test_overrides_sync_to_mlflow_once_even_if_a_response_is_lost(env):
     assert requirements["metadata"]["ai_score_original"] == "7"
     assert requirements["score"] == 5.0
 
-
 def test_reverting_updates_the_same_mlflow_assessment(env):
     h = headers(FACULTY)
     client.patch(PATCH_URL, json=override_patch(requirements=50.0, testing=4.0), headers=h)
@@ -119,14 +112,12 @@ def test_reverting_updates_the_same_mlflow_assessment(env):
     requirements = next(v for v in env.gateway.labels["tr-1"].values() if v["dimension"] == "requirements")
     assert requirements["score"] == 7.0
 
-
 def test_a_failure_recording_the_override_does_not_break_the_editor(env, monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("insights down")
 
     monkeypatch.setattr(env.insights, "upsert_overrides", boom)
     assert client.patch(PATCH_URL, json=override_patch(), headers=headers(FACULTY)).status_code == 200
-
 
 def test_override_stats_route_never_reports_accuracy(env):
     h = headers(FACULTY)
@@ -135,7 +126,6 @@ def test_override_stats_route_never_reports_accuracy(env):
     assert body["notice"] == NOTICE and "not a measure of AI accuracy" in body["notice"]
     assert not {"exact_match", "within_1", "within_1_rate", "accuracy"} & set(body)
     assert all("within_1" not in row for row in body["by_dimension"])
-
 
 def test_override_stats_match_a_hand_computed_fixture():
     def overridden(requirements, testing):
@@ -161,7 +151,6 @@ def test_override_stats_match_a_hand_computed_fixture():
     assert rows["requirements"]["mean_adjustment"] == -1.5 and rows["requirements"]["direction"] == "lowered"
     assert rows["testing"]["changed"] == 1 and rows["testing"]["mean_abs_adjustment"] == 2.0
     assert rows["cicd"]["changed"] == 0 and rows["cicd"]["direction"] is None
-
 
 def test_a_dimension_the_ai_failed_is_left_out_of_the_comparison():
     original = {k: v for k, v in AI_SCORES.items() if k != "cicd"}  # the AI did not assess cicd

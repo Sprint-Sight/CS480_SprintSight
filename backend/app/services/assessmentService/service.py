@@ -1,5 +1,7 @@
 import logging
+import threading
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -50,6 +52,9 @@ from app.services.middleManService.service import (
 )
 from app.services.notificationService.service import EmailTransport
 
+if TYPE_CHECKING:
+    from app.services.insightsService.mlflow_gateway import MlflowGateway
+
 logger = logging.getLogger(__name__)
 
 # Minimum /100 score (inclusive) required for each letter grade, highest first.
@@ -68,13 +73,11 @@ GRADE_BOUNDARIES: list[tuple[float, str]] = [
     (0, "F"),
 ]
 
-
 def score_to_grade(score: float) -> str:
     for minimum, grade in GRADE_BOUNDARIES:
         if score >= minimum:
             return grade
     return "F"
-
 
 def _format_evidence_citations(evidence: object) -> list[str]:
     """The AI engine sends each citation as {"identifier", "reason"}; flatten
@@ -92,6 +95,36 @@ def _format_evidence_citations(evidence: object) -> list[str]:
             formatted.append(str(item))
     return formatted
 
+def _poll_ai_progress(
+    job_id, correlation_id, gateway, job_repo, stop: threading.Event, interval: float = 5.0
+) -> None:
+    if gateway is None:
+        return # No MLflow gateway available; skip progress polling
+    last = 70
+    while not stop.wait(interval):
+        try:
+            progress = gateway.get_eval_progress(correlation_id)
+        except Exception:  # MLflow down: keep the current value
+            logger.debug("eval progress poll failed", exc_info=True)
+            continue
+        if stop.is_set(): # AI call finished while talking to MLflow
+            return
+        if not progress:
+            continue
+        done, total = progress
+        if total <= 0: # bad tag must not kill thread
+            continue
+        pct = 70 + int(19 * done / total)   # AI stage owns 70..89; saving takes 90
+        if pct <= last:
+            continue
+        last = pct
+        job_repo.update_job(
+            job_id, status="ai_evaluating", progress=pct, current_stage="ai_evaluating"
+        )
+        job_repo.append_event(job_id, "progress", {
+            "status": "ai_evaluating", "progress": pct,
+            "message": f"AI is evaluating the sprint ({done}/{total} steps).",
+        })
 
 def _evidence_details(evidence: object) -> list[EvidenceDetail]:
     """Keep the AI engine's resolved citation fields (file path, line range,
@@ -112,7 +145,6 @@ def _evidence_details(evidence: object) -> list[EvidenceDetail]:
                 )
     return details
 
-
 def _failed_dimension_names(
     ai_result: dict, rubric_scores: dict[str, RubricDimensionScoreDetail]
 ) -> list[str]:
@@ -127,7 +159,6 @@ def _failed_dimension_names(
     names |= {name for name, detail in rubric_scores.items() if detail.evaluation_failed}
     order = {dimension: index for index, dimension in enumerate(RUBRIC_WEIGHTS)}
     return sorted(names, key=lambda name: (order.get(name, len(order)), name))
-
 
 def convert_ai_result_to_assessment_report(
     payload: AssessRequest | dict,
@@ -222,7 +253,7 @@ def convert_ai_result_to_assessment_report(
             for dimension, weight in effective_weights.items()
         )
         team_score_value = round(weighted_average * 10, 2)
-    elif isinstance(overall_score, (int, float)):
+    elif isinstance(overall_score, int | float):
         team_score_value = round(overall_score * 10, 2)
     else:
         team_score_value = 0.0
@@ -281,7 +312,6 @@ def convert_ai_result_to_assessment_report(
         ai_rubric_scores_original=original_scores or None,
     )
 
-
 RUBRIC_WEIGHTS = {
     "requirements": 1 / 6,
     "code_quality": 1 / 6,
@@ -290,7 +320,6 @@ RUBRIC_WEIGHTS = {
     "collaboration": 1 / 6,
     "cicd": 1 / 6,
 }
-
 
 def _validate_rubric_weights(weights: dict[str, float]) -> None:
     expected_dimensions = set(RUBRIC_WEIGHTS)
@@ -306,7 +335,6 @@ def _validate_rubric_weights(weights: dict[str, float]) -> None:
             detail=f"Rubric weights must sum to 1.0 (got {total:.3f}).",
         )
 
-
 def get_effective_rubric_weights(
     course_id: str,
     rubric_weights_repository: RubricWeightsRepository | None = None,
@@ -315,7 +343,6 @@ def get_effective_rubric_weights(
     repository = rubric_weights_repository or rubric_weights_repo
     record = repository.get_weights(course_id)
     return dict(record.weights) if record else dict(RUBRIC_WEIGHTS)
-
 
 def set_rubric_weights(
     course_id: str,
@@ -326,7 +353,6 @@ def set_rubric_weights(
     _validate_rubric_weights(weights)
     repository = rubric_weights_repository or rubric_weights_repo
     return repository.set_weights(course_id, weights, updated_by)
-
 
 def get_effective_model_name(
     requested_model: str | None,
@@ -353,7 +379,6 @@ def get_effective_model_name(
             return record.model_id
     return get_settings().default_model_name
 
-
 def run_assessment_job(
     job_id: str,
     payload: AssessRequest,
@@ -367,6 +392,7 @@ def run_assessment_job(
     user_repository: UserRepository | None = None,
     project_repository: ProjectRepository | None = None,
     notification_service: EmailTransport | None = None,
+    mlflow_gateway: "MlflowGateway | None" = None,
 ) -> None:
     """Background worker that collects the same input that the old synchronous endpoint used,
     sends the canonical payload to the AI engine, and then persists a report without
@@ -492,7 +518,20 @@ def run_assessment_job(
             "progress",
             {"status": "ai_evaluating", "progress": 70, "message": "AI is evaluating the sprint."},
         )
-        ai_result = send_assessment_to_ai_engine(middle_man_payload, payload.model_name)
+        stop = threading.Event()
+        poller = threading.Thread(
+            target=_poll_ai_progress,
+            args=(job_id, job_id, mlflow_gateway, job_repo, stop),
+            daemon=True,
+        )
+        poller.start()
+        try:
+            ai_result = send_assessment_to_ai_engine(
+                middle_man_payload, payload.model_name, correlation_id=job_id
+            )
+        finally:
+            stop.set()
+            poller.join(timeout=1)
 
         effective_weights = get_effective_rubric_weights(
             payload.course_id, rubric_weights_repository

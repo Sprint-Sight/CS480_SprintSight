@@ -46,7 +46,7 @@ def _ticket_timestamp(
     )
     if not raw:
         return None
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+    if isinstance(raw, int | float) and not isinstance(raw, bool):
         try:
             timestamp = float(raw)
             if abs(timestamp) >= 100_000_000_000:
@@ -66,7 +66,7 @@ def _ticket_created_at(fields: dict[str, Any]) -> datetime | None:
     raw = fields.get("created")
     if not raw:
         return None
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+    if isinstance(raw, int | float) and not isinstance(raw, bool):
         try:
             timestamp = float(raw)
             if abs(timestamp) >= 100_000_000_000:
@@ -172,7 +172,7 @@ def _issue_changelog(issue: dict[str, Any]) -> list[JiraIssueChange]:
         if not isinstance(history, dict) or not history.get("created"):
             continue
         created = history["created"]
-        if isinstance(created, (int, float)) and not isinstance(created, bool):
+        if isinstance(created, int | float) and not isinstance(created, bool):
             try:
                 timestamp = float(created)
                 if abs(timestamp) >= 100_000_000_000:

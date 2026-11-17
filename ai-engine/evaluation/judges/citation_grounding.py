@@ -24,7 +24,7 @@ from evaluation.judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
-from schemas.failure_class import FailureClass
+from schemas.failure_class import FailureClass, is_transient
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
 from services.failures import PromptTruncatedError, classify_failure, failure_detail
@@ -46,8 +46,9 @@ _PREVIEW_CHARS = 900  # MLflow's trace table stores previews in a VARCHAR(1000)
 # minute inside the scorer's limit, so a stuck call is cancelled by us (closing the connection, so
 # Ollama stops generating) with a classified timeout, instead of MLflow abandoning a thread that
 # keeps running.
-JUDGE_SCORER_TIMEOUT_SECONDS = float(os.getenv("JUDGE_SCORER_TIMEOUT_SECONDS", "3600"))
+JUDGE_SCORER_TIMEOUT_SECONDS = float(os.getenv("JUDGE_SCORER_TIMEOUT_SECONDS", "3000"))
 JUDGE_CALL_DEADLINE_SECONDS = max(60.0, JUDGE_SCORER_TIMEOUT_SECONDS - 60.0)
+JUDGE_PROGRESS_TAG = 'judge.progress'
 
 # V3: RAW_BUNDLE carries diffs and file contents only for what the claims mention (evaluation/judges/evidence.py).
 # V4: commits touching a cited file stay visible, with their messages, at every reduction level.
@@ -206,7 +207,8 @@ def summarize_verdict(citations: dict, verdict: GroundingVerdict) -> dict:
         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None, 'severity_weighted_rate': None}
     judged = {v.citation_id: v for v in verdict.citation_verdicts if v.citation_id in citations}
     n = len(judged)
-    count = lambda label: sum(v.label == label for v in judged.values())
+    def count(label: str) -> int:
+        return sum(v.label == label for v in judged.values())
     return {
         "coverage": round(n / len(citations), 4),
         "hallucination_rate": round(count("hallucinated") / n, 4) if n else None,
@@ -307,60 +309,32 @@ def plan_batches(bundle: ArtifactBundle, citations: dict, ctx: int, ids: list[st
     middle = len(ids) // 2
     return plan_batches(bundle, citations, ctx, ids[:middle]) + plan_batches(bundle, citations, ctx, ids[middle:])
 
-async def _judge_batch(bundle: ArtifactBundle, batch: _Batch, judge_model: str, judge_provider: str,
-                       ctx: int, extra_body: dict) -> GroundingVerdict:
-    user_prompt = f"RAW_BUNDLE:\n{batch.bundle_json}\n\nCLAIMS TO CHECK:\n{batch.claims_text}"   # compact JSON
-    est_tokens = (len(GROUNDING_SYSTEM_PROMPT) + len(user_prompt)) // 4
-
-    # num_ctx is what _prompt_truncated compares the server's reported prompt size with (Ollama
-    # cuts an over-long prompt to num_ctx without an error). Without it the check could never
-    # fire for the judge, and a prompt cut by the server would be judged as if the missing
-    # evidence did not exist. Only the ceiling check is enabled: its other fingerprint, "far
-    # fewer tokens than we sent", needs a tokenizer-accurate estimate, and chars // 4 on this
-    # JSON-heavy prompt is not one, so it could flag a healthy call.
-    on_ollama = judge_provider == 'ollama'
-    with audit_scope(team_id=bundle.team_id, sprint_id=bundle.sprint_id, dimension="judge_grounding",
-                     model=judge_model, prompt_version=GROUNDING_PROMPT_VERSION,
-                     num_ctx=ctx if on_ollama else None) as audit:
-        verdict = await create_llm_client(provider=judge_provider).chat.completions.create(
-            model=judge_model,
-            response_model=make_grounding_verdict_model(set(batch.ids)),
-            temperature=LLM_TEMPERATURE,
-            max_retries=3,
-            extra_body=extra_body,
-            messages=[
-                {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-    if audit["prompt_truncated"]:
-        raise JudgeContextTruncated(
-            f"{judge_model} reported a prompt cut by the server (~{est_tokens} tokens sent, num_ctx {ctx}); "
-            "discarding its verdicts."
-        )
-    return verdict
-
 # Main entry point for the grounding judge, get the judge's verdict and the per-citation rows for logging.
-async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str, judge_provider: str = 'ollama') -> GroundingVerdict:
+async def run_grounding_judge(bundle: ArtifactBundle, citations: dict, judge_model: str, judge_provider: str = 'ollama', on_progress=None) -> GroundingVerdict:
     ctx = await _judge_context(judge_model, judge_provider)
     extra_body = _request_extra_body(ctx) if judge_provider == 'ollama' else {}
     batches = plan_batches(bundle, citations, ctx)
     log.info("Judging %d claim(s) in %d call(s) with a %d-token window (evidence levels %s).",
              len(citations), len(batches), ctx, [b.evidence_level for b in batches])
 
-    verdicts: list[CitationVerdict] = []
-    notes: list[str] = []
-    for batch in batches:  # one after another: the judge model gets one Ollama slot
-        result = await _judge_batch(bundle, batch, judge_model, judge_provider, ctx, extra_body)
+    async def report(done: int) -> None: # Report on the MLflow trace so the user sees progress in the UI
+        if on_progress:
+            await asyncio.to_thread(on_progress, done, len(batches))  # never block the loop on MLflow
+
+    await report(0)  # also clears a stale tag from an earlier run
+    verdicts, notes = [], []
+    for i, batch in enumerate(batches, 1):
+        result = await _judge_batch_retrying(bundle, batch, judge_model, judge_provider, ctx, extra_body)
         verdicts.extend(result.citation_verdicts)
         notes.append(result.judge_notes)
+        await report(i)
     return GroundingVerdict(citation_verdicts=verdicts, judge_notes=" ".join(notes))
 
 async def judge_assessment(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str, judge_provider: str = 'ollama') -> dict:
     return (await judge_assessment_detailed(bundle, rubric_scores, judge_model, judge_provider))[0]
 
 # Detailed assessment adds per-dimension hallucination rates and a row per judged citation, 
-async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str, judge_provider: str = 'ollama') -> tuple[dict, list[dict]]:
+async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: RubricsScore, judge_model: str, judge_provider: str = 'ollama', on_progress=None) -> tuple[dict, list[dict]]:
     """Harness entry point. Raises if the judge can't give a complete verdict, so no rate is ever
     computed over a subset. Returns (metrics, rows): one row per judged citation, for rationales and later logging.
     Zero citations returns citation_count=0 with all rates None and no rows."""
@@ -368,7 +342,8 @@ async def judge_assessment_detailed(bundle: ArtifactBundle, rubric_scores: Rubri
     if not citations:
         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None,
                 "severity_weighted_rate": None, "citation_count": 0}, []
-    verdict = await run_grounding_judge(bundle, citations, judge_model, judge_provider)
+    kwargs = {'on_progress': on_progress} if on_progress else {}
+    verdict = await run_grounding_judge(bundle, citations, judge_model, judge_provider, **kwargs)
     by_dim: dict[str, list[CitationVerdict]] = {}
     for v in verdict.citation_verdicts: # Judge emits rates and a citation count per dimension
         by_dim.setdefault(citations[v.citation_id]["dimension"], []).append(v)
@@ -424,7 +399,8 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
             bundle = _bundle_of(trace, team)
             rubric, dropped = read_candidate(trace, bundle) # Get the candidate's rubric scores and any citations dropped by code
             result, rows = asyncio.run(asyncio.wait_for(  # Run the judge on the candidate's rubric scores
-                judge_assessment_detailed(bundle, rubric, judge_model, judge_provider), JUDGE_CALL_DEADLINE_SECONDS))
+                judge_assessment_detailed(bundle, rubric, judge_model, judge_provider, on_progress=_progress_reporter(trace.info.trace_id)), 
+                JUDGE_CALL_DEADLINE_SECONDS))
         
         except Exception as e:  # noqa: BLE001 - judge call can fail in many ways; must not crash the eval run
             # Bounded: instructor's exception text can run to tens of thousands of characters (every
@@ -474,3 +450,59 @@ def _feedback_name(key: str) -> str: # known keys keep their names; already-pref
     if key in FEEDBACK_NAMES:
         return FEEDBACK_NAMES[key]
     return key if key.startswith("citation_") else f'citation_{key}'
+
+# Callback that updates the MLflow trace with the judge's progress, so the user sees it in the UI
+def _progress_reporter(trace_id: str):
+    def report(done: int, total: int):
+        try:
+            mlflow.MlflowClient().set_trace_tag(trace_id, JUDGE_PROGRESS_TAG, f"{done}/{total}")
+        except Exception: # progress is cosmetic , it must never fail the judge
+            log.debug('Could not record judge progress', exc_info=True)
+    return report
+
+async def _judge_batch(bundle: ArtifactBundle, batch: _Batch, judge_model: str, judge_provider: str,
+                       ctx: int, extra_body: dict) -> GroundingVerdict:
+    user_prompt = f"RAW_BUNDLE:\n{batch.bundle_json}\n\nCLAIMS TO CHECK:\n{batch.claims_text}"   # compact JSON
+    est_tokens = (len(GROUNDING_SYSTEM_PROMPT) + len(user_prompt)) // 4
+
+    # num_ctx is what _prompt_truncated compares the server's reported prompt size with (Ollama
+    # cuts an over-long prompt to num_ctx without an error). Without it the check could never
+    # fire for the judge, and a prompt cut by the server would be judged as if the missing
+    # evidence did not exist. Only the ceiling check is enabled: its other fingerprint, "far
+    # fewer tokens than we sent", needs a tokenizer-accurate estimate, and chars // 4 on this
+    # JSON-heavy prompt is not one, so it could flag a healthy call.
+    on_ollama = judge_provider == 'ollama'
+    body = extra_body
+    if on_ollama:  # cap the output: no more than ~150 tokens per claim plus fixed overhead
+        body = {**extra_body, "options": {**extra_body.get("options", {}),
+                                          "num_predict": 300 + 150 * len(batch.ids)}}
+    with audit_scope(team_id=bundle.team_id, sprint_id=bundle.sprint_id, dimension="judge_grounding",
+                     model=judge_model, prompt_version=GROUNDING_PROMPT_VERSION,
+                     num_ctx=ctx if on_ollama else None) as audit:
+        verdict = await create_llm_client(provider=judge_provider).chat.completions.create(
+            model=judge_model,
+            response_model=make_grounding_verdict_model(set(batch.ids)),
+            temperature=LLM_TEMPERATURE,
+            max_retries=3,
+            extra_body=body,
+            messages=[
+                {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+    if audit["prompt_truncated"]:
+        raise JudgeContextTruncated(
+            f"{judge_model} reported a prompt cut by the server (~{est_tokens} tokens sent, num_ctx {ctx}); "
+            "discarding its verdicts."
+        )
+    return verdict
+
+async def _judge_batch_retrying(*args, attempts: int = 3):
+    for attempt in range(1, attempts + 1):
+        try:
+            return await _judge_batch(*args)
+        except Exception as exc:
+            if attempt == attempts or not is_transient(classify_failure(exc).value):
+                raise
+            log.warning("Judge call failed (%s); retry %d/%d", type(exc).__name__, attempt, attempts - 1)
+            await asyncio.sleep(10 * attempt)

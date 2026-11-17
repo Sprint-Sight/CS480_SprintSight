@@ -9,7 +9,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import httpx
@@ -807,7 +807,7 @@ def _prompt_truncated(raw_body: str, context: dict) -> bool:
     return at_ceiling or shrunk
 
 
-def create_llm_client(provider="ollama"):
+def create_llm_client(provider="ollama", read_timeout: float | None = None):
     """
     Creates the instructor-wrapped Ollama client.
 
@@ -833,18 +833,21 @@ def create_llm_client(provider="ollama"):
             # Explicit on every axis: only the *read* of a long generation may take minutes.
             # Connecting, sending the prompt and waiting for a pooled connection are quick
             # unless the server is unreachable, which should be reported promptly.
-            timeout=httpx.Timeout(
-                connect=OLLAMA_CONNECT_TIMEOUT, read=OLLAMA_TIMEOUT, write=60.0, pool=30.0
-            ),
+            timeout=cast(Any, httpx.Timeout(
+                connect=OLLAMA_CONNECT_TIMEOUT, 
+                read=read_timeout or OLLAMA_TIMEOUT, 
+                write=60.0,
+                  pool=30.0
+            )),
             max_retries=OLLAMA_CLIENT_MAX_RETRIES,
-            http_client=transport, # Use the custom transport to capture requests and responses
+            http_client=cast(Any, transport), # Use the custom transport to capture requests and responses
         )
     elif provider == "openai":
         raw_client = AsyncOpenAI( # Hosted OpenAI client (fixture judge only)
             api_key=os.getenv('OPENAI_API_KEY'),
             timeout=OPENAI_TIMEOUT,
             max_retries=OPENAI_CLIENT_MAX_RETRIES,
-            http_client=transport, # Use the custom transport to capture requests and responses
+            http_client=cast(Any, transport), # Use the custom transport to capture requests and responses
         )
     else:
         raise ValueError(f"Unknown LLM provider {provider!r}; expected 'ollama' or 'openai'.")
