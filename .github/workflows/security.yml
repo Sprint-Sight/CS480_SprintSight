@@ -86,7 +86,7 @@ jobs:
 
       - name: Build Frontend Docker Image (fresh base image, no stale cache)
         run: |
-          docker pull node:20-bookworm-slim
+          docker pull node:24-bookworm-slim
           docker build --pull -t sprintsight-frontend:security-scan --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 ./frontend
 
       - name: Scan Frontend Container Image
@@ -103,7 +103,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Audit npm packages
         working-directory: frontend
