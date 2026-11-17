@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.core.config import get_settings
 from app.core.credential_crypto import CredentialDecryptionError, decrypt_secret
 from app.dependencies.auth import (
+    ensure_course_access,
     get_action_audit_repository,
     get_git_identity_repository,
     get_instructor_jira_credentials_repository,
@@ -527,6 +528,7 @@ def sync_repository_ingestion(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course."
         )
+    ensure_course_access(faculty_user, project.course_id, projects)
     if not project.local_repo_path:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

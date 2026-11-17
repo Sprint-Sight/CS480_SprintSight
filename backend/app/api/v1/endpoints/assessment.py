@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.dependencies.auth import (
+    ensure_course_access,
     get_action_audit_repository,
     get_assessment_repository,
     get_audit_repository,
@@ -66,6 +67,7 @@ from app.services.assessmentService.service import (
     update_manual_assessment,
 )
 from app.services.auditLogService.service import append_action_audit, append_override_audit
+from app.services.insightsService.blind import stamp_score_exposure
 from app.services.insightsService.overrides import record_override
 from app.services.notificationService.service import EmailTransport
 
@@ -78,6 +80,7 @@ def _authorize_report_access(
     current_user: object, course_id: str, project_id: str, projects: ProjectRepository
 ) -> None:
     if current_user.role != Role.STUDENT:
+        ensure_course_access(current_user, course_id, projects)
         return
     project = projects.get_project(project_id)
     if (
@@ -89,6 +92,19 @@ def _authorize_report_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view assessment reports for your project.",
         )
+
+
+def _stamp_exposure(
+    user: UserRecord, report_ids: list[str], insights: InsightsRepository | None
+) -> None:
+    """These legacy routes show AI scores. Record that, so an instructor's later blind labels
+    are stored as non-blind instead of being counted as an unbiased baseline."""
+    if insights is None:
+        return
+    try:
+        stamp_score_exposure(report_ids, user, insights)
+    except Exception:
+        logger.exception("Could not record score exposure for %s", report_ids)
 
 
 @router.post("/assess", status_code=status.HTTP_202_ACCEPTED)
@@ -121,6 +137,7 @@ def assess_sprint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course."
         )
+    ensure_course_access(faculty_user, project.course_id, projects)
     if not project.local_repo_path:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -183,13 +200,14 @@ def assess_sprint(
 def assessment_job_events(
     job_id: str,
     faculty_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
 ):
-    _ = faculty_user
     job = job_repo.get_job(job_id)
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Assessment job not found."
         )
+    ensure_course_access(faculty_user, job.course_id, projects)
 
     def event_stream():
         seen = 0
@@ -214,10 +232,16 @@ def list_reports(
     project_id: str,
     sprint_id: str,
     faculty_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    insights_repository: Annotated[
+        InsightsRepository | None, Depends(get_optional_insights_repository)
+    ],
 ):
-    _ = faculty_user
-    return list_assessment_reports(course_id, project_id, sprint_id, assessment_repository)
+    ensure_course_access(faculty_user, course_id, projects)
+    reports = list_assessment_reports(course_id, project_id, sprint_id, assessment_repository)
+    _stamp_exposure(faculty_user, [r.report_id for r in reports], insights_repository)
+    return reports
 
 
 @router.get("/latest")
@@ -228,9 +252,14 @@ def get_latest(
     current_user: Annotated[UserRecord, Depends(require_student_or_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    insights_repository: Annotated[
+        InsightsRepository | None, Depends(get_optional_insights_repository)
+    ],
 ):
     _authorize_report_access(current_user, course_id, project_id, projects)
-    return get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
+    report = get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
+    _stamp_exposure(current_user, [report.report_id], insights_repository)
+    return report
 
 
 @router.get("/reports/{report_id}/evidence", response_model=ReportEvidenceLinksResponse)
@@ -267,11 +296,12 @@ def get_report_evidence_links(
 def get_rubric_weights(
     course_id: str,
     faculty_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     rubric_weights_repository: Annotated[
         RubricWeightsRepository, Depends(get_rubric_weights_repository)
     ],
 ) -> RubricWeightsResponse:
-    _ = faculty_user
+    ensure_course_access(faculty_user, course_id, projects)
     record = rubric_weights_repository.get_weights(course_id)
     if record:
         return RubricWeightsResponse(
@@ -293,11 +323,13 @@ def put_rubric_weights(
     course_id: str,
     payload: RubricWeightsPayload,
     faculty_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     rubric_weights_repository: Annotated[
         RubricWeightsRepository, Depends(get_rubric_weights_repository)
     ],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> RubricWeightsResponse:
+    ensure_course_access(faculty_user, course_id, projects)
     record = set_rubric_weights(
         course_id, payload.weights, faculty_user.id, rubric_weights_repository
     )
@@ -372,6 +404,7 @@ def patch_assessment_report(
 def override_score(
     payload: OverrideRequest,
     faculty_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     audit_repository: Annotated[AuditRepository, Depends(get_audit_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
@@ -382,6 +415,9 @@ def override_score(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Assessment repository unavailable.",
         )
+    existing = assessment_repository.get_report(payload.report_id)
+    if existing:
+        ensure_course_access(faculty_user, existing.course_id, projects)
     override_record = override_student_score(
         payload,
         instructor_id=faculty_user.id,

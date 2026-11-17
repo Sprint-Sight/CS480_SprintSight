@@ -202,3 +202,14 @@ def require_admin(current_user=Depends(require_password_changed)):
     if current_user.role != Role.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required.")
     return current_user
+
+
+def ensure_course_access(user, course_id: str, projects: ProjectRepository) -> None:
+    """Staff may act on a course only if they teach it (admins may act on any course)."""
+    if user.role == Role.ADMIN:
+        return
+    if user.role == Role.INSTRUCTOR and projects.is_instructor_assigned(course_id, user.id):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail="Instructor is not assigned to this course."
+    )

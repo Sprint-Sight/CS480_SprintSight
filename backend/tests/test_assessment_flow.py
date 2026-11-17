@@ -164,6 +164,7 @@ def test_assess_and_override_writes_audit(
     )
     monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(repository_root))
     get_settings.cache_clear()
+    override_user_repository.assign_instructor("cs480", "u-faculty-1")
     override_user_repository.create_project(
         ProjectRecord(
             id="proj-a",
@@ -424,6 +425,7 @@ def test_assessment_job_contract_returns_accepted_and_job_id(
     )
     monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(repository_root))
     get_settings.cache_clear()
+    override_user_repository.assign_instructor("cs480", "u-faculty-1")
     override_user_repository.create_project(
         ProjectRecord(
             id="proj-a",

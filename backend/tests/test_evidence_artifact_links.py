@@ -88,6 +88,7 @@ def project(override_user_repository, student_repo) -> ProjectRecord:
         jira_domain="team.atlassian.net",
         jira_project_key="ENG",
     )
+    override_user_repository.assign_instructor("cs480", "u-faculty-1")
     override_user_repository.create_project(record, ["u-student-1"])
     return record
 
