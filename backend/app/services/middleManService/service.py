@@ -1,8 +1,10 @@
+from urllib.parse import quote
+
 import httpx
 
 from app.core.config import get_settings
 from app.repositories.interfaces import IngestionMetricBundle
-from urllib.parse import quote
+
 
 def build_assessment_payload(
     metrics: IngestionMetricBundle,
@@ -85,7 +87,9 @@ def _ai_engine_timeout(settings: object) -> httpx.Timeout:
 
 
 
-def send_assessment_to_ai_engine(payload: dict, model_name: str | None = None, correlation_id: str | None = None) -> dict:
+def send_assessment_to_ai_engine(
+    payload: dict, model_name: str | None = None, correlation_id: str | None = None
+) -> dict:
     settings = get_settings()
     base_url = settings.ai_engine_url.rstrip("/")
     selected_model = model_name or settings.default_model_name

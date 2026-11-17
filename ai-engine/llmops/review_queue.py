@@ -38,6 +38,6 @@ def _experiment_id_for(trace_id: str) -> str:
     client = mlflow.MlflowClient()
     try:
         return client.get_trace(trace_id).info.experiment_id
-    except Exception:
+    except MlflowException:
         log.warning("Could not read trace %s; using the production experiment.", trace_id)
         return client.get_experiment_by_name(experiments.PRODUCTION).experiment_id

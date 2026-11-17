@@ -6,7 +6,9 @@ convert snake_case to camelCase blindly without mangling keys like `code_quality
 
 from __future__ import annotations
 
-import difflib, logging, os
+import difflib
+import logging
+import os
 from collections import defaultdict
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -42,8 +44,8 @@ from app.services.insightsService.judge import (
 from app.services.insightsService.mlflow_gateway import (
     MlflowGateway,
     MlflowUnavailable,
-    TraceNotFound,
     PromptNotFound,
+    TraceNotFound,
 )
 from app.services.insightsService.trace_summary import AI_ENGINE_DIMENSION_ORDER, TraceSummary
 
@@ -168,7 +170,9 @@ def attention_flags(run: RunRow, unlocked: bool) -> list[str]:
 
 def prompt_detail(scoped: ScopedReport, insights: InsightsRepository,
                   gateway: MlflowGateway, name: str) -> dict:
-    authorize_score_view(scoped, insights)           # same gate as the reveal: no blind-label spoilers
+    authorize_score_view(
+        scoped, insights
+    )  # same gate as the reveal: no blind-label spoilers
     if name not in PROMPT_NAMES or not scoped.run.trace_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Prompt not found.")
     base = {"available": False, "notice": None, "name": name, "version": None, "template": None,
@@ -193,7 +197,9 @@ def prompt_detail(scoped: ScopedReport, insights: InsightsRepository,
     out = {**base, "available": True, "version": version,
            "span_duration_ms": span.duration_ms if span else None,
            "span_status": span.status if span else None,
-           "unaccepted_citations": sum(1 for r in rows if r.dimension == dim) if (dim and judged) else None,
+           "unaccepted_citations": (
+               sum(1 for r in rows if r.dimension == dim) if (dim and judged) else None
+           ),
            "unaccepted_citations_truncated": truncated}
     try:
         out.update(gateway.get_prompt(name, version))
@@ -644,7 +650,6 @@ def judge_status_view(
     status_, checked = run.judge_status, run.judge_checked_at
     if checked is not None and checked.tzinfo is None:
         checked = checked.replace(tzinfo=UTC)
-    fresh = checked is not None and (now - checked).total_seconds() < JUDGE_REFRESH_MIN_SECONDS
     progress = None # judge progress is cosmetic, it must never fail the status view
     if status_ in JUDGE_OPEN_STATUSES and run.trace_id:
         try:  # cached for 15 s by the gateway, so this is usually not an extra MLflow call

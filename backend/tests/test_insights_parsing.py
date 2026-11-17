@@ -1,6 +1,7 @@
-import pytest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+
+import pytest
 
 from app.services.insightsService.citations import parse_citation_rationale
 from app.services.insightsService.judge import derive_judge_status
@@ -10,6 +11,7 @@ from app.services.insightsService.trace_summary import (
     collect_claims,
     summarize_trace,
 )
+
 
 def test_parses_real_rationale_format_with_continuation_and_claims():
     text = ("C7 [documentation] partially_grounded/minor_detail: Commit message is generic.\n"

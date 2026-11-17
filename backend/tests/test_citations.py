@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+
 from app.services.insightsService import citations as c
 
 '''

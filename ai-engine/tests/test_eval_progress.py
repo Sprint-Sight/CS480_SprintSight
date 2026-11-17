@@ -1,7 +1,9 @@
 """eval.progress is written as 'done/total' on the run: 0/N at start, +1 per finished step."""
 
-import asyncio, pytest
+import asyncio
+
 from services import evaluator as ev
+
 
 class FakeRun:
     def __init__(self, fail: bool = False):

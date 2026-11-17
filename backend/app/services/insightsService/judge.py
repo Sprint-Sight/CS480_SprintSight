@@ -101,7 +101,8 @@ def build_tiles(values: dict | None) -> list[dict]:
             "Citations the judge returned a verdict for",
             _grade_low(v.get("coverage"), warn=1.0, bad=0.8),
         ),
-        # _tile("tone", "Tone", "Not measured", "No tone judge runs in the pipeline yet", "na"), # Tone judge can be added in the future
+        # Tone judge can be added in the future.
+        # _tile("tone", "Tone", "Not measured", "No tone judge runs in the pipeline yet", "na"),
     ]
 
 def citation_check(values: dict | None) -> dict | None:

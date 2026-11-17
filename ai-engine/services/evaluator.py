@@ -1,7 +1,12 @@
-import asyncio, logging, mlflow, os, threading, time
+import asyncio
+import logging
+import os
+import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+import mlflow
 from mlflow.entities import SpanEvent, SpanType
 
 from llmops.prompt_registry import (

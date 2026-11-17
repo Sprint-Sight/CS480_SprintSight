@@ -1,8 +1,9 @@
 """Tier 1 (INSIGHTS_MODE=blind_label): blind labelling, reveal, sync and degraded mode."""
 
 import pytest
-from tests.conftest import EXPECTED_TILES
+
 from app.services.insightsService.label_sync import sync_pending_labels
+from tests.conftest import EXPECTED_TILES
 from tests.insights_support import (
     ADMIN,
     API,
@@ -12,6 +13,7 @@ from tests.insights_support import (
     headers,
     six,
 )
+
 
 @pytest.fixture
 def env(override_user_repository, monkeypatch):

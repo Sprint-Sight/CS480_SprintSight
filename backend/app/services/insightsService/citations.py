@@ -7,7 +7,8 @@ module prefers that and falls back to parsing.
 
 from __future__ import annotations
 
-import json, re
+import json
+import re
 from dataclasses import dataclass
 
 from app.services.insightsService.trace_summary import TraceSummary

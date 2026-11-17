@@ -1,7 +1,13 @@
-import asyncio, httpx, logging, mlflow, os, re, time
+import asyncio
+import logging
+import os
+import re
+import time
 from dataclasses import dataclass
 from typing import Literal
 
+import httpx
+import mlflow
 from mlflow.entities import (
     AssessmentSource,
     AssessmentSourceType,
@@ -18,10 +24,9 @@ from evaluation.judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle
-from schemas.failure_class import FailureClass
+from schemas.failure_class import FailureClass, is_transient
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
-from schemas.failure_class import is_transient
 from services.failures import PromptTruncatedError, classify_failure, failure_detail
 from services.llm_client import (
     LLM_TEMPERATURE,
@@ -202,7 +207,8 @@ def summarize_verdict(citations: dict, verdict: GroundingVerdict) -> dict:
         return {"coverage": None, "hallucination_rate": None, "grounded_rate": None, 'severity_weighted_rate': None}
     judged = {v.citation_id: v for v in verdict.citation_verdicts if v.citation_id in citations}
     n = len(judged)
-    count = lambda label: sum(v.label == label for v in judged.values())
+    def count(label: str) -> int:
+        return sum(v.label == label for v in judged.values())
     return {
         "coverage": round(n / len(citations), 4),
         "hallucination_rate": round(count("hallucinated") / n, 4) if n else None,

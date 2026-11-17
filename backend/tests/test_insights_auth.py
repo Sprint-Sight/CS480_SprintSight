@@ -11,6 +11,7 @@ import pytest
 from app.main import app
 from tests.insights_support import ADMIN, API, FACULTY, STUDENT, build_env, client, headers, six
 
+
 @pytest.fixture(params=["blind_label", "override_gate"])
 def env(request, override_user_repository, monkeypatch):
     environment = build_env(override_user_repository, monkeypatch, request.param)

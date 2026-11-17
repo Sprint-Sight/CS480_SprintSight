@@ -13,6 +13,7 @@ from app.services.insightsService.mlflow_gateway import (
 )
 from app.services.insightsService.trace_summary import TraceSummary
 
+
 class FakeMlflowGateway:  # for tests and offline demos; implements MlflowGateway protocol
     def __init__(self, server_version: str = "3.16.1", client_version: str = "3.16.1") -> None:
         self.traces: dict[str, TraceSummary] = {}

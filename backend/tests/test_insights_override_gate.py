@@ -4,6 +4,7 @@ import pytest
 
 from app.services.insightsService.label_sync import sync_pending_overrides
 from app.services.insightsService.override_stats import NOTICE, override_stats
+from tests.conftest import EXPECTED_TILES
 from tests.insights_support import (
     ADMIN,
     AI_SCORES,
@@ -16,7 +17,6 @@ from tests.insights_support import (
     override_patch,
     six,
 )
-from tests.conftest import EXPECTED_TILES
 
 PATCH_URL = "/api/v1/assessments/reports/r-in"
 

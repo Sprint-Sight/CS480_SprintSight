@@ -1,5 +1,7 @@
-import logging, threading
+import logging
+import threading
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -50,7 +52,6 @@ from app.services.middleManService.service import (
 )
 from app.services.notificationService.service import EmailTransport
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.services.insightsService.mlflow_gateway import MlflowGateway
 
@@ -94,7 +95,9 @@ def _format_evidence_citations(evidence: object) -> list[str]:
             formatted.append(str(item))
     return formatted
 
-def _poll_ai_progress(job_id, correlation_id, gateway, job_repo, stop: threading.Event, interval: float = 5.0) -> None:
+def _poll_ai_progress(
+    job_id, correlation_id, gateway, job_repo, stop: threading.Event, interval: float = 5.0
+) -> None:
     if gateway is None:
         return # No MLflow gateway available; skip progress polling
     last = 70
@@ -115,7 +118,9 @@ def _poll_ai_progress(job_id, correlation_id, gateway, job_repo, stop: threading
         if pct <= last:
             continue
         last = pct
-        job_repo.update_job(job_id, status="ai_evaluating", progress=pct, current_stage="ai_evaluating")
+        job_repo.update_job(
+            job_id, status="ai_evaluating", progress=pct, current_stage="ai_evaluating"
+        )
         job_repo.append_event(job_id, "progress", {
             "status": "ai_evaluating", "progress": pct,
             "message": f"AI is evaluating the sprint ({done}/{total} steps).",

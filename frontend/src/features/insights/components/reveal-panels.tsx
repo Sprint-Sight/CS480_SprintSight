@@ -1,7 +1,6 @@
 import { clsx } from "clsx";
 import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogClose } from "@/components/ui/dialog";
-import { usePromptDetail } from "@/features/insights/hooks/use-insights";
+import { PromptDetailDialog } from "@/features/insights/components/prompt-detail-dialog";
 import type {
   RevealDimension,
   Tile,
@@ -217,70 +216,5 @@ export function PromptVersionsList({ reportId, versions, dimensions }: {
           onClose={() => setOpen(null)} />
       )}
     </>
-  );
-}
-
-function PromptDetailDialog({ reportId, name, dimensions, onClose }: {
-  reportId: string; name: string; dimensions: RevealDimension[]; onClose: () => void;
-}) {
-  const q = usePromptDetail(reportId, name, true);
-  const d = q.data;
-  const dim = dimensions.find((x) => `Evaluate_${x.dimension}` === name);
-  const stat = (label: string, value: string) => (
-    <div className="rounded border border-slate-200 p-2">
-      <div className="text-xs uppercase text-slate-500">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
-    </div>
-  );
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl p-6" dismissOnOutsideClick>
-        <DialogTitle className="font-mono text-base font-semibold">
-          {name} {d?.version && <>v{d.version}</>}
-        </DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-slate-600">
-          {d?.commitMessage || "Registered template recorded on this report's trace."}
-          {d?.createdAt && <> · created {new Date(d.createdAt).toLocaleDateString()}</>}
-        </DialogDescription>
-        {q.isLoading && <p className="mt-4 text-sm text-slate-500">Loading…</p>}
-        {q.isError && <p className="mt-4 text-sm text-red-700">Could not load this prompt.</p>}
-        {d?.notice && <p className="mt-4 text-sm text-amber-700">{d.notice}</p>}
-        {d && (
-          <>
-            <div className="mt-3 flex flex-wrap items-center gap-1">
-              <span className="text-xs text-slate-500">Aliases now:</span>
-              {d.aliases.map((a) => (
-                <span key={a} className="rounded bg-slate-100 px-2 py-0.5 text-xs">{a}</span>
-              ))}
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {dim && stat("AI score", dim.aiScore?.toString() ?? "failed")}
-              {dim && stat("Your score", dim.yourScore?.toString() ?? "—")}
-              {dim && stat("Diff", dim.diff?.toString() ?? "—")}
-              {d.spanDurationMs != null && stat("Run time", `${(d.spanDurationMs / 1000).toFixed(1)} s`)}
-              {d.spanStatus && stat("Span status", d.spanStatus)}
-              {d.unacceptedCitations != null &&
-                stat(
-                  d.unacceptedCitationsTruncated ? "Citations not accepted (at least)" : "Citations not accepted",
-                  `${d.unacceptedCitations}${d.unacceptedCitationsTruncated ? "+" : ""}`,
-                )}
-            </div>
-            {d.template && (
-              <div className="mt-4">
-                <div className="mb-1 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold">Prompt template</h3>
-                  <button type="button" className="text-xs text-indigo-700 hover:underline"
-                    onClick={() => void navigator.clipboard.writeText(d.template ?? "")}>Copy</button>
-                </div>
-                <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-3 text-xs">
-                  {d.template}
-                </pre>
-              </div>
-            )}
-          </>
-        )}
-        <DialogClose className="mt-4 rounded border px-3 py-1 text-sm">Close</DialogClose>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -1,4 +1,9 @@
-import contextvars, hashlib, httpx, instructor, json, logging, mlflow, os, time
+import contextvars
+import hashlib
+import json
+import logging
+import os
+import time
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -7,6 +12,9 @@ from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
+import httpx
+import instructor
+import mlflow
 from dotenv import load_dotenv
 from instructor.core import IncompleteOutputException
 from mlflow.entities import SpanType

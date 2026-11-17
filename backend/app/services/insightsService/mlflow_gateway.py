@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-import httpx, importlib.metadata, json, logging, os, threading, time
+import importlib.metadata
+import json
+import logging
+import os
+import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
+
+import httpx
 
 from app.services.insightsService.trace_summary import (
     AI_ENGINE_DIMENSION_ORDER,
@@ -258,7 +265,9 @@ class RealMlflowGateway: # real implementation of MlflowGateway talking to a rea
         template = pv.template
         created = getattr(pv, "creation_timestamp", None)  # epoch ms
         try:  # the created date is cosmetic: a bad value must not take down the whole drawer
-            created_at = datetime.fromtimestamp(created / 1000, UTC).isoformat() if created else None
+            created_at = (
+                datetime.fromtimestamp(created / 1000, UTC).isoformat() if created else None
+            )
         except (TypeError, ValueError, OverflowError, OSError):
             created_at = None
         return {

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from evaluation.judges import citation_grounding as cg
 
+
 def test_run_grounding_judge_reports_each_batch(monkeypatch):
     calls: list[tuple[int, int]] = []
 

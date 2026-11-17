@@ -1,4 +1,6 @@
-import os, pytest
+import os
+
+import pytest
 
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key")
 os.environ.setdefault("CREDENTIALS_ENCRYPTION_KEY", "")
