@@ -2,7 +2,16 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from psycopg.errors import UniqueViolation
 
 from app.core.credential_crypto import encrypt_secret
@@ -10,8 +19,10 @@ from app.dependencies.auth import (
     get_action_audit_repository,
     get_assessment_repository,
     get_current_user,
+    get_git_identity_repository,
     get_instructor_jira_credentials_repository,
     get_jira_ingestion_repository,
+    get_metrics_repository,
     get_notification_repository,
     get_notification_service,
     get_project_repository,
@@ -22,7 +33,10 @@ from app.repositories.interfaces import (
     ActionAuditRepository,
     AssessmentRepository,
     CourseRecord,
+    GitIdentityRepository,
     InstructorJiraCredentialsRepository,
+    JiraIngestionRunRepository,
+    MetricsRepository,
     NotificationRepository,
     ProjectRecord,
     ProjectRepository,
@@ -51,6 +65,7 @@ from app.services.authService.service import (
     generate_placeholder_password,
     user_response,
 )
+from app.services.identityService.service import relink_project
 from app.services.jiraService.service import validate_jira_credentials
 from app.services.notificationService.in_app import create_in_app_notification
 from app.services.notificationService.service import EmailTransport
@@ -678,6 +693,10 @@ def unenroll_course_student(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+    metrics: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    background_tasks: BackgroundTasks,
 ) -> None:
     course = _course_or_404(repository, course_id)
     if not _can_manage_course(current_user, course_id, repository):
@@ -697,14 +716,12 @@ def unenroll_course_student(
 
     # Unenrolling also removes the student from their project group in this
     # course, so capture the group name before the change for the notification.
-    removed_group = next(
-        (
-            project.team_name
-            for project in repository.list_projects(course_id)
-            if user_id in repository.list_member_ids(project.id)
-        ),
-        None,
-    )
+    left_projects = [
+        project
+        for project in repository.list_projects(course_id)
+        if user_id in repository.list_member_ids(project.id)
+    ]
+    removed_group = left_projects[0].team_name if left_projects else None
 
     if not repository.unenroll_student(course_id, user_id):
         raise HTTPException(
@@ -720,6 +737,10 @@ def unenroll_course_student(
         details={"course_id": course_id, "removed_project_group": removed_group},
     )
     _notify_course_unenrollment(notifications, student, course, removed_group)
+    for project in left_projects:
+        background_tasks.add_task(
+            relink_project, project.id, repository, users, identities, metrics, jira_runs
+        )
 
 
 @router.post("/courses/{course_id}/instructors/{user_id}", response_model=CourseInstructorResponse)
@@ -1298,6 +1319,10 @@ def add_member(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+    metrics: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    background_tasks: BackgroundTasks,
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     member = users.get_by_id(user_id)
@@ -1343,6 +1368,10 @@ def add_member(
         details={"project_id": project_id, "course_id": project.course_id},
     )
     _notify_project_membership(notifications, member, project)
+    # Commits and Jira tickets already ingested for this team now belong to the new member.
+    background_tasks.add_task(
+        relink_project, project_id, repository, users, identities, metrics, jira_runs
+    )
     return _project_response(project, repository, users)
 
 
@@ -1355,6 +1384,10 @@ def remove_member(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
     notifications: Annotated[NotificationRepository, Depends(get_notification_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+    metrics: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    background_tasks: BackgroundTasks,
 ) -> ProjectResponse:
     project = repository.get_project(project_id)
     if not project or not _can_manage_course(current_user, project.course_id, repository):
@@ -1381,4 +1414,7 @@ def remove_member(
     )
     if member:
         _notify_project_unmembership(notifications, member, project)
+    background_tasks.add_task(
+        relink_project, project_id, repository, users, identities, metrics, jira_runs
+    )
     return _project_response(project, repository, users)

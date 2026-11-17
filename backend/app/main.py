@@ -25,6 +25,7 @@ from app.repositories.postgres import (
     PostgresAuditRetentionConfigRepository,
     PostgresDocumentRepository,
     PostgresEmailOutboxRepository,
+    PostgresGitIdentityRepository,
     PostgresInstructorJiraCredentialsRepository,
     PostgresInstructorModelSelectionRepository,
     PostgresJiraIngestionRunRepository,
@@ -40,6 +41,7 @@ from app.repositories.postgres import (
     ensure_audit_retention_config_schema,
     ensure_audit_schema,
     ensure_email_outbox_schema,
+    ensure_git_identity_schema,
     ensure_instructor_jira_credentials_schema,
     ensure_instructor_model_selection_schema,
     ensure_notification_schema,
@@ -98,6 +100,7 @@ async def lifespan(app: FastAPI):
     ensure_instructor_model_selection_schema(pool)
     ensure_instructor_jira_credentials_schema(pool)
     ensure_peer_evaluation_schema(pool)
+    ensure_git_identity_schema(pool)
     # After the users, courses and assessment tables exist: it alters assessment_reports.
     ensure_insights_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
@@ -120,6 +123,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.export_log_repository = InMemoryExportLogRepository()
     app.state.peer_evaluation_repository = PostgresPeerEvaluationRepository(pool)
+    app.state.git_identity_repository = PostgresGitIdentityRepository(pool)
     app.state.insights_repository = PostgresInsightsRepository(pool)
     app.state.mlflow_gateway = RealMlflowGateway(
         settings.mlflow_tracking_uri, settings.mlflow_timeout_seconds

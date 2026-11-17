@@ -533,3 +533,18 @@ CREATE TABLE IF NOT EXISTS report_overrides (
 );
 CREATE INDEX IF NOT EXISTS idx_report_overrides_sync
     ON report_overrides(sync_status, updated_at);
+
+
+-- Git identity overrides: instructor-set mapping from a commit author email or name to a project
+-- member. Mirrors ensure_git_identity_schema in app/repositories/postgres.py.
+CREATE TABLE IF NOT EXISTS project_git_identities (
+    identity_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    kind VARCHAR(8) NOT NULL CHECK (kind IN ('email', 'name')),
+    value VARCHAR(255) NOT NULL,          -- trimmed and case-folded
+    student_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (project_id, kind, value)
+);
+CREATE INDEX IF NOT EXISTS idx_project_git_identities_student
+    ON project_git_identities(student_id);

@@ -14,6 +14,7 @@ from app.repositories.interfaces import (
     DocumentRepository,
     EmailOutboxRecord,
     EmailOutboxRepository,
+    GitIdentityRecord,
     IngestionMetricBundle,
     InstructorJiraCredentialsRecord,
     InstructorJiraCredentialsRepository,
@@ -1305,6 +1306,26 @@ def ensure_instructor_jira_credentials_schema(pool: ConnectionPool) -> None:
         )
 
 
+def ensure_git_identity_schema(pool: ConnectionPool) -> None:
+    """Instructor overrides that map a Git author email or name to a project member."""
+    with pool.connection() as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS project_git_identities (
+                identity_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+                kind VARCHAR(8) NOT NULL CHECK (kind IN ('email', 'name')),
+                value VARCHAR(255) NOT NULL,
+                student_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (project_id, kind, value)
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_git_identities_student "
+            "ON project_git_identities(student_id)"
+        )
+
+
 def ensure_peer_evaluation_schema(pool: ConnectionPool) -> None:
     with pool.connection() as connection:
         connection.execute(
@@ -1986,6 +2007,46 @@ class PostgresMetricsRepository(MetricsRepository):
             captured_at=row["captured_at"],
         )
 
+    def list_author_stats(self, project_id: str) -> list[dict]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT c.author, c.author_email, COUNT(DISTINCT c.sha) AS commits
+                   FROM ingestion_commits c
+                   JOIN ingestion_runs r ON r.ingestion_run_id = c.ingestion_run_id
+                   WHERE r.project_id = %s
+                   GROUP BY c.author, c.author_email""",
+                (UUID(project_id),),
+            ).fetchall()
+        return [
+            {"author": r["author"], "author_email": r["author_email"], "commits": int(r["commits"])}
+            for r in rows
+        ]
+
+    def relink_commits(self, project_id: str, resolve) -> int:
+        changed = 0
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                authors = connection.execute(
+                    """SELECT DISTINCT c.author, c.author_email
+                       FROM ingestion_commits c
+                       JOIN ingestion_runs r ON r.ingestion_run_id = c.ingestion_run_id
+                       WHERE r.project_id = %s""",
+                    (UUID(project_id),),
+                ).fetchall()
+                for row in authors:
+                    resolved = resolve(row["author"], row["author_email"])
+                    value = UUID(resolved) if resolved else None
+                    cursor = connection.execute(
+                        """UPDATE ingestion_commits SET student_id = %s
+                           WHERE author = %s AND author_email IS NOT DISTINCT FROM %s
+                             AND student_id IS DISTINCT FROM %s
+                             AND ingestion_run_id IN (
+                                 SELECT ingestion_run_id FROM ingestion_runs WHERE project_id = %s)""",
+                        (value, row["author"], row["author_email"], value, UUID(project_id)),
+                    )
+                    changed += cursor.rowcount
+        return changed
+
     def get_metrics_page(
         self,
         course_id: str,
@@ -2056,6 +2117,51 @@ class PostgresMetricsRepository(MetricsRepository):
             head_sha=row["head_sha"],
             captured_at=row["captured_at"],
         ), total
+
+
+class PostgresGitIdentityRepository:
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    @staticmethod
+    def _record(row) -> GitIdentityRecord:
+        return GitIdentityRecord(
+            id=str(row["identity_id"]),
+            project_id=str(row["project_id"]),
+            kind=row["kind"],
+            value=row["value"],
+            student_id=str(row["student_id"]),
+            created_at=row["created_at"],
+        )
+
+    def list_identities(self, project_id: str) -> list[GitIdentityRecord]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM project_git_identities WHERE project_id = %s ORDER BY kind, value",
+                (UUID(project_id),),
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def upsert_identity(
+        self, project_id: str, kind: str, value: str, student_id: str
+    ) -> GitIdentityRecord:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO project_git_identities (project_id, kind, value, student_id)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (project_id, kind, value) DO UPDATE SET student_id = EXCLUDED.student_id
+                   RETURNING *""",
+                (UUID(project_id), kind, value.strip().casefold(), UUID(student_id)),
+            ).fetchone()
+        return self._record(row)
+
+    def delete_identity(self, project_id: str, identity_id: str) -> bool:
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM project_git_identities WHERE project_id = %s AND identity_id = %s",
+                (UUID(project_id), UUID(identity_id)),
+            )
+        return cursor.rowcount > 0
 
 
 class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):

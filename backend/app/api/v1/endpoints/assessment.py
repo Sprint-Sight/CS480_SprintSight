@@ -12,6 +12,7 @@ from app.dependencies.auth import (
     get_assessment_repository,
     get_audit_repository,
     get_document_repository,
+    get_git_identity_repository,
     get_instructor_model_selection_repository,
     get_jira_ingestion_repository,
     get_manual_text_repository,
@@ -32,6 +33,7 @@ from app.repositories.interfaces import (
     AssessmentRepository,
     AuditRepository,
     DocumentRepository,
+    GitIdentityRepository,
     InstructorModelSelectionRepository,
     JiraIngestionRunRepository,
     ManualTextRepository,
@@ -110,6 +112,7 @@ def assess_sprint(
     selection_repository: Annotated[
         InstructorModelSelectionRepository, Depends(get_instructor_model_selection_repository)
     ],
+    identity_repository: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
 ) -> dict:
     project = projects.get_project(payload.project_id)
     if not project:
@@ -153,6 +156,7 @@ def assess_sprint(
         user_repository=user_repository,
         project_repository=projects,
         notification_service=notification_service,
+        identity_repository=identity_repository,
     )
     append_action_audit(
         action_audits,

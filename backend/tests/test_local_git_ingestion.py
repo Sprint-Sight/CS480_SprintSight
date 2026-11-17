@@ -26,6 +26,9 @@ class StubUserRepository:
     def get_by_email(self, email: str) -> UserRecord | None:
         return self.users.get(email.lower())
 
+    def get_by_id(self, user_id: str) -> UserRecord | None:
+        return next((user for user in self.users.values() if user.id == user_id), None)
+
 
 def git(repository: Path, *arguments: str) -> None:
     subprocess.run(

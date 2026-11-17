@@ -1,11 +1,14 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from psycopg.errors import UniqueViolation
 
 from app.dependencies.auth import (
     get_action_audit_repository,
+    get_git_identity_repository,
+    get_jira_ingestion_repository,
+    get_metrics_repository,
     get_notification_service,
     get_project_repository,
     get_user_repository,
@@ -14,6 +17,9 @@ from app.dependencies.auth import (
 )
 from app.repositories.interfaces import (
     ActionAuditRepository,
+    GitIdentityRepository,
+    JiraIngestionRunRepository,
+    MetricsRepository,
     ProjectRepository,
     UserRecord,
     UserRepository,
@@ -35,6 +41,7 @@ from app.services.authService.service import (
     reset_password,
     user_response,
 )
+from app.services.identityService.service import relink_for_user, relink_project
 from app.services.notificationService.service import (
     EmailTransport,
 )
@@ -144,6 +151,11 @@ def update_managed_user(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+    metrics: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    background_tasks: BackgroundTasks,
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
@@ -228,6 +240,10 @@ def update_managed_user(
             "is_active": payload.is_active if payload.is_active is not None else user.is_active,
         },
     )
+    # A changed email, name or active flag changes who this student's commits resolve to.
+    background_tasks.add_task(
+        relink_for_user, user_id, projects, repository, identities, metrics, jira_runs
+    )
     return user_response(updated)
 
 
@@ -265,6 +281,10 @@ def deactivate_managed_user(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+    metrics: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    background_tasks: BackgroundTasks,
 ) -> UserResponse:
     """
     Soft-deletes a user by setting is_active = False and cleaning up all
@@ -310,6 +330,12 @@ def deactivate_managed_user(
         )
 
     # Soft-delete + cascade membership cleanup
+    former_projects = [
+        project.id
+        for course in projects.list_courses()
+        for project in projects.list_projects(course.id)
+        if user_id in projects.list_member_ids(project.id)
+    ]
     updated = deactivate_user_cascade(users, projects, user_id)
     append_action_audit(
         action_audits,
@@ -320,6 +346,10 @@ def deactivate_managed_user(
         target_id=user_id,
         details={"email": updated.email, "role": updated.role.value},
     )
+    for project_id in former_projects:
+        background_tasks.add_task(
+            relink_project, project_id, projects, users, identities, metrics, jira_runs
+        )
     return user_response(updated)
 
 
@@ -329,6 +359,11 @@ def activate_managed_user(
     current_admin: Annotated[UserRecord, Depends(require_admin)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    identities: Annotated[GitIdentityRepository, Depends(get_git_identity_repository)],
+    metrics: Annotated[MetricsRepository, Depends(get_metrics_repository)],
+    jira_runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+    background_tasks: BackgroundTasks,
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
@@ -355,5 +390,8 @@ def activate_managed_user(
         target_type="user",
         target_id=user_id,
         details={"email": updated.email, "role": updated.role.value},
+    )
+    background_tasks.add_task(
+        relink_for_user, user_id, projects, repository, identities, metrics, jira_runs
     )
     return user_response(updated)

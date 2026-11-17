@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -392,6 +393,41 @@ class MetricsRepository(Protocol):
         start_datetime: datetime | None = None,
         end_datetime: datetime | None = None,
     ) -> tuple[IngestionMetricBundle | None, int]: ...
+
+    def relink_commits(
+        self, project_id: str, resolve: Callable[[str, str | None], str | None]
+    ) -> int:
+        """Re-resolve student_id on every stored commit of a project from (author, author_email).
+        Returns the number of stored commit rows whose student_id changed."""
+        ...
+
+    def list_author_stats(self, project_id: str) -> list[dict]:
+        """Distinct (author, author_email) pairs in a project's stored commits, with the number
+        of distinct commits each wrote: [{"author", "author_email", "commits"}]."""
+        ...
+
+
+@dataclass
+class GitIdentityRecord:
+    """An instructor-set mapping from a Git author label to one project member.
+
+    kind is "email" or "name"; value is stored trimmed and case-folded.
+    """
+
+    id: str
+    project_id: str
+    kind: str
+    value: str
+    student_id: str
+    created_at: datetime | None = None
+
+
+class GitIdentityRepository(Protocol):
+    def list_identities(self, project_id: str) -> list[GitIdentityRecord]: ...
+    def upsert_identity(
+        self, project_id: str, kind: str, value: str, student_id: str
+    ) -> GitIdentityRecord: ...
+    def delete_identity(self, project_id: str, identity_id: str) -> bool: ...
 
 
 @dataclass
