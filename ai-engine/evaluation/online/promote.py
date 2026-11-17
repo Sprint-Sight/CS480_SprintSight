@@ -34,7 +34,8 @@ SEVERITY_TOLERANCE = 0.03                 # same, for the severity-weighted rate
 log = logging.getLogger("sprintsight.judges.promote")
 _JUDGE_LOCK = threading.Lock()  # one judge + promotion at a time: one shared Ollama, and alias flips must not race
 
-_input_key = lambda team_id, sprint_id, model, judge_model: f"{team_id}|{sprint_id}|{model}|{judge_model}"
+def _input_key(team_id, sprint_id, model, judge_model):
+    return f"{team_id}|{sprint_id}|{model}|{judge_model}"
 
 class JudgeTransientFailure(RuntimeError):
     """The judge call failed for a reason that may pass (see schemas.failure_class)."""

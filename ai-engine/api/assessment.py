@@ -89,6 +89,7 @@ async def assess_backend_data_endpoint(
         Query(description="Select the model to use for assessment"),
     ],
     experiment_name: str = experiments.PRODUCTION,
+    correlation_id: str | None = None,
 ):
     """Accept the backend middleman payload and evaluate it with the configured model."""
     try:
@@ -117,7 +118,7 @@ async def assess_backend_data_endpoint(
             # Grading has priority for the single Ollama model slot; a judge job that is running
             # is waited for (bounded), and queued judge jobs wait for grading to go quiet.
             async with get_arbiter().grading():
-                return await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids)
+                return await evaluate_sprint(bundle, modelname, experiment_name, mlflow_client, trace_ids, correlation_id=correlation_id)
 
         # If the backend hangs up (its timeout), cancel the grading: otherwise Ollama keeps
         # generating for a result nobody will read.

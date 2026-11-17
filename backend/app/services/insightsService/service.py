@@ -6,6 +6,7 @@ convert snake_case to camelCase blindly without mangling keys like `code_quality
 
 from __future__ import annotations
 
+import difflib
 import logging
 import os
 from collections import defaultdict
@@ -44,9 +45,10 @@ from app.services.insightsService.judge import (
 from app.services.insightsService.mlflow_gateway import (
     MlflowGateway,
     MlflowUnavailable,
+    PromptNotFound,
     TraceNotFound,
 )
-from app.services.insightsService.trace_summary import TraceSummary
+from app.services.insightsService.trace_summary import AI_ENGINE_DIMENSION_ORDER, TraceSummary
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +83,7 @@ MLFLOW_DOWN_NOTICE = (
 )
 TRACE_MISSING_NOTICE = "MLflow has no trace with this report's ID."
 JUDGE_REFRESH_MIN_SECONDS = 10
+PROMPT_NAMES = {f"Evaluate_{d}" for d in AI_ENGINE_DIMENSION_ORDER} | {"Generate_Sprint_Feedback"}
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
@@ -135,8 +138,7 @@ def override_comparison(report: AssessmentReport) -> list[dict]:
         )
     return rows
 
-# judge status
-def _store_judge(
+def _store_judge( # judge status
     run: RunRow, summary: TraceSummary, insights: InsightsRepository, stale_minutes: int
 ) -> tuple[str, dict]:
     status_ = derive_judge_status(
@@ -146,7 +148,7 @@ def _store_judge(
     insights.set_judge_status(run.report_id, status_, values)
     return status_, values
 
-def refresh_judge_status(
+def refresh_judge_status( # Refresh judge status from MLflow, store in Postgres
     run: RunRow, gateway: MlflowGateway, insights: InsightsRepository, *, stale_minutes: int
 ) -> str:
     """Raises MlflowUnavailable; callers decide how to degrade."""
@@ -166,6 +168,82 @@ def refresh_judge_status(
         return "no_trace"
     return _store_judge(run, summary, insights, stale_minutes)[0]
 
+# Attention flags for a run, for the instructor dashboard. These are not shown to students.
+def attention_flags(run: RunRow, unlocked: bool) -> list[str]:
+    flags = []
+    if run.has_failed_dimension:
+        flags.append("failed_dimension")
+    if run.judge_status in ('failed', 'stale'):
+        flags.append(f"judge_{run.judge_status}")
+    check = citation_check(run.judge_summary) if unlocked else None # same gate as _run_item
+    if check and check['status'] == 'flagged':
+        flags.append("citation")
+    return flags
+
+def prompt_detail(scoped: ScopedReport, insights: InsightsRepository,
+                  gateway: MlflowGateway, name: str) -> dict:
+    authorize_score_view(
+        scoped, insights
+    )  # same gate as the reveal: no blind-label spoilers
+    if name not in PROMPT_NAMES or not scoped.run.trace_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Prompt not found.")
+    base = {"available": False, "notice": None, "name": name, "version": None, "template": None,
+            "commit_message": None, "created_at": None, "aliases": [],
+            "span_duration_ms": None, "span_status": None, "unaccepted_citations": None,
+            "unaccepted_citations_truncated": False}
+    try:
+        summary = gateway.get_trace_summary(scoped.run.trace_id)
+    except TraceNotFound:
+        return {**base, "notice": TRACE_MISSING_NOTICE}
+    except MlflowUnavailable:
+        return {**base, "notice": MLFLOW_DOWN_NOTICE}
+    version = summary.prompt_versions.get(name)      # ONLY the version this trace used
+    if version is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Prompt version not recorded on this trace.")
+
+    dim = name.removeprefix("Evaluate_") if name != "Generate_Sprint_Feedback" else None
+    span_name = f"Evaluate_Dimension_{dim}" if dim else name
+    span = next((s for s in summary.spans if s.name.replace(" ", "_") == span_name), None)
+    rows, truncated = unaccepted_citations(summary)
+    judged = summary.assessment("citation_hallucination_rate") is not None
+    out = {**base, "available": True, "version": version,
+           "span_duration_ms": span.duration_ms if span else None,
+           "span_status": span.status if span else None,
+           "unaccepted_citations": (
+               sum(1 for r in rows if r.dimension == dim) if (dim and judged) else None
+           ),
+           "unaccepted_citations_truncated": truncated}
+    try:
+        out.update(gateway.get_prompt(name, version))
+    except (MlflowUnavailable, PromptNotFound):
+        out["notice"] = "Prompt text is unavailable right now."   # stats still shown
+    return out
+
+def registry_prompt_detail(gateway: MlflowGateway, name: str, version: int) -> dict:
+    """Admin view of one registered prompt version, with a diff against the previous one."""
+    if name not in PROMPT_NAMES or version < 1:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Prompt not found.")
+    base = {"available": False, "notice": None, "name": name, "version": str(version),
+            "template": None, "commit_message": None, "created_at": None,
+            "aliases": [], "diff": None}
+    try:
+        current = gateway.get_prompt(name, str(version))
+    except PromptNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Prompt version not found.") from None
+    except MlflowUnavailable:
+        return {**base, "notice": MLFLOW_DOWN_NOTICE}
+    diff = None
+    if version > 1:
+        try:
+            previous = gateway.get_prompt(name, str(version - 1))
+            diff = "\n".join(difflib.unified_diff(
+                (previous["template"] or "").splitlines(), (current["template"] or "").splitlines(),
+                f"v{version - 1}", f"v{version}", lineterm="",
+            )) or None
+        except (PromptNotFound, MlflowUnavailable):
+            diff = None
+    return {**base, "available": True, **current, "diff": diff}
+
 def _run_item(run: RunRow, labels_done: int, score_visible: bool, unlocked: bool) -> dict:
     return {
         "report_id": run.report_id,
@@ -182,7 +260,9 @@ def _run_item(run: RunRow, labels_done: int, score_visible: bool, unlocked: bool
         "ai_score_hidden": not score_visible,
         "insights_unlocked": unlocked,
         "overridden": run.overridden,
+        "has_failed_dimension": run.has_failed_dimension,
         "citation_check": citation_check(run.judge_summary) if unlocked else None,
+        "flags": attention_flags(run, unlocked),
     }
 
 def list_runs(
@@ -196,6 +276,7 @@ def list_runs(
     label_status: str,
     page: int,
     page_size: int,
+    needs_attention: bool,
 ) -> dict:
     runs = insights.list_runs(scoped_course_ids(user, projects))
     is_instructor = user.role == Role.INSTRUCTOR
@@ -207,6 +288,16 @@ def list_runs(
         if override_mode:  # "labelled" means an instructor saved an override
             return len(DIMENSIONS) if run.overridden else 0
         return min(counts.get(run.report_id, 0), len(DIMENSIONS))
+
+    all_ids = [r.report_id for r in runs] # All report IDs for the run
+    if not needs_attention:
+        unlocked_all: set[str] = set()
+    elif user.role == Role.ADMIN: # Admins sees all scores, judge and citations; no gate.
+        unlocked_all = set(all_ids)
+    elif override_mode:  # AI score is visible; judge checks unlock once overridden.
+        unlocked_all = {r.report_id for r in runs if r.overridden}
+    else: # Instructor sees AI score and judge checks only after labelling all six dimensions.
+        unlocked_all = {rid for rid in all_ids if counts.get(rid, 0) >= len(DIMENSIONS)}
 
     one_per_course = {r.course_id: r for r in runs}.values()
     facets = {
@@ -227,15 +318,16 @@ def list_runs(
         and (not sprint_id or r.sprint_id == sprint_id)
         and (not model or r.model_name == model)
         and (label_status == "all" or (label_status == "labelled") == (done(r) >= len(DIMENSIONS)))
+        and (not needs_attention or attention_flags(r, r.report_id in unlocked_all))
     ]
     start = (page - 1) * page_size
     page_rows = filtered[start : start + page_size]
     if override_mode:
         # The AI score is no longer hidden; judge checks unlock once the report is overridden.
-        is_admin = user.role == Role.ADMIN
+        is_admin = user.role == Role.ADMIN # Admins see all scores, judge and citations; no gate.
         unlocked_ids = {r.report_id for r in page_rows if r.overridden or is_admin}
-        score_ids = {r.report_id for r in page_rows}
-    else:
+        score_ids = {r.report_id for r in page_rows} # All scores visible in override mode
+    else: # Instructor sees AI score and judge checks only after labelling all six dimensions.
         unlocked_ids = score_ids = visible_score_ids(
             user, [r.report_id for r in page_rows], insights
         )
@@ -576,20 +668,23 @@ def judge_status_view(
     status_, checked = run.judge_status, run.judge_checked_at
     if checked is not None and checked.tzinfo is None:
         checked = checked.replace(tzinfo=UTC)
-    fresh = checked is not None and (now - checked).total_seconds() < JUDGE_REFRESH_MIN_SECONDS
-    if status_ in JUDGE_OPEN_STATUSES and not fresh:
-        try:
-            status_ = refresh_judge_status(run, gateway, insights, stale_minutes=stale_minutes)
-            checked = now
-        except MlflowUnavailable:
+    progress = None # judge progress is cosmetic, it must never fail the status view
+    if status_ in JUDGE_OPEN_STATUSES and run.trace_id:
+        try:  # cached for 15 s by the gateway, so this is usually not an extra MLflow call
+            found = gateway.get_trace_summary(run.trace_id).judge_progress
+            progress = {"done": found[0], "total": found[1]} if found else None
+        except (MlflowUnavailable, TraceNotFound):
             pass
     code = ((run.judge_summary or {}).get("failure_class")) if status_ == "failed" else None
+    started = run.generated_at if run.generated_at.tzinfo else run.generated_at.replace(tzinfo=UTC)
     return {
         "report_id": run.report_id,
         "judge_status": status_,
         "checked_at": _iso(checked),
         "failure_class": code,
         "failure_description": failure_description(code),
+        "progress": progress,
+        "elapsed_minutes": int((now - started).total_seconds() // 60),
     }
 
 def health(gateway: MlflowGateway, insights: InsightsRepository) -> dict:

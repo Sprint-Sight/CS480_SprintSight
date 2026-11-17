@@ -11,6 +11,9 @@ vi.mock("@/features/insights/hooks/use-insights", () => ({
 vi.mock("@/features/insights/components/health-panel", () => ({
   HealthPanel: () => <p>health panel</p>,
 }));
+vi.mock("@/features/insights/components/prompt-registry-panel", () => ({
+  PromptRegistryPanel: () => <p>prompt registry</p>,
+}));
 
 import { AdminInsightsContent } from "@/features/insights/components/admin-insights-content";
 

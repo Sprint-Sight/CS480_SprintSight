@@ -6,6 +6,7 @@ import { useRequireAdmin } from "@/features/auth/hooks/use-require-admin";
 import { HealthPanel } from "@/features/insights/components/health-panel";
 import { useInsightsHealth } from "@/features/insights/hooks/use-insights";
 import { getErrorMessage } from "@/lib/api/client";
+import { PromptRegistryPanel } from "@/features/insights/components/prompt-registry-panel";
 
 export function AdminInsightsContent() {
   const allowed = useRequireAdmin();
@@ -26,6 +27,8 @@ export function AdminInsightsContent() {
       ) : (
         <HealthPanel health={health.data} />
       )}
+      {/* <HealthSection /> */}
+      <PromptRegistryPanel />
       <p className="text-sm text-slate-500">
         Course, model and agreement comparisons arrive in Tiers 2–3.
       </p>

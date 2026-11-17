@@ -54,6 +54,7 @@ log = logging.getLogger("sprintsight.evaluator")
 # Batched decoding is not guaranteed bit-identical to one-at-a-time, so check
 # scores against a concurrency-1 run before using a higher value for grading.
 DIMENSION_CONCURRENCY = max(1, int(os.getenv("LLM_DIMENSION_CONCURRENCY", "1")))
+EVALUATION_PROGRESS_TAG = "eval.progress"  # MLflow run tag that records how many of the total steps have completed
 
 async def _bounded_evaluate(dim: DimensionName, bundle: ArtifactBundle, model_name: str, run_num_ctx: int | None, semaphore: asyncio.Semaphore, prompts) -> RubricDimensionScore: # Bounded evaluation function to limit concurrent calls to the LLM service
     # Acquire the semaphore HERE, around the actual LLM call, so it genuinely
@@ -148,18 +149,30 @@ async def _log_gpu_offload(model_name: str, run: TrackedRun | None = None) -> No
     except Exception:  # telemetry must not break grading
         log.warning("Could not record GPU offload for model '%s'.", model_name, exc_info=True)
 
-async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient, trace_ids: list[str] | None = None, dimension_prompts=None) -> tuple[SprintAssessment, dict[str, int]]:
+def make_progress_reporter(run, total_steps: int):
+    done = 0
+
+    def report(initial: bool = False) -> None:
+        nonlocal done
+        if not initial:
+            done += 1
+        try: # cosmetic: must never fail grading
+            run.set_tag(EVALUATION_PROGRESS_TAG, f"{done}/{total_steps}")
+        except Exception:
+            log.debug("Could not record eval progress", exc_info=True)
+    return report
+
+async def evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient, trace_ids: list[str] | None = None, dimension_prompts=None, correlation_id: str | None = None) -> tuple[SprintAssessment, dict[str, int]]:
     """Grade one sprint. Assessments run one at a time here, because MLflow's tracer provider is a
     single shared object that cannot be re-pointed at an experiment while another assessment's spans
     are still in flight (see llmops/run_tracking.py); a second request waits its turn. The model
     server serves one generation at a time anyway, so little is lost."""
     async with exclusive_trace_destination(experiment_name):
-        return await _evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, dimension_prompts)
-
+        return await _evaluate_sprint(bundle, model_name, experiment_name, mlflow_client, trace_ids, dimension_prompts, correlation_id)
 
 # Evaluates each rubric dimension, then generates project-level sprint feedback. Call evaluate_sprint,
 # which holds the trace destination for the duration.
-async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient, trace_ids: list[str] | None = None, dimension_prompts=None) -> tuple[SprintAssessment, dict[str, int]]:
+async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_name: str, mlflow_client: mlflow.MlflowClient, trace_ids: list[str] | None = None, dimension_prompts=None, correlation_id: str | None = None) -> tuple[SprintAssessment, dict[str, int]]:
 
     if trace_ids is None:
         trace_ids = []
@@ -198,6 +211,11 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
         run.set_tag("team_id", bundle.team_id)
         run.set_tag("sprint_id", bundle.sprint_id)
 
+        report_progress = make_progress_reporter(run, len(DIMENSIONS) + 1)  # +1 for sprint feedback generation
+        if correlation_id:
+            run.set_tag('correlation_id', correlation_id)
+        report_progress(initial=True)  # Record initial progress before any dimension is evaluated
+
         trace_ids.append(root.trace_id)  # Add the root trace ID to the list of trace IDs for this evaluation
 
         mlflow.update_current_trace(
@@ -212,7 +230,13 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
         # 2. Create one task per dimension. Each task acquires the semaphore
         #    itself (inside _bounded_evaluate), so at most `semaphore` value
         #    dimensions call the LLM concurrently — the rest wait their turn.
-        tasks = [_bounded_evaluate(dim, bundle, model_name, run_num_ctx, semaphore, prompts) for dim in DIMENSIONS]
+        async def _tracked(dim):
+            try:
+                return await _bounded_evaluate(dim, bundle, model_name, run_num_ctx, semaphore, prompts)
+            finally:
+                report_progress()  # Update progress after each dimension is evaluated
+
+        tasks = [_tracked(dim) for dim in DIMENSIONS]
 
         # 3. Schedule all tasks at once; the semaphore (not gather) is what
         #    limits real concurrency. With a cap of N, wall-clock is roughly

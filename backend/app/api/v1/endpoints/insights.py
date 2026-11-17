@@ -34,7 +34,7 @@ from app.repositories.interfaces import (
 from app.services.insightsService import service
 from app.services.insightsService.blind import is_override_mode
 from app.services.insightsService.label_sync import sync_labels_for_report
-from app.services.insightsService.mlflow_gateway import MlflowGateway
+from app.services.insightsService.mlflow_gateway import MlflowGateway, MlflowUnavailable
 from app.services.insightsService.override_stats import override_stats
 
 '''
@@ -92,6 +92,7 @@ def list_runs(
     label_status: Literal["all", "labelled", "unlabelled"] = "all",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+    needs_attention: bool = False,
 ):
     return service.list_runs(
         user,
@@ -103,6 +104,7 @@ def list_runs(
         label_status=label_status,
         page=page,
         page_size=page_size,
+        needs_attention=needs_attention,
     )
 
 @router.get("/reports/{report_id}/evidence")
@@ -130,6 +132,28 @@ def put_labels(
         sync_labels_for_report, insights, gateway, scoped.report.report_id, scoped.user.id
     )
     return result
+
+@router.get("/reports/{report_id}/prompts/{prompt_name}")
+def prompt_detail(prompt_name: str, scoped: Scoped, insights: Insights, gateway: Gateway):
+    return service.prompt_detail(scoped, insights, gateway, prompt_name)
+
+@router.get("/prompt-registry/{prompt_name}/{version}", dependencies=[Depends(require_admin)])
+def prompt_registry_version(prompt_name: str, version: int, gateway: Gateway):
+    return service.registry_prompt_detail(gateway, prompt_name, version)
+
+@router.get('/prompt-registry', dependencies=[Depends(require_admin)])
+def prompt_registry(gateway: Gateway): # versions & alias only, never prompt text
+    try:
+        return {
+            "available": True,
+            "notice": (
+                "Grading uses the prompt in code, registered as 'challenger'. "
+                "'production' is the research promotion gate's baseline."
+            ),
+            "prompts": gateway.prompt_registry(),
+        }
+    except MlflowUnavailable:
+        return {"available": False, "notice": service.MLFLOW_DOWN_NOTICE, "prompts": []}
 
 @router.get("/reports/{report_id}/reveal")
 def reveal(scoped: Scoped, insights: Insights, gateway: Gateway):

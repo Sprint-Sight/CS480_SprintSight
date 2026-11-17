@@ -1,3 +1,7 @@
+altair
+
+boto3
+
 fastapi[standard]
 
 httpx
@@ -17,12 +21,20 @@ numpy
 openai
 
 pandas
-altair
+
+reportlab
+
 streamlit
 
 psycopg2-binary===2.9.10
 
+psycopg[binary, pool]
+
+psycopg
+
 # Schema validation & definition
 pydantic >= 2.0
+
+pydriller
 
 python-dotenv

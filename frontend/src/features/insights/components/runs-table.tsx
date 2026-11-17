@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CitationChip, HiddenValue, JudgeChip } from "@/features/insights/components/chips";
+import { CitationChip, HiddenValue, FlagChips, JudgeChip } from "@/features/insights/components/chips";
 import type { InsightsMode, RunItem } from "@/features/insights/types";
 
 const HEADERS = ["Team", "Course · Sprint", "Model", "AI score", "Citation check", "Judge"];
@@ -56,6 +56,7 @@ export function RunsTable({
               </td>
               <td className="px-3 py-2">
                 <JudgeChip status={run.judgeStatus} />
+                <FlagChips flags={run.flags} />
               </td>
               <td className="px-3 py-2 tabular-nums">
                 {override ? (run.overridden ? "✓" : "—") : `${run.labelsDone} of 6`}

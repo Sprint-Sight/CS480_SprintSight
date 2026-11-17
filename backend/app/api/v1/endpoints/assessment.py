@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
@@ -72,10 +72,9 @@ from app.services.insightsService.blind import stamp_score_exposure
 from app.services.insightsService.overrides import record_override
 from app.services.notificationService.service import EmailTransport
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 _executor = ThreadPoolExecutor(max_workers=4)
-logger = logging.getLogger(__name__)
-
 
 def _authorize_report_access(
     current_user: object, course_id: str, project_id: str, projects: ProjectRepository
@@ -110,6 +109,7 @@ def _stamp_exposure(
 
 @router.post("/assess", status_code=status.HTTP_202_ACCEPTED)
 def assess_sprint(
+    request: Request,
     payload: AssessRequest,
     faculty_user: Annotated[UserRecord, Depends(require_faculty)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
@@ -175,6 +175,7 @@ def assess_sprint(
         project_repository=projects,
         notification_service=notification_service,
         identity_repository=identity_repository,
+        mlflow_gateway=getattr(request.app.state, "mlflow_gateway", None),
     )
     append_action_audit(
         action_audits,
@@ -195,7 +196,6 @@ def assess_sprint(
         "status": "queued",
         "message": "Assessment has started.",
     }
-
 
 @router.get("/jobs/{job_id}/events")
 def assessment_job_events(
@@ -230,7 +230,6 @@ def assessment_job_events(
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-
 @router.get("/reports")
 def list_reports(
     course_id: str,
@@ -248,7 +247,6 @@ def list_reports(
     _stamp_exposure(faculty_user, [r.report_id for r in reports], insights_repository)
     return reports
 
-
 @router.get("/latest")
 def get_latest(
     course_id: str,
@@ -265,7 +263,6 @@ def get_latest(
     report = get_latest_assessment(course_id, project_id, sprint_id, assessment_repository)
     _stamp_exposure(current_user, [report.report_id], insights_repository)
     return report
-
 
 @router.get("/reports/{report_id}/evidence", response_model=ReportEvidenceLinksResponse)
 def get_report_evidence_links(
@@ -296,7 +293,6 @@ def get_report_evidence_links(
         report, projects.get_project(report.project_id), jira_ingestion_repository
     )
 
-
 @router.get("/rubric-weights", response_model=RubricWeightsResponse)
 def get_rubric_weights(
     course_id: str,
@@ -321,7 +317,6 @@ def get_rubric_weights(
         weights=get_effective_rubric_weights(course_id, rubric_weights_repository),
         is_custom=False,
     )
-
 
 @router.put("/rubric-weights", response_model=RubricWeightsResponse)
 def put_rubric_weights(
@@ -355,7 +350,6 @@ def put_rubric_weights(
         updated_at=record.updated_at,
     )
 
-
 @router.patch("/reports/{report_id}")
 def patch_assessment_report(
     report_id: str,
@@ -384,8 +378,8 @@ def patch_assessment_report(
     )
     try:
         record_override(report, instructor_user.id, insights_repository)
-    except Exception:
-        logger.exception("Could not record assessment override for report %s", report_id)
+    except Exception:  # noqa: BLE001 - AI Insights must never break the override itself
+        logger.exception("AI Insights: override of report %s was not recorded", report_id)
     append_action_audit(
         action_audits,
         actor_id=instructor_user.id,
@@ -411,7 +405,6 @@ def patch_assessment_report(
         "Your instructor updated the assessment report.",
     )
     return report
-
 
 @router.post("/override")
 def override_score(

@@ -21,6 +21,7 @@ const run = (patch: Partial<RunItem> = {}): RunItem => ({
   insightsUnlocked: false,
   overridden: false,
   citationCheck: null,
+  flags: [],
   ...patch,
 });
 
@@ -41,7 +42,7 @@ describe("RunsTable (blind labelling)", () => {
             aiScore: 6.8,
             aiScoreHidden: false,
             insightsUnlocked: true,
-            citationCheck: { status: "flagged", groundedRate: 0.31 },
+            citationCheck: { status: "flagged", groundedRate: 0.31, hallucinationRate: 0.14, droppedByCode: 2 },
           }),
         ]}
       />,
@@ -79,7 +80,7 @@ describe("RunsTable (override gate)", () => {
             aiScoreHidden: false,
             insightsUnlocked: true,
             overridden: true,
-            citationCheck: { status: "ok", groundedRate: 0.9 },
+            citationCheck: { status: "ok", groundedRate: 0.9, hallucinationRate: 0.02, droppedByCode: 0 },
           }),
         ]}
       />,

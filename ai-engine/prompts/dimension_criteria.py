@@ -91,7 +91,7 @@ documentation_prompt = '''
     3–5: Documentation is vague, incomplete, or missing across some artifacts.
     1–2: No documentation effort is recorded in any system.
 
-    Output: Provide the score, a concise justification, and the specific documentation evidence supporting the score. Do not award credit for documentation unless there is evidence it was actually produced.
+    Output: Provide the score, a concise justification, and the specific documentation evidence supporting the score. Do not award credit for documentation unless there is evidence it was actually produced, keep justification to under 490 characters.
     '''
 
 collaboration_prompt = '''

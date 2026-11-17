@@ -14,3 +14,15 @@ def no_ollama_context_lookup(monkeypatch):
 
     monkeypatch.setattr(judge, "_server_context_limit", unknown)
     judge._server_context.clear()
+
+"""
+MLflow's default local file store is a subdir of the current working directory, which
+pytest changes to a temp dir. This fixture sets MLflow's local file store to a temp dir
+outside the pytest temp dir, so that MLflow's SQLite database is not deleted between tests.
+"""
+@pytest.fixture(scope='session', autouse=True)
+def _isolated_mlflow(tmp_path_factory):
+    patch = pytest.MonkeyPatch()
+    patch.setenv('MLFLOW_TRACKING_URI', f"sqlite:///{tmp_path_factory.mktemp('mlflow') / 'mlflow.db'}")
+    yield
+    patch.undo()

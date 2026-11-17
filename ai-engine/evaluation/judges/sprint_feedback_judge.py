@@ -91,7 +91,8 @@ async def judge_sprint_feedback(a: dict, judge_model: str, judge_provider: str='
     judged = [v for v in report.verdicts if v.label != "not_addressed"]
     just_bad = [v for v in contradictory_scores if v.item_id.startswith("D-")] # justifications are the only items that can be judged against a score
     narr_bad = [v for v in contradictory_scores if not v.item_id.startswith("D-")] # narrative items are judged against each other, not against scores
-    detail = lambda vs: "; ".join(f"{v.item_id}: {v.reasoning}" for v in vs) or None
+    def detail(verdicts: list) -> str | None:
+        return "; ".join(f"{v.item_id}: {v.reasoning}" for v in verdicts) or None
     return {"justification": (len(just_bad), detail(just_bad)), "narrative": (len(narr_bad), detail(narr_bad)),
             "rate": round(len(contradictory_scores) / len(judged), 4) if judged else None, "items": len(items)}
 

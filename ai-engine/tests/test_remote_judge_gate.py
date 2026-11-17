@@ -70,7 +70,7 @@ def test_with_the_opt_in_the_citation_judge_runs_on_the_hosted_provider(monkeypa
     monkeypatch.setenv(ENV, "1")
     seen: dict[str, str] = {}
 
-    async def fake_judge(bundle, rubric, judge_model, judge_provider="ollama"):
+    async def fake_judge(bundle, rubric, judge_model, judge_provider="ollama", on_progress=None):
         seen.update(model=judge_model, provider=judge_provider)
         return {"coverage": 1.0, "hallucination_rate": 0.0, "citation_count": 0}, []
 
