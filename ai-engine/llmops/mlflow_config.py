@@ -60,8 +60,9 @@ def start_mlflow(experiment_name, name: str | None = None,
                  template: str | None = None, commit_message: str | None = None,
                  tags: dict | None = None) -> None:
     configure_mlflow() # Ensure MLflow is configured before starting a run
-    if name and template: # If a prompt name and template are provided, register the prompt
-        register_prompt(name, template, commit_message=commit_message or "Initial commit", tags=tags or {"author": "SprintSight"})
+    if name and template:  # register the bootstrap prompt only once
+        if mlflow.MlflowClient().get_prompt(name) is None:
+            register_prompt(name, template, commit_message=commit_message or "Initial commit", tags=tags or {"author": "SprintSight"})
 
 def register_prompt(name, template, commit_message="Initial commit", tags: dict | None = None):
     return mlflow.genai.register_prompt( # Register prompt version in MLflow Prompt Registry
