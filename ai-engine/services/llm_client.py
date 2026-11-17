@@ -1,9 +1,4 @@
-import contextvars
-import hashlib
-import json
-import logging
-import os
-import time
+import contextvars, hashlib, httpx, instructor, json, logging, mlflow, os, time
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -12,9 +7,6 @@ from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-import httpx
-import instructor
-import mlflow
 from dotenv import load_dotenv
 from instructor.core import IncompleteOutputException
 from mlflow.entities import SpanType
@@ -807,7 +799,7 @@ def _prompt_truncated(raw_body: str, context: dict) -> bool:
     return at_ceiling or shrunk
 
 
-def create_llm_client(provider="ollama"):
+def create_llm_client(provider="ollama", read_timeout: float | None = None):
     """
     Creates the instructor-wrapped Ollama client.
 
@@ -834,7 +826,10 @@ def create_llm_client(provider="ollama"):
             # Connecting, sending the prompt and waiting for a pooled connection are quick
             # unless the server is unreachable, which should be reported promptly.
             timeout=httpx.Timeout(
-                connect=OLLAMA_CONNECT_TIMEOUT, read=OLLAMA_TIMEOUT, write=60.0, pool=30.0
+                connect=OLLAMA_CONNECT_TIMEOUT, 
+                read=read_timeout or OLLAMA_TIMEOUT, 
+                write=60.0,
+                  pool=30.0
             ),
             max_retries=OLLAMA_CLIENT_MAX_RETRIES,
             http_client=transport, # Use the custom transport to capture requests and responses
