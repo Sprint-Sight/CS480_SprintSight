@@ -7,8 +7,7 @@ module prefers that and falls back to parsing.
 
 from __future__ import annotations
 
-import json
-import re
+import json, re
 from dataclasses import dataclass
 
 from app.services.insightsService.trace_summary import TraceSummary
@@ -28,10 +27,10 @@ class CitationVerdictRow:
     severity: str
     reasoning: str
 
+# (rows, truncated). `truncated` is True when the rationale hit the ai-engine's cut-off
 def parse_citation_rationale(
     text: str | None, claims: dict[str, str]
 ) -> tuple[list[CitationVerdictRow], bool]:
-    """(rows, truncated). `truncated` is True when the rationale hit the ai-engine's cut-off."""
     if not text:
         return [], False
     rows: list[dict] = []
@@ -52,6 +51,7 @@ def parse_citation_rationale(
         elif rows and line:  # a reasoning that spilled onto another line
             rows[-1]["reasoning"] += " " + line
     truncated = len(text) >= RATIONALE_LIMIT
+
     return [CitationVerdictRow(claim=claims.get(r["citation_id"]), **r) for r in rows], truncated
 
 def unaccepted_citations(summary: TraceSummary) -> tuple[list[CitationVerdictRow], bool]:

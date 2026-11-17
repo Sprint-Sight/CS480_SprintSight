@@ -64,6 +64,7 @@ class TraceSummary:
     assessments: tuple[JudgeAssessment, ...] = ()
     prompt_versions: dict[str, str] = field(default_factory=dict)
     claims: dict[str, str] = field(default_factory=dict)  # "C3" -> "identifier | reason"
+    judge_progress: tuple[int, int] | None = None  # (done, total) judge calls completed
 
     def assessment(self, name: str) -> JudgeAssessment | None:
         return next((a for a in self.assessments if a.name == name), None)
@@ -105,6 +106,7 @@ def summarize_trace(trace: Any) -> TraceSummary:
         assessments=tuple(_assessments(getattr(info, "assessments", None) or [])),
         prompt_versions=_prompt_versions(getattr(info, "tags", None) or {}, root),
         claims=collect_claims(root.outputs if root is not None else None),
+        judge_progress=_judge_progress(getattr(info, "tags", None) or {}),
     )
 
 def collect_claims(outputs: Any) -> dict[str, str]:
@@ -171,3 +173,13 @@ def _assessments(raw: list) -> list[JudgeAssessment]:
             )
         )
     return out
+
+def _judge_progress(tags):
+    raw = tags.get('judge.progress')
+    if not raw:
+        return None
+    try:
+        done, total = (int(x) for x in str(raw).split("/", 1))
+    except (TypeError, ValueError):
+        return None
+    return (done, total) if total > 0 and 0 <= done <= total else None

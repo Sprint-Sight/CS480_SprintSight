@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import importlib.metadata
-import logging
-import os
-import threading
-import time
+import httpx, importlib.metadata, json, logging, os, threading, time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Protocol
 
-import httpx
-
-from app.services.insightsService.trace_summary import TraceSummary, summarize_trace
+from app.services.insightsService.trace_summary import (
+    AI_ENGINE_DIMENSION_ORDER,
+    TraceSummary,
+    summarize_trace,
+)
 
 log = logging.getLogger(__name__)
 LABEL_PREFIX = "sprintsight.instructor."
@@ -23,6 +22,9 @@ class MlflowUnavailable(RuntimeError): # noqa: N818 - named for what callers han
 
 class TraceNotFound(LookupError): # noqa: N818
     """MLflow is up but has no trace with this ID."""
+
+class PromptNotFound(LookupError): # noqa: N818
+    """MLflow is up but has no prompt with this name."""
 
 @dataclass(frozen=True)
 class GatewayHealth:
@@ -59,9 +61,12 @@ class MlflowGateway(Protocol):
         reason: str | None,
         name_prefix: str = LABEL_PREFIX,
     ) -> None: ...
+    def prompt_registry(self) -> list[dict]: ...
+    def get_prompt(self, name: str, version: str) -> dict: ...
+    def get_eval_progress(self, correlation_id: str) -> tuple[int, int] | None: ...
     def health(self) -> GatewayHealth: ...
 
-def client_version() -> str | None:
+def client_version() -> str | None: # version of the MLflow client library
     for dist in ("mlflow-skinny", "mlflow"):
         try:
             return importlib.metadata.version(dist)
@@ -69,7 +74,7 @@ def client_version() -> str | None:
             continue
     return None
 
-class RealMlflowGateway:
+class RealMlflowGateway: # real implementation of MlflowGateway talking to a real MLflow server
     def __init__(
         self, tracking_uri: str, timeout_seconds: float = 5.0, cache_ttl_seconds: float = 15.0
     ) -> None:
@@ -113,10 +118,31 @@ class RealMlflowGateway:
         self._cache[trace_id] = (now, summary)
         return summary
 
-    def find_label(
+    def get_eval_progress(self, correlation_id: str) -> tuple[int, int] | None:
+        try:
+            _, client = self._mlflow()
+            ids = [e.experiment_id for e in client.search_experiments()]
+            runs = client.search_runs(
+                experiment_ids=ids,
+                filter_string=f"tags.correlation_id = '{correlation_id}'",
+                order_by=["attributes.start_time DESC"],
+                max_results=1,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise MlflowUnavailable(str(exc)) from exc
+        if not runs:
+            return None
+        raw = runs[0].data.tags.get("eval.progress")
+        try:
+            done, total = (int(x) for x in str(raw).split("/", 1))
+        except (TypeError, ValueError):
+            return None
+        return (done, total) if total > 0 and 0 <= done <= total else None
+
+    def find_label( # finds an assessment ID for a label if it exists, else None
         self, trace_id: str, feedback_id: str, *, name_prefix: str = LABEL_PREFIX
     ) -> str | None:
-        trace = self._get_trace(trace_id)  # uncached on purpose: idempotency check must be fresh
+        trace = self._get_trace(trace_id) # uncached on purpose: idempotency check must be fresh
         for a in getattr(trace.info, "assessments", None) or []:
             if (
                 a.name.startswith(name_prefix)
@@ -125,7 +151,7 @@ class RealMlflowGateway:
                 return a.assessment_id
         return None
 
-    def log_label(
+    def log_label( # logs new label to MLflow; returns the assessment ID
         self,
         trace_id: str,
         *,
@@ -165,7 +191,7 @@ class RealMlflowGateway:
         self._cache.pop(trace_id, None)
         return assessment.assessment_id
 
-    def update_label(
+    def update_label(  # updates an existing label in MLflow
         self,
         trace_id: str,
         assessment_id: str,
@@ -197,3 +223,47 @@ class RealMlflowGateway:
         except httpx.HTTPError:
             return GatewayHealth(False, None, client_version())
         return GatewayHealth(reachable, version, client_version())
+
+    def prompt_registry(self) -> list[dict]:  # production/challenger/latest per prompt
+        names = [f"Evaluate_{d}" for d in AI_ENGINE_DIMENSION_ORDER] + ["Generate_Sprint_Feedback"]
+        try:
+            _, client = self._mlflow()
+            rows = []
+            for name in names:
+                row = {"name": name, "production": None, "challenger": None, "latest": None}
+                for alias in ("production", "challenger"):
+                    try:
+                        row[alias] = int(client.get_prompt_version_by_alias(name, alias).version)
+                    except Exception:  # alias not set
+                        pass
+                versions = [
+                    int(v.version) for v in client.search_prompt_versions(name, max_results=200)
+                ]
+                row["latest"] = max(versions) if versions else None
+                rows.append(row)
+            return rows
+        except Exception as exc:  # noqa: BLE001
+            raise MlflowUnavailable(str(exc)) from exc
+
+    def get_prompt(self, name: str, version: str) -> dict:
+        try:
+            _, client = self._mlflow()
+            pv = client.get_prompt_version(name, version)
+        except Exception as exc:  # noqa: BLE001
+            # Decide "missing" by MLflow's error code, not by guessing at message text, so a
+            # network failure is never reported as a missing prompt.
+            if getattr(exc, "error_code", "") == "RESOURCE_DOES_NOT_EXIST":
+                raise PromptNotFound(f"{name} v{version}") from exc
+            raise MlflowUnavailable(str(exc)) from exc
+        template = pv.template
+        created = getattr(pv, "creation_timestamp", None)  # epoch ms
+        try:  # the created date is cosmetic: a bad value must not take down the whole drawer
+            created_at = datetime.fromtimestamp(created / 1000, UTC).isoformat() if created else None
+        except (TypeError, ValueError, OverflowError, OSError):
+            created_at = None
+        return {
+            "template": template if isinstance(template, str) else json.dumps(template, indent=2),
+            "commit_message": getattr(pv, "commit_message", None),
+            "created_at": created_at,
+            "aliases": list(getattr(pv, "aliases", None) or []),
+        }

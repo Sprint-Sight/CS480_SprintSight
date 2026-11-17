@@ -101,7 +101,7 @@ def build_tiles(values: dict | None) -> list[dict]:
             "Citations the judge returned a verdict for",
             _grade_low(v.get("coverage"), warn=1.0, bad=0.8),
         ),
-        _tile("tone", "Tone", "Not measured", "No tone judge runs in the pipeline yet", "na"),
+        # _tile("tone", "Tone", "Not measured", "No tone judge runs in the pipeline yet", "na"), # Tone judge can be added in the future
     ]
 
 def citation_check(values: dict | None) -> dict | None:
@@ -110,7 +110,11 @@ def citation_check(values: dict | None) -> dict | None:
     flagged = (values.get("hallucination_rate") or 0) > 0.1 or (
         values.get("dropped_by_code") or 0
     ) > 0
-    return {"status": "flagged" if flagged else "ok", "grounded_rate": values["grounded_rate"]}
+    return {"status": "flagged" if flagged else "ok", 
+            "grounded_rate": values["grounded_rate"],
+            "hallucination_rate": values.get("hallucination_rate"), 
+            "dropped_by_code": values.get("dropped_by_code")
+        }
 
 def utcnow() -> datetime:
     return datetime.now(UTC)

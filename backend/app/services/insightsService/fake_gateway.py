@@ -8,12 +8,12 @@ from app.services.insightsService.mlflow_gateway import (
     LABEL_PREFIX,
     GatewayHealth,
     MlflowUnavailable,
+    PromptNotFound,
     TraceNotFound,
 )
 from app.services.insightsService.trace_summary import TraceSummary
 
-
-class FakeMlflowGateway:
+class FakeMlflowGateway:  # for tests and offline demos; implements MlflowGateway protocol
     def __init__(self, server_version: str = "3.16.1", client_version: str = "3.16.1") -> None:
         self.traces: dict[str, TraceSummary] = {}
         self.labels: dict[str, dict[str, dict]] = {}  # trace_id -> assessment_id -> data
@@ -21,6 +21,9 @@ class FakeMlflowGateway:
         # The write succeeds but the caller sees an error: the worst case for retries.
         self.lose_next_response = 0
         self.server_version, self.client_version = server_version, client_version
+        self.eval_progress: dict[str, tuple[int, int]] = {}  # correlation_id -> (done, total)
+        # (name, version) -> prompt dict; tests add entries, anything else is "not found".
+        self.prompts: dict[tuple[str, str], dict] = {}
 
     def _check(self) -> None:
         if self.down:
@@ -31,6 +34,15 @@ class FakeMlflowGateway:
         if trace_id not in self.traces:
             raise TraceNotFound(trace_id)
         return self.traces[trace_id]
+
+    def get_eval_progress(self, correlation_id: str) -> tuple[int, int] | None:
+        return self.eval_progress.get(correlation_id)
+
+    def get_prompt(self, name: str, version: str) -> dict:
+        self._check()
+        if (name, version) not in self.prompts:
+            raise PromptNotFound(f"{name} v{version}")
+        return dict(self.prompts[(name, version)])
 
     def find_label(
         self, trace_id: str, feedback_id: str, *, name_prefix: str = LABEL_PREFIX
@@ -85,6 +97,13 @@ class FakeMlflowGateway:
     ) -> None:
         self._check()
         self.labels[trace_id][assessment_id].update(score=score, reason=reason)
+
+    def prompt_registry(self) -> list[dict]:
+        self._check()
+        return [
+            {'name': 'Evaluate_testing', 'production': 1, 'challenger': 11, 'latest': 11},
+            {'name': 'Generate_Sprint_Feedback', 'production': 1, 'challenger': None, 'latest': 2},
+        ]
 
     def health(self) -> GatewayHealth:
         if self.down:
