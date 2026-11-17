@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -15,11 +16,13 @@ from app.repositories.in_memory import (
     InMemoryEmailOutboxRepository,
     InMemoryExportLogRepository,
     InMemoryPeerEvaluationRepository,
+    job_repo,
 )
 from app.repositories.insights import PostgresInsightsRepository, ensure_insights_schema
 from app.repositories.interfaces import UserRecord
 from app.repositories.postgres import (
     PostgresActionAuditRepository,
+    PostgresAssessmentJobRepository,
     PostgresAssessmentRepository,
     PostgresAuditRepository,
     PostgresAuditRetentionConfigRepository,
@@ -37,6 +40,7 @@ from app.repositories.postgres import (
     PostgresRubricWeightsRepository,
     PostgresUserRepository,
     create_user_pool,
+    ensure_assessment_job_schema,
     ensure_assessment_schema,
     ensure_audit_retention_config_schema,
     ensure_audit_schema,
@@ -58,6 +62,7 @@ from app.services.notificationService.service import build_email_transport
 
 settings = get_settings()
 configure_logging()
+log = logging.getLogger(__name__)
 
 
 def _bootstrap_user(
@@ -101,6 +106,7 @@ async def lifespan(app: FastAPI):
     ensure_instructor_jira_credentials_schema(pool)
     ensure_peer_evaluation_schema(pool)
     ensure_git_identity_schema(pool)
+    ensure_assessment_job_schema(pool)
     # After the users, courses and assessment tables exist: it alters assessment_reports.
     ensure_insights_schema(pool)
     app.state.user_repository = PostgresUserRepository(pool)
@@ -124,6 +130,13 @@ async def lifespan(app: FastAPI):
     app.state.export_log_repository = InMemoryExportLogRepository()
     app.state.peer_evaluation_repository = PostgresPeerEvaluationRepository(pool)
     app.state.git_identity_repository = PostgresGitIdentityRepository(pool)
+    jobs = PostgresAssessmentJobRepository(pool)
+    job_repo.use(jobs)
+    # Nothing can still be running after a restart: close unfinished jobs as retryable failures.
+    interrupted = jobs.fail_interrupted_jobs("The backend restarted while this assessment ran.")
+    if interrupted:
+        log.warning("Marked %d interrupted assessment job(s) as failed.", interrupted)
+    jobs.prune(older_than_days=30)
     app.state.insights_repository = PostgresInsightsRepository(pool)
     app.state.mlflow_gateway = RealMlflowGateway(
         settings.mlflow_tracking_uri, settings.mlflow_timeout_seconds
@@ -241,7 +254,7 @@ app.openapi = custom_openapi
 # Enable CORS for browser frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for development (e.g., http://localhost:3000)
+    allow_origins=[o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

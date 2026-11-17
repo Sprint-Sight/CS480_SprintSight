@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from app.core.config import get_settings
 from app.dependencies.auth import (
     ensure_course_access,
     get_action_audit_repository,
@@ -209,9 +210,13 @@ def assessment_job_events(
         )
     ensure_course_access(faculty_user, job.course_id, projects)
 
+    # A job can outlive its stream, but a stream must not outlive its job: stop when the job is
+    # gone or well past the longest an assessment may take.
+    give_up_at = time.monotonic() + get_settings().ai_engine_timeout_seconds + 600
+
     def event_stream():
         seen = 0
-        while True:
+        while time.monotonic() < give_up_at:
             events = job_repo.list_events(job_id)
             if len(events) > seen:
                 for item in events[seen:]:
@@ -219,7 +224,7 @@ def assessment_job_events(
                     yield f"data: {json.dumps(item.data)}\n\n"
                 seen = len(events)
             state = job_repo.get_job(job_id)
-            if state and state.status in {"completed", "failed"}:
+            if state is None or state.status in {"completed", "failed"}:
                 break
             time.sleep(0.25)
 
@@ -394,7 +399,15 @@ def patch_assessment_report(
         report,
         user_repository,
         notification_service,
-        [score.student_id for score in report.individual_scores],
+        # Grading is team-level (individual_scores is empty), so notify the team's members.
+        list(
+            dict.fromkeys(
+                [
+                    *projects.list_member_ids(report.project_id),
+                    *(score.student_id for score in report.individual_scores),
+                ]
+            )
+        ),
         "Your instructor updated the assessment report.",
     )
     return report

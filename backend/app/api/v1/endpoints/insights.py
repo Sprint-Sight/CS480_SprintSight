@@ -164,5 +164,5 @@ def override_statistics(
 ):
     """How often and how far overrides changed AI scores. Not an accuracy measure."""
     runs = insights.list_runs(scoped_course_ids(user, projects))
-    reports = [r for r in (assessments.get_report(run.report_id) for run in runs) if r is not None]
+    reports = assessments.get_reports([run.report_id for run in runs])
     return override_stats(reports)

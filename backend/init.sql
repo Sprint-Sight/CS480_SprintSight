@@ -548,3 +548,30 @@ CREATE TABLE IF NOT EXISTS project_git_identities (
 );
 CREATE INDEX IF NOT EXISTS idx_project_git_identities_student
     ON project_git_identities(student_id);
+
+
+-- Assessment jobs and their progress events (survive a backend restart). Mirrors
+-- ensure_assessment_job_schema in app/repositories/postgres.py.
+CREATE TABLE IF NOT EXISTS assessment_jobs (
+    job_id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    sprint_id TEXT NOT NULL,
+    model_name TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    progress INTEGER NOT NULL DEFAULT 0,
+    current_stage TEXT NOT NULL DEFAULT 'queued',
+    report_id TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS assessment_job_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES assessment_jobs(job_id) ON DELETE CASCADE,
+    event TEXT NOT NULL,
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_assessment_job_events_job ON assessment_job_events(job_id, event_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_jobs_status ON assessment_jobs(status);

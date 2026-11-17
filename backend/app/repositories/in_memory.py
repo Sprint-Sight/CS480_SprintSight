@@ -516,6 +516,9 @@ class InMemoryAssessmentRepository(AssessmentRepository):
     def get_report(self, report_id: str) -> AssessmentReport | None:
         return self._reports.get(report_id)
 
+    def get_reports(self, report_ids: list[str]) -> list[AssessmentReport]:
+        return [self._reports[i] for i in report_ids if i in self._reports]
+
     def update_manual_assessment(
         self, report_id: str, patch: dict[str, object]
     ) -> AssessmentReport | None:
@@ -1001,7 +1004,23 @@ class InMemoryGitIdentityRepository:
 
 git_identity_repo = InMemoryGitIdentityRepository()
 jira_ingestion_repo = InMemoryJiraIngestionRunRepository()
-job_repo = InMemoryAssessmentJobRepository()
+
+
+class _JobRepositoryProxy:
+    """The module-level job store. In-memory until the app starts against Postgres (main.py
+    calls use()), so jobs survive a backend restart in a real deployment."""
+
+    def __init__(self) -> None:
+        self._target = InMemoryAssessmentJobRepository()
+
+    def use(self, repository) -> None:
+        self._target = repository
+
+    def __getattr__(self, name: str):
+        return getattr(self._target, name)
+
+
+job_repo = _JobRepositoryProxy()
 export_log_repo = InMemoryExportLogRepository()
 
 
