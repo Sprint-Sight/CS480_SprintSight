@@ -67,6 +67,14 @@ export function RunFiltersBar({ filters, facets, onChange, mode = "blind_label" 
         <option value="unlabelled">{override ? "Not overridden" : "Not yet labelled"}</option>
         <option value="labelled">{override ? "Overridden" : "Labelled by you"}</option>
       </select>
+      <label className="flex items-center gap-1 text-sm">
+        <input
+          type="checkbox"
+          checked={!!filters.needsAttention}
+          onChange={(e) => set({ needsAttention: e.target.checked || undefined })}
+        />
+        Needs attention
+      </label>
     </div>
   );
 }

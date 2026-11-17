@@ -7,6 +7,9 @@ import type {
   JudgeStatusView,
   LabelDraft,
   OverrideStats,
+  PromptDetail,
+  PromptRegistry,
+  PromptVersionDetail,
   Reveal,
   RunFilters,
   RunsPage,
@@ -41,6 +44,7 @@ export function fetchRuns(filters: RunFilters) {
   if (filters.courseId) params.set("course_id", filters.courseId);
   if (filters.sprintId) params.set("sprint_id", filters.sprintId);
   if (filters.model) params.set("model", filters.model);
+  if (filters.needsAttention) params.set("needs_attention", "true"); // filter runs that have attention flags (e.g., failed judge, failed dimension, etc.)
   return get<RunsPage>(`/insights/runs?${params.toString()}`);
 }
 
@@ -55,6 +59,10 @@ export const fetchJudgeStatus = (reportId: string) =>
 export const fetchInsightsHealth = () => get<InsightsHealth>("/insights/health");
 export const fetchInsightsConfig = () => get<InsightsConfig>("/insights/config");
 export const fetchOverrideStats = () => get<OverrideStats>("/insights/override-stats");
+export const fetchPromptDetail = (reportId: string, name: string) => get<PromptDetail>(`/insights/reports/${enc(reportId)}/prompts/${enc(name)}`);
+export const fetchPromptRegistry = () => get<PromptRegistry>("/insights/prompt-registry");
+export const fetchPromptVersion = (name: string, version: number) =>
+  get<PromptVersionDetail>(`/insights/prompt-registry/${enc(name)}/${version}`);
 
 export async function saveLabels(reportId: string, labels: LabelDraft[]) {
   const body = JSON.stringify({

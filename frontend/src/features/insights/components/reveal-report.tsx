@@ -7,7 +7,7 @@ import {
   TraceTimeline,
   UnacceptedCitationsTable,
 } from "@/features/insights/components/reveal-panels";
-import type { JudgeStatus, Reveal, TraceView } from "@/features/insights/types";
+import type { JudgeStatus, JudgeStatusView, Reveal, TraceView } from "@/features/insights/types";
 
 type RevealReportProps = {
   reveal: Reveal;
@@ -15,10 +15,12 @@ type RevealReportProps = {
   judgeStatus: JudgeStatus;
   /** Undefined while the trace is still loading. */
   trace: TraceView | undefined;
+  /** Progress and elapsed time from the polled judge status; undefined until the first poll. */
+  judgeProgress?: Pick<JudgeStatusView, "progress" | "elapsedMinutes">;
 };
 
 /** The AI results for one report: scores vs instructor, judge checks, citations, trace, prompts. */
-export function RevealReport({ reveal, judgeStatus, trace }: RevealReportProps) {
+export function RevealReport({ reveal, judgeStatus, trace, judgeProgress }: RevealReportProps) {
   const override = reveal.comparison === "override";
 
   return (
@@ -38,9 +40,27 @@ export function RevealReport({ reveal, judgeStatus, trace }: RevealReportProps) 
           Judge checks <JudgeChip status={judgeStatus} />
         </h2>
         {judgeStatus === "pending" && (
-          <p className="text-sm text-slate-600">
-            The judge is still running; this updates automatically.
-          </p>
+          <div className="space-y-1 text-sm text-slate-600">
+            <p>The judge is still running; this updates automatically.</p>
+            {judgeProgress?.progress && (
+              <>
+                <p>
+                  Checked {judgeProgress.progress.done} of {judgeProgress.progress.total} batches ·
+                  running for {judgeProgress.elapsedMinutes} min
+                </p>
+                <progress
+                  className="h-2 w-64"
+                  value={judgeProgress.progress.done}
+                  max={judgeProgress.progress.total}
+                />
+              </>
+            )}
+            {(judgeProgress?.elapsedMinutes ?? 0) >= 20 && (
+              <p className="text-amber-700">
+                Taking longer than usual. The judge server may be busy or unreachable.
+              </p>
+            )}
+          </div>
         )}
         <DegradedNotice notice={reveal.judge.notice} />
         <JudgeTiles tiles={reveal.judge.tiles} />
@@ -67,7 +87,7 @@ export function RevealReport({ reveal, judgeStatus, trace }: RevealReportProps) 
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Prompt versions used</h2>
-        <PromptVersionsList versions={reveal.promptVersions} />
+        <PromptVersionsList reportId={reveal.reportId} versions={reveal.promptVersions} dimensions={reveal.dimensions} />
       </section>
     </div>
   );

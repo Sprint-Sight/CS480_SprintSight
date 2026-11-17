@@ -37,7 +37,8 @@ export type InsightsCourse = {
   judgePending: number;
   lastEvaluationAt: string | null;
 };
-export type CitationCheck = { status: "ok" | "flagged"; groundedRate: number };
+export type CitationCheck = { status: "ok" | "flagged"; groundedRate: number;
+  hallucinationRate: number | null; droppedByCode: number | null};
 export type RunItem = {
   reportId: string;
   teamName: string;
@@ -54,6 +55,7 @@ export type RunItem = {
   insightsUnlocked: boolean;
   overridden: boolean;
   citationCheck: CitationCheck | null;
+  flags: string[]; // List of attention flags for the run
 };
 export type RunFilters = {
   courseId?: string;
@@ -62,6 +64,7 @@ export type RunFilters = {
   labelStatus: LabelStatusFilter;
   page: number;
   pageSize: number;
+  needsAttention?: boolean;
 };
 export type RunsPage = {
   items: RunItem[];
@@ -119,6 +122,33 @@ export type Evidence = {
 };
 export type SaveLabelsResult = { labelsDone: number; canReveal: boolean; isBlind: boolean };
 
+export type PromptDetail = { // Every detail from prompt registry
+  available: boolean; notice: string | null; name: string; version: string | null;
+  template: string | null; commitMessage: string | null; createdAt: string | null;
+  aliases: string[]; spanDurationMs: number | null; spanStatus: string | null;
+  unacceptedCitations: number | null;
+  /** True when the judge output was cut off, so the count is "at least" this many. */
+  unacceptedCitationsTruncated: boolean;
+};
+export type PromptVersionDetail = {
+  available: boolean;
+  notice: string | null;
+  name: string;
+  version: string;
+  template: string | null;
+  commitMessage: string | null;
+  createdAt: string | null;
+  aliases: string[];
+  /** Unified diff against the previous version; null for v1 or when unavailable. */
+  diff: string | null;
+};
+export type PromptRegistryRow = {
+  name: string;
+  production: number | null;
+  challenger: number | null;
+  latest: number | null;
+};
+export type PromptRegistry = { available: boolean; notice: string; prompts: PromptRegistryRow[] };
 export type Tile = {
   key: string;
   label: string;
@@ -182,6 +212,8 @@ export type JudgeStatusView = {
   reportId: string;
   judgeStatus: JudgeStatus;
   checkedAt: string | null;
+  progress: { done: number; total: number } | null;
+  elapsedMinutes: number;
 };
 export type InsightsHealth = {
   mlflow: {
