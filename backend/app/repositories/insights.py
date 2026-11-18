@@ -146,6 +146,7 @@ class InsightsRepository(Protocol):
     def mark_override_failed(self, override_id: str, error: str) -> None: ...
     def mark_override_no_trace(self, override_id: str) -> None: ...
     def count_pending_overrides(self) -> int: ...
+    def overrides_for_reports(self, report_ids: list[str]) -> list[OverrideRow]: ...
 
 # SCHEMA
 # Mirrored at the end of backend/init.sql. Every statement is idempotent: this runs on
@@ -512,6 +513,17 @@ class PostgresInsightsRepository:
             ).fetchall()
         return [_override(row) for row in rows]
 
+    def overrides_for_reports(self, report_ids: list[str]) -> list[OverrideRow]:
+        if not report_ids:
+            return []
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM report_overrides WHERE report_id = ANY(%s)
+                   ORDER BY report_id, dimension""",
+                ([_uuid(rid) for rid in report_ids],),
+            ).fetchall()
+        return [_override(row) for row in rows]
+
     def mark_override_synced(self, override_id: str, assessment_id: str) -> None:
         with self._pool.connection() as connection:
             connection.execute(
@@ -738,6 +750,10 @@ class InMemoryInsightsRepository: # in-memory (tests)
             (o for (rid, _), o in self._overrides.items() if rid == report_id),
             key=lambda o: o.dimension,
         )
+
+    def overrides_for_reports(self, report_ids):
+        wanted = set(report_ids)
+        return [o for (rid, _), o in self._overrides.items() if rid in wanted]
 
     def _update_override(self, override_id, **changes):
         for key, row in self._overrides.items():

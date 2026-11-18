@@ -19,10 +19,11 @@ import {
   saveLabels,
 } from "@/features/insights/insights-api";
 import { insightsKeys } from "@/features/insights/query-keys";
-import type { JudgeStatus, LabelDraft, RunFilters, RunsPage } from "@/features/insights/types";
+import type { JudgeStatus, LabelDraft, RunFilters, RunsPage, OverrideSyncStatus } from "@/features/insights/types";
 
 const OPEN: JudgeStatus[] = ["pending", "unknown"];
 export const JUDGE_POLL_MS = 10_000;
+export const SYNC_POLL_MS = 10_000;
 
 export function judgeStatusRefetchInterval(status: JudgeStatus | undefined): number | false {
   return status && OPEN.includes(status) ? JUDGE_POLL_MS : false;
@@ -34,15 +35,24 @@ export function useMyCourses() {
   return useQuery({ queryKey: insightsKeys.myCourses(), queryFn: fetchMyCourses });
 }
 
+/** Poll every 10 s while any override is still on its way to MLflow. */
+export function overrideSyncRefetchInterval(
+  statuses: ReadonlyArray<OverrideSyncStatus | null | undefined>,
+): number | false {
+  return statuses.includes("pending") ? SYNC_POLL_MS : false;
+}
+
 export function useRuns(filters: RunFilters) {
   return useQuery({
     queryKey: insightsKeys.runs(filters),
     queryFn: () => fetchRuns(filters),
     placeholderData: keepPreviousData,
-    refetchInterval: (query) =>
-      (query.state.data as RunsPage | undefined)?.items.some((i) => OPEN.includes(i.judgeStatus))
+    refetchInterval: (query) => {
+      const items = (query.state.data as RunsPage | undefined)?.items ?? [];
+      return items.some((i) => OPEN.includes(i.judgeStatus))
         ? JUDGE_POLL_MS
-        : false,
+        : overrideSyncRefetchInterval(items.map((i) => i.overrideSync));
+    },
   });
 }
 

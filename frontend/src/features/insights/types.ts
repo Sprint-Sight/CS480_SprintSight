@@ -54,6 +54,7 @@ export type RunItem = {
   aiScoreHidden: boolean;
   insightsUnlocked: boolean;
   overridden: boolean;
+  overrideSync: OverrideSyncStatus | null;
   citationCheck: CitationCheck | null;
   flags: string[]; // List of attention flags for the run
 };
@@ -246,3 +247,4 @@ export type OverrideStats = {
   byDimension: OverrideDimensionStats[];
   notice: string;
 };
+export type OverrideSyncStatus = "pending" | "failed" | "synced" | "no_trace" | "not_needed";
