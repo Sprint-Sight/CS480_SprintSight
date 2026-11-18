@@ -130,6 +130,11 @@ class Settings(BaseSettings):
     )
     # Read timeout for one whole assessment (six LLM calls plus retries on a local GPU).
     ai_engine_timeout_seconds: float = Field(default=3600.0, alias="AI_ENGINE_TIMEOUT_SECONDS")
+    # How many assessments are sent to the engine at once. The engine grades one at a time, so
+    # more than one only makes the extra requests wait on its lock until they hit the read
+    # timeout above. Excess jobs stay "queued" here instead. Raise it only if the engine can
+    # really grade in parallel.
+    ai_engine_max_concurrency: int = Field(default=1, ge=1, alias="AI_ENGINE_MAX_CONCURRENCY")
 
     # AI Insights / MLflow (read by trace ID only; see services/insightsService).
     # mlflow_timeout_seconds reads the env var MLflow itself uses, so there is one knob.

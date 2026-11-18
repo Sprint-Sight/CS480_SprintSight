@@ -74,7 +74,19 @@ from app.services.notificationService.service import EmailTransport
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/assessments", tags=["assessments"])
-_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def build_assessment_executor() -> ThreadPoolExecutor:
+    """Runs assessment jobs. Sized to the engine's concurrency: a job waiting for a free worker
+    is still "queued" and costs nothing, while a job already sent to a busy engine would sit on
+    the engine's lock inside the HTTP read timeout."""
+    return ThreadPoolExecutor(
+        max_workers=get_settings().ai_engine_max_concurrency,
+        thread_name_prefix="assessment-job",
+    )
+
+
+_executor = build_assessment_executor()
 
 def _authorize_report_access(
     current_user: object, course_id: str, project_id: str, projects: ProjectRepository
