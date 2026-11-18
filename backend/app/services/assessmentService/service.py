@@ -581,13 +581,6 @@ def run_assessment_job(
         else:
             assessment_repo.save_report(report)
 
-        job_repo.update_job(
-            job_id,
-            status="completed",
-            progress=100,
-            current_stage="completed",
-            report_id=report.report_id,
-        )
         completed_event: dict[str, object] = {
             "status": "completed",
             "progress": 100,
@@ -604,7 +597,15 @@ def run_assessment_job(
                     f"{', '.join(report.failed_dimensions)}."
                 ),
             )
-        job_repo.append_event(job_id, "completed", completed_event)
+        # Terminal event and status together (event first): the progress stream closes as soon
+        # as it sees the status, so the event must already be there.
+        job_repo.finish_job(
+            job_id,
+            "completed",
+            completed_event,
+            status="completed",
+            report_id=report.report_id,
+        )
         if user_repository and project_repository and notification_service:
             _notify_instructors_report_completed(
                 report,
@@ -634,14 +635,7 @@ def run_assessment_job(
                 )
     except Exception as exc:
         error_message = str(exc)
-        job_repo.update_job(
-            job_id,
-            status="failed",
-            progress=100,
-            current_stage="failed",
-            error_message=error_message,
-        )
-        job_repo.append_event(
+        job_repo.finish_job(
             job_id,
             "failed",
             {
@@ -653,6 +647,8 @@ def run_assessment_job(
                 "transient": bool(getattr(exc, "transient", False)),
                 "error_kind": getattr(exc, "kind", None),
             },
+            status="failed",
+            error_message=error_message,
         )
 
 

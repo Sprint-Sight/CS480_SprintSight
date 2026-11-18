@@ -260,6 +260,23 @@ class AssessmentJobRepository(Protocol):
 
     def list_events(self, job_id: str) -> list[AssessmentJobEvent]: ...
 
+    def finish_job(
+        self,
+        job_id: str,
+        event: str,
+        data: dict,
+        *,
+        status: str,
+        progress: int = 100,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None:
+        """Record a job's terminal event and its terminal status together, event first.
+
+        A reader that sees the terminal status must also see the event that explains it."""
+        ...
+
 
 @dataclass
 class RubricWeightsRecord:

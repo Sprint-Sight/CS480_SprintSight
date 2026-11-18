@@ -630,6 +630,29 @@ class InMemoryAssessmentJobRepository:
     def list_events(self, job_id: str) -> list[AssessmentJobEvent]:
         return list(self._events.get(job_id, []))
 
+    def finish_job(
+        self,
+        job_id: str,
+        event: str,
+        data: dict,
+        *,
+        status: str,
+        progress: int = 100,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None:
+        # Event first: a stream that sees the terminal status must find the event already there.
+        self.append_event(job_id, event, data)
+        return self.update_job(
+            job_id,
+            status=status,
+            progress=progress,
+            current_stage=current_stage or status,
+            report_id=report_id,
+            error_message=error_message,
+        )
+
 
 class InMemoryOverrideRepository(OverrideRepository):
     def __init__(self) -> None:

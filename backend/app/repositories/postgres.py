@@ -2259,6 +2259,38 @@ class PostgresAssessmentJobRepository:
                 (job_id, event, Json(data), job_id),
             )
 
+    def finish_job(
+        self,
+        job_id: str,
+        event: str,
+        data: dict,
+        *,
+        status: str,
+        progress: int = 100,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None:
+        """One transaction, event first: the terminal status is never visible without its event."""
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "INSERT INTO assessment_job_events (job_id, event, data) "
+                "SELECT %s, %s, %s WHERE EXISTS (SELECT 1 FROM assessment_jobs WHERE job_id = %s)",
+                (job_id, event, Json(data), job_id),
+            )
+            row = connection.execute(
+                """UPDATE assessment_jobs SET
+                       status = %s,
+                       progress = %s,
+                       current_stage = %s,
+                       report_id = COALESCE(%s, report_id),
+                       error_message = COALESCE(%s, error_message),
+                       updated_at = now()
+                   WHERE job_id = %s RETURNING *""",
+                (status, progress, current_stage or status, report_id, error_message, job_id),
+            ).fetchone()
+        return self._record(row) if row else None
+
     def list_events(self, job_id: str) -> list[AssessmentJobEvent]:
         with self._pool.connection() as connection:
             rows = connection.execute(

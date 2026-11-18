@@ -153,10 +153,8 @@ def assess_sprint(
         payload.model_name, faculty_user.id, selection_repository
     )
 
+    # create_job records the "started" event itself.
     job = job_repo.create_job(payload)
-    job_repo.append_event(
-        job.job_id, "started", {"status": "started", "message": "Assessment has started."}
-    )
 
     # Start the long-polling worker in a background thread so the endpoint
     # returns immediately with the 202 job contract instead of blocking.
@@ -217,13 +215,17 @@ def assessment_job_events(
     def event_stream():
         seen = 0
         while time.monotonic() < give_up_at:
+            # Read the status BEFORE the events. The worker writes a job's terminal event before
+            # its terminal status, so a status read first that is terminal guarantees the events
+            # read next include the final one. Reading in the other order could close the stream
+            # between the two writes and the client would never see "failed".
+            state = job_repo.get_job(job_id)
             events = job_repo.list_events(job_id)
             if len(events) > seen:
                 for item in events[seen:]:
                     yield f"event: {item.event}\n"
                     yield f"data: {json.dumps(item.data)}\n\n"
                 seen = len(events)
-            state = job_repo.get_job(job_id)
             if state is None or state.status in {"completed", "failed"}:
                 break
             time.sleep(0.25)
