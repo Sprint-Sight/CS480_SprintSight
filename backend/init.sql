@@ -579,3 +579,52 @@ CREATE TABLE IF NOT EXISTS assessment_job_events (
 );
 CREATE INDEX IF NOT EXISTS idx_assessment_job_events_job ON assessment_job_events(job_id, event_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_jobs_status ON assessment_jobs(status);
+
+-- Tables the backend used to create only at startup (the ensure_* functions in
+-- app/repositories/postgres.py). Defined here as well so a database built from this file alone
+-- has the whole schema. Keep each definition identical to its ensure_* function.
+CREATE TABLE IF NOT EXISTS user_notifications (
+    notification_id UUID PRIMARY KEY,
+    recipient_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    event_type VARCHAR(80) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    read_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_user_notifications_recipient_created
+    ON user_notifications(recipient_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS email_outbox (
+    email_id UUID PRIMARY KEY,
+    recipient VARCHAR(320) NOT NULL,
+    subject VARCHAR(500) NOT NULL,
+    body TEXT NOT NULL,
+    kind VARCHAR(80) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    scheduled_for TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMPTZ,
+    last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_email_outbox_pending ON email_outbox(status, scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_email_outbox_sent_at ON email_outbox(sent_at DESC);
+
+-- The single row is seeded at startup from the AUDIT_*_RETENTION_DAYS settings.
+CREATE TABLE IF NOT EXISTS audit_retention_config (
+    config_id SMALLINT PRIMARY KEY CHECK (config_id = 1),
+    hot_retention_days INTEGER NOT NULL CHECK (hot_retention_days >= 1),
+    action_archive_retention_days INTEGER NOT NULL CHECK (action_archive_retention_days >= 1),
+    override_archive_retention_days INTEGER NOT NULL CHECK (override_archive_retention_days >= 1),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS instructor_jira_credentials (
+    user_id UUID PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    jira_email VARCHAR(255),
+    jira_api_token_encrypted TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+

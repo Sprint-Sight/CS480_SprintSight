@@ -242,9 +242,12 @@ def update_peer_evaluation(
 # ------------------------------------------------------------------
 
 
+# response_model=None: this module uses `from __future__ import annotations`, so `-> None` is the
+# string "None", which FastAPI 0.116.1 turns into a response model and then rejects for a 204.
 @router.delete(
     "/evaluations/{evaluation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 def delete_peer_evaluation(
     evaluation_id: str,

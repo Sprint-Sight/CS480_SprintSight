@@ -49,6 +49,7 @@ from app.services.gitlabGithub.service import (
 from app.services.jiraService.service import enrich_jira_metrics
 from app.services.manualTextService.service import get_manual_text
 from app.services.middleManService.service import (
+    AIEngineError,
     build_assessment_payload,
     send_assessment_to_ai_engine,
 )
@@ -202,6 +203,28 @@ def team_score_from_dimensions(
     return None
 
 
+_ENGINE_FAILURE_MESSAGES = {
+    "timeout": "The AI engine did not answer in time.",
+    "unavailable": "The AI engine could not be reached.",
+    "rejected": "The AI engine rejected the assessment request.",
+    "engine_error": "The AI engine could not complete the assessment.",
+    "invalid_response": "The AI engine sent a response that could not be read.",
+}
+
+
+def safe_job_error_message(exc: BaseException) -> str:
+    """What a failed assessment job may tell its viewer.
+
+    An HTTPException's detail is this backend's own wording (for example "Project has no local
+    repository configured."), so it is kept. An engine failure becomes a fixed sentence for its
+    kind. Anything else may contain internals and is replaced by a generic sentence."""
+    if isinstance(exc, HTTPException) and isinstance(exc.detail, str):
+        return exc.detail
+    if isinstance(exc, AIEngineError):
+        return _ENGINE_FAILURE_MESSAGES.get(exc.kind, _ENGINE_FAILURE_MESSAGES["engine_error"])
+    return "The assessment failed unexpectedly. Please try again or contact support."
+
+
 def convert_ai_result_to_assessment_report(
     payload: AssessRequest | dict,
     ai_result: dict,
@@ -242,12 +265,19 @@ def convert_ai_result_to_assessment_report(
             if isinstance(detail, dict):
                 dimension_name = str(detail.get("dimension") or dimension)
                 score = detail.get("score")
-                if isinstance(score, int):
+                # bool is an int in Python: True would otherwise count as a score of 1.
+                score_is_number = isinstance(score, int | float) and not isinstance(score, bool)
+                evaluation_failed = bool(detail.get("evaluation_failed"))
+                failure_class = detail.get("failure_class")
+                if score_is_number:
                     normalized_score = float(score)
-                elif isinstance(score, float):
-                    normalized_score = score
                 else:
-                    normalized_score = 0.0
+                    # A score that is not a number is not an assessment. Counting it as 0 would
+                    # silently drag the team score down; flag the dimension like the engine's own
+                    # failures, with the placeholder score the engine uses (1).
+                    normalized_score = 1.0
+                    evaluation_failed = True
+                    failure_class = failure_class or "schema_validation"
 
                 evidence = detail.get("evidence_citations") or []
                 rubric_scores[dimension_name] = RubricDimensionScoreDetail(
@@ -256,8 +286,8 @@ def convert_ai_result_to_assessment_report(
                     or "AI-generated rubric justification.",
                     evidence_citations=_format_evidence_citations(evidence),
                     evidence_details=_evidence_details(evidence),
-                    evaluation_failed=bool(detail.get("evaluation_failed")),
-                    failure_class=detail.get("failure_class"),
+                    evaluation_failed=evaluation_failed,
+                    failure_class=failure_class,
                 )
 
     recommendations = list(ai_result.get("key_recommendations") or [])
@@ -634,7 +664,10 @@ def run_assessment_job(
                     project_repository,
                 )
     except Exception as exc:
-        error_message = str(exc)
+        # The traceback is for the log. Exception text can carry URLs, engine responses and
+        # student data, so the job (and so the UI) gets a fixed sentence instead.
+        logger.exception("Assessment job %s failed.", job_id)
+        error_message = safe_job_error_message(exc)
         job_repo.finish_job(
             job_id,
             "failed",

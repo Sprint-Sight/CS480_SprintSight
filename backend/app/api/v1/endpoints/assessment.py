@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
+from app.api.v1.endpoints.models import require_catalogued_model
 from app.core.config import get_settings
 from app.dependencies.auth import (
     ensure_course_access,
@@ -106,6 +107,11 @@ def _authorize_report_access(
         )
 
 
+# How often the progress stream looks for new events. Each look is two queries; a status line
+# that updates once a second is as good as one that updates four times a second.
+_EVENT_POLL_SECONDS = 1.0
+
+
 def _stamp_exposure(
     user: UserRecord, report_ids: list[str], insights: InsightsRepository | None
 ) -> None:
@@ -151,6 +157,7 @@ def assess_sprint(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Project does not belong to course."
         )
     ensure_course_access(faculty_user, project.course_id, projects)
+    require_catalogued_model(payload.model_name)
     if not project.local_repo_path:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,7 +247,7 @@ def assessment_job_events(
                 seen = len(events)
             if state is None or state.status in {"completed", "failed"}:
                 break
-            time.sleep(0.25)
+            time.sleep(_EVENT_POLL_SECONDS)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

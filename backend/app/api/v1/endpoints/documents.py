@@ -8,11 +8,11 @@ from app.core.config import get_settings
 from app.core.storage import storage
 from app.dependencies.auth import (
     get_action_audit_repository,
-    get_current_user,
     get_document_repository,
     get_notification_repository,
     get_project_repository,
     get_user_repository,
+    require_password_changed,
 )
 from app.repositories.interfaces import (
     ActionAuditRepository,
@@ -64,7 +64,7 @@ def _response(document) -> DocumentResponse:
 async def upload_project_documents(
     project_id: str,
     files: Annotated[list[UploadFile], File(...)],
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     documents: Annotated[DocumentRepository, Depends(get_document_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -119,7 +119,7 @@ async def upload_project_documents(
 @router.get("", response_model=list[DocumentResponse])
 def list_project_documents(
     project_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     documents: Annotated[DocumentRepository, Depends(get_document_repository)],
 ) -> list[DocumentResponse]:
@@ -131,7 +131,7 @@ def list_project_documents(
 def download_project_document(
     project_id: str,
     document_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     documents: Annotated[DocumentRepository, Depends(get_document_repository)],
 ) -> Response:
@@ -150,7 +150,7 @@ def download_project_document(
 def delete_project_document(
     project_id: str,
     document_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     projects: Annotated[ProjectRepository, Depends(get_project_repository)],
     documents: Annotated[DocumentRepository, Depends(get_document_repository)],
 ) -> Response:

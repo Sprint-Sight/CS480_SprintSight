@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies.auth import get_current_user, get_notification_repository
+from app.dependencies.auth import get_notification_repository, require_password_changed
 from app.repositories.interfaces import NotificationRepository, UserRecord
 from app.schemas.notifications import NotificationListResponse, NotificationResponse
 
@@ -23,7 +23,7 @@ def _response(notification) -> NotificationResponse:
 
 @router.get("", response_model=NotificationListResponse)
 def list_notifications(
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> NotificationListResponse:
     return NotificationListResponse(
@@ -35,7 +35,7 @@ def list_notifications(
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
 def mark_notification_read(
     notification_id: UUID,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[NotificationRepository, Depends(get_notification_repository)],
 ) -> NotificationResponse:
     notification = repository.mark_notification_read(str(notification_id), current_user.id)
