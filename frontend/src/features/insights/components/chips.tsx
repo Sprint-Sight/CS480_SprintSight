@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import type { CitationCheck, JudgeStatus } from "@/features/insights/types";
+import type { CitationCheck, JudgeStatus, OverrideSyncStatus } from "@/features/insights/types";
 
 const FLAGS: Record<string, string> = {
   failed_dimension: "Failed dimension",
@@ -14,6 +14,13 @@ const JUDGE: Record<JudgeStatus, { label: string; className: string }> = {
   failed: { label: "Failed", className: "bg-red-100 text-red-800" },
   stale: { label: "Taking too long", className: "bg-slate-200 text-slate-700" },
   no_trace: { label: "No trace", className: "bg-slate-100 text-slate-600" },
+};
+const SYNC: Record<OverrideSyncStatus, { label: string; className: string }> = {
+  synced: { label: "Synced", className: "bg-emerald-100 text-emerald-800" },
+  pending: { label: "Pending", className: "bg-amber-100 text-amber-800" },
+  failed: { label: "Failed", className: "bg-red-100 text-red-800" },
+  no_trace: { label: "No trace", className: "bg-slate-100 text-slate-600" },
+  not_needed: { label: "No changes", className: "bg-slate-100 text-slate-600" },
 };
 const chip = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium";
 
@@ -56,4 +63,11 @@ export function CitationChip({ check, hidden }: { check: CitationCheck | null; h
       {check.status === "flagged" ? " · flagged" : ""}
     </span>
   );
-} 
+}
+
+/** MLflow sync of a report's saved override (one state per report). */
+export function SyncChip({ status }: { status: OverrideSyncStatus | null }) {
+  if (!status) return <span className="text-xs text-slate-400">—</span>;
+  const s = SYNC[status];
+  return <span className={clsx(chip, s.className)}>{s.label}</span>;
+}

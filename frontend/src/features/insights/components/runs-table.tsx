@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CitationChip, HiddenValue, FlagChips, JudgeChip } from "@/features/insights/components/chips";
+import { CitationChip, HiddenValue, FlagChips, JudgeChip, SyncChip } from "@/features/insights/components/chips";
 import type { InsightsMode, RunItem } from "@/features/insights/types";
 
 const HEADERS = ["Team", "Course · Sprint", "Model", "AI score", "Citation check", "Judge"];
@@ -26,7 +26,7 @@ export function RunsTable({
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
           <tr>
-            {[...HEADERS, override ? "Overridden" : "Your labels"].map((h) => (
+            {[...HEADERS, override ? "Overridden" : "Your labels", ... (override ? ["MLflow Sync"] : [])].map((h) => (
               <th key={h} scope="col" className="px-3 py-2">
                 {h}
               </th>
@@ -61,6 +61,11 @@ export function RunsTable({
               <td className="px-3 py-2 tabular-nums">
                 {override ? (run.overridden ? "✓" : "—") : `${run.labelsDone} of 6`}
               </td>
+              {override && (
+                <td className="px-3 py-2">
+                  <SyncChip status={run.overrideSync} />
+                </td>
+              )}
               <td className="px-3 py-2 text-right">
                 {override && !run.insightsUnlocked ? (
                   <Link

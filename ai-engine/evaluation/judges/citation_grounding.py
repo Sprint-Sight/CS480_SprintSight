@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from evaluation.judges.config import configured_judge_model
 from evaluation.judges.evidence import fit_judge_bundle
 from evaluation.judges.trace_adapters import read_candidate
+from evaluation.judges.verdict_metadata import citation_verdicts_metadata
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
 from schemas.bundle_registry import get_bundle, load_persisted_bundle
@@ -423,9 +424,10 @@ def llm_judge_citation_grounding(trace: Trace) -> list[Feedback]:
         headline = round((wsum + CODE_DROP_WEIGHT * dropped) / (n + dropped), 4) if n + dropped else None
         why = "\n".join(f'{r["citation_id"]} [{r["dimension"]}] {r["label"]}/{r["severity"]}: {r["reasoning"]}'
                         for r in rows if r["label"] != "grounded")[:2000] or "every judged citation was grounded"
-        
+        verdict_meta = citation_verdicts_metadata(rows)
         return [Feedback(name=_feedback_name(k), value=v, source=source,
-                         rationale=why if k in ("hallucination_rate", "severity_weighted_rate") else None)
+                         rationale=why if k in ("hallucination_rate", "severity_weighted_rate") else None,
+                         metadata=verdict_meta if k == "hallucination_rate" else None) # structured verdicts ride on headline assessment only
                 for k, v in result.items()] + [
             Feedback(name="citations_dropped_by_code", value=dropped, source=CODE_SOURCE,
                      rationale="citations removed by code before the judge ran; each is a fabrication"),

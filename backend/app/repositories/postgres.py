@@ -2421,6 +2421,15 @@ class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
 
+    def delete_run(self, project_id: str, sprint_id: str, run_id: str) -> bool:
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM jira_ingestion_runs WHERE project_id = %s AND sprint_id = %s AND run_id = %s",
+                (UUID(project_id), sprint_id, UUID(run_id)),
+            )
+            connection.commit()
+            return cursor.rowcount > 0
+
     @staticmethod
     def _run(row: dict) -> JiraIngestionRunRecord:
         snapshot = row.get("cleaned_snapshot")
@@ -2464,6 +2473,40 @@ class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
                 ),
             ).fetchone()
         return self._run(row)
+
+    def update_raw_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        jira_project_key: str,
+        jql: str,
+        raw_bucket: str,
+        raw_object_key: str,
+        issue_count: int,
+        captured_at: datetime,
+    ) -> JiraIngestionRunRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE jira_ingestion_runs SET jira_project_key = %s, jql = %s,
+                raw_bucket = %s, raw_object_key = %s, issue_count = %s, captured_at = %s,
+                processing_status = 'pending', processed_at = NULL,
+                normalization_version = NULL, processing_error = NULL, cleaned_snapshot = NULL
+                WHERE project_id = %s AND sprint_id = %s AND run_id = %s
+                RETURNING *""",
+                (
+                    jira_project_key,
+                    jql,
+                    raw_bucket,
+                    raw_object_key,
+                    issue_count,
+                    captured_at,
+                    UUID(project_id),
+                    sprint_id,
+                    UUID(run_id),
+                ),
+            ).fetchone()
+        return self._run(row) if row else None
 
     def get_run(
         self, project_id: str, sprint_id: str, run_id: str

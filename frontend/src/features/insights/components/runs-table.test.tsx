@@ -20,6 +20,7 @@ const run = (patch: Partial<RunItem> = {}): RunItem => ({
   aiScoreHidden: true,
   insightsUnlocked: false,
   overridden: false,
+  overrideSync: null,
   citationCheck: null,
   flags: [],
   ...patch,
@@ -91,5 +92,27 @@ describe("RunsTable (override gate)", () => {
       "href",
       "/insights/reports/r-1",
     );
+  });
+});
+
+describe("RunsTable MLflow sync column", () => {
+  it("shows each report's sync state in override mode", () => {
+    render(
+      <RunsTable
+        mode="override_gate"
+        items={[
+          run({ reportId: "r-1", overridden: true, insightsUnlocked: true, overrideSync: "pending" }),
+          run({ reportId: "r-2", teamName: "Team B", overridden: true, insightsUnlocked: true, overrideSync: "synced" }),
+        ]}
+      />,
+    );
+    expect(screen.getByRole("columnheader", { name: "MLflow Sync" })).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+    expect(screen.getByText("Synced")).toBeInTheDocument();
+  });
+
+  it("has no sync column in blind mode", () => {
+    render(<RunsTable items={[run()]} />);
+    expect(screen.queryByRole("columnheader", { name: "MLflow Sync" })).not.toBeInTheDocument();
   });
 });
