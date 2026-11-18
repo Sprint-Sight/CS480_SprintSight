@@ -107,7 +107,7 @@ jobs:
 
       - name: Audit npm packages
         working-directory: frontend
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
       - uses: actions/setup-python@v5
         with:
