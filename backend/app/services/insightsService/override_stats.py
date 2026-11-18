@@ -22,6 +22,7 @@ NOTICE = (
     "reports nobody saved are not counted as agreement."
 )
 DIRECTION_THRESHOLD = 0.25  # mean signed adjustment (0-10 scale) below which direction is "mixed"
+MIN_SAMPLE = 5 # fewer saved overrides than this: warn that figures are anecdotal
 
 def override_stats(reports: list[AssessmentReport]) -> dict:
     # Only reports with a known AI baseline can be compared.
@@ -59,6 +60,7 @@ def override_stats(reports: list[AssessmentReport]) -> dict:
                     round(sum(abs(a) for a in changed) / len(changed), 2) if changed else None
                 ),
                 "direction": direction,
+                "small_sample": len(values) < MIN_SAMPLE,
             }
         )
     return {
@@ -68,4 +70,6 @@ def override_stats(reports: list[AssessmentReport]) -> dict:
         "reports_with_changes": reports_with_changes,
         "by_dimension": by_dimension,
         "notice": NOTICE,
+        "small_sample": len(saved) < MIN_SAMPLE,
+        "min_sample": MIN_SAMPLE,
     }
