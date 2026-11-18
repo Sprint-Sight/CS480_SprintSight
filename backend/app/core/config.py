@@ -135,6 +135,11 @@ class Settings(BaseSettings):
     # timeout above. Excess jobs stay "queued" here instead. Raise it only if the engine can
     # really grade in parallel.
     ai_engine_max_concurrency: int = Field(default=1, ge=1, alias="AI_ENGINE_MAX_CONCURRENCY")
+    # A running backend refreshes its jobs' heartbeat this often; a job whose heartbeat is older
+    # than the stale limit belongs to a process that stopped and is failed as retryable. Keep
+    # the stale limit several heartbeats long.
+    job_heartbeat_seconds: float = Field(default=30.0, gt=0, alias="JOB_HEARTBEAT_SECONDS")
+    job_stale_after_seconds: float = Field(default=120.0, gt=0, alias="JOB_STALE_AFTER_SECONDS")
 
     # AI Insights / MLflow (read by trace ID only; see services/insightsService).
     # mlflow_timeout_seconds reads the env var MLflow itself uses, so there is one knob.

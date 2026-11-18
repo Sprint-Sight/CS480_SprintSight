@@ -1760,10 +1760,15 @@ class PostgresAssessmentRepository(AssessmentRepository):
             )
 
     def get_report(self, report_id: str) -> AssessmentReport | None:
+        # Reports are addressed as "rpt-<uuid>" everywhere outside the table, as in get_reports.
+        try:
+            report_uuid = UUID(report_id.removeprefix("rpt-"))
+        except ValueError:
+            return None
         with self._pool.connection() as connection:
             row = connection.execute(
                 "SELECT * FROM assessment_reports WHERE report_id = %s",
-                (UUID(report_id),),
+                (report_uuid,),
             ).fetchone()
             return self._report(row) if row else None
 
@@ -2173,6 +2178,12 @@ def ensure_assessment_job_schema(pool: ConnectionPool) -> None:
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )"""
         )
+        # Which backend process runs a job, and when it last said so: a restart must only fail
+        # the jobs of a process that is gone, never those of another worker that is alive.
+        connection.execute("ALTER TABLE assessment_jobs ADD COLUMN IF NOT EXISTS owner_id TEXT")
+        connection.execute(
+            "ALTER TABLE assessment_jobs ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ"
+        )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_assessment_job_events_job "
             "ON assessment_job_events(job_id, event_id)"
@@ -2185,8 +2196,11 @@ def ensure_assessment_job_schema(pool: ConnectionPool) -> None:
 class PostgresAssessmentJobRepository:
     """Same interface as InMemoryAssessmentJobRepository."""
 
-    def __init__(self, pool: ConnectionPool) -> None:
+    def __init__(self, pool: ConnectionPool, owner_id: str | None = None) -> None:
         self._pool = pool
+        # One id per backend process: the jobs it creates carry it, and its heartbeat keeps them
+        # from being failed as abandoned.
+        self.owner_id = owner_id or uuid4().hex
 
     @staticmethod
     def _record(row) -> AssessmentJobRecord:
@@ -2210,9 +2224,16 @@ class PostgresAssessmentJobRepository:
         with self._pool.connection() as connection, connection.transaction():
             row = connection.execute(
                 """INSERT INTO assessment_jobs
-                   (job_id, course_id, project_id, sprint_id, model_name)
-                   VALUES (%s, %s, %s, %s, %s) RETURNING *""",
-                (job_id, payload.course_id, payload.project_id, payload.sprint_id, payload.model_name),
+                   (job_id, course_id, project_id, sprint_id, model_name, owner_id, heartbeat_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, now()) RETURNING *""",
+                (
+                    job_id,
+                    payload.course_id,
+                    payload.project_id,
+                    payload.sprint_id,
+                    payload.model_name,
+                    self.owner_id,
+                ),
             ).fetchone()
             connection.execute(
                 "INSERT INTO assessment_job_events (job_id, event, data) VALUES (%s, %s, %s)",
@@ -2299,9 +2320,21 @@ class PostgresAssessmentJobRepository:
             ).fetchall()
         return [AssessmentJobEvent(event=row["event"], data=row["data"]) for row in rows]
 
-    def fail_interrupted_jobs(self, message: str) -> int:
-        """At startup nothing can still be running: close every unfinished job as a transient
-        failure so its page shows "retry" instead of waiting forever."""
+    def touch_owned_jobs(self) -> int:
+        """Say this process is alive: refresh the heartbeat of its unfinished jobs."""
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE assessment_jobs SET heartbeat_at = now() "
+                "WHERE owner_id = %s AND status <> ALL(%s)",
+                (self.owner_id, list(TERMINAL_JOB_STATUSES)),
+            )
+        return cursor.rowcount
+
+    def fail_stale_jobs(self, stale_after_seconds: float, message: str) -> int:
+        """Close the unfinished jobs of a backend process that stopped (no heartbeat for
+        `stale_after_seconds`, or never one) as a transient failure, so their page shows "retry"
+        instead of waiting forever. Another live worker's jobs, and this process's own, are left
+        alone: a restart is not proof that every other worker died."""
         data = Json(
             {
                 "status": "failed",
@@ -2315,8 +2348,12 @@ class PostgresAssessmentJobRepository:
             rows = connection.execute(
                 """UPDATE assessment_jobs SET status = 'failed', progress = 100,
                        current_stage = 'failed', error_message = %s, updated_at = now()
-                   WHERE status <> ALL(%s) RETURNING job_id""",
-                (message, list(TERMINAL_JOB_STATUSES)),
+                   WHERE status <> ALL(%s)
+                     AND owner_id IS DISTINCT FROM %s
+                     AND (heartbeat_at IS NULL
+                          OR heartbeat_at < now() - make_interval(secs => %s))
+                   RETURNING job_id""",
+                (message, list(TERMINAL_JOB_STATUSES), self.owner_id, stale_after_seconds),
             ).fetchall()
             for row in rows:
                 connection.execute(

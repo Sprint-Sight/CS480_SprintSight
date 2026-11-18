@@ -564,7 +564,11 @@ CREATE TABLE IF NOT EXISTS assessment_jobs (
     report_id TEXT,
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- The backend process that runs the job and its last sign of life, so a restart only fails
+    -- the jobs of a process that stopped.
+    owner_id TEXT,
+    heartbeat_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS assessment_job_events (
     event_id BIGSERIAL PRIMARY KEY,
