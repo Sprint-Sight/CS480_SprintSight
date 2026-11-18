@@ -139,6 +139,8 @@ class InMemoryUserRepository(UserRepository):
         user.is_active = is_active
         if old_email != user.email:
             del self._users[old_email]
+            # Sessions issued for the old address must not outlive the change.
+            user.token_version += 1
         self._users[user.email] = user
         return user
 

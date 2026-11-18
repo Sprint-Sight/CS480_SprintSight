@@ -764,10 +764,12 @@ class PostgresUserRepository(UserRepository):
     ) -> UserRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
-                """UPDATE users SET email = %s, full_name = %s, role = %s, is_active = %s
+                """UPDATE users SET
+                    token_version = token_version + CASE WHEN email <> %s THEN 1 ELSE 0 END,
+                    email = %s, full_name = %s, role = %s, is_active = %s
                 WHERE user_id = %s
                 RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number""",
-                (email.lower(), full_name, role.value, is_active, UUID(user_id)),
+                (email.lower(), email.lower(), full_name, role.value, is_active, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
 

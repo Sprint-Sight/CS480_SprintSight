@@ -204,6 +204,34 @@ def require_admin(current_user=Depends(require_password_changed)):
     return current_user
 
 
+def student_enrollments(projects: ProjectRepository) -> dict[str, set[str]]:
+    """Map each enrolled student id to the ids of the courses they are enrolled in."""
+    enrollments: dict[str, set[str]] = {}
+    for course in projects.list_courses():
+        for student_id in projects.list_enrolled_student_ids(course.id):
+            enrollments.setdefault(student_id, set()).add(course.id)
+    return enrollments
+
+
+def instructor_can_view_student(taught_course_ids: set[str], enrolled_course_ids: set[str]) -> bool:
+    """An instructor may see a student who is enrolled in a course they teach, or one who is not
+    enrolled anywhere yet (just created, waiting to be enrolled). Students who belong only to
+    other instructors' courses stay hidden."""
+    return not enrolled_course_ids or bool(enrolled_course_ids & taught_course_ids)
+
+
+def instructor_can_manage_student(
+    taught_course_ids: set[str], enrolled_course_ids: set[str]
+) -> bool:
+    """An instructor may edit a student only when every course the student is enrolled in is one
+    they teach (or the student is not enrolled anywhere yet).
+
+    Viewing is not enough for editing. Any instructor can enrol any existing student into their
+    own course, and a changed email plus the public password reset takes the account over, so a
+    student shared with another instructor's course needs an admin to edit."""
+    return enrolled_course_ids <= taught_course_ids
+
+
 def ensure_course_access(user, course_id: str, projects: ProjectRepository) -> None:
     """Staff may act on a course only if they teach it (admins may act on any course)."""
     if user.role == Role.ADMIN:
