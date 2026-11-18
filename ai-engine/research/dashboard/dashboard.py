@@ -25,6 +25,8 @@ def load(folder: str):
         session = f.stem.rsplit("_", 1)[-1]
         for line in filter(str.strip, f.read_text().splitlines()):
             r = json.loads(line)
+            if "dimension_scores" not in r:                    # app-run record, not a trial record
+                continue
             if len(r["failed_dimensions"]) == len(DIMS):      # outage runs are stored as 0.0
                 continue
             runs.append({"session": session, "model": r["model"].removeprefix("sprintsight-"),
@@ -37,7 +39,11 @@ def load(folder: str):
             j = json.loads(line)
             s = {k: v for k, v in j["scores"].items() if k != "gold"}
             judges.append({"trace_id": j["trace_id"], "judge": judge, **s})
-    return pd.DataFrame(runs), pd.DataFrame(judges)
+    runs_df = pd.DataFrame(runs)
+    judges_df = pd.DataFrame(judges)
+    if not runs_df.empty and not judges_df.empty:
+        judges_df = judges_df[judges_df.trace_id.isin(runs_df.trace_id)]
+    return runs_df, judges_df
 
 def flags(r):
     out = []
