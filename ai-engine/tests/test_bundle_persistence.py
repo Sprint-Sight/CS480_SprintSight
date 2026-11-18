@@ -1,10 +1,12 @@
 """The judge finds the bundle a trace was graded on without the in-memory registry (H5)."""
 
 from types import SimpleNamespace
+from typing import cast
 
 import mlflow
 import pytest
 from mlflow import MlflowClient
+from mlflow.entities import Trace
 from mlflow.tracing.constant import TraceMetadataKey
 
 from evaluation.judges.citation_grounding import _bundle_of
@@ -49,10 +51,11 @@ def new_run(store) -> TrackedRun:
     return TrackedRun(client, created.info.run_id, experiment_id)
 
 
-def trace_of(run_id: str | None, sprint_id: str | None = "s9") -> SimpleNamespace:
+def trace_of(run_id: str | None, sprint_id: str | None = "s9") -> Trace:
     metadata = {TraceMetadataKey.SOURCE_RUN: run_id} if run_id else {}
     root = SimpleNamespace(parent_id=None, inputs={"sprint_id": sprint_id})
-    return SimpleNamespace(info=SimpleNamespace(trace_metadata=metadata), data=SimpleNamespace(spans=[root]))
+    fake = SimpleNamespace(info=SimpleNamespace(trace_metadata=metadata), data=SimpleNamespace(spans=[root]))
+    return cast(Trace, fake)
 
 
 def test_a_stored_bundle_round_trips(store) -> None:
