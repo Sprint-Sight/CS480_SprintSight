@@ -22,6 +22,7 @@ from app.repositories.insights import (
     InsightsRepository,
     LabelInput,
     RunRow,
+    OverrideRow,
 )
 from app.repositories.interfaces import ProjectRepository, UserRecord
 from app.schemas.assessment import AssessmentReport
@@ -84,6 +85,7 @@ MLFLOW_DOWN_NOTICE = (
 TRACE_MISSING_NOTICE = "MLflow has no trace with this report's ID."
 JUDGE_REFRESH_MIN_SECONDS = 10
 PROMPT_NAMES = {f"Evaluate_{d}" for d in AI_ENGINE_DIMENSION_ORDER} | {"Generate_Sprint_Feedback"}
+SYNC_PRIORITY = ("pending", "failed", "synced", "no_trace", "not_needed")
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
@@ -244,7 +246,12 @@ def registry_prompt_detail(gateway: MlflowGateway, name: str, version: int) -> d
             diff = None
     return {**base, "available": True, **current, "diff": diff}
 
-def _run_item(run: RunRow, labels_done: int, score_visible: bool, unlocked: bool) -> dict:
+# A report's MLflow sync status across its dim rows; None if nothing was saved
+def report_sync_status(rows) -> str | None:
+    present = {row.sync_status for row in rows}
+    return next((s for s in SYNC_PRIORITY if s in present), None)
+
+def _run_item(run: RunRow, labels_done: int, score_visible: bool, unlocked: bool, override_sync: str | None = None) -> dict:
     return {
         "report_id": run.report_id,
         "team_name": run.team_name,
@@ -263,6 +270,7 @@ def _run_item(run: RunRow, labels_done: int, score_visible: bool, unlocked: bool
         "has_failed_dimension": run.has_failed_dimension,
         "citation_check": citation_check(run.judge_summary) if unlocked else None,
         "flags": attention_flags(run, unlocked),
+        "override_sync": override_sync,
     }
 
 def list_runs(
@@ -331,9 +339,12 @@ def list_runs(
         unlocked_ids = score_ids = visible_score_ids(
             user, [r.report_id for r in page_rows], insights
         )
+    overrides: dict[str, list[OverrideRow]] = defaultdict(list)
+    for row in insights.overrides_for_reports([r.report_id for r in page_rows]):
+        overrides[row.report_id].append(row)
     return {
         "items": [
-            _run_item(r, done(r), r.report_id in score_ids, r.report_id in unlocked_ids)
+            _run_item(r, done(r), r.report_id in score_ids, r.report_id in unlocked_ids, report_sync_status(overrides.get(r.report_id, [])))
             for r in page_rows
         ],
         "total": len(filtered),
