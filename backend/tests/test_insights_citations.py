@@ -1,7 +1,9 @@
 import json
 
 from app.services.insightsService.citations import (
-    METADATA_KEY, TRUNCATED_KEY, unaccepted_citations,
+    METADATA_KEY,
+    TRUNCATED_KEY,
+    unaccepted_citations,
 )
 from app.services.insightsService.trace_summary import JudgeAssessment, TraceSummary
 

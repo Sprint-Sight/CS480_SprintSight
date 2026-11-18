@@ -1,8 +1,12 @@
 import json
 
 from evaluation.judges.verdict_metadata import (
-    MAX_JSON_CHARS, METADATA_KEY, TRUNCATED_KEY, citation_verdicts_metadata,
+    MAX_JSON_CHARS,
+    METADATA_KEY,
+    TRUNCATED_KEY,
+    citation_verdicts_metadata,
 )
+
 
 def row(i, label="hallucinated"):
     return {"citation_id": f"C{i}", "dimension": "testing", "claim": "abc123 | Added tests",

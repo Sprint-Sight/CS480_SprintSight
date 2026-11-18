@@ -21,8 +21,8 @@ from app.repositories.insights import (
     JUDGE_OPEN_STATUSES,
     InsightsRepository,
     LabelInput,
-    RunRow,
     OverrideRow,
+    RunRow,
 )
 from app.repositories.interfaces import ProjectRepository, UserRecord
 from app.schemas.assessment import AssessmentReport
@@ -251,7 +251,13 @@ def report_sync_status(rows) -> str | None:
     present = {row.sync_status for row in rows}
     return next((s for s in SYNC_PRIORITY if s in present), None)
 
-def _run_item(run: RunRow, labels_done: int, score_visible: bool, unlocked: bool, override_sync: str | None = None) -> dict:
+def _run_item(
+    run: RunRow,
+    labels_done: int,
+    score_visible: bool,
+    unlocked: bool,
+    override_sync: str | None = None,
+) -> dict:
     return {
         "report_id": run.report_id,
         "team_name": run.team_name,
@@ -344,7 +350,13 @@ def list_runs(
         overrides[row.report_id].append(row)
     return {
         "items": [
-            _run_item(r, done(r), r.report_id in score_ids, r.report_id in unlocked_ids, report_sync_status(overrides.get(r.report_id, [])))
+            _run_item(
+                r,
+                done(r),
+                r.report_id in score_ids,
+                r.report_id in unlocked_ids,
+                report_sync_status(overrides.get(r.report_id, [])),
+            )
             for r in page_rows
         ],
         "total": len(filtered),

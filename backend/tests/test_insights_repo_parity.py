@@ -1,6 +1,9 @@
 from app.repositories.insights import (
-    InMemoryInsightsRepository, InsightsRepository, PostgresInsightsRepository,
+    InMemoryInsightsRepository,
+    InsightsRepository,
+    PostgresInsightsRepository,
 )
+
 
 def _methods(cls):
     return {n for n in dir(cls) if not n.startswith("_") and callable(getattr(cls, n))}
