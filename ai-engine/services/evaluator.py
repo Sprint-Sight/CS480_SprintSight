@@ -22,7 +22,7 @@ from prompts.dimension_criteria import (
 )
 from schemas.all_dimensions_failed_error import AllDimensionsFailedError
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.bundle_registry import remember_bundle
+from schemas.bundle_registry import persist_bundle, remember_bundle
 from schemas.failure_class import describe_failure
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_dimension_score import DimensionName, RubricDimensionScore
@@ -177,7 +177,7 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
     if trace_ids is None:
         trace_ids = []
     
-    remember_bundle(bundle)  # Store the bundle in a global registry for later retrieval by the judge
+    remember_bundle(bundle)  # fast path for the judge; the durable copy is stored with the run below
 
     # No mlflow.set_tracking_uri / set_experiment here: both are process-global, and this runs
     # inside an async route where concurrent requests share one thread. tracked_run() below
@@ -202,6 +202,7 @@ async def _evaluate_sprint(bundle: ArtifactBundle, model_name: str, experiment_n
             mlflow.start_span(name="Evaluate_Complete_Sprint", span_type=SpanType.CHAIN) as root, \
             _error_on_cancel(root):
         run.link_current_trace()  # what the active run used to do implicitly
+        persist_bundle(run, bundle)  # the judge may run after a restart, when the registry is empty
         run.log_param("dimension_concurrency", DIMENSION_CONCURRENCY)
         start_time = time.time() # Start time for entire evaluation process
         run.log_params({

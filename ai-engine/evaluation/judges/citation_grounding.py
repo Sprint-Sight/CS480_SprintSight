@@ -16,6 +16,7 @@ from mlflow.entities import (
     Trace,
 )
 from mlflow.genai.scorers import scorer
+from mlflow.tracing.constant import TraceMetadataKey
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from evaluation.judges.config import configured_judge_model
@@ -23,7 +24,7 @@ from evaluation.judges.evidence import fit_judge_bundle
 from evaluation.judges.trace_adapters import read_candidate
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
-from schemas.bundle_registry import get_bundle
+from schemas.bundle_registry import get_bundle, load_persisted_bundle
 from schemas.failure_class import FailureClass, is_transient
 from schemas.modelname import MODEL_NUM_CTX
 from schemas.rubrics_score import RubricsScore
@@ -441,7 +442,11 @@ def _bundle_of(trace: Trace, team: str | None) -> ArtifactBundle:
     inputs = (root.inputs or {}) if root is not None and isinstance(root.inputs, dict) else {}
     if inputs.get("bundle"):
         return ArtifactBundle.model_validate(inputs["bundle"])
-    bundle = get_bundle(team, inputs.get("sprint_id")) or _fixture_bundle(team)
+    # The copy stored with the trace's run is exactly what was graded. The registry is keyed by
+    # team and sprint, so a re-run of the same sprint replaces the entry a queued job needs.
+    run_id = (getattr(trace.info, "trace_metadata", None) or {}).get(TraceMetadataKey.SOURCE_RUN)
+    bundle = (load_persisted_bundle(run_id) or get_bundle(team, inputs.get("sprint_id"))
+              or _fixture_bundle(team))
     if bundle is None:
         raise KeyError(f"no bundle for team={team!r} sprint={inputs.get('sprint_id')!r}")
     return bundle
