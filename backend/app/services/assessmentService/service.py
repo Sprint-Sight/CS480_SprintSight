@@ -1,4 +1,5 @@
 import logging
+import re
 import threading
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -161,6 +162,46 @@ def _failed_dimension_names(
     order = {dimension: index for index, dimension in enumerate(RUBRIC_WEIGHTS)}
     return sorted(names, key=lambda name: (order.get(name, len(order)), name))
 
+_INCOMPLETE_PREFIX = re.compile(r"^Incomplete assessment: .*? pending manual review\. ")
+
+
+def incomplete_assessment_prefix(failed_dimensions: list[str]) -> str:
+    """Rationale prefix telling the reader which dimensions are missing from the score."""
+    if not failed_dimensions:
+        return ""
+    verb = "is" if len(failed_dimensions) == 1 else "are"
+    return (
+        f"Incomplete assessment: {', '.join(failed_dimensions)} could not be scored "
+        f"automatically and {verb} excluded from this score pending manual review. "
+    )
+
+
+def team_score_from_dimensions(
+    scores: dict[str, float], weights: dict[str, float], failed: set[str]
+) -> float | None:
+    """Weighted team score (0-100) from per-dimension scores (0-10); None if not computable.
+
+    A failed dimension carries a placeholder score (1), not an assessment. Counting it would
+    silently drag the team score down, so it is excluded and the remaining weights are
+    renormalised. Without failures every weighted dimension must have a score.
+    """
+    if failed:
+        assessed = {
+            dimension: weight
+            for dimension, weight in weights.items()
+            if dimension in scores and dimension not in failed
+        }
+        total_weight = sum(assessed.values())
+        if assessed and total_weight > 0:
+            weighted_sum = sum(scores[dimension] * weight for dimension, weight in assessed.items())
+            return round(weighted_sum / total_weight * 10, 2)
+        return 0.0
+    if scores and all(dimension in scores for dimension in weights):
+        weighted_sum = sum(scores[dimension] * weight for dimension, weight in weights.items())
+        return round(weighted_sum * 10, 2)
+    return None
+
+
 def convert_ai_result_to_assessment_report(
     payload: AssessRequest | dict,
     ai_result: dict,
@@ -229,44 +270,20 @@ def convert_ai_result_to_assessment_report(
     # custom weights change the team score, not just the displayed labels.
     # Falls back to the AI engine's own (unweighted) overall_score when
     # per-dimension detail isn't available (e.g. older/partial ai_result).
-    if failed_dimensions:
-        # A dimension whose retries were exhausted carries a placeholder score (1), not an
-        # assessment. Counting it would silently drag the team score down, so it is
-        # excluded and the remaining weights are renormalised. The report is flagged
-        # (evaluation_failed) so a person decides what to do about the gap.
-        assessed_weights = {
-            dimension: weight
-            for dimension, weight in effective_weights.items()
-            if dimension in rubric_scores and dimension not in failed_dimensions
-        }
-        total_weight = sum(assessed_weights.values())
-        if assessed_weights and total_weight > 0:
-            weighted_sum = sum(
-                rubric_scores[dimension].score * weight
-                for dimension, weight in assessed_weights.items()
-            )
-            team_score_value = round(weighted_sum / total_weight * 10, 2)
-        else:
-            team_score_value = 0.0
-    elif rubric_scores and all(dimension in rubric_scores for dimension in effective_weights):
-        weighted_average = sum(
-            rubric_scores[dimension].score * weight
-            for dimension, weight in effective_weights.items()
-        )
-        team_score_value = round(weighted_average * 10, 2)
+    computed_score = team_score_from_dimensions(
+        {dimension: detail.score for dimension, detail in rubric_scores.items()},
+        effective_weights,
+        set(failed_dimensions),
+    )
+    if computed_score is not None:
+        team_score_value = computed_score
     elif isinstance(overall_score, int | float):
         team_score_value = round(overall_score * 10, 2)
     else:
         team_score_value = 0.0
 
     team_rationale = ai_result.get("executive_summary") or "AI assessment result."
-    if failed_dimensions:
-        verb = "is" if len(failed_dimensions) == 1 else "are"
-        team_rationale = (
-            f"Incomplete assessment: {', '.join(failed_dimensions)} could not be scored "
-            f"automatically and {verb} excluded from this score pending manual review. "
-            f"{team_rationale}"
-        )
+    team_rationale = incomplete_assessment_prefix(failed_dimensions) + team_rationale
 
     def deduplicate(values: list) -> list[str]:
         deduplicated = []
@@ -875,6 +892,29 @@ def get_latest_assessment(
     return report
 
 
+_LEGACY_SCORE_DIMENSIONS = ("requirements", "code_quality", "documentation", "collaboration")
+
+
+def _to_ten_point_scale(score: float | int) -> float:
+    """A rubric score on 0-10. Values above 10 are 0-100 scores written by the older editor
+    path, so they are scaled down; anything outside 0-100 is rejected."""
+    value = float(score)
+    if not 0 <= value <= 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Rubric scores must be between 0 and 10 (got {score}).",
+        )
+    return round(value / 10, 2) if value > 10 else value
+
+
+def _rubric_weights_are_valid(weights: dict[str, float]) -> bool:
+    try:
+        _validate_rubric_weights(weights)
+    except HTTPException:
+        return False
+    return True
+
+
 def update_manual_assessment(
     report_id: str,
     payload: ManualAssessmentPatch,
@@ -899,31 +939,97 @@ def update_manual_assessment(
             detail="Instructor is not assigned to this course.",
         )
 
-    patch = payload.model_dump(exclude_unset=True)
-    rubric_scores = {key: detail.model_dump() for key, detail in report.rubric_scores.items()}
+    patch = {
+        key: value
+        for key, value in payload.model_dump(exclude_unset=True).items()
+        if value is not None
+    }
+    if "rubric_weights" in patch:
+        _validate_rubric_weights(patch["rubric_weights"])
+        weights = patch["rubric_weights"]
+    elif _rubric_weights_are_valid(report.rubric_weights):
+        weights = report.rubric_weights
+    else:
+        weights = get_effective_rubric_weights(report.course_id)
+
+    # Every score is kept on the 0-10 scale of rubric_scores. The four legacy fields arrive
+    # on 0-100, so they are divided by 10 here instead of being stored as they came in.
+    previous = {key: detail.model_dump() for key, detail in report.rubric_scores.items()}
+    failed_before = set(report.failed_dimensions) | {
+        dimension for dimension, detail in previous.items() if detail["evaluation_failed"]
+    }
+    rubric_scores = {
+        dimension: {**detail, "score": _to_ten_point_scale(detail["score"])}
+        for dimension, detail in previous.items()
+    }
     supplied_rubric_scores = patch.get("rubric_scores") or {}
+    edited: dict[str, dict] = {}
     # Merge per dimension rather than replace: an editor that only sends
     # score/justification/evidence_citations must not wipe evidence_details.
     for dimension, supplied in supplied_rubric_scores.items():
-        rubric_scores[dimension] = {**rubric_scores.get(dimension, {}), **supplied}
-    for dimension in ("requirements", "code_quality", "documentation", "collaboration"):
-        score_key = f"{dimension}_score"
-        justification_key = f"{dimension}_justification"
-        if dimension in supplied_rubric_scores:
+        edited[dimension] = dict(supplied)
+        if "score" in supplied:
+            edited[dimension]["score"] = _to_ten_point_scale(supplied["score"])
+    for dimension in _LEGACY_SCORE_DIMENSIONS:
+        if dimension in edited:
             continue
-        if score_key not in patch and justification_key not in patch:
-            continue
-        existing = rubric_scores.get(dimension, {})
-        rubric_scores[dimension] = {
-            **existing,
-            "score": patch.get(score_key, existing.get("score", 0)),
-            "justification": patch.get(
-                justification_key,
-                existing.get("justification"),
-            ),
+        edited[dimension] = {
+            "score": _to_ten_point_scale(patch[f"{dimension}_score"] / 10),
+            "justification": patch[f"{dimension}_justification"],
         }
-    if rubric_scores:
-        patch["rubric_scores"] = rubric_scores
+    for dimension, fields in edited.items():
+        rubric_scores[dimension] = {**rubric_scores.get(dimension, {"score": 0}), **fields}
+
+    # A dimension the AI could not score stays failed unless the instructor really scored it.
+    # The editor sends the placeholder back unchanged, which must not count as a score.
+    for dimension in failed_before:
+        before = previous.get(dimension)
+        detail = rubric_scores.get(dimension)
+        scored_by_instructor = bool(
+            before
+            and detail
+            and dimension in edited
+            and (
+                abs(detail["score"] - _to_ten_point_scale(before["score"])) > 1e-6
+                or detail.get("justification") != before.get("justification")
+            )
+        )
+        if detail is not None:
+            detail["evaluation_failed"] = not scored_by_instructor
+            if scored_by_instructor:
+                detail["failure_class"] = None
+    order = {dimension: index for index, dimension in enumerate(RUBRIC_WEIGHTS)}
+    still_failed = sorted(
+        (
+            dimension
+            for dimension in failed_before
+            if rubric_scores.get(dimension, {}).get("evaluation_failed", True)
+        ),
+        key=lambda name: (order.get(name, len(order)), name),
+    )
+
+    base_team_score = patch.get("team_score") or report.team_score.model_dump()
+    computed = team_score_from_dimensions(
+        {dimension: float(detail["score"]) for dimension, detail in rubric_scores.items()},
+        weights,
+        set(still_failed),
+    )
+    team_score_value = computed if computed is not None else base_team_score["score"]
+    rationale = _INCOMPLETE_PREFIX.sub("", base_team_score["rationale"])
+    patch["team_score"] = {
+        "score": team_score_value,
+        "rationale": incomplete_assessment_prefix(still_failed) + rationale,
+        "overall_grade": score_to_grade(team_score_value),
+    }
+    patch["evaluation_failed"] = bool(still_failed)
+    patch["failed_dimensions"] = still_failed
+    patch["rubric_scores"] = rubric_scores
+    for dimension in _LEGACY_SCORE_DIMENSIONS:
+        # The legacy 0-100 field mirrors the stored 0-10 score. It must stay non-null: the
+        # assessment_reports_manual_fields_check constraint requires all four once override is
+        # set. For a still-failed dimension it holds the placeholder, which clients ignore in
+        # favour of rubric_scores[...].evaluation_failed.
+        patch[f"{dimension}_score"] = round(rubric_scores[dimension]["score"] * 10, 2)
 
     updated = assessment_repository.update_manual_assessment(report_id, patch)
     if not updated:

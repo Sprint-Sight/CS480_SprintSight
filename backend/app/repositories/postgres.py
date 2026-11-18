@@ -1802,8 +1802,11 @@ class PostgresAssessmentRepository(AssessmentRepository):
             "strengths": "strengths",
             "weaknesses": "weaknesses",
             "recommendations": "recommendations",
+            "evaluation_failed": "evaluation_failed",
+            "failed_dimensions": "failed_dimensions",
         }
         json_columns = {
+            "failed_dimensions",
             "rubric_weights",
             "team_score",
             "individual_scores",
