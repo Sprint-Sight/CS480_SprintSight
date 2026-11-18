@@ -730,6 +730,34 @@ class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
         self._runs[run.id] = run
         return run
 
+    def update_raw_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        jira_project_key: str,
+        jql: str,
+        raw_bucket: str,
+        raw_object_key: str,
+        issue_count: int,
+        captured_at: datetime,
+    ) -> JiraIngestionRunRecord | None:
+        run = self.get_run(project_id, sprint_id, run_id)
+        if not run:
+            return None
+        run.jira_project_key = jira_project_key
+        run.jql = jql
+        run.raw_bucket = raw_bucket
+        run.raw_object_key = raw_object_key
+        run.issue_count = issue_count
+        run.captured_at = captured_at
+        run.processing_status = "pending"
+        run.processed_at = None
+        run.normalization_version = None
+        run.processing_error = None
+        run.cleaned_snapshot = None
+        return run
+
     def get_run(
         self, project_id: str, sprint_id: str, run_id: str
     ) -> JiraIngestionRunRecord | None:
@@ -776,6 +804,13 @@ class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
         run.processing_error = processing_error
         run.cleaned_snapshot = cleaned_snapshot
         return run
+
+    def delete_run(self, project_id: str, sprint_id: str, run_id: str) -> bool:
+        run = self.get_run(project_id, sprint_id, run_id)
+        if not run:
+            return False
+        del self._runs[run_id]
+        return True
 
 
 class InMemoryMetricsRepository(MetricsRepository):

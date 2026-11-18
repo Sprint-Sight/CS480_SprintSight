@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import UTC, date, datetime
 from typing import Any
@@ -82,19 +83,77 @@ def _ticket_created_at(fields: dict[str, Any]) -> datetime | None:
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
+_SPRINT_START_DATE_KEYS = (
+    "startdate",
+    "start_date",
+    "start",
+    "starttime",
+    "start_time",
+    "sprintstartdate",
+    "sprint_start_date",
+    "begindate",
+    "begin_date",
+)
+_SPRINT_END_DATE_KEYS = (
+    "enddate",
+    "end_date",
+    "end",
+    "endtime",
+    "end_time",
+    "sprintenddate",
+    "sprint_end_date",
+    "finishdate",
+    "finish_date",
+    "completedate",
+    "complete_date",
+)
+
+
 def _parse_date(value: Any) -> date | None:
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
         return value
+    if isinstance(value, dict):
+        for candidate_key in ("iso", "date", "value", "dateTime", "timestamp"):
+            if candidate_key in value:
+                parsed = _parse_date(value.get(candidate_key))
+                if parsed:
+                    return parsed
+        # Try any string value.
+        for candidate_value in value.values():
+            if isinstance(candidate_value, str):
+                parsed = _parse_date(candidate_value)
+                if parsed:
+                    return parsed
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        timestamp = float(value)
+        if abs(timestamp) >= 1_000_000_000:
+            if abs(timestamp) >= 100_000_000_000:
+                timestamp /= 1000
+            try:
+                return datetime.fromtimestamp(timestamp, tz=UTC).date()
+            except (OverflowError, OSError, ValueError):
+                return None
+        return None
     if not isinstance(value, str) or not value.strip():
         return None
+    text = value.strip()
     try:
-        return datetime.fromisoformat(value.strip().replace("Z", "+00:00")).date()
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
     except ValueError:
         try:
-            return date.fromisoformat(value.strip())
+            return date.fromisoformat(text)
         except ValueError:
+            # Last resort: try common alternate separators.
+            for fmt in ("%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"):
+                try:
+                    from datetime import datetime as _dt
+
+                    return _dt.strptime(text, fmt).date()
+                except ValueError:
+                    continue
             return None
 
 
@@ -106,18 +165,77 @@ def _sprint_identity(value: Any) -> str:
     return re.sub(r"[\s_-]+", "", normalized)
 
 
+def _sprint_has_date_keys(value: dict[str, Any]) -> bool:
+    normalized_keys = {str(key).casefold().replace("_", "") for key in value}
+    all_date_keys = set(_SPRINT_START_DATE_KEYS) | set(_SPRINT_END_DATE_KEYS)
+    normalized_targets = {k.casefold().replace("_", "") for k in all_date_keys}
+    return bool(normalized_keys & normalized_targets)
+
+
 def _sprint_metadata_entries(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, list):
         return [entry for item in value for entry in _sprint_metadata_entries(item)]
     if isinstance(value, dict):
-        if "startDate" in value or "endDate" in value:
+        if _sprint_has_date_keys(value):
             return [value]
+        # Common wrappers.
+        for wrapper_key in ("sprints", "items", "values", "results", "data"):
+            if wrapper_key in value and isinstance(value[wrapper_key], (list, dict, str)):
+                return _sprint_metadata_entries(value[wrapper_key])
         return [entry for item in value.values() for entry in _sprint_metadata_entries(item)]
     if isinstance(value, str):
-        pairs = re.findall(r"(id|name|startDate|endDate)=([^,\]]+)", value)
+        text = value.strip()
+        if not text:
+            return []
+        # Try JSON first.
+        if text.startswith(("{", "[")):
+            try:
+                parsed = json.loads(text)
+                return _sprint_metadata_entries(parsed)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        pairs = re.findall(r"([A-Za-z_]+)=([^,\]]+)", text)
         if pairs:
-            return [{key: item.strip() for key, item in pairs}]
+            entry = {key: item.strip() for key, item in pairs}
+            entry_keys = {k.casefold() for k in entry}
+            has_identity = "name" in entry_keys or "id" in entry_keys
+            if _sprint_has_date_keys(entry) or has_identity:
+                return [entry]
+        return []
     return []
+
+
+def _sprint_entry_value(entry: dict[str, Any], keys: set[str]) -> Any:
+    normalized_map = {
+        str(key).casefold().replace("_", ""): value for key, value in entry.items()
+    }
+    for key in keys:
+        candidate = normalized_map.get(key.casefold().replace("_", ""))
+        if candidate is not None:
+            return candidate
+    # case-insensitive direct match
+    for key in keys:
+        for entry_key, value in entry.items():
+            if str(entry_key).casefold() == key.casefold():
+                return value
+    return None
+
+
+def _sprint_dates_from_entry(entry: dict[str, Any]) -> tuple[date | None, date | None]:
+    start_raw = _sprint_entry_value(entry, _SPRINT_START_DATE_KEYS)
+    end_raw = _sprint_entry_value(entry, _SPRINT_END_DATE_KEYS)
+    # Fallback: any key containing "start"/"end".
+    if start_raw is None:
+        for key, value in entry.items():
+            if "start" in str(key).casefold():
+                start_raw = value
+                break
+    if end_raw is None:
+        for key, value in entry.items():
+            if "end" in str(key).casefold() or "complete" in str(key).casefold():
+                end_raw = value
+                break
+    return _parse_date(start_raw), _parse_date(end_raw)
 
 
 def _sprint_dates(
@@ -127,9 +245,10 @@ def _sprint_dates(
     sprint_start_date_field: str | None,
     sprint_end_date_field: str | None,
 ) -> tuple[date | None, date | None]:
+    # Custom date fields take precedence when present.
+    custom_start_date = None
+    custom_end_date = None
     if sprint_start_date_field or sprint_end_date_field:
-        custom_start_date = None
-        custom_end_date = None
         for issue in issues:
             fields = issue.get("fields")
             if not isinstance(fields, dict):
@@ -139,23 +258,69 @@ def _sprint_dates(
             if custom_end_date is None and sprint_end_date_field:
                 custom_end_date = _parse_date(fields.get(sprint_end_date_field))
             if custom_start_date and custom_end_date:
-                return custom_start_date, custom_end_date
-        if custom_start_date or custom_end_date:
-            return custom_start_date, custom_end_date
+                break
 
-    target = _sprint_identity(requested_sprint)
+    # Sprint metadata from the configured (and common) sprint fields.
+    sprint_fields = list(
+        dict.fromkeys(
+            [sprint_field, "sprint", "sprints", "customfield_10020", "customfield_10018"]
+        )
+    )
+    all_entries: list[dict[str, Any]] = []
     for issue in issues:
         fields = issue.get("fields")
         if not isinstance(fields, dict):
             continue
-        for sprint in _sprint_metadata_entries(fields.get(sprint_field)):
-            candidates = (sprint.get("id"), sprint.get("name"))
-            if target and not any(_sprint_identity(item) == target for item in candidates):
+        for sf in sprint_fields:
+            if sf in fields:
+                all_entries.extend(_sprint_metadata_entries(fields.get(sf)))
+    # Fallback: scan every field for sprint-like metadata when the configured
+    # field did not yield any entries.
+    if not all_entries:
+        for issue in issues:
+            fields = issue.get("fields")
+            if not isinstance(fields, dict):
                 continue
-            start_date = _parse_date(sprint.get("startDate"))
-            end_date = _parse_date(sprint.get("endDate"))
-            if start_date or end_date:
-                return start_date, end_date
+            for value in fields.values():
+                entries = _sprint_metadata_entries(value)
+                if entries and any(_sprint_has_date_keys(e) for e in entries):
+                    all_entries.extend(entries)
+
+    target = _sprint_identity(requested_sprint)
+    matched_entries: list[dict[str, Any]] = []
+    for entry in all_entries:
+        candidates = []
+        for key in ("id", "name", "key", "title", "sprintId", "sprint_id"):
+            if entry.get(key) is not None:
+                candidates.append(entry.get(key))
+        if target and candidates:
+            if any(_sprint_identity(candidate) == target for candidate in candidates):
+                matched_entries.append(entry)
+        else:
+            matched_entries.append(entry)
+
+    pool = matched_entries if matched_entries else all_entries
+
+    meta_start_date = None
+    meta_end_date = None
+    for entry in pool:
+        start_date, end_date = _sprint_dates_from_entry(entry)
+        if start_date or end_date:
+            meta_start_date = start_date or meta_start_date
+            meta_end_date = end_date or meta_end_date
+            if start_date and end_date:
+                break
+
+    # Fill any missing custom date from metadata.
+    if custom_start_date is None:
+        custom_start_date = meta_start_date
+    if custom_end_date is None:
+        custom_end_date = meta_end_date
+
+    if custom_start_date or custom_end_date:
+        return custom_start_date, custom_end_date
+    if meta_start_date or meta_end_date:
+        return meta_start_date, meta_end_date
     return None, None
 
 
@@ -388,6 +553,11 @@ def normalize_jira_envelope(
         sprint_start_date_field,
         sprint_end_date_field,
     )
+    # Fallback to dates carried at the envelope level (if any).
+    if sprint_start_date is None:
+        sprint_start_date = _parse_date(envelope.get("sprint_start_date"))
+    if sprint_end_date is None:
+        sprint_end_date = _parse_date(envelope.get("sprint_end_date"))
     tickets: list[JiraTicket] = []
     for issue in issues:
         if not isinstance(issue, dict) or not issue.get("key"):

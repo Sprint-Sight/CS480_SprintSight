@@ -454,6 +454,19 @@ class JiraIngestionRunRecord:
 class JiraIngestionRunRepository(Protocol):
     def create_run(self, run: JiraIngestionRunRecord) -> JiraIngestionRunRecord: ...
 
+    def update_raw_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        jira_project_key: str,
+        jql: str,
+        raw_bucket: str,
+        raw_object_key: str,
+        issue_count: int,
+        captured_at: datetime,
+    ) -> JiraIngestionRunRecord | None: ...
+
     def get_run(
         self, project_id: str, sprint_id: str, run_id: str
     ) -> JiraIngestionRunRecord | None: ...
@@ -473,6 +486,8 @@ class JiraIngestionRunRepository(Protocol):
         processing_error: str | None,
         cleaned_snapshot: JiraCleanedSnapshot | None,
     ) -> JiraIngestionRunRecord | None: ...
+
+    def delete_run(self, project_id: str, sprint_id: str, run_id: str) -> bool: ...
 
 
 @dataclass

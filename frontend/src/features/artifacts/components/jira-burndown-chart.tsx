@@ -112,14 +112,7 @@ export function JiraBurndownChart({ burndown }: JiraBurndownChartProps) {
                 dot={false}
                 connectNulls
               />
-              <Line
-                type="monotone"
-                dataKey="ideal_remaining"
-                name="Ideal remaining"
-                stroke={chartColor("muted")}
-                strokeDasharray="5 5"
-                dot={false}
-              />
+              {/* Ideal line removed: it added no value (often flat at zero). */}
             </LineChart>
           </ResponsiveContainer>
         </div>
