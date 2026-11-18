@@ -27,6 +27,11 @@ MLFLOW_EXPERIMENT_NAME="sprintsight"
 # Service-to-service secret. If set, /assess/* requires the header X-Service-Token with this value
 # (the backend sends AI_ENGINE_SERVICE_TOKEN from backend/.env). Empty = open, for a local demo only.
 AI_ENGINE_SERVICE_TOKEN=
+# Which address the engine's port 8001 is published on. The default (127.0.0.1) means only this
+# machine can reach it; the backend runs here too, and in HPC mode only Ollama is on the cluster.
+# Set 0.0.0.0 only if the backend must reach the engine from another machine (or you run native
+# Linux Docker, where containers reach the host through the bridge) - and then set the token above.
+# AI_ENGINE_BIND=127.0.0.1
 # Browser origins allowed to call the engine (comma separated). Empty = none; the backend is not a browser.
 # AI_ENGINE_CORS_ORIGINS=
 
