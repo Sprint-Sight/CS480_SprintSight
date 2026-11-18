@@ -15,6 +15,15 @@ export function OverrideStatsView({ stats }: { stats: OverrideStats }) {
       aria-label="Override statistics"
     >
       <h2 className="text-base font-semibold text-slate-900">How scores were overridden</h2>
+      {stats.smallSample && (
+        <p
+          role="status"
+          className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900"
+        >
+          Small sample: fewer than {stats.minSample} saved overrides. Read these figures as
+          examples, not trends.
+        </p>
+      )}
       <p className="text-sm text-slate-700">
         {stats.reportsOverridden} of {stats.reports} reports overridden ({pct(stats.overrideRate)}
         ); {stats.reportsWithChanges} with at least one changed score.

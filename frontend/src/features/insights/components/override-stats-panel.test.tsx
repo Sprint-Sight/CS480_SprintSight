@@ -19,6 +19,7 @@ const stats: OverrideStats = {
       meanAdjustment: -1.5,
       meanAbsAdjustment: 1.5,
       direction: "lowered",
+      smallSample: true,
     },
     {
       dimension: "cicd",
@@ -28,10 +29,13 @@ const stats: OverrideStats = {
       meanAdjustment: null,
       meanAbsAdjustment: null,
       direction: null,
+      smallSample: true,
     },
   ],
   notice:
     "Overrides are not blind: the instructor saw the AI score first. They are not a measure of AI accuracy.",
+  smallSample: true,
+  minSample: 5,
 };
 
 describe("OverrideStatsView", () => {
@@ -41,6 +45,14 @@ describe("OverrideStatsView", () => {
     expect(screen.getByText("-1.50")).toBeInTheDocument();
     expect(screen.getByText("lowered")).toBeInTheDocument();
     expect(screen.getByText(/not a measure of AI accuracy/)).toBeInTheDocument();
+  });
+
+  it("warns about a small sample, and only then", () => {
+    const { unmount } = render(<OverrideStatsView stats={stats} />);
+    expect(screen.getByText(/Small sample: fewer than 5/)).toBeInTheDocument();
+    unmount();
+    render(<OverrideStatsView stats={{ ...stats, smallSample: false }} />);
+    expect(screen.queryByText(/Small sample/)).not.toBeInTheDocument();
   });
 
   it("never presents agreement or accuracy figures", () => {
