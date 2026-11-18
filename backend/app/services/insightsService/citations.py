@@ -15,6 +15,7 @@ from app.services.insightsService.trace_summary import TraceSummary
 
 RATIONALE_LIMIT = 2000
 METADATA_KEY = "sprintsight.citation_verdicts"
+TRUNCATED_KEY = "sprintsight.citation_verdicts_truncated"
 # One line per citation, as written by the ai-engine's llm_judge_citation_grounding:
 #   C7 [documentation] partially_grounded/minor_detail: <reasoning>
 _LINE = re.compile(r"^(C\d+) \[([a-z_]+)\] ([a-z_]+)/([a-z_]+): (.*)$")
@@ -71,7 +72,7 @@ def unaccepted_citations(summary: TraceSummary) -> tuple[list[CitationVerdictRow
                 )
                 for d in data
                 if d.get("label") != "grounded"
-            ], False
+            ], primary.metadata.get(TRUNCATED_KEY) == 'true'
         except (ValueError, KeyError, TypeError):
             pass  # fall back to the rationale text
     for name in ("citation_hallucination_rate", "citation_severity_weighted_rate"):
