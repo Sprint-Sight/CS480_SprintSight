@@ -220,3 +220,23 @@ def test_assess_rejects_an_unknown_model_and_still_accepts_none_or_a_catalogued_
     assert unknown.status_code == 400 and "gpt-nonsense" in unknown.json()["error"]["message"]
     assert default.status_code == 202, default.text
     assert known.status_code == 202, known.text
+
+
+# --- item 3: the per-student override route is gone; report edits go through PATCH ---------------
+
+
+def test_the_per_student_override_route_no_longer_exists(override_user_repository) -> None:
+    headers = login("faculty@sprintsight.edu")
+    body = {
+        "report_id": "rpt-1",
+        "student_id": "u-student-1",
+        "new_score": 90,
+        "reason_comment": "Adjusted after review.",
+    }
+
+    response = client.post("/api/v1/assessments/override", json=body, headers=headers)
+
+    assert response.status_code in (404, 405)
+    paths = app.openapi()["paths"]
+    assert "/api/v1/assessments/override" not in paths
+    assert "patch" in paths["/api/v1/assessments/reports/{report_id}"]  # the real override stays

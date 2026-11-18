@@ -13,7 +13,6 @@ from app.repositories.in_memory import (
     assessment_repo,
     instructor_model_selection_repo,
     job_repo,
-    overrides_repo,
     rubric_weights_repo,
 )
 from app.repositories.interfaces import (
@@ -34,8 +33,6 @@ from app.schemas.assessment import (
     AssessRequest,
     EvidenceDetail,
     ManualAssessmentPatch,
-    OverrideRequest,
-    OverrideResponse,
     RubricDimensionScoreDetail,
     StudentScore,
     TeamScore,
@@ -1068,35 +1065,3 @@ def update_manual_assessment(
     return updated
 
 
-def override_student_score(
-    payload: OverrideRequest,
-    instructor_id: str,
-    assessment_repository: AssessmentRepository | None = None,
-) -> OverrideResponse:
-    repository = assessment_repository or assessment_repo
-    report = repository.get_report(payload.report_id)
-    if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
-
-    original_entry = next(
-        (x for x in report.individual_scores if x.student_id == payload.student_id), None
-    )
-    if not original_entry:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Student score not found in report."
-        )
-
-    override_record = OverrideResponse(
-        override_id=f"ovr-{uuid4().hex[:12]}",
-        report_id=payload.report_id,
-        student_id=payload.student_id,
-        original_score=original_entry.score,
-        new_score=payload.new_score,
-        reason_comment=payload.reason_comment,
-        instructor_id=instructor_id,
-        created_at=datetime.now(UTC),
-    )
-    original_entry.score = payload.new_score
-    overrides_repo.save_override(override_record)
-    repository.save_report(report)
-    return override_record

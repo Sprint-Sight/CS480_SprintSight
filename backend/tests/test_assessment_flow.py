@@ -7,10 +7,8 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
-from app.dependencies.auth import get_assessment_repository
 from app.main import app
 from app.repositories.interfaces import ProjectRecord
-from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
 from app.services.assessmentService.service import convert_ai_result_to_assessment_report
 from app.services.middleManService.service import send_assessment_to_ai_engine
 
@@ -162,115 +160,6 @@ def test_send_assessment_sends_the_service_token_when_configured(monkeypatch) ->
     send_assessment_to_ai_engine({"sprint_context": {"project_id": "demo"}}, "m")
 
     assert seen["headers"] == {"X-Service-Token": "s3cret"}
-
-
-def test_assess_and_override_writes_audit(
-    monkeypatch, tmp_path: Path, override_user_repository
-) -> None:
-    repository_root = tmp_path / "repos"
-    repository_path = repository_root / "cs-203-project"
-    repository_path.mkdir(parents=True)
-    subprocess.run(["git", "init", str(repository_path)], check=True, capture_output=True)
-    (repository_path / "README.md").write_text("# CS203 project\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "-C", str(repository_path), "add", "README.md"], check=True, capture_output=True
-    )
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repository_path),
-            "-c",
-            "user.name=Test User",
-            "-c",
-            "user.email=test@example.com",
-            "commit",
-            "-m",
-            "Initial commit",
-        ],
-        check=True,
-        capture_output=True,
-    )
-    monkeypatch.setenv("LOCAL_REPOSITORY_ROOT", str(repository_root))
-    get_settings.cache_clear()
-    override_user_repository.assign_instructor("cs480", "u-faculty-1")
-    override_user_repository.create_project(
-        ProjectRecord(
-            id="proj-a",
-            project_name="CS203 Project",
-            team_name="CS203 Team",
-            description=None,
-            course_id="cs480",
-            course_code="CS480",
-            github_repo_url=None,
-            local_repo_path="cs-203-project",
-            created_by="u-faculty-1",
-            created_at=datetime.now(UTC),
-        ),
-        [],
-    )
-
-    monkeypatch.setattr(
-        "app.services.assessmentService.service.send_assessment_to_ai_engine",
-        lambda *args, **kwargs: {
-            "overall_score": 8,
-            "executive_summary": "Strong sprint delivery.",
-            "key_recommendations": ["Improve test coverage."],
-            "member_contributions": [],
-        },
-    )
-
-    token = faculty_token()
-    headers = {"Authorization": f"Bearer {token}"}
-
-    assess_response = client.post(
-        "/api/v1/assessments/assess",
-        json={"course_id": "cs480", "project_id": "proj-a", "sprint_id": "sp1"},
-        headers=headers,
-    )
-    assert assess_response.status_code == 202
-
-    report_id = "rpt-audit-1"
-    app.dependency_overrides[get_assessment_repository]().save_report(
-        AssessmentReport(
-            report_id=report_id,
-            model_name="mock-rubric-v1",
-            mode="mock",
-            course_id="cs480",
-            project_id="proj-a",
-            sprint_id="sp1",
-            generated_at=datetime.now(UTC),
-            rubric_weights={
-                "delivery": 0.35,
-                "collaboration": 0.30,
-                "quality": 0.20,
-                "documentation": 0.15,
-            },
-            team_score=TeamScore(score=80.0, rationale="Initial team assessment."),
-            individual_scores=[
-                StudentScore(student_id="stu-001", score=80.0, rationale="Initial contribution.")
-            ],
-            recommendations=["Increase unit testing."],
-            rubric_scores={},
-            strengths=["Delivery"],
-            weaknesses=["Testing"],
-        )
-    )
-
-    override_response = client.post(
-        "/api/v1/assessments/override",
-        json={
-            "report_id": report_id,
-            "student_id": "stu-001",
-            "new_score": 91.0,
-            "reason_comment": "Adjusted for strong testing leadership and mentoring.",
-        },
-        headers=headers,
-    )
-    assert override_response.status_code == 200
-    audit_list_response = client.get("/api/v1/audit/overrides", headers=headers)
-    assert audit_list_response.status_code == 200
-    assert len(audit_list_response.json()) >= 1
 
 
 def test_instructor_mutation_actions_are_logged() -> None:

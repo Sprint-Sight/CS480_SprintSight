@@ -13,7 +13,6 @@ from app.dependencies.auth import (
     ensure_course_access,
     get_action_audit_repository,
     get_assessment_repository,
-    get_audit_repository,
     get_document_repository,
     get_git_identity_repository,
     get_instructor_model_selection_repository,
@@ -34,7 +33,6 @@ from app.repositories.insights import InsightsRepository
 from app.repositories.interfaces import (
     ActionAuditRepository,
     AssessmentRepository,
-    AuditRepository,
     DocumentRepository,
     GitIdentityRepository,
     InstructorModelSelectionRepository,
@@ -51,7 +49,6 @@ from app.schemas.assessment import (
     AssessmentReport,
     AssessRequest,
     ManualAssessmentPatch,
-    OverrideRequest,
     RubricWeightsPayload,
     RubricWeightsResponse,
 )
@@ -63,12 +60,11 @@ from app.services.assessmentService.service import (
     get_latest_assessment,
     list_assessment_reports,
     notify_students_report_overridden,
-    override_student_score,
     run_assessment_job,
     set_rubric_weights,
     update_manual_assessment,
 )
-from app.services.auditLogService.service import append_action_audit, append_override_audit
+from app.services.auditLogService.service import append_action_audit
 from app.services.insightsService.blind import stamp_score_exposure
 from app.services.insightsService.overrides import record_override
 from app.services.notificationService.service import EmailTransport
@@ -427,40 +423,3 @@ def patch_assessment_report(
     )
     return report
 
-@router.post("/override")
-def override_score(
-    payload: OverrideRequest,
-    faculty_user: Annotated[UserRecord, Depends(require_faculty)],
-    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
-    audit_repository: Annotated[AuditRepository, Depends(get_audit_repository)],
-    assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
-    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
-    notification_service: Annotated[EmailTransport, Depends(get_notification_service)],
-):
-    if assessment_repository is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Assessment repository unavailable.",
-        )
-    existing = assessment_repository.get_report(payload.report_id)
-    if existing:
-        ensure_course_access(faculty_user, existing.course_id, projects)
-    override_record = override_student_score(
-        payload,
-        instructor_id=faculty_user.id,
-        assessment_repository=assessment_repository,
-    )
-    audit = append_override_audit(override_record, audit_repository)
-    report = assessment_repository.get_report(payload.report_id)
-    if report:
-        notify_students_report_overridden(
-            report,
-            user_repository,
-            notification_service,
-            [payload.student_id],
-            payload.reason_comment,
-        )
-    return {
-        "override": override_record,
-        "audit": audit,
-    }

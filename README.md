@@ -152,10 +152,8 @@ Admin/user event routes include `POST /users` (`create_user`),
 `POST /users/{user_id}/activate` (`activate_user`). Check that password-reset
 events contain no password or token values.
 
-For score overrides, submit a valid `POST /assessments/override` and check
-`GET /audit/overrides`; overrides are a separate audit record type, not an
-`/audit/actions` event. Finally, restart the backend and repeat both GETs to
-confirm events persist in PostgreSQL.
+Finally, restart the backend and repeat the GET to confirm events persist in
+PostgreSQL.
 
 ### Verify retention
 
