@@ -138,6 +138,12 @@ class Settings(BaseSettings):
     # A running backend refreshes its jobs' heartbeat this often; a job whose heartbeat is older
     # than the stale limit belongs to a process that stopped and is failed as retryable. Keep
     # the stale limit several heartbeats long.
+    # How long one engine step (one model call) is expected to take, used only to move the
+    # progress bar while a step is running; the engine's real reports still set it, and the value
+    # is learned from the first finished step.
+    ai_progress_expected_step_seconds: float = Field(
+        default=120.0, gt=0, alias="AI_PROGRESS_EXPECTED_STEP_SECONDS"
+    )
     job_heartbeat_seconds: float = Field(default=30.0, gt=0, alias="JOB_HEARTBEAT_SECONDS")
     job_stale_after_seconds: float = Field(default=120.0, gt=0, alias="JOB_STALE_AFTER_SECONDS")
 

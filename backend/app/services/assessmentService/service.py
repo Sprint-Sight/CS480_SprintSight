@@ -1,6 +1,9 @@
 import logging
+import math
 import re
 import threading
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -95,26 +98,75 @@ def _format_evidence_citations(evidence: object) -> list[str]:
             formatted.append(str(item))
     return formatted
 
+# The AI stage owns 70..89 of a job's progress bar; saving the report takes 90.
+_AI_STAGE_START = 70
+_AI_STAGE_SPAN = 19
+# Inside one engine step (one model call, which can take minutes) the bar creeps forward but is
+# held short of the next step, which only a real report from the engine may reach.
+_MAX_STEP_FRACTION = 0.9
+_MIN_EXPECTED_STEP_SECONDS = 10.0
+_MAX_EXPECTED_STEP_SECONDS = 1800.0
+DEFAULT_EXPECTED_STEP_SECONDS = 120.0
+
+
+def ai_stage_percent(
+    done: int, total: int, seconds_in_step: float, expected_step_seconds: float
+) -> int:
+    """Progress (70..89) for an engine that has finished `done` of `total` steps and has been on
+    the current one for `seconds_in_step`.
+
+    The engine reports a step only when it ends, and a step is a model call that can take minutes
+    (a cold model load alone can), so the real value sits still and the bar looks frozen. The
+    time spent in the step moves the bar part of the way to the next step, quickly at first and
+    then ever more slowly, never all the way: a real step then always moves it forward, never back.
+    """
+    fraction = 0.0
+    if done < total:
+        elapsed = max(0.0, seconds_in_step)
+        fraction = _MAX_STEP_FRACTION * (1 - math.exp(-elapsed / expected_step_seconds))
+    return _AI_STAGE_START + int(_AI_STAGE_SPAN * (done + fraction) / total)
+
+
 def _poll_ai_progress(
-    job_id, correlation_id, gateway, job_repo, stop: threading.Event, interval: float = 5.0
+    job_id,
+    correlation_id,
+    gateway,
+    job_repo,
+    stop: threading.Event,
+    interval: float = 5.0,
+    expected_step_seconds: float = DEFAULT_EXPECTED_STEP_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
 ) -> None:
     if gateway is None:
         return # No MLflow gateway available; skip progress polling
-    last = 70
+    last = _AI_STAGE_START
+    known: tuple[int, int] | None = None  # the engine's last report: (steps done, steps in all)
+    run_seen_at = step_started_at = 0.0
+    expected = max(expected_step_seconds, _MIN_EXPECTED_STEP_SECONDS)
     while not stop.wait(interval):
         try:
             progress = gateway.get_eval_progress(correlation_id)
-        except Exception:  # MLflow down: keep the current value
+        except Exception:  # MLflow down: carry on from the last report
             logger.debug("eval progress poll failed", exc_info=True)
-            continue
+            progress = None
         if stop.is_set(): # AI call finished while talking to MLflow
             return
-        if not progress:
-            continue
-        done, total = progress
-        if total <= 0: # bad tag must not kill thread
-            continue
-        pct = 70 + int(19 * done / total)   # AI stage owns 70..89; saving takes 90
+        now = clock()
+        if progress and progress[1] > 0:  # a bad tag must not kill the thread
+            if known is None:
+                run_seen_at = step_started_at = now
+            elif progress[0] != known[0]:
+                step_started_at = now
+                if progress[0] > 0:  # learn how long a step really takes on this model
+                    expected = min(
+                        max((now - run_seen_at) / progress[0], _MIN_EXPECTED_STEP_SECONDS),
+                        _MAX_EXPECTED_STEP_SECONDS,
+                    )
+            known = progress
+        if known is None:
+            continue  # the engine has not started this run yet: nothing to show
+        done, total = known
+        pct = ai_stage_percent(done, total, now - step_started_at, expected)
         if pct <= last:
             continue
         last = pct
@@ -577,6 +629,7 @@ def run_assessment_job(
         poller = threading.Thread(
             target=_poll_ai_progress,
             args=(job_id, job_id, mlflow_gateway, job_repo, stop),
+            kwargs={"expected_step_seconds": get_settings().ai_progress_expected_step_seconds},
             daemon=True,
         )
         poller.start()
