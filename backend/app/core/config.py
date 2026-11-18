@@ -130,6 +130,22 @@ class Settings(BaseSettings):
     )
     # Read timeout for one whole assessment (six LLM calls plus retries on a local GPU).
     ai_engine_timeout_seconds: float = Field(default=3600.0, alias="AI_ENGINE_TIMEOUT_SECONDS")
+    # How many assessments are sent to the engine at once. The engine grades one at a time, so
+    # more than one only makes the extra requests wait on its lock until they hit the read
+    # timeout above. Excess jobs stay "queued" here instead. Raise it only if the engine can
+    # really grade in parallel.
+    ai_engine_max_concurrency: int = Field(default=1, ge=1, alias="AI_ENGINE_MAX_CONCURRENCY")
+    # A running backend refreshes its jobs' heartbeat this often; a job whose heartbeat is older
+    # than the stale limit belongs to a process that stopped and is failed as retryable. Keep
+    # the stale limit several heartbeats long.
+    # How long one engine step (one model call) is expected to take, used only to move the
+    # progress bar while a step is running; the engine's real reports still set it, and the value
+    # is learned from the first finished step.
+    ai_progress_expected_step_seconds: float = Field(
+        default=120.0, gt=0, alias="AI_PROGRESS_EXPECTED_STEP_SECONDS"
+    )
+    job_heartbeat_seconds: float = Field(default=30.0, gt=0, alias="JOB_HEARTBEAT_SECONDS")
+    job_stale_after_seconds: float = Field(default=120.0, gt=0, alias="JOB_STALE_AFTER_SECONDS")
 
     # AI Insights / MLflow (read by trace ID only; see services/insightsService).
     # mlflow_timeout_seconds reads the env var MLflow itself uses, so there is one knob.

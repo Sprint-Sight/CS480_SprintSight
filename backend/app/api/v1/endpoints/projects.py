@@ -18,7 +18,6 @@ from app.core.credential_crypto import encrypt_secret
 from app.dependencies.auth import (
     get_action_audit_repository,
     get_assessment_repository,
-    get_current_user,
     get_git_identity_repository,
     get_instructor_jira_credentials_repository,
     get_jira_ingestion_repository,
@@ -28,6 +27,7 @@ from app.dependencies.auth import (
     get_project_repository,
     get_user_repository,
     require_instructor,
+    require_password_changed,
 )
 from app.repositories.interfaces import (
     ActionAuditRepository,
@@ -351,7 +351,7 @@ def create_course(
 
 @router.get("/courses", response_model=list[CourseResponse])
 def list_courses(
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> list[CourseResponse]:
     if current_user.role == Role.STUDENT:
@@ -412,7 +412,7 @@ def get_course(
 def update_course(
     course_id: str,
     payload: CourseUpdate,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
 ) -> CourseResponse:
@@ -464,7 +464,7 @@ def update_course(
 @router.delete("/courses/{course_id}", response_model=CourseResponse)
 def delete_course(
     course_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -523,7 +523,7 @@ def delete_course(
 @router.get("/courses/{course_id}/students", response_model=list[CourseStudentResponse])
 def list_course_students(
     course_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     include_other_sections: Annotated[
@@ -579,7 +579,7 @@ def list_course_students(
 def import_course_students(
     course_id: str,
     file: Annotated[UploadFile, File(...)],
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -634,7 +634,7 @@ def import_course_students(
 def enroll_course_student(
     course_id: str,
     user_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -688,7 +688,7 @@ def enroll_course_student(
 def unenroll_course_student(
     course_id: str,
     user_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -790,7 +790,7 @@ def assign_instructor(
 def create_course_student(
     course_id: str,
     payload: InstructorStudentCreate,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -890,7 +890,7 @@ def create_course_student(
 def create_project(
     course_id: str,
     payload: ProjectCreate,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     instructor_jira_credentials: Annotated[
@@ -996,7 +996,7 @@ def create_project(
 @router.get("/courses/{course_id}/projects", response_model=list[ProjectResponse])
 def list_projects(
     course_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> list[ProjectResponse]:
@@ -1017,7 +1017,7 @@ def list_projects(
 
 @router.get("/students/courses", response_model=list[CourseResponse])
 def list_student_courses(
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> list[CourseResponse]:
     if current_user.role != Role.STUDENT:
@@ -1046,7 +1046,7 @@ def list_student_courses(
 
 @router.get("/students/projects", response_model=list[ProjectResponse])
 def list_student_projects(
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> list[ProjectResponse]:
@@ -1070,7 +1070,7 @@ def list_student_projects(
 @router.get("/students/projects/{project_id}", response_model=ProjectResponse)
 def get_student_project(
     project_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> ProjectResponse:
@@ -1091,7 +1091,7 @@ def get_student_project(
 @router.get("/students/projects/{project_id}/reports", response_model=list[AssessmentReport])
 def list_student_project_reports(
     project_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
 ) -> list[AssessmentReport]:
@@ -1119,7 +1119,7 @@ def list_student_project_reports(
 @router.get("/students/projects/{project_id}/sprints", response_model=list[str])
 def list_student_project_sprints(
     project_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     assessment_repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     jira_runs_repo: Annotated[object, Depends(get_jira_ingestion_repository)],
@@ -1153,7 +1153,7 @@ def list_student_project_sprints(
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
 def get_project(
     project_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> ProjectResponse:
@@ -1179,7 +1179,7 @@ def get_project(
 def update_project(
     project_id: str,
     payload: ProjectUpdate,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -1273,7 +1273,7 @@ def update_project(
 @router.delete("/projects/{project_id}", response_model=ProjectResponse)
 def delete_project(
     project_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -1314,7 +1314,7 @@ def delete_project(
 def add_member(
     project_id: str,
     user_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],
@@ -1379,7 +1379,7 @@ def add_member(
 def remove_member(
     project_id: str,
     user_id: str,
-    current_user: Annotated[UserRecord, Depends(get_current_user)],
+    current_user: Annotated[UserRecord, Depends(require_password_changed)],
     repository: Annotated[ProjectRepository, Depends(get_project_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
     action_audits: Annotated[ActionAuditRepository, Depends(get_action_audit_repository)],

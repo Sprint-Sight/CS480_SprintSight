@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
-from app.dependencies.auth import get_assessment_repository, get_project_repository
+from app.dependencies.auth import get_project_repository
 from app.main import app
 from app.repositories.in_memory import InMemoryProjectRepository, InMemoryUserRepository
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
@@ -346,48 +346,3 @@ def test_completed_report_email_targets_each_scored_student() -> None:
     assert "rpt-student-email-test" in body
 
 
-def test_score_override_emails_the_affected_student(monkeypatch) -> None:
-    notifications = FakeNotificationService()
-    monkeypatch.setattr(app.state, "notification_service", notifications)
-    report = AssessmentReport(
-        report_id="rpt-override-email-test",
-        model_name="test-model",
-        mode="test",
-        course_id="course-email-test",
-        project_id="project-email-test",
-        sprint_id="sprint-1",
-        generated_at=datetime.now(UTC),
-        rubric_weights={},
-        team_score=TeamScore(score=83, rationale="Good work."),
-        individual_scores=[
-            StudentScore(student_id="u-student-1", score=70, rationale="Initial score."),
-        ],
-        recommendations=[],
-    )
-    app.dependency_overrides[get_assessment_repository]().save_report(report)
-    app.dependency_overrides[get_project_repository]().assign_instructor(
-        "course-email-test", "u-faculty-1"
-    )
-    token = client.post(
-        "/api/v1/auth/login",
-        json={"email": "faculty@sprintsight.edu", "password": "password123"},
-    ).json()["access_token"]
-
-    response = client.post(
-        "/api/v1/assessments/override",
-        json={
-            "report_id": "rpt-override-email-test",
-            "student_id": "u-student-1",
-            "new_score": 90,
-            "reason_comment": "Adjusted after reviewing the submitted evidence.",
-        },
-        headers={"Authorization": f"Bearer {token}"},
-    )
-
-    assert response.status_code == 200, response.text
-    assert len(notifications.messages) == 1
-    recipient, subject, body = notifications.messages[0]
-    assert recipient == "student@sprintsight.edu"
-    assert "report updated" in subject
-    assert "Your updated score: 90" in body
-    assert "Adjusted after reviewing the submitted evidence." in body

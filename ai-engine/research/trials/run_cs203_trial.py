@@ -17,6 +17,7 @@ import mlflow
 from fastapi import BackgroundTasks
 
 from evaluation.online.promote import judge_and_promote_trace
+from llmops.console import use_utf8_streams
 from llmops.prompt_registry import get_production_prompt
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.artifact_bundle import ArtifactBundle
@@ -42,9 +43,11 @@ def _production_prompts() -> dict[str, str]:
         prompts[dim] = production.template
     return prompts
 
-async def run_trial(model_name: str, experiment_name: str = DEFAULT_EXPERIMENT_NAME, repeats: int = 1) -> None:
+async def run_trial(model_name: str, experiment_name: str = DEFAULT_EXPERIMENT_NAME, repeats: int = 1, baseline: bool = False) -> None:
     mlflow_client, background_tasks = mlflow.MlflowClient(), BackgroundTasks()
-    prompts = _production_prompts()
+    # None = the prompts in the code, which register as challengers; --baseline grades with
+    # what is promoted to production, to measure a challenger against it.
+    prompts = _production_prompts() if baseline else None
 
     try:
         for ab_bundle_path in (CS203g6_BUNDLE_PATH, CS203jy_BUNDLE_PATH):
@@ -71,13 +74,15 @@ async def run_trial(model_name: str, experiment_name: str = DEFAULT_EXPERIMENT_N
     print("All evaluations + judging + promotion checks complete.")
 
 def main() -> None:
+    use_utf8_streams()
     parser = argparse.ArgumentParser(description="Run one AB-bundle evaluation + judge + promotion cycle")
     parser.add_argument("--model", required=True, help="Ollama model tag to evaluate with")
     parser.add_argument("--experiment-name", default=DEFAULT_EXPERIMENT_NAME)
     parser.add_argument("--repeats", type=int, default=1)
-    #parser.add_argument("--baseline", action="store_true", help="Use production prompts")
+    parser.add_argument("--baseline", action="store_true",
+                        help="Grade with the registered production prompts instead of the prompts in the code")
     args = parser.parse_args()
-    asyncio.run(run_trial(args.model, args.experiment_name, args.repeats))
+    asyncio.run(run_trial(args.model, args.experiment_name, args.repeats, args.baseline))
     
 if __name__ == "__main__":
     main()

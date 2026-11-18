@@ -54,6 +54,9 @@ _CONNECT_TIMEOUT_SECONDS = 10.0
 _WRITE_TIMEOUT_SECONDS = 60.0
 _POOL_TIMEOUT_SECONDS = 10.0
 _TRANSIENT_STATUS_CODES = frozenset({502, 503, 504})
+# The engine answers every failed assessment with HTTP 500 and says what went wrong in
+# detail.failure_class (ai-engine/schemas/failure_class.py). Only these two may pass on a retry.
+_TRANSIENT_FAILURE_CLASSES = frozenset({"timeout", "infra_unavailable"})
 
 
 class AIEngineError(RuntimeError):
@@ -64,10 +67,23 @@ class AIEngineError(RuntimeError):
     not expected to change on an identical retry.
     """
 
-    def __init__(self, message: str, *, kind: str, transient: bool) -> None:
+    def __init__(
+        self, message: str, *, kind: str, transient: bool, failure_class: str | None = None
+    ) -> None:
         super().__init__(message)
         self.kind = kind
         self.transient = transient
+        self.failure_class = failure_class
+
+
+def _engine_failure_class(response: httpx.Response) -> str | None:
+    """The failure class the engine reports in an error body, or None if it sent none."""
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, AttributeError):
+        return None
+    failure_class = detail.get("failure_class") if isinstance(detail, dict) else None
+    return failure_class if isinstance(failure_class, str) else None
 
 
 def _ai_engine_timeout(settings: object) -> httpx.Timeout:
@@ -114,10 +130,15 @@ def send_assessment_to_ai_engine(
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code
         if status_code >= 500:
+            failure_class = _engine_failure_class(exc.response)
             raise AIEngineError(
                 f"AI engine failed with HTTP {status_code}: {exc.response.text[:500]}",
                 kind="engine_error",
-                transient=status_code in _TRANSIENT_STATUS_CODES,
+                transient=(
+                    status_code in _TRANSIENT_STATUS_CODES
+                    or failure_class in _TRANSIENT_FAILURE_CLASSES
+                ),
+                failure_class=failure_class,
             ) from exc
         raise AIEngineError(
             f"AI engine rejected the assessment payload: {exc.response.text[:500]}",

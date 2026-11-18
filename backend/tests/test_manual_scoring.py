@@ -1,11 +1,13 @@
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies.auth import get_assessment_repository
 from app.main import app
 from app.repositories.in_memory import InMemoryAssessmentRepository
 from app.schemas.assessment import AssessmentReport, StudentScore, TeamScore
+from app.services.assessmentService.service import score_to_grade
 
 client = TestClient(app)
 
@@ -92,7 +94,11 @@ def test_instructor_can_patch_assessment_report(override_user_repository) -> Non
     assert result["override"] is True
     assert result["requirements_score"] == 80
     assert result["team_score"]["rationale"] == "AI rationale"
-    assert result["rubric_scores"]["requirements"]["score"] == 80
+    # Stored on the same 0-10 scale as the AI scores; the legacy field keeps its 0-100 scale.
+    assert result["rubric_scores"]["requirements"]["score"] == 8
+    assert result["rubric_scores"]["code_quality"]["score"] == 9
+    assert result["rubric_scores"]["documentation"]["score"] == 10
+    assert result["rubric_scores"]["collaboration"]["score"] == 6
     assert result["rubric_scores"]["requirements"]["justification"] == "Requirements were met."
 
 
@@ -104,24 +110,31 @@ def test_patch_persists_all_report_content_edits(override_user_repository) -> No
 
     edits = {
         **payload(),
-        "rubric_weights": {"requirements": 0.5, "quality": 0.5},
+        "rubric_weights": {
+            "requirements": 0.25,
+            "code_quality": 0.15,
+            "testing": 0.2,
+            "documentation": 0.1,
+            "collaboration": 0.1,
+            "cicd": 0.2,
+        },
         "team_score": {"score": 91, "rationale": "Updated overall rationale", "overall_grade": "A"},
         "individual_scores": [
             {"student_id": "u-student-1", "score": 92, "rationale": "Updated contribution"}
         ],
         "rubric_scores": {
             "requirements": {
-                "score": 95,
+                "score": 9.5,
                 "justification": "Updated criterion feedback",
                 "evidence_citations": ["commit:abc123"],
             },
             "testing": {
-                "score": 88,
+                "score": 8.8,
                 "justification": "Regression coverage is strong.",
                 "evidence_citations": ["tests/test_api.py"],
             },
             "cicd": {
-                "score": 76,
+                "score": 7.6,
                 "justification": "Pipeline is configured but lacks deployment checks.",
                 "evidence_citations": [".github/workflows/ci.yml"],
             },
@@ -146,12 +159,15 @@ def test_patch_persists_all_report_content_edits(override_user_repository) -> No
     assert result["strengths"] == ["Strong delivery"]
     assert result["weaknesses"] == ["Needs more tests"]
     assert result["recommendations"] == ["Add regression tests"]
-    assert result["requirements_score"] == 80
-    assert result["rubric_scores"]["requirements"]["score"] == 95
+    assert result["requirements_score"] == 95
+    assert result["rubric_scores"]["requirements"]["score"] == 9.5
+    # 9.5/9/8.8/10/6/7.6 under the supplied weights, recomputed rather than left at the AI's 80.
+    assert result["team_score"]["score"] == pytest.approx(86.05)
+    assert result["team_score"]["overall_grade"] == score_to_grade(86.05)
     assert result["rubric_scores"]["requirements"]["justification"] == "Updated criterion feedback"
-    assert result["rubric_scores"]["testing"]["score"] == 88
+    assert result["rubric_scores"]["testing"]["score"] == 8.8
     assert result["rubric_scores"]["testing"]["justification"] == "Regression coverage is strong."
-    assert result["rubric_scores"]["cicd"]["score"] == 76
+    assert result["rubric_scores"]["cicd"]["score"] == 7.6
     assert (
         result["rubric_scores"]["cicd"]["justification"]
         == "Pipeline is configured but lacks deployment checks."
@@ -168,7 +184,7 @@ def test_patch_persists_all_report_content_edits(override_user_repository) -> No
         reloaded_report["rubric_scores"]["testing"]["justification"]
         == "Regression coverage is strong."
     )
-    assert reloaded_report["rubric_scores"]["cicd"]["score"] == 76
+    assert reloaded_report["rubric_scores"]["cicd"]["score"] == 7.6
     assert reloaded_report["strengths"] == ["Strong delivery"]
     assert reloaded_report["weaknesses"] == ["Needs more tests"]
     assert reloaded_report["recommendations"] == ["Add regression tests"]
@@ -285,3 +301,150 @@ def test_patch_notifies_the_team_even_though_grading_has_no_individual_scores(
     assert response.status_code == 200
     recipients = [recipient for recipient, _, _ in stub_notification_service.messages]
     assert recipients == ["student@sprintsight.edu"]
+
+
+FULL_WEIGHTS = {
+    "requirements": 0.2,
+    "code_quality": 0.2,
+    "testing": 0.2,
+    "documentation": 0.1,
+    "collaboration": 0.1,
+    "cicd": 0.2,
+}
+
+
+def full_report() -> AssessmentReport:
+    """A report shaped like the AI engine's: six dimensions on the 0-10 scale."""
+    from app.schemas.assessment import RubricDimensionScoreDetail
+
+    scores = {
+        "requirements": 8,
+        "code_quality": 7,
+        "testing": 6,
+        "documentation": 9,
+        "collaboration": 5,
+        "cicd": 4,
+    }
+    result = report()
+    result.rubric_weights = dict(FULL_WEIGHTS)
+    result.rubric_scores = {
+        name: RubricDimensionScoreDetail(score=value, justification=f"AI on {name}")
+        for name, value in scores.items()
+    }
+    return result
+
+
+def patch_report_as_instructor(stored: AssessmentReport, **edits: object):
+    from app.dependencies.auth import get_project_repository
+
+    setup_project(app.dependency_overrides[get_project_repository]())
+    repository = InMemoryAssessmentRepository()
+    repository.save_report(stored)
+    app.dependency_overrides[get_assessment_repository] = lambda: repository
+    return client.patch(
+        f"/api/v1/assessments/reports/{stored.report_id}",
+        json=payload(**edits),
+        headers=headers("faculty@sprintsight.edu"),
+    )
+
+
+def test_patch_keeps_every_dimension_on_one_scale_and_recomputes_the_grade(
+    override_user_repository,
+) -> None:
+    response = patch_report_as_instructor(
+        full_report(), requirements_score=100, code_quality_score=90, documentation_score=80
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert all(0 <= detail["score"] <= 10 for detail in result["rubric_scores"].values())
+    assert result["rubric_scores"]["requirements"]["score"] == 10
+    # 10*.2 + 9*.2 + 6*.2 + 8*.1 + 6*.1 + 4*.2 = 7.2 -> 72 out of 100
+    assert result["team_score"]["score"] == pytest.approx(72.0)
+    assert result["team_score"]["overall_grade"] == score_to_grade(72.0)
+
+
+def test_patch_rejects_scores_outside_the_scale_and_invalid_weights(
+    override_user_repository,
+) -> None:
+    out_of_range = patch_report_as_instructor(
+        full_report(), rubric_scores={"testing": {"score": 150, "justification": "x"}}
+    )
+    bad_weights = patch_report_as_instructor(full_report(), rubric_weights={"requirements": 1.0})
+    not_summing = patch_report_as_instructor(
+        full_report(), rubric_weights={**FULL_WEIGHTS, "cicd": 0.9}
+    )
+
+    assert out_of_range.status_code == 422
+    assert bad_weights.status_code == 400
+    assert not_summing.status_code == 400
+
+
+def test_patch_repairs_zero_to_hundred_scores_left_by_the_old_editor_path(
+    override_user_repository,
+) -> None:
+    corrupted = full_report()
+    corrupted.rubric_scores["testing"].score = 60  # an earlier PATCH stored a 0-100 value here
+
+    response = patch_report_as_instructor(corrupted)
+
+    assert response.status_code == 200, response.text
+    scores = {name: d["score"] for name, d in response.json()["rubric_scores"].items()}
+    assert scores["testing"] == 6
+    assert all(0 <= value <= 10 for value in scores.values())
+
+
+def failed_report() -> AssessmentReport:
+    stored = full_report()
+    stored.rubric_scores["testing"].score = 1
+    stored.rubric_scores["testing"].evaluation_failed = True
+    stored.rubric_scores["testing"].failure_class = "timeout"
+    stored.evaluation_failed = True
+    stored.failed_dimensions = ["testing"]
+    stored.team_score = TeamScore(
+        score=70,
+        rationale=(
+            "Incomplete assessment: testing could not be scored automatically and is excluded "
+            "from this score pending manual review. AI rationale"
+        ),
+    )
+    return stored
+
+
+def test_resaving_without_touching_a_failed_dimension_keeps_it_failed(
+    override_user_repository,
+) -> None:
+    """The editor shows the placeholder 1 as 10/100 and sends it back unchanged."""
+    response = patch_report_as_instructor(
+        failed_report(),
+        rubric_scores={"testing": {"score": 1, "justification": "AI on testing"}},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["evaluation_failed"] is True
+    assert result["failed_dimensions"] == ["testing"]
+    assert result["rubric_scores"]["testing"]["evaluation_failed"] is True
+    assert result["team_score"]["rationale"].startswith("Incomplete assessment: testing")
+    # 8*.2 + 9*.2 + 10*.1 + 6*.1 + 4*.2 = 5.8, over the 0.8 of weight that was assessed
+    assert result["team_score"]["score"] == pytest.approx(72.5)
+
+
+def test_scoring_a_failed_dimension_clears_the_review_flags_and_the_grade_uses_it(
+    override_user_repository,
+) -> None:
+    response = patch_report_as_instructor(
+        failed_report(),
+        rubric_scores={"testing": {"score": 9, "justification": "Instructor scored the tests."}},
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["evaluation_failed"] is False
+    assert result["failed_dimensions"] == []
+    assert result["rubric_scores"]["testing"]["evaluation_failed"] is False
+    assert result["rubric_scores"]["testing"]["failure_class"] is None
+    assert result["team_score"]["rationale"] == "AI rationale"
+    # 8*.2 + 9*.2 + 9*.2 + 10*.1 + 6*.1 + 4*.2 = 7.6
+    assert result["team_score"]["score"] == pytest.approx(76.0)
+    assert result["team_score"]["overall_grade"] == score_to_grade(76.0)

@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from mlflow import MlflowClient
 from mlflow.exceptions import MlflowException
@@ -106,17 +107,32 @@ def _register_dimension_prompt(
         return
     _register_prompt(name, template, tags, prompt_versions_registered)
 
+# A registered (tracking store, name, template) never changes version, and finding one used to cost
+# a request per version of the prompt, for every dimension, on every assessment. Only hits are
+# kept: a prompt that is not registered yet is looked up again, so a new one is picked up.
+_REGISTERED: dict[tuple[str | None, str, str], Any] = {}
+
+
+def clear_prompt_cache() -> None:
+    _REGISTERED.clear()
+
+
 def _is_prompt_registered(
     dimension_prompt_name: str,
     dimension_prompt_template: str,
     client: MlflowClient,
 ):
+    key = (getattr(client, "tracking_uri", None), dimension_prompt_name, dimension_prompt_template)
+    cached = _REGISTERED.get(key)
+    if cached is not None:
+        return cached
     if client.get_prompt(dimension_prompt_name) is None: # never registered; search_prompt_versions raises for an unknown name
         return None
     versions = client.search_prompt_versions(dimension_prompt_name) # Get all prompt version given dimension prompt name
     for version in versions:
         prompt_version = client.get_prompt_version(dimension_prompt_name, version.version)
         if prompt_version.template == dimension_prompt_template:
+            _REGISTERED[key] = prompt_version
             return prompt_version # Return PromptVersion object
     return None
 

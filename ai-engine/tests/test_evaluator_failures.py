@@ -221,3 +221,21 @@ def test_every_dimension_failing_still_queues_the_trace_then_raises(harness) -> 
     assert len(harness.queued) == 1
     assert set(raised.value.failed_dimensions) == set(DIMENSIONS)
     assert all(text.startswith("infra_unavailable: ") for text in raised.value.failed_dimensions.values())
+
+
+def test_the_bundle_is_stored_with_the_run_so_a_restarted_engine_can_still_judge(harness) -> None:
+    """A judge job can wait in the queue past an engine restart, or past 32 newer assessments."""
+    from evaluation.judges.citation_grounding import _bundle_of
+    from schemas import bundle_registry
+
+    trace_ids: list[str] = []
+    _evaluate(harness, trace_ids)
+
+    def the_linked_trace():
+        trace = harness.client.get_trace(trace_ids[0])
+        return trace if "mlflow.sourceRun" in trace.info.trace_metadata else None
+
+    trace = _eventually(the_linked_trace, "the finished trace")
+    bundle_registry._BUNDLES.clear()  # what a restart does to the in-memory registry
+
+    assert _bundle_of(trace, "team-a") == _bundle()

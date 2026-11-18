@@ -10,6 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.dependencies.auth import (
+    ensure_course_access,
     get_jira_ingestion_repository,
     get_project_repository,
     get_user_repository,
@@ -18,6 +19,7 @@ from app.dependencies.auth import (
 from app.repositories.interfaces import (
     JiraIngestionRunRepository,
     ProjectRepository,
+    UserRecord,
     UserRepository,
 )
 from app.schemas.jira_outlier import (
@@ -43,6 +45,7 @@ router = APIRouter(
 )
 def list_jira_contribution_outliers(
     course_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
     jira_repo: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
     project_repo: Annotated[ProjectRepository, Depends(get_project_repository)],
@@ -56,6 +59,7 @@ def list_jira_contribution_outliers(
     Every enrolled student is included (zero points when they have no Jira
     tickets). Use ``only_outliers=true`` for a short list of flagged students.
     """
+    ensure_course_access(current_user, course_id, project_repo)
     return get_jira_contribution_outliers(
         course_id=course_id,
         jira_repo=jira_repo,
@@ -73,6 +77,7 @@ def list_jira_contribution_outliers(
 def jira_contribution_outlier(
     course_id: str,
     student_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
     jira_repo: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
     project_repo: Annotated[ProjectRepository, Depends(get_project_repository)],
@@ -84,6 +89,7 @@ def jira_contribution_outlier(
     (``is_total_outlier``) because it is based on story-point volume rather
     than peer ratings.
     """
+    ensure_course_access(current_user, course_id, project_repo)
     return get_jira_contribution_outlier(
         course_id=course_id,
         student_id=student_id,

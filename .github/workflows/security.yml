@@ -105,6 +105,10 @@ jobs:
         with:
           node-version: 24
 
+      # Audits what ships (production dependencies). Build, test and lint tooling is left out: an
+      # advisory with no patched release yet (picomatch, GHSA-fc5q-39xc-vjpf, every published
+      # version) in vitest/vite/tailwind/eslint would otherwise fail every pull request, while the
+      # runtime tree has none. The built image is scanned separately by Trivy above.
       - name: Audit npm packages
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high

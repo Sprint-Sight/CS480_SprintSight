@@ -76,11 +76,7 @@ def sync_raw_jira_data(
     project = projects.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    if not projects.is_instructor_assigned(project.course_id, current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Instructor is not assigned to this course.",
-        )
+    ensure_course_access(current_user, project.course_id, projects)
     jira_project_key = payload.jira_project_key or project.jira_project_key
     if not jira_project_key:
         raise HTTPException(
@@ -203,11 +199,7 @@ def _authorized_project(project_id: str, user: UserRecord, projects: ProjectRepo
     project = projects.get_project(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    if not projects.is_instructor_assigned(project.course_id, user.id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Instructor is not assigned to this course.",
-        )
+    ensure_course_access(user, project.course_id, projects)
     return project
 
 

@@ -16,6 +16,19 @@ def login(email: str, password: str) -> str:
     return response.json()["access_token"]
 
 
+def login_after_choosing_a_password(email: str, temporary: str) -> str:
+    """A student created with a temporary password must change it before using the API."""
+    first = client.post("/api/v1/auth/login", json={"email": email, "password": temporary})
+    assert first.status_code == 200 and first.json()["must_change_password"] is True
+    changed = client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": temporary, "new_password": "studentchosen123"},
+        headers={"Authorization": f"Bearer {first.json()['access_token']}"},
+    )
+    assert changed.status_code == 200
+    return login(email, "studentchosen123")
+
+
 def test_login_success_faculty() -> None:
     token = login("faculty@sprintsight.edu", "password123")
     assert token
@@ -111,7 +124,8 @@ def test_student_can_view_own_courses_projects_and_reports() -> None:
     assert student.status_code == 201
     student_id = student.json()["id"]
     student_headers = {
-        "Authorization": f"Bearer {login('student.flow@sprintsight.edu', 'temporary123')}"
+        "Authorization": "Bearer "
+        + login_after_choosing_a_password("student.flow@sprintsight.edu", "temporary123")
     }
 
     project = client.post(
@@ -227,7 +241,10 @@ def test_student_reports_and_sprints_when_list_project_reports_returns_none() ->
     assert student.status_code == 201
     student_id = student.json()["id"]
     student_headers = {
-        "Authorization": f"Bearer {login('student.empty-reports@sprintsight.edu', 'temporary123')}"
+        "Authorization": "Bearer "
+        + login_after_choosing_a_password(
+            "student.empty-reports@sprintsight.edu", "temporary123"
+        )
     }
 
     project = client.post(

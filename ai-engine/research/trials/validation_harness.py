@@ -76,6 +76,7 @@ from evaluation.benchmarks.expected_orders import (
     check_order,
 )
 from llmops import experiments
+from llmops.console import use_utf8_streams
 from llmops.mlflow_config import get_experiment_id
 from schemas.artifact_bundle import ArtifactBundle
 from services.evaluator import evaluate_sprint
@@ -347,6 +348,7 @@ def compute_summary(results: list[RunResult]) -> dict:
     return summary
 
 def main() -> None:
+    use_utf8_streams()
     # Set up command-line argument parsing
     parser = argparse.ArgumentParser(description="SprintSight LLM output validation harness")
     parser.add_argument( # Add required argument for model tags to compare
