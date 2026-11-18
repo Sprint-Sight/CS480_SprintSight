@@ -23,6 +23,23 @@ outside the pytest temp dir, so that MLflow's SQLite database is not deleted bet
 @pytest.fixture(scope='session', autouse=True)
 def _isolated_mlflow(tmp_path_factory):
     patch = pytest.MonkeyPatch()
-    patch.setenv('MLFLOW_TRACKING_URI', f"sqlite:///{tmp_path_factory.mktemp('mlflow') / 'mlflow.db'}")
+    mlflow_dir = tmp_path_factory.mktemp('mlflow')
+    patch.setenv('MLFLOW_TRACKING_URI', f"sqlite:///{mlflow_dir / 'mlflow.db'}")
+    # A SQLite store keeps only metadata in the database. Artifacts go to ./mlruns, which is the
+    # real folder in ai-engine/ (with the user's own runs in it) unless the root is set. MLflow
+    # reads this variable for exactly that; it is private to MLflow, so a test below fails if an
+    # upgrade stops honouring it.
+    patch.setenv('_MLFLOW_SERVER_ARTIFACT_ROOT', str(mlflow_dir / 'artifacts'))
     yield
     patch.undo()
+
+
+@pytest.fixture(autouse=True)
+def fresh_prompt_registry_cache():
+    """The prompt registry remembers what it found in a tracking store; a test's fake or temporary
+    store must not be answered from another test's cache."""
+    from llmops.prompt_registry import clear_prompt_cache
+
+    clear_prompt_cache()
+    yield
+    clear_prompt_cache()

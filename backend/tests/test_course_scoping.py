@@ -17,9 +17,7 @@ PROJECT_ID = "00000000-0000-4000-8000-0000000000c1"
 
 
 def _login(email: str) -> dict[str, str]:
-    response = client.post(
-        "/api/v1/auth/login", json={"email": email, "password": "password123"}
-    )
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
@@ -168,3 +166,142 @@ def test_legacy_score_routes_mark_the_instructor_as_having_seen_the_ai_score(cou
     assert response.status_code == 200
     view = insights.get_view("rpt-peek", "u-faculty-1")
     assert view is not None and view.first_score_seen_at is not None
+
+
+# --- Jira contribution outliers (H1) -----------------------------------------------------------
+
+
+def test_unassigned_instructor_cannot_read_another_courses_jira_outliers(course) -> None:
+    outsider, owner = _login("other@sprintsight.edu"), _login("faculty@sprintsight.edu")
+    admin = _login("admin@sprintsight.edu")
+    base = f"/api/v1/jira/contribution-outliers/courses/{course.id}"
+
+    assert client.get(base, headers=outsider).status_code == 403
+    assert client.get(f"{base}/students/u-student-1", headers=outsider).status_code == 403
+    # The course has no Jira runs, so an authorised caller gets 404 (no data) rather than 403;
+    # the data path itself is covered in test_jira_contribution_outlier.py.
+    assert client.get(base, headers=owner).status_code == 404
+    assert client.get(base, headers=admin).status_code == 404
+
+
+# --- Student accounts (H2) ---------------------------------------------------------------------
+
+
+@pytest.fixture
+def students(course):
+    """mine-only, theirs-only, shared across both courses, and not enrolled anywhere."""
+    from app.dependencies.auth import get_project_repository
+
+    users = app.dependency_overrides[get_user_repository]()
+    projects = app.dependency_overrides[get_project_repository]()
+    theirs = next(c for c in projects.list_courses() if c.code == "CS999")
+    ids = {}
+    for key in ("mine", "theirs", "shared", "free"):
+        users.create_user(
+            UserRecord(
+                f"u-{key}",
+                f"{key}@sprintsight.edu",
+                key.title(),
+                Role.STUDENT,
+                hash_password("password123"),
+            )
+        )
+        ids[key] = f"u-{key}"
+    projects.enroll_student(course.id, ids["mine"])
+    projects.enroll_student(theirs.id, ids["theirs"])
+    projects.enroll_student(course.id, ids["shared"])
+    projects.enroll_student(theirs.id, ids["shared"])
+    return ids
+
+
+def test_instructor_lists_only_students_in_their_courses_or_unenrolled(course, students) -> None:
+    response = client.get("/api/v1/users", headers=_login("faculty@sprintsight.edu"))
+
+    listed = {u["id"] for u in response.json()}
+    assert response.status_code == 200
+    assert {students["mine"], students["shared"], students["free"]} <= listed
+    assert students["theirs"] not in listed
+
+
+def test_instructor_cannot_read_a_student_of_another_course(course, students) -> None:
+    headers = _login("faculty@sprintsight.edu")
+
+    assert client.get(f"/api/v1/users/{students['theirs']}", headers=headers).status_code == 403
+    for key in ("mine", "shared", "free"):
+        assert client.get(f"/api/v1/users/{students[key]}", headers=headers).status_code == 200
+
+
+def test_instructor_cannot_edit_a_student_of_another_course(course, students) -> None:
+    headers = _login("faculty@sprintsight.edu")
+
+    response = client.patch(
+        f"/api/v1/users/{students['theirs']}",
+        json={"email": "taken-over@example.com"},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    users = app.dependency_overrides[get_user_repository]()
+    assert users.get_by_id(students["theirs"]).email == "theirs@sprintsight.edu"
+
+
+def test_enrolling_a_student_into_my_course_does_not_unlock_editing_them(course, students) -> None:
+    """Any instructor can enrol any student, so enrolment must not grant edit rights."""
+    headers = _login("faculty@sprintsight.edu")
+    enrol = client.post(
+        f"/api/v1/courses/{course.id}/students/{students['theirs']}", headers=headers
+    )
+    assert enrol.status_code == 200, enrol.text
+
+    edit = client.patch(
+        f"/api/v1/users/{students['theirs']}", json={"email": "x@example.com"}, headers=headers
+    )
+    shared_edit = client.patch(
+        f"/api/v1/users/{students['shared']}", json={"email": "y@example.com"}, headers=headers
+    )
+
+    assert edit.status_code == 403
+    assert shared_edit.status_code == 403
+
+
+def test_instructor_can_edit_students_only_in_their_courses_or_unenrolled(course, students) -> None:
+    headers = _login("faculty@sprintsight.edu")
+
+    mine = client.patch(
+        f"/api/v1/users/{students['mine']}", json={"full_name": "Renamed"}, headers=headers
+    )
+    free = client.patch(
+        f"/api/v1/users/{students['free']}", json={"full_name": "Renamed"}, headers=headers
+    )
+
+    assert (mine.status_code, free.status_code) == (200, 200)
+
+
+def test_admin_can_still_read_and_edit_any_student(course, students) -> None:
+    admin = _login("admin@sprintsight.edu")
+
+    listed = {u["id"] for u in client.get("/api/v1/users", headers=admin).json()}
+    read = client.get(f"/api/v1/users/{students['theirs']}", headers=admin)
+    edit = client.patch(
+        f"/api/v1/users/{students['shared']}", json={"full_name": "Admin Edit"}, headers=admin
+    )
+
+    assert set(students.values()) <= listed
+    assert (read.status_code, edit.status_code) == (200, 200)
+
+
+def test_changing_a_students_email_signs_out_their_existing_sessions(course, students) -> None:
+    student_login = client.post(
+        "/api/v1/auth/login", json={"email": "mine@sprintsight.edu", "password": "password123"}
+    )
+    student = {"Authorization": f"Bearer {student_login.json()['access_token']}"}
+    assert client.get("/api/v1/auth/me", headers=student).status_code == 200
+
+    patch = client.patch(
+        f"/api/v1/users/{students['mine']}",
+        json={"email": "mine.new@sprintsight.edu"},
+        headers=_login("faculty@sprintsight.edu"),
+    )
+
+    assert patch.status_code == 200, patch.text
+    assert client.get("/api/v1/auth/me", headers=student).status_code == 401

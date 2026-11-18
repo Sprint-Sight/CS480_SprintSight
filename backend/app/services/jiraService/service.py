@@ -274,6 +274,90 @@ def _fetch_jira_changelogs(
     return changes_by_issue
 
 
+def list_jira_sprints(
+    project: ProjectRecord,
+    jira_project_key: str,
+    instructor_credentials: tuple[str, str] | None = None,
+) -> list[dict[str, object]]:
+    """List sprints available on the Jira boards for a project.
+
+    Returns sprint metadata (id, name, state, start/end dates) so the
+    frontend can auto-detect the active/future sprint instead of guessing.
+    """
+    settings = get_settings()
+    domain, email, api_token = _resolve_jira_auth(project, instructor_credentials)
+
+    sprints: list[dict[str, object]] = []
+    seen: set[tuple[object, object]] = set()
+    try:
+        with httpx.Client(
+            base_url=f"https://{domain}",
+            auth=(email, api_token),
+            timeout=settings.jira_timeout_seconds,
+            headers={"Accept": "application/json"},
+        ) as client:
+            boards: list[dict[str, object]] = []
+            try:
+                response = client.get(
+                    "/rest/agile/1.0/board",
+                    params={"projectKeyOrId": jira_project_key, "maxResults": 50},
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if isinstance(payload, dict) and isinstance(payload.get("values"), list):
+                    boards = [b for b in payload["values"] if isinstance(b, dict)]
+            except httpx.HTTPError:
+                boards = []
+
+            for board in boards:
+                board_id = board.get("id")
+                if board_id is None:
+                    continue
+                for state in ("active", "future", "closed"):
+                    try:
+                        response = client.get(
+                            f"/rest/agile/1.0/board/{board_id}/sprint",
+                            params={"state": state, "maxResults": 50},
+                        )
+                        response.raise_for_status()
+                        payload = response.json()
+                        values = payload.get("values") if isinstance(payload, dict) else None
+                        if not isinstance(values, list):
+                            continue
+                        for sprint in values:
+                            if not isinstance(sprint, dict):
+                                continue
+                            sprint_id = sprint.get("id")
+                            key = (board_id, sprint_id)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            sprints.append(
+                                {
+                                    "id": sprint_id,
+                                    "name": sprint.get("name"),
+                                    "state": sprint.get("state"),
+                                    "start_date": sprint.get("startDate"),
+                                    "end_date": sprint.get("endDate"),
+                                    "board_id": board_id,
+                                    "board_name": board.get("name"),
+                                }
+                            )
+                    except httpx.HTTPError:
+                        continue
+    except httpx.HTTPError:
+        return []
+
+    state_rank = {"active": 0, "future": 1, "closed": 2}
+    sprints.sort(
+        key=lambda item: (
+            state_rank.get(str(item.get("state") or "").lower(), 3),
+            str(item.get("name") or ""),
+        )
+    )
+    return sprints
+
+
 def fetch_and_store_raw_jira_data(
     course_id: str,
     project_id: str,

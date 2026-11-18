@@ -55,6 +55,7 @@ from app.repositories.postgres import (
     ensure_user_schema,
 )
 from app.schemas.auth import Role
+from app.services.assessmentService.heartbeat import JobHeartbeat
 from app.services.insightsService.label_sync import LabelSyncWorker
 from app.services.insightsService.mlflow_gateway import RealMlflowGateway
 from app.services.notificationService.queue import EmailDispatcher, EmailQueue
@@ -132,10 +133,13 @@ async def lifespan(app: FastAPI):
     app.state.git_identity_repository = PostgresGitIdentityRepository(pool)
     jobs = PostgresAssessmentJobRepository(pool)
     job_repo.use(jobs)
-    # Nothing can still be running after a restart: close unfinished jobs as retryable failures.
-    interrupted = jobs.fail_interrupted_jobs("The backend restarted while this assessment ran.")
-    if interrupted:
-        log.warning("Marked %d interrupted assessment job(s) as failed.", interrupted)
+    # Close the jobs of a backend that stopped as retryable failures, but only those: another
+    # worker that is alive keeps heartbeating its jobs and must not lose them to this startup.
+    app.state.job_heartbeat = JobHeartbeat(
+        jobs, settings.job_heartbeat_seconds, settings.job_stale_after_seconds
+    )
+    app.state.job_heartbeat.beat()
+    app.state.job_heartbeat.start()
     jobs.prune(older_than_days=30)
     app.state.insights_repository = PostgresInsightsRepository(pool)
     app.state.mlflow_gateway = RealMlflowGateway(
@@ -190,6 +194,9 @@ async def lifespan(app: FastAPI):
     yield  # app runs here
 
     # ---- SHUTDOWN ------------------------------------------------
+    heartbeat = getattr(app.state, "job_heartbeat", None)
+    if heartbeat is not None:
+        heartbeat.stop()
     dispatcher = getattr(app.state, "email_dispatcher", None)
     if dispatcher is not None:
         dispatcher.stop()

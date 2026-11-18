@@ -39,6 +39,7 @@ from evaluation.offline.judge_study.robustness import (
     self_consistency_probe,
 )
 from evaluation.offline.judge_study.specs import JUDGE_METRIC_NAMES
+from llmops.console import use_utf8_streams
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ def _records_for_cli(arguments: argparse.Namespace) -> list[JudgeRecord]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    use_utf8_streams()
     parser = argparse.ArgumentParser(
         prog="python -m evaluation.offline.judge_study",
         description="MLflow-native LLM-as-a-Judge evaluation for SprintSight.",

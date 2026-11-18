@@ -106,3 +106,38 @@ def override_user_repository():
     app.dependency_overrides.pop(get_audit_retention_config_repository, None)
     app.dependency_overrides.pop(get_export_log_repository, None)
     app.dependency_overrides.pop(get_peer_evaluation_repository, None)
+
+
+@pytest.fixture(scope="session")
+def postgres_pool():
+    """A connection pool on a throwaway Postgres, or a skip when TEST_DATABASE_URL is not set.
+
+    The database is wiped and rebuilt (init.sql, then the same ensure_* steps the app runs at
+    startup), so it must be a database made for tests: the name has to contain "test"."""
+    import os
+    from pathlib import Path
+
+    url = os.environ.get("TEST_DATABASE_URL", "")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set; Postgres repository tests need a database.")
+    import psycopg
+    from psycopg.conninfo import conninfo_to_dict
+
+    database = conninfo_to_dict(url).get("dbname", "")
+    if "test" not in database:
+        pytest.fail(f"Refusing to wipe database {database!r}: a test database's name must contain 'test'.")
+
+    from app.repositories import postgres as pg
+
+    with psycopg.connect(url, autocommit=True) as connection:
+        connection.execute("DROP SCHEMA public CASCADE")
+        connection.execute("CREATE SCHEMA public")
+        connection.execute((Path(__file__).parents[1] / "init.sql").read_text(encoding="utf-8"))
+    pool = pg.create_user_pool(url)
+    pool.open(wait=True)
+    pg.ensure_user_schema(pool)
+    pg.ensure_assessment_schema(pool)
+    pg.ensure_assessment_job_schema(pool)
+    yield pool
+    pool.close()
+

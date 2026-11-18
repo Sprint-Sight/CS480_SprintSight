@@ -16,9 +16,10 @@ export type JiraIngestionRun = {
 type JiraIngestionRunsTableProps = {
   runs: JiraIngestionRun[];
   onLoadCleanedRun: (run: JiraIngestionRun) => void;
+  onDeleteRun?: (run: JiraIngestionRun) => void;
 };
 
-export function JiraIngestionRunsTable({ runs, onLoadCleanedRun }: JiraIngestionRunsTableProps) {
+export function JiraIngestionRunsTable({ runs, onLoadCleanedRun, onDeleteRun }: JiraIngestionRunsTableProps) {
   if (runs.length === 0) return null;
 
   return (
@@ -40,16 +41,23 @@ export function JiraIngestionRunsTable({ runs, onLoadCleanedRun }: JiraIngestion
               <td className="px-3 py-2 text-slate-600">{run.issue_count}</td>
               <td className="px-3 py-2">
                 <span className={`rounded-full px-2 py-1 text-xs font-semibold ${run.processing_status === "completed" ? "bg-emerald-50 text-emerald-700" : run.processing_status === "failed" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>
-                  {run.processing_status}
+                  {run.processing_status === "completed" ? "Processed" : run.processing_status === "failed" ? "Failed" : "Pending"}
                 </span>
               </td>
               <td className="px-3 py-2 text-slate-600">{new Date(run.captured_at).toLocaleString()}</td>
-              <td className="px-3 py-2 text-right">
-                {run.processing_status === "completed" && (
-                  <button type="button" onClick={() => onLoadCleanedRun(run)} className="text-xs font-semibold text-blue-700 hover:text-blue-900">
-                    View data + burndown
-                  </button>
-                )}
+               <td className="px-3 py-2 text-right">
+                <div className="flex items-center justify-end gap-2">
+                  {run.processing_status === "completed" && (
+                    <button type="button" onClick={() => onLoadCleanedRun(run)} className="text-xs font-semibold text-blue-700 hover:text-blue-900">
+                      View data + burndown
+                    </button>
+                  )}
+                  {onDeleteRun && (
+                    <button type="button" onClick={() => onDeleteRun(run)} className="text-xs font-semibold text-rose-600 hover:text-rose-800">
+                      Delete
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

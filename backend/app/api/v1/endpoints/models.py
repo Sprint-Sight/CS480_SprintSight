@@ -120,6 +120,18 @@ def list_models(
 _VALID_MODEL_IDS = {option.id for option in _MODEL_CATALOG}
 
 
+def require_catalogued_model(model_id: str | None) -> None:
+    """400 for a model the AI engine has no Modelfile (and so no context budget) for.
+
+    Only a model the caller names is checked: a deployment's own DEFAULT_MODEL_NAME is its
+    choice, and an unset one falls back to it."""
+    if model_id is not None and model_id not in _VALID_MODEL_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown model '{model_id}'. Choose one of: {sorted(_VALID_MODEL_IDS)}.",
+        )
+
+
 class ModelSelectionResponse(BaseModel):
     # `model_id` collides with pydantic's protected "model_" namespace; allow it.
     model_config = ConfigDict(protected_namespaces=())

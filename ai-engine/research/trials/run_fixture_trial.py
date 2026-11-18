@@ -9,6 +9,8 @@ Usage:
     for m in sprintsight-qwen25-32b sprintsight-qwen sprintsight-gemma sprintsight-r1-32b sprintsight-coder-32b; do
         docker compose exec sprintsight_ai python -m research.trials.run_fixture_trial --model "$m"
     done
+
+Add --baseline to grade with the registered production prompts instead of the prompts in the code.
 """
 import argparse
 import asyncio
@@ -21,6 +23,7 @@ from mlflow.exceptions import MlflowException
 
 from evaluation.benchmarks.synthetic_v2 import FIXTURES_TEAMS
 from evaluation.online.promote import judge_and_promote_trace
+from llmops.console import use_utf8_streams
 from llmops.prompt_registry import get_production_prompt
 from prompts.dimension_criteria import DIMENSIONS
 from schemas.all_dimensions_failed_error import AllDimensionsFailedError
@@ -33,9 +36,11 @@ def load_ab_bundle(ab_bundle_path: Path) -> ArtifactBundle:
     with ab_bundle_path.open() as f:
         return ArtifactBundle.model_validate(json.load(f))
 
-async def run_fixture_trial(model_name: str, experiment_name: str = "Fixture test", repeats: int = 1) -> None:
+async def run_fixture_trial(model_name: str, experiment_name: str = "Fixture test", repeats: int = 1, baseline: bool = False) -> None:
     mlflow_client, background_tasks = mlflow.MlflowClient(), BackgroundTasks()
-    prompts = _production_prompts()
+    # None = the prompts in the code, which register as challengers; --baseline grades with
+    # what is promoted to production, to measure a challenger against it.
+    prompts = _production_prompts() if baseline else None
     for bundle in FIXTURES_TEAMS:
         for i in range(repeats):
             print(f"[{i + 1}/{repeats}] Evaluating '{model_name}' against {bundle.team_id}...")
@@ -75,13 +80,15 @@ def _production_prompts() -> dict[str, str]:
     return prompts
 
 def main() -> None:
+    use_utf8_streams()
     parser = argparse.ArgumentParser(description="Run one AB-bundle evaluation + judge + promotion cycle")
     parser.add_argument("--model", required=True, help="Ollama model tag to evaluate with")
     parser.add_argument("--experiment-name", default=DEFAULT_EXPERIMENT_NAME)
     parser.add_argument("--repeats", type=int, default=1)
-    #parser.add_argument("--baseline", action="store_true", help="Use production prompts")
+    parser.add_argument("--baseline", action="store_true",
+                        help="Grade with the registered production prompts instead of the prompts in the code")
     args = parser.parse_args()
-    asyncio.run(run_fixture_trial(args.model, args.experiment_name, args.repeats))
+    asyncio.run(run_fixture_trial(args.model, args.experiment_name, args.repeats, args.baseline))
     
 if __name__ == "__main__":
     main()

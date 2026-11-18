@@ -139,6 +139,8 @@ class InMemoryUserRepository(UserRepository):
         user.is_active = is_active
         if old_email != user.email:
             del self._users[old_email]
+            # Sessions issued for the old address must not outlive the change.
+            user.token_version += 1
         self._users[user.email] = user
         return user
 
@@ -628,6 +630,29 @@ class InMemoryAssessmentJobRepository:
     def list_events(self, job_id: str) -> list[AssessmentJobEvent]:
         return list(self._events.get(job_id, []))
 
+    def finish_job(
+        self,
+        job_id: str,
+        event: str,
+        data: dict,
+        *,
+        status: str,
+        progress: int = 100,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None:
+        # Event first: a stream that sees the terminal status must find the event already there.
+        self.append_event(job_id, event, data)
+        return self.update_job(
+            job_id,
+            status=status,
+            progress=progress,
+            current_stage=current_stage or status,
+            report_id=report_id,
+            error_message=error_message,
+        )
+
 
 class InMemoryOverrideRepository(OverrideRepository):
     def __init__(self) -> None:
@@ -730,6 +755,34 @@ class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
         self._runs[run.id] = run
         return run
 
+    def update_raw_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        jira_project_key: str,
+        jql: str,
+        raw_bucket: str,
+        raw_object_key: str,
+        issue_count: int,
+        captured_at: datetime,
+    ) -> JiraIngestionRunRecord | None:
+        run = self.get_run(project_id, sprint_id, run_id)
+        if not run:
+            return None
+        run.jira_project_key = jira_project_key
+        run.jql = jql
+        run.raw_bucket = raw_bucket
+        run.raw_object_key = raw_object_key
+        run.issue_count = issue_count
+        run.captured_at = captured_at
+        run.processing_status = "pending"
+        run.processed_at = None
+        run.normalization_version = None
+        run.processing_error = None
+        run.cleaned_snapshot = None
+        return run
+
     def get_run(
         self, project_id: str, sprint_id: str, run_id: str
     ) -> JiraIngestionRunRecord | None:
@@ -776,6 +829,13 @@ class InMemoryJiraIngestionRunRepository(JiraIngestionRunRepository):
         run.processing_error = processing_error
         run.cleaned_snapshot = cleaned_snapshot
         return run
+
+    def delete_run(self, project_id: str, sprint_id: str, run_id: str) -> bool:
+        run = self.get_run(project_id, sprint_id, run_id)
+        if not run:
+            return False
+        del self._runs[run_id]
+        return True
 
 
 class InMemoryMetricsRepository(MetricsRepository):

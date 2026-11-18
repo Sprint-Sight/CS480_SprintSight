@@ -764,10 +764,12 @@ class PostgresUserRepository(UserRepository):
     ) -> UserRecord | None:
         with self._pool.connection() as connection:
             row = connection.execute(
-                """UPDATE users SET email = %s, full_name = %s, role = %s, is_active = %s
+                """UPDATE users SET
+                    token_version = token_version + CASE WHEN email <> %s THEN 1 ELSE 0 END,
+                    email = %s, full_name = %s, role = %s, is_active = %s
                 WHERE user_id = %s
                 RETURNING user_id, email, full_name, password_hash, role, is_active, must_change_password, token_version, student_number""",
-                (email.lower(), full_name, role.value, is_active, UUID(user_id)),
+                (email.lower(), email.lower(), full_name, role.value, is_active, UUID(user_id)),
             ).fetchone()
         return self._to_record(row) if row else None
 
@@ -1758,10 +1760,15 @@ class PostgresAssessmentRepository(AssessmentRepository):
             )
 
     def get_report(self, report_id: str) -> AssessmentReport | None:
+        # Reports are addressed as "rpt-<uuid>" everywhere outside the table, as in get_reports.
+        try:
+            report_uuid = UUID(report_id.removeprefix("rpt-"))
+        except ValueError:
+            return None
         with self._pool.connection() as connection:
             row = connection.execute(
                 "SELECT * FROM assessment_reports WHERE report_id = %s",
-                (UUID(report_id),),
+                (report_uuid,),
             ).fetchone()
             return self._report(row) if row else None
 
@@ -1800,8 +1807,11 @@ class PostgresAssessmentRepository(AssessmentRepository):
             "strengths": "strengths",
             "weaknesses": "weaknesses",
             "recommendations": "recommendations",
+            "evaluation_failed": "evaluation_failed",
+            "failed_dimensions": "failed_dimensions",
         }
         json_columns = {
+            "failed_dimensions",
             "rubric_weights",
             "team_score",
             "individual_scores",
@@ -2168,6 +2178,12 @@ def ensure_assessment_job_schema(pool: ConnectionPool) -> None:
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )"""
         )
+        # Which backend process runs a job, and when it last said so: a restart must only fail
+        # the jobs of a process that is gone, never those of another worker that is alive.
+        connection.execute("ALTER TABLE assessment_jobs ADD COLUMN IF NOT EXISTS owner_id TEXT")
+        connection.execute(
+            "ALTER TABLE assessment_jobs ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ"
+        )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_assessment_job_events_job "
             "ON assessment_job_events(job_id, event_id)"
@@ -2180,8 +2196,11 @@ def ensure_assessment_job_schema(pool: ConnectionPool) -> None:
 class PostgresAssessmentJobRepository:
     """Same interface as InMemoryAssessmentJobRepository."""
 
-    def __init__(self, pool: ConnectionPool) -> None:
+    def __init__(self, pool: ConnectionPool, owner_id: str | None = None) -> None:
         self._pool = pool
+        # One id per backend process: the jobs it creates carry it, and its heartbeat keeps them
+        # from being failed as abandoned.
+        self.owner_id = owner_id or uuid4().hex
 
     @staticmethod
     def _record(row) -> AssessmentJobRecord:
@@ -2205,9 +2224,16 @@ class PostgresAssessmentJobRepository:
         with self._pool.connection() as connection, connection.transaction():
             row = connection.execute(
                 """INSERT INTO assessment_jobs
-                   (job_id, course_id, project_id, sprint_id, model_name)
-                   VALUES (%s, %s, %s, %s, %s) RETURNING *""",
-                (job_id, payload.course_id, payload.project_id, payload.sprint_id, payload.model_name),
+                   (job_id, course_id, project_id, sprint_id, model_name, owner_id, heartbeat_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, now()) RETURNING *""",
+                (
+                    job_id,
+                    payload.course_id,
+                    payload.project_id,
+                    payload.sprint_id,
+                    payload.model_name,
+                    self.owner_id,
+                ),
             ).fetchone()
             connection.execute(
                 "INSERT INTO assessment_job_events (job_id, event, data) VALUES (%s, %s, %s)",
@@ -2254,6 +2280,38 @@ class PostgresAssessmentJobRepository:
                 (job_id, event, Json(data), job_id),
             )
 
+    def finish_job(
+        self,
+        job_id: str,
+        event: str,
+        data: dict,
+        *,
+        status: str,
+        progress: int = 100,
+        current_stage: str | None = None,
+        report_id: str | None = None,
+        error_message: str | None = None,
+    ) -> AssessmentJobRecord | None:
+        """One transaction, event first: the terminal status is never visible without its event."""
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "INSERT INTO assessment_job_events (job_id, event, data) "
+                "SELECT %s, %s, %s WHERE EXISTS (SELECT 1 FROM assessment_jobs WHERE job_id = %s)",
+                (job_id, event, Json(data), job_id),
+            )
+            row = connection.execute(
+                """UPDATE assessment_jobs SET
+                       status = %s,
+                       progress = %s,
+                       current_stage = %s,
+                       report_id = COALESCE(%s, report_id),
+                       error_message = COALESCE(%s, error_message),
+                       updated_at = now()
+                   WHERE job_id = %s RETURNING *""",
+                (status, progress, current_stage or status, report_id, error_message, job_id),
+            ).fetchone()
+        return self._record(row) if row else None
+
     def list_events(self, job_id: str) -> list[AssessmentJobEvent]:
         with self._pool.connection() as connection:
             rows = connection.execute(
@@ -2262,9 +2320,21 @@ class PostgresAssessmentJobRepository:
             ).fetchall()
         return [AssessmentJobEvent(event=row["event"], data=row["data"]) for row in rows]
 
-    def fail_interrupted_jobs(self, message: str) -> int:
-        """At startup nothing can still be running: close every unfinished job as a transient
-        failure so its page shows "retry" instead of waiting forever."""
+    def touch_owned_jobs(self) -> int:
+        """Say this process is alive: refresh the heartbeat of its unfinished jobs."""
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE assessment_jobs SET heartbeat_at = now() "
+                "WHERE owner_id = %s AND status <> ALL(%s)",
+                (self.owner_id, list(TERMINAL_JOB_STATUSES)),
+            )
+        return cursor.rowcount
+
+    def fail_stale_jobs(self, stale_after_seconds: float, message: str) -> int:
+        """Close the unfinished jobs of a backend process that stopped (no heartbeat for
+        `stale_after_seconds`, or never one) as a transient failure, so their page shows "retry"
+        instead of waiting forever. Another live worker's jobs, and this process's own, are left
+        alone: a restart is not proof that every other worker died."""
         data = Json(
             {
                 "status": "failed",
@@ -2278,8 +2348,12 @@ class PostgresAssessmentJobRepository:
             rows = connection.execute(
                 """UPDATE assessment_jobs SET status = 'failed', progress = 100,
                        current_stage = 'failed', error_message = %s, updated_at = now()
-                   WHERE status <> ALL(%s) RETURNING job_id""",
-                (message, list(TERMINAL_JOB_STATUSES)),
+                   WHERE status <> ALL(%s)
+                     AND owner_id IS DISTINCT FROM %s
+                     AND (heartbeat_at IS NULL
+                          OR heartbeat_at < now() - make_interval(secs => %s))
+                   RETURNING job_id""",
+                (message, list(TERMINAL_JOB_STATUSES), self.owner_id, stale_after_seconds),
             ).fetchall()
             for row in rows:
                 connection.execute(
@@ -2347,6 +2421,15 @@ class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
 
+    def delete_run(self, project_id: str, sprint_id: str, run_id: str) -> bool:
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM jira_ingestion_runs WHERE project_id = %s AND sprint_id = %s AND run_id = %s",
+                (UUID(project_id), sprint_id, UUID(run_id)),
+            )
+            connection.commit()
+            return cursor.rowcount > 0
+
     @staticmethod
     def _run(row: dict) -> JiraIngestionRunRecord:
         snapshot = row.get("cleaned_snapshot")
@@ -2390,6 +2473,40 @@ class PostgresJiraIngestionRunRepository(JiraIngestionRunRepository):
                 ),
             ).fetchone()
         return self._run(row)
+
+    def update_raw_run(
+        self,
+        project_id: str,
+        sprint_id: str,
+        run_id: str,
+        jira_project_key: str,
+        jql: str,
+        raw_bucket: str,
+        raw_object_key: str,
+        issue_count: int,
+        captured_at: datetime,
+    ) -> JiraIngestionRunRecord | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE jira_ingestion_runs SET jira_project_key = %s, jql = %s,
+                raw_bucket = %s, raw_object_key = %s, issue_count = %s, captured_at = %s,
+                processing_status = 'pending', processed_at = NULL,
+                normalization_version = NULL, processing_error = NULL, cleaned_snapshot = NULL
+                WHERE project_id = %s AND sprint_id = %s AND run_id = %s
+                RETURNING *""",
+                (
+                    jira_project_key,
+                    jql,
+                    raw_bucket,
+                    raw_object_key,
+                    issue_count,
+                    captured_at,
+                    UUID(project_id),
+                    sprint_id,
+                    UUID(run_id),
+                ),
+            ).fetchone()
+        return self._run(row) if row else None
 
     def get_run(
         self, project_id: str, sprint_id: str, run_id: str

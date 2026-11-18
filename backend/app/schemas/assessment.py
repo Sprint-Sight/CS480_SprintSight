@@ -275,13 +275,6 @@ class RubricWeightsResponse(BaseModel):
     updated_at: datetime | None = None
 
 
-class OverrideRequest(BaseModel):
-    report_id: str
-    student_id: str
-    new_score: float = Field(ge=0.0, le=100.0)
-    reason_comment: str = Field(min_length=5, max_length=2000)
-
-
 class OverrideResponse(BaseModel):
     override_id: str
     report_id: str

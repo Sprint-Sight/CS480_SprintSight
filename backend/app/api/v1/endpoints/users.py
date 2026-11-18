@@ -12,8 +12,11 @@ from app.dependencies.auth import (
     get_notification_service,
     get_project_repository,
     get_user_repository,
+    instructor_can_manage_student,
+    instructor_can_view_student,
     require_admin,
     require_faculty,
+    student_enrollments,
 )
 from app.repositories.interfaces import (
     ActionAuditRepository,
@@ -78,10 +81,18 @@ def _active_admin_count(repository: UserRepository) -> int:
 def list_users(
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> list[UserResponse]:
     users = repository.list_users()
     if current_user.role == Role.INSTRUCTOR:
-        users = [u for u in users if u.role == Role.STUDENT]
+        taught = set(projects.list_instructor_course_ids(current_user.id))
+        enrollments = student_enrollments(projects)
+        users = [
+            u
+            for u in users
+            if u.role == Role.STUDENT
+            and instructor_can_view_student(taught, enrollments.get(u.id, set()))
+        ]
     return [user_response(user) for user in users]
 
 
@@ -90,15 +101,24 @@ def get_user(
     user_id: str,
     current_user: Annotated[UserRecord, Depends(require_faculty)],
     repository: Annotated[UserRepository, Depends(get_user_repository)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
 ) -> UserResponse:
     user = repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-    if current_user.role == Role.INSTRUCTOR and user.role != Role.STUDENT:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Instructors can only view student accounts.",
-        )
+    if current_user.role == Role.INSTRUCTOR:
+        if user.role != Role.STUDENT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Instructors can only view student accounts.",
+            )
+        taught = set(projects.list_instructor_course_ids(current_user.id))
+        enrolled = student_enrollments(projects).get(user.id, set())
+        if not instructor_can_view_student(taught, enrolled):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Instructors can only view students in their own courses.",
+            )
     return user_response(user)
 
 
@@ -171,6 +191,19 @@ def update_managed_user(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Instructors cannot change a user's role.",
+            )
+        # Otherwise an instructor could change the email of another course's student and take
+        # the account over through the password reset. A student who is also in another
+        # instructor's course needs an admin, because enrolling them here is open to any instructor.
+        taught = set(projects.list_instructor_course_ids(current_user.id))
+        enrolled = student_enrollments(projects).get(user_id, set())
+        if not instructor_can_manage_student(taught, enrolled):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Instructors can only manage students who are enrolled only in "
+                    "their own courses."
+                ),
             )
 
     # Prevent admins from locking themselves out or demoting themselves
