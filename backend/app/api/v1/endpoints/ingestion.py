@@ -51,7 +51,11 @@ from app.services.identityService.service import (
     relink_project,
 )
 from app.services.jiraService.normalizer import JiraNormalizationError
-from app.services.jiraService.service import enrich_jira_metrics, fetch_and_store_raw_jira_data
+from app.services.jiraService.service import (
+    enrich_jira_metrics,
+    fetch_and_store_raw_jira_data,
+    list_jira_sprints,
+)
 
 router = APIRouter(prefix="/repo-ingestion", tags=["repo-ingestion"])
 jira_ingestion_router = APIRouter(prefix="/jira-ingestion", tags=["jira-ingestion"])
@@ -107,20 +111,50 @@ def sync_raw_jira_data(
         payload.jql,
         instructor_credentials=shared_credentials,
     )
-    run = runs.create_run(
-        JiraIngestionRunRecord(
-            id=str(uuid4()),
-            course_id=project.course_id,
-            project_id=project_id,
-            sprint_id=payload.sprint_id,
-            jira_project_key=str(result["jira_project_key"]),
-            jql=str(result["jql"]),
-            raw_bucket=str(result["bucket"]),
-            raw_object_key=str(result["object_key"]),
-            issue_count=int(result["issue_count"]),  # type: ignore[call-overload]
-            captured_at=result["captured_at"],  # type: ignore[arg-type]
+    existing_runs = runs.list_runs(project_id, payload.sprint_id)
+    if existing_runs:
+        existing = existing_runs[0]
+        run = runs.update_raw_run(
+            project_id,
+            payload.sprint_id,
+            existing.id,
+            str(result["jira_project_key"]),
+            str(result["jql"]),
+            str(result["bucket"]),
+            str(result["object_key"]),
+            int(result["issue_count"]),  # type: ignore[call-overload]
+            result["captured_at"],  # type: ignore[arg-type]
         )
-    )
+        if run is None:
+            run = runs.create_run(
+                JiraIngestionRunRecord(
+                    id=str(uuid4()),
+                    course_id=project.course_id,
+                    project_id=project_id,
+                    sprint_id=payload.sprint_id,
+                    jira_project_key=str(result["jira_project_key"]),
+                    jql=str(result["jql"]),
+                    raw_bucket=str(result["bucket"]),
+                    raw_object_key=str(result["object_key"]),
+                    issue_count=int(result["issue_count"]),  # type: ignore[call-overload]
+                    captured_at=result["captured_at"],  # type: ignore[arg-type]
+                )
+            )
+    else:
+        run = runs.create_run(
+            JiraIngestionRunRecord(
+                id=str(uuid4()),
+                course_id=project.course_id,
+                project_id=project_id,
+                sprint_id=payload.sprint_id,
+                jira_project_key=str(result["jira_project_key"]),
+                jql=str(result["jql"]),
+                raw_bucket=str(result["bucket"]),
+                raw_object_key=str(result["object_key"]),
+                issue_count=int(result["issue_count"]),  # type: ignore[call-overload]
+                captured_at=result["captured_at"],  # type: ignore[arg-type]
+            )
+        )
     append_action_audit(
         action_audits,
         actor_id=current_user.id,
@@ -131,6 +165,38 @@ def sync_raw_jira_data(
         details={"sprint_id": payload.sprint_id, "jira_project_key": jira_project_key},
     )
     return _run_response(run).model_dump(mode="json")
+
+
+@jira_ingestion_router.get("/sprints/{project_id}")
+def list_project_jira_sprints(
+    project_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    instructor_credentials: Annotated[
+        InstructorJiraCredentialsRepository, Depends(get_instructor_jira_credentials_repository)
+    ],
+) -> list[dict[str, object]]:
+    project = _authorized_project(project_id, current_user, projects)
+    jira_project_key = project.jira_project_key
+    if not jira_project_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Jira project key is required.",
+        )
+    shared_credentials = None
+    credential_record = instructor_credentials.get_credentials(current_user.id)
+    if credential_record and credential_record.jira_email:
+        if credential_record.jira_api_token_encrypted:
+            try:
+                shared_credentials = (
+                    credential_record.jira_email,
+                    decrypt_secret(credential_record.jira_api_token_encrypted),
+                )
+            except CredentialDecryptionError:
+                shared_credentials = None
+        elif get_settings().jira_api_token:
+            shared_credentials = (credential_record.jira_email, get_settings().jira_api_token)
+    return list_jira_sprints(project, str(jira_project_key), shared_credentials)
 
 
 def _authorized_project(project_id: str, user: UserRecord, projects: ProjectRepository):
@@ -324,6 +390,26 @@ def reprocess_all_jira_runs(
             )
 
     return results
+
+
+@jira_ingestion_router.delete("/runs/{project_id}/{sprint_id}/{run_id}")
+def delete_jira_run(
+    project_id: str,
+    sprint_id: str,
+    run_id: str,
+    current_user: Annotated[UserRecord, Depends(require_faculty)],
+    projects: Annotated[ProjectRepository, Depends(get_project_repository)],
+    runs: Annotated[JiraIngestionRunRepository, Depends(get_jira_ingestion_repository)],
+) -> dict[str, bool]:
+    _authorized_project(project_id, current_user, projects)
+    run = runs.get_run(project_id, sprint_id, run_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Jira ingestion run not found.",
+        )
+    deleted = runs.delete_run(project_id, sprint_id, run_id)
+    return {"deleted": bool(deleted)}
 
 
 @jira_ingestion_router.get(

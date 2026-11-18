@@ -201,6 +201,7 @@ export default function ArtifactViewerPageContent() {
   });
   const [sprintId, setSprintId] = useState("");
   const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
+  const [jiraSprints, setJiraSprints] = useState<Array<{ id: unknown; name: string | null; state: string | null; start_date: string | null; end_date: string | null }>>([]);
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
   const [jiraError, setJiraError] = useState("");
   const [jiraBurndown, setJiraBurndown] = useState<JiraBurndownResponse | null>(null);
@@ -362,7 +363,28 @@ export default function ArtifactViewerPageContent() {
           setJiraSnapshot(null);
         }
         if (controller.signal.aborted) return;
-        setSprintId(buildNextSprintId(runs.map((run) => run.sprint_id)));
+        // Auto-detect the active/future sprint from Jira so a new sprint is
+        // picked up without manual entry.
+        let detectedSprint = selectedCompleted?.sprint_id || runs[0]?.sprint_id || "";
+        try {
+          const sprints = await apiRequest<Array<{ name: string | null; state: string | null }>>(
+            `/jira-ingestion/sprints/${selectedProjectId}`,
+            { signal: controller.signal }
+          );
+          if (!controller.signal.aborted && Array.isArray(sprints)) {
+            setJiraSprints(sprints as any);
+            const preferred =
+              sprints.find((s) => String(s.state || "").toLowerCase() === "active") ||
+              sprints.find((s) => String(s.state || "").toLowerCase() === "future");
+            if (preferred?.name) {
+              detectedSprint = String(preferred.name);
+            }
+          }
+        } catch {
+          // Jira Agile API may be unavailable; fall back to existing runs.
+        }
+        if (controller.signal.aborted) return;
+        setSprintId(detectedSprint || selectedCompleted?.sprint_id || runs[0]?.sprint_id || "");
       } catch (error) {
         if (controller.signal.aborted) return;
         setJiraError(getErrorMessage(error, "Failed to load Jira ingestion runs."));
@@ -483,7 +505,7 @@ export default function ArtifactViewerPageContent() {
       );
       await loadCleanedRun(processedRun);
       await loadSprintRuns(sprint);
-      setSprintId(buildNextSprintId([...jiraRuns.map((run) => run.sprint_id), sprint]));
+      setSprintId(sprint);
       await queryClient.invalidateQueries({ queryKey: ingestionQueryKeys.project(selectedProjectId) });
     } catch (error) {
       setJiraError(getErrorMessage(error, "Jira ingestion failed."));
@@ -716,14 +738,23 @@ export default function ArtifactViewerPageContent() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
               <div className="space-y-1">
                 <label htmlFor="jira-sprint-id" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</label>
-                <input
-                  id="jira-sprint-id"
-                  type="text"
-                  value={sprintId}
-                  onChange={(event) => setSprintId(event.target.value)}
-                  placeholder="Sprint 2"
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                />
+                {jiraSprints.length > 0 ? (
+                  <select
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 text-sm font-medium text-slate-700"
+                    value={sprintId}
+                    onChange={(event) => setSprintId(event.target.value)}
+                  >
+                    {jiraSprints.map((sprint) => (
+                      <option key={String(sprint.id)} value={String(sprint.name || "")}>
+                        {sprint.name} {sprint.state ? `(${sprint.state.toLowerCase() === "closed" ? "Completed" : sprint.state})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-100 px-3 text-sm font-medium text-slate-700">
+                    {sprintId || "—"}
+                  </div>
+                )}
                 <p className="text-xs text-slate-500">Enter the Jira sprint name, for example “Sprint 2”.</p>
               </div>
             </div>
@@ -731,7 +762,31 @@ export default function ArtifactViewerPageContent() {
             {jiraError && <p className="text-sm text-rose-600">{jiraError}</p>}
             {isLoadingBurndown && <p className="text-sm text-slate-500">Loading Jira burndown...</p>}
 
-            <JiraIngestionRunsTable runs={jiraRuns} onLoadCleanedRun={loadCleanedRun} />
+            <JiraIngestionRunsTable
+              runs={jiraRuns}
+              onLoadCleanedRun={loadCleanedRun}
+              onDeleteRun={async (run) => {
+                try {
+                  await apiRequest(`/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}`, {
+                    method: "DELETE",
+                  });
+                  const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${run.project_id}`);
+                  setJiraRuns(runs);
+                  const selectedCompleted = [...runs]
+                    .filter((r) => r.processing_status === "completed")
+                    .sort((left, right) => right.captured_at.localeCompare(left.captured_at))[0];
+                  if (selectedCompleted) {
+                    await loadCleanedRun(selectedCompleted);
+                  } else {
+                    setJiraSnapshot(null);
+                    setJiraBurndown(null);
+                    setJiraBurndownError("");
+                  }
+                } catch (error) {
+                  setJiraError(getErrorMessage(error, "Failed to delete Jira run."));
+                }
+              }}
+            />
 
             {jiraBurndownError && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -747,7 +802,7 @@ export default function ArtifactViewerPageContent() {
                     <div>
                       <p className="text-lg font-semibold text-slate-900">{ticket.ticket_id}: {ticket.summary}</p>
                       <p className="mt-1 text-sm text-slate-500">
-                        {ticket.assignee || "Unassigned"} - {ticket.issue_type || "Issue"} - {ticket.story_points ?? 0} pts
+                        {ticket.assignee || "Unassigned"} - {ticket.issue_type || "Issue"} - {ticket.story_points ?? 0} pts{ticket.timestamp ? ` - Completed ${new Date(ticket.timestamp).toLocaleDateString()}` : ""}
                       </p>
                     </div>
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPill(ticket.status || undefined)}`}>{ticket.status || "Unknown"}</span>
