@@ -238,6 +238,7 @@ export type OverrideDimensionStats = {
   meanAdjustment: number | null;
   meanAbsAdjustment: number | null;
   direction: "raised" | "lowered" | "mixed" | null;
+  smallSample: boolean;
 };
 export type OverrideStats = {
   reports: number;
@@ -246,5 +247,7 @@ export type OverrideStats = {
   reportsWithChanges: number;
   byDimension: OverrideDimensionStats[];
   notice: string;
+  smallSample: boolean;
+  minSample: number;
 };
 export type OverrideSyncStatus = "pending" | "failed" | "synced" | "no_trace" | "not_needed";

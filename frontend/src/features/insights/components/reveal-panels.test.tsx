@@ -1,8 +1,12 @@
 /// <reference types="vitest/globals" />
 import "@testing-library/jest-dom";
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { DegradedNotice, RevealComparison } from "@/features/insights/components/reveal-panels";
+import { describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  DegradedNotice,
+  PromptVersionsList,
+  RevealComparison,
+} from "@/features/insights/components/reveal-panels";
 import type { RevealDimension } from "@/features/insights/types";
 
 const dimensions: RevealDimension[] = [
@@ -49,6 +53,20 @@ describe("RevealComparison", () => {
     );
     expect(screen.getByText("Within 1 point")).toBeInTheDocument();
     expect(screen.getByText(/Yes/)).toBeInTheDocument();
+  });
+});
+
+describe("PromptVersionsList", () => {
+  it("reports the clicked prompt name to the container instead of fetching it", () => {
+    const onOpenPrompt = vi.fn();
+    render(
+      <PromptVersionsList
+        versions={[{ name: "Evaluate_Scope", version: "3" }]}
+        onOpenPrompt={onOpenPrompt}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Evaluate_Scope/ }));
+    expect(onOpenPrompt).toHaveBeenCalledWith("Evaluate_Scope");
   });
 });
 

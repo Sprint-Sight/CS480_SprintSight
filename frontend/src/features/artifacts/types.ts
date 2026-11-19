@@ -60,3 +60,19 @@ export type ArtifactProjectDataset = {
   peerEvaluation: PeerEvaluationArtifact[];
   sources: ArtifactSourceSummary[];
 };
+
+/** One Jira ingestion snapshot for a project sprint, as returned by /jira-ingestion/runs. */
+export type JiraIngestionRun = {
+  run_id: string;
+  course_id: string;
+  project_id: string;
+  sprint_id: string;
+  jira_project_key: string;
+  jql: string;
+  issue_count: number;
+  captured_at: string;
+  processed_at: string | null;
+  processing_status: "pending" | "completed" | "failed";
+  normalization_version: string | null;
+  processing_error: string | null;
+};

@@ -1,8 +1,8 @@
 # Run health: local-LLM grading batch
 
-Generated 2026-11-12T11:30:20 by `research/dashboard/analyze.py` (read-only on `results/` and `audit_logs/`).
+Generated 2026-11-18T16:09:52+00:00 by `research/dashboard/analyze.py` (read-only on `results/` and `audit_logs/`).
 
-Batch = files in `ai-engine/results/` modified in the last 48 h: **30 files**. Older files excluded: 0.
+Files analysed from `ai-engine/results/`: **60** (filters: since=none, experiment=none). Excluded by filters: 0. Judge-only sessions skipped: 0.
 
 Each invocation writes 3 files sharing one session timestamp (`services/save_results.py`: `_SESSION_TS` is set once per process): `raw_results_<experiment>_<ts>.jsonl`, `summary_<experiment>_<ts>.json` and `raw_judge_results_<experiment>_<ts>.jsonl`. Nothing is overwritten on re-run unless two processes start in the same second.
 

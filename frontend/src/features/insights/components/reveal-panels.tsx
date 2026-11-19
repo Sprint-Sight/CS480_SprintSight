@@ -1,6 +1,4 @@
 import { clsx } from "clsx";
-import { useState } from "react";
-import { PromptDetailDialog } from "@/features/insights/components/prompt-detail-dialog";
 import type {
   RevealDimension,
   Tile,
@@ -190,31 +188,26 @@ export function TraceTimeline({ trace }: { trace: TraceView }) {
   );
 }
 
-export function PromptVersionsList({ reportId, versions, dimensions }: {
-  reportId: string;
+export function PromptVersionsList({ versions, onOpenPrompt }: {
   versions: { name: string; version: string }[];
-  dimensions: RevealDimension[];
+  onOpenPrompt: (name: string) => void;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
   if (versions.length === 0)
     return <p className="text-sm text-slate-500">Prompt versions unavailable.</p>;
   return (
-    <>
-      <ul className="grid gap-1 text-sm sm:grid-cols-2">
-        {versions.map((v) => (
-          <li key={v.name}>
-            <button type="button" onClick={() => setOpen(v.name)}
-              className="flex w-full justify-between rounded border border-slate-200 bg-white px-2 py-1 text-left hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500">
-              <span className="font-mono text-xs">{v.name}</span>
-              <span>v{v.version} ›</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {open && (
-        <PromptDetailDialog reportId={reportId} name={open} dimensions={dimensions}
-          onClose={() => setOpen(null)} />
-      )}
-    </>
+    <ul className="grid gap-1 text-sm sm:grid-cols-2">
+      {versions.map((v) => (
+        <li key={v.name}>
+          <button
+            type="button"
+            onClick={() => onOpenPrompt(v.name)}
+            className="flex w-full justify-between rounded border border-slate-200 bg-white px-2 py-1 text-left hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+          >
+            <span className="font-mono text-xs">{v.name}</span>
+            <span>v{v.version} ›</span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

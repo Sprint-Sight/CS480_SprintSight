@@ -1,25 +1,22 @@
-export type JiraIngestionRun = {
-  run_id: string;
-  course_id: string;
-  project_id: string;
-  sprint_id: string;
-  jira_project_key: string;
-  jql: string;
-  issue_count: number;
-  captured_at: string;
-  processed_at: string | null;
-  processing_status: "pending" | "completed" | "failed";
-  normalization_version: string | null;
-  processing_error: string | null;
-};
+import type { JiraIngestionRun } from "@/features/artifacts/types";
+
+// Re-exported so existing imports from this file keep working.
+export type { JiraIngestionRun };
 
 type JiraIngestionRunsTableProps = {
   runs: JiraIngestionRun[];
   onLoadCleanedRun: (run: JiraIngestionRun) => void;
   onDeleteRun?: (run: JiraIngestionRun) => void;
+  /** Disables Delete while a run is being deleted, so it cannot be sent twice. */
+  isDeleting?: boolean;
 };
 
-export function JiraIngestionRunsTable({ runs, onLoadCleanedRun, onDeleteRun }: JiraIngestionRunsTableProps) {
+export function JiraIngestionRunsTable({
+  runs,
+  onLoadCleanedRun,
+  onDeleteRun,
+  isDeleting = false,
+}: JiraIngestionRunsTableProps) {
   if (runs.length === 0) return null;
 
   return (
@@ -40,20 +37,41 @@ export function JiraIngestionRunsTable({ runs, onLoadCleanedRun, onDeleteRun }: 
               <td className="px-3 py-2 font-medium text-slate-800">{run.sprint_id}</td>
               <td className="px-3 py-2 text-slate-600">{run.issue_count}</td>
               <td className="px-3 py-2">
-                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${run.processing_status === "completed" ? "bg-emerald-50 text-emerald-700" : run.processing_status === "failed" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>
-                  {run.processing_status === "completed" ? "Processed" : run.processing_status === "failed" ? "Failed" : "Pending"}
+                <span
+                  className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                    run.processing_status === "completed"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : run.processing_status === "failed"
+                        ? "bg-rose-50 text-rose-700"
+                        : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {run.processing_status === "completed"
+                    ? "Processed"
+                    : run.processing_status === "failed"
+                      ? "Failed"
+                      : "Pending"}
                 </span>
               </td>
               <td className="px-3 py-2 text-slate-600">{new Date(run.captured_at).toLocaleString()}</td>
-               <td className="px-3 py-2 text-right">
+              <td className="px-3 py-2 text-right">
                 <div className="flex items-center justify-end gap-2">
                   {run.processing_status === "completed" && (
-                    <button type="button" onClick={() => onLoadCleanedRun(run)} className="text-xs font-semibold text-blue-700 hover:text-blue-900">
+                    <button
+                      type="button"
+                      onClick={() => onLoadCleanedRun(run)}
+                      className="text-xs font-semibold text-blue-700 hover:text-blue-900"
+                    >
                       View data + burndown
                     </button>
                   )}
                   {onDeleteRun && (
-                    <button type="button" onClick={() => onDeleteRun(run)} className="text-xs font-semibold text-rose-600 hover:text-rose-800">
+                    <button
+                      type="button"
+                      onClick={() => onDeleteRun(run)}
+                      disabled={isDeleting}
+                      className="text-xs font-semibold text-rose-600 hover:text-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
                       Delete
                     </button>
                   )}
