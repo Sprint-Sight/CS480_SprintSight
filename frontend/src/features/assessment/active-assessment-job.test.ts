@@ -8,7 +8,7 @@ import {
 } from "@/features/assessment/active-assessment-job";
 
 describe("active assessment job storage", () => {
-  beforeEach(() => sessionStorage.clear());
+  beforeEach(() => localStorage.clear());
 
   it("round-trips and clears a job", () => {
     const job = { jobId: "j1", courseId: "c1", projectId: "p1", sprintId: "sprint-1" };
@@ -19,9 +19,9 @@ describe("active assessment job storage", () => {
   });
 
   it("ignores malformed or incomplete data", () => {
-    sessionStorage.setItem("sprintsight-active-assessment-job", "{bad");
+    localStorage.setItem("sprintsight-active-assessment-job", "{bad");
     expect(readActiveAssessmentJob()).toBeNull();
-    sessionStorage.setItem("sprintsight-active-assessment-job", JSON.stringify({ jobId: "j1" }));
+    localStorage.setItem("sprintsight-active-assessment-job", JSON.stringify({ jobId: "j1" }));
     expect(readActiveAssessmentJob()).toBeNull();
   });
 });
