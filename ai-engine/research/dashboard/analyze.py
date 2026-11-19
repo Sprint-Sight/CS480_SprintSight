@@ -92,13 +92,15 @@ runs = []
 for s, inv in sorted(invocations.items()):
     raw = inv["files"].get("raw")
     lines = raw.read_text().splitlines() if raw else []
-    inv["raw_lines"], inv["bad_json"] = len(lines), 0
+    inv["raw_lines"], inv["bad_json"], inv["foreign"] = len(lines), 0, 0
     rep: collections.Counter[str] = collections.Counter()
     for i, line in enumerate(lines, 1):
         try:
             r = json.loads(line)
         except json.JSONDecodeError:
             inv["bad_json"] += 1; continue
+        if "dimension_scores" not in r:
+            inv["foreign"] += 1; continue
         rep[r["team_id"]] += 1
         end = parse_ts(r["timestamp"])
         runs.append({"session": s, "script": inv["script"], "line": i, "model": r["model"].removeprefix("sprintsight-"),
@@ -108,7 +110,9 @@ for s, inv in sorted(invocations.items()):
                      "duration": r["duration_seconds"], "end": end, "start": end - dt.timedelta(seconds=r["duration_seconds"]),
                      "prompt_versions": r["prompt_versions"]})
     inv["model"] = runs[-1]["model"] if runs and runs[-1]["session"] == s else None
-
+for s in [s for s, inv in invocations.items() if inv["foreign"] and inv["foreign"] == inv["raw_lines"]]:
+    del invocations[s]
+    
 # ---------------- audit logs (calls inside the batch window) ----------------
 SECTION = re.compile(r"\n([A-Z][A-Z /]+)\n-+\n(.*?)(?=\n[A-Z][A-Z /]+\n-+\n|\Z)", re.DOTALL)
 if not runs: raise SystemExit("No runs found for these filters.")
