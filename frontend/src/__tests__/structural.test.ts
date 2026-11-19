@@ -114,22 +114,38 @@ describe("Insights feature architecture (AI insights PR 127)", () => {
     "src/app/admin/insights/page.tsx",
   ];
 
-  // Everything in features/insights/components except the three page containers.
-  const insightsPresentational = [
-    "blind-label-form",
-    "chips",
-    "course-cards",
-    "evidence-panel",
-    "health-panel",
-    "insights-locked-notice",
-    "override-stats-panel",
-    "report-header",
-    "reveal-panels",
-    "reveal-report",
-    "run-filters",
-    "runs-pagination",
-    "runs-table",
-  ].map((name) => `src/features/insights/components/${name}.tsx`);
+  const insightsComponentsDir = path.join(process.cwd(), "src/features/insights/components");
+  const insightsContainers = new Set([
+    "admin-insights-content.tsx",
+    "insights-page-content.tsx",
+    "report-insights-content.tsx",
+  ]);
+  // Presentational components allowed to hold local form drafts.
+  const stateAllowlist = new Set(["blind-label-form.tsx"]);
+  const dataImportPattern =
+    /from\s+["'](@\/features\/insights\/(hooks\/|insights-api)|@tanstack\/react-query)/;
+  const localComponentImportPattern = /from\s+["']@\/features\/insights\/components\/([\w-]+)["']/g;
+
+  const presentationalFiles = fs
+    .readdirSync(insightsComponentsDir)
+    .filter(
+      (name) =>
+        name.endsWith(".tsx") &&
+        !name.endsWith(".test.tsx") &&
+        !insightsContainers.has(name),
+    )
+    .map((name) => path.join(insightsComponentsDir, name));
+
+  // True when the file, or any insights component it imports, reaches a data hook or API module.
+  function fetchesData(filePath: string, seen = new Set<string>()): boolean {
+    if (seen.has(filePath)) return false;
+    seen.add(filePath);
+    const content = readFile(filePath);
+    if (dataImportPattern.test(content)) return true;
+    return [...content.matchAll(localComponentImportPattern)].some((match) =>
+      fetchesData(path.join(insightsComponentsDir, `${match[1]}.tsx`), seen),
+    );
+  }
 
   it("keeps insights route files thin, with no state, effects or fetching", () => {
     insightsRoutes.forEach((filePath) => {
@@ -140,14 +156,22 @@ describe("Insights feature architecture (AI insights PR 127)", () => {
     });
   });
 
+  it("finds every insights presentational component, not a hand-written list", () => {
+    expect(presentationalFiles.length).toBeGreaterThan(10);
+  });
+
   it("keeps insights presentational components free of data fetching and side effects", () => {
-    insightsPresentational.forEach((filePath) => {
-      const content = readFile(path.join(process.cwd(), filePath));
-      expect(content, filePath).not.toMatch(/@\/features\/insights\/hooks\//);
-      expect(content, filePath).not.toMatch(/@\/features\/insights\/insights-api/);
-      expect(content, filePath).not.toMatch(/@tanstack\/react-query/);
-      expect(content, filePath).not.toMatch(/restoreSession|useEffect|useRouter/);
-      expect(content, filePath).not.toMatch(/fetch\s*\(|apiRequest|sessionStorage|localStorage/);
+    presentationalFiles.forEach((filePath) => {
+      const name = path.basename(filePath);
+      const content = readFile(filePath);
+      expect(fetchesData(filePath), `${name} fetches data directly or via a child component`).toBe(
+        false,
+      );
+      expect(content, name).not.toMatch(/restoreSession|useEffect|useRouter/);
+      expect(content, name).not.toMatch(/fetch\s*\(|apiRequest|sessionStorage|localStorage/);
+      if (!stateAllowlist.has(name)) {
+        expect(content, `${name} holds state; move it to a container`).not.toMatch(/useState\s*[(<]/);
+      }
     });
   });
 

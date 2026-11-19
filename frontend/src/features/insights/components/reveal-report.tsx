@@ -17,10 +17,17 @@ type RevealReportProps = {
   trace: TraceView | undefined;
   /** Progress and elapsed time from the polled judge status; undefined until the first poll. */
   judgeProgress?: Pick<JudgeStatusView, "progress" | "elapsedMinutes">;
+  onOpenPrompt: (name: string) => void;
 };
 
 /** The AI results for one report: scores vs instructor, judge checks, citations, trace, prompts. */
-export function RevealReport({ reveal, judgeStatus, trace, judgeProgress }: RevealReportProps) {
+export function RevealReport({
+  reveal,
+  judgeStatus,
+  trace,
+  judgeProgress,
+  onOpenPrompt,
+}: RevealReportProps) {
   const override = reveal.comparison === "override";
 
   return (
@@ -87,7 +94,7 @@ export function RevealReport({ reveal, judgeStatus, trace, judgeProgress }: Reve
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Prompt versions used</h2>
-        <PromptVersionsList reportId={reveal.reportId} versions={reveal.promptVersions} dimensions={reveal.dimensions} />
+        <PromptVersionsList versions={reveal.promptVersions} onOpenPrompt={onOpenPrompt} />
       </section>
     </div>
   );

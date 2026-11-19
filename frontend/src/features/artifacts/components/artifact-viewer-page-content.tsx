@@ -19,14 +19,18 @@ import { apiRequest, getErrorMessage } from "@/lib/api/client";
 import { ingestionQueryKeys } from "@/features/ingestion/ingestion-query";
 import type { ArtifactTab, DocumentArtifact } from "@/features/artifacts/types";
 import { fetchProjectGitRuns } from "@/features/artifacts/git-runs-api";
+import { fetchJiraRuns } from "@/features/artifacts/jira-api";
 import { useArtifactTab } from "@/features/artifacts/hooks/use-artifact-tab";
 import { ArtifactTabs } from "@/features/artifacts/components/artifact-tabs";
 import { GitIngestionRunsTable } from "@/features/artifacts/components/git-ingestion-runs-table";
 import { JiraIngestionRunsTable, type JiraIngestionRun } from "@/features/artifacts/components/jira-ingestion-runs-table";
+import { JiraSprintField } from "@/features/artifacts/components/jira-sprint-field";
 import { JiraBurndownChart, type JiraBurndownResponse } from "@/features/artifacts/components/jira-burndown-chart";
 import { getDocumentFileType, validateDocumentFiles } from "@/features/artifacts/document-upload";
 import { downloadBlob } from "@/lib/download-blob";
 import { useDocumentDeletion } from "@/features/artifacts/hooks/use-document-deletion";
+import { useJiraRunDeletion } from "@/features/artifacts/hooks/use-jira-run-deletion";
+import { useJiraSprints } from "@/features/artifacts/hooks/use-jira-sprints";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -201,7 +205,21 @@ export default function ArtifactViewerPageContent() {
   });
   const [sprintId, setSprintId] = useState("");
   const [jiraRuns, setJiraRuns] = useState<JiraIngestionRun[]>([]);
-  const [jiraSprints, setJiraSprints] = useState<Array<{ id: unknown; name: string | null; state: string | null; start_date: string | null; end_date: string | null }>>([]);
+  const { sprints: jiraSprints, loadSprints, clearSprints } = useJiraSprints();
+  const jiraRunDeletion = useJiraRunDeletion(async (run) => {
+    const runs = await fetchJiraRuns(run.project_id);
+    setJiraRuns(runs);
+    const selectedCompleted = [...runs]
+      .filter((r) => r.processing_status === "completed")
+      .sort((left, right) => right.captured_at.localeCompare(left.captured_at))[0];
+    if (selectedCompleted) {
+      await loadCleanedRun(selectedCompleted);
+    } else {
+      setJiraSnapshot(null);
+      setJiraBurndown(null);
+      setJiraBurndownError("");
+    }
+  });
   const [jiraSnapshot, setJiraSnapshot] = useState<JiraCleanedSnapshot | null>(null);
   const [jiraError, setJiraError] = useState("");
   const [jiraBurndown, setJiraBurndown] = useState<JiraBurndownResponse | null>(null);
@@ -326,6 +344,7 @@ export default function ArtifactViewerPageContent() {
     const controller = new AbortController();
     jiraBurndownRequestId.current += 1;
     setIsLoadingBurndown(false);
+    clearSprints();
     if (role !== "instructor") {
       setJiraRuns([]);
       setJiraSnapshot(null);
@@ -349,9 +368,7 @@ export default function ArtifactViewerPageContent() {
       setJiraBurndown(null);
       setIsLoadingJira(true);
       try {
-        const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${selectedProjectId}`, {
-          signal: controller.signal,
-        });
+        const runs = await fetchJiraRuns(selectedProjectId, controller.signal);
         if (controller.signal.aborted) return;
         setJiraRuns(runs);
         const selectedCompleted = [...runs]
@@ -367,12 +384,8 @@ export default function ArtifactViewerPageContent() {
         // picked up without manual entry.
         let detectedSprint = selectedCompleted?.sprint_id || runs[0]?.sprint_id || "";
         try {
-          const sprints = await apiRequest<Array<{ name: string | null; state: string | null }>>(
-            `/jira-ingestion/sprints/${selectedProjectId}`,
-            { signal: controller.signal }
-          );
-          if (!controller.signal.aborted && Array.isArray(sprints)) {
-            setJiraSprints(sprints as any);
+          const sprints = await loadSprints(selectedProjectId, controller.signal);
+          if (!controller.signal.aborted) {
             const preferred =
               sprints.find((s) => String(s.state || "").toLowerCase() === "active") ||
               sprints.find((s) => String(s.state || "").toLowerCase() === "future");
@@ -398,7 +411,7 @@ export default function ArtifactViewerPageContent() {
       controller.abort();
       setIsLoadingJira(false);
     };
-  }, [role, selectedProjectId]);
+  }, [role, selectedProjectId, clearSprints, loadSprints]);
 
   async function loadGitMetrics() {
     const sprint = gitSprintId.trim();
@@ -736,56 +749,18 @@ export default function ArtifactViewerPageContent() {
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
-              <div className="space-y-1">
-                <label htmlFor="jira-sprint-id" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Sprint</label>
-                {jiraSprints.length > 0 ? (
-                  <select
-                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 text-sm font-medium text-slate-700"
-                    value={sprintId}
-                    onChange={(event) => setSprintId(event.target.value)}
-                  >
-                    {jiraSprints.map((sprint) => (
-                      <option key={String(sprint.id)} value={String(sprint.name || "")}>
-                        {sprint.name} {sprint.state ? `(${sprint.state.toLowerCase() === "closed" ? "Completed" : sprint.state})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-100 px-3 text-sm font-medium text-slate-700">
-                    {sprintId || "—"}
-                  </div>
-                )}
-                <p className="text-xs text-slate-500">Enter the Jira sprint name, for example “Sprint 2”.</p>
-              </div>
+              <JiraSprintField sprintId={sprintId} sprints={jiraSprints} onSprintIdChange={setSprintId} />
             </div>
 
             {jiraError && <p className="text-sm text-rose-600">{jiraError}</p>}
+            {jiraRunDeletion.deleteError && <p className="text-sm text-rose-600">{jiraRunDeletion.deleteError}</p>}
             {isLoadingBurndown && <p className="text-sm text-slate-500">Loading Jira burndown...</p>}
 
             <JiraIngestionRunsTable
               runs={jiraRuns}
               onLoadCleanedRun={loadCleanedRun}
-              onDeleteRun={async (run) => {
-                try {
-                  await apiRequest(`/jira-ingestion/runs/${run.project_id}/${encodeURIComponent(run.sprint_id)}/${run.run_id}`, {
-                    method: "DELETE",
-                  });
-                  const runs = await apiRequest<JiraIngestionRun[]>(`/jira-ingestion/runs/${run.project_id}`);
-                  setJiraRuns(runs);
-                  const selectedCompleted = [...runs]
-                    .filter((r) => r.processing_status === "completed")
-                    .sort((left, right) => right.captured_at.localeCompare(left.captured_at))[0];
-                  if (selectedCompleted) {
-                    await loadCleanedRun(selectedCompleted);
-                  } else {
-                    setJiraSnapshot(null);
-                    setJiraBurndown(null);
-                    setJiraBurndownError("");
-                  }
-                } catch (error) {
-                  setJiraError(getErrorMessage(error, "Failed to delete Jira run."));
-                }
-              }}
+              onDeleteRun={jiraRunDeletion.requestDelete}
+              isDeleting={jiraRunDeletion.isDeleting}
             />
 
             {jiraBurndownError && (
@@ -939,6 +914,16 @@ export default function ArtifactViewerPageContent() {
         onConfirm={() => void documentDeletion.confirmDelete()}
         title="Delete document"
         message={`Delete "${documentDeletion.pendingDelete?.filename ?? "this document"}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+      />
+
+      <ConfirmationModal
+        isOpen={Boolean(jiraRunDeletion.pendingDelete)}
+        onClose={jiraRunDeletion.cancelDelete}
+        onConfirm={() => void jiraRunDeletion.confirmDelete()}
+        title="Delete Jira run"
+        message={`Delete the Jira run for "${jiraRunDeletion.pendingDelete?.sprint_id ?? "this sprint"}"? This action cannot be undone.`}
         confirmText="Delete"
         variant="danger"
       />
