@@ -76,8 +76,8 @@ export function useSaveLabels(reportId: string) {
   });
 }
 
-export function usePromptRegistry() {
-  return useQuery({ queryKey: insightsKeys.promptRegistry(), queryFn: fetchPromptRegistry });
+export function usePromptRegistry(enabled = true) {
+  return useQuery({ queryKey: insightsKeys.promptRegistry(), queryFn: fetchPromptRegistry, enabled });
 }
 
 export function useReveal(reportId: string, enabled: boolean) {

@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { useState } from "react";
 
 import { BlindLabelForm } from "@/features/insights/components/blind-label-form";
 import { EvidencePanel } from "@/features/insights/components/evidence-panel";
 import { InsightsLockedNotice } from "@/features/insights/components/insights-locked-notice";
+import { PromptDetailDialog } from "@/features/insights/components/prompt-detail-dialog";
 import { ReportHeader } from "@/features/insights/components/report-header";
 import { RevealReport } from "@/features/insights/components/reveal-report";
 import {
   useEvidence,
   useInsightsConfig,
   useJudgeStatus,
+  usePromptDetail,
   useReveal,
   useSaveLabels,
   useTrace,
@@ -22,21 +25,36 @@ import { getErrorMessage } from "@/lib/api/client";
 const NOT_FOUND = "Report not found, or not in your courses.";
 const httpStatus = (error: unknown) => (error as { status?: number } | null)?.status;
 
-/** Loads the AI results, judge status and trace for a report; RevealReport draws them. */
+/** Loads the AI results, judge status, trace and the open prompt; RevealReport draws them. */
 function RevealStep({ reportId }: { reportId: string }) {
+  const [openPrompt, setOpenPrompt] = useState<string | null>(null);
   const reveal = useReveal(reportId, true);
   const judge = useJudgeStatus(reportId);
   const trace = useTrace(reportId, reveal.isSuccess);
+  const prompt = usePromptDetail(reportId, openPrompt ?? "", openPrompt !== null);
   if (reveal.isLoading) return <p className="text-sm text-slate-500">Loading AI results…</p>;
   if (reveal.error || !reveal.data)
     return <p className="text-sm text-red-700">{getErrorMessage(reveal.error)}</p>;
   return (
-    <RevealReport
-      reveal={reveal.data}
-      judgeStatus={judge.data?.judgeStatus ?? reveal.data.judgeStatus}
-      judgeProgress={judge.data}
-      trace={trace.data}
-    />
+    <>
+      <RevealReport
+        reveal={reveal.data}
+        judgeStatus={judge.data?.judgeStatus ?? reveal.data.judgeStatus}
+        judgeProgress={judge.data}
+        trace={trace.data}
+        onOpenPrompt={setOpenPrompt}
+      />
+      {openPrompt && (
+        <PromptDetailDialog
+          name={openPrompt}
+          dimensions={reveal.data.dimensions}
+          detail={prompt.data}
+          isLoading={prompt.isLoading}
+          isError={prompt.isError}
+          onClose={() => setOpenPrompt(null)}
+        />
+      )}
+    </>
   );
 }
 

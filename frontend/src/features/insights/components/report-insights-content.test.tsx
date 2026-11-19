@@ -1,7 +1,7 @@
 /// <reference types="vitest/globals" />
 import "@testing-library/jest-dom";
 import { beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 const hooks = vi.hoisted(() => ({
   useInsightsConfig: vi.fn(),
@@ -10,10 +10,22 @@ const hooks = vi.hoisted(() => ({
   useSaveLabels: vi.fn(),
   useJudgeStatus: vi.fn(),
   useTrace: vi.fn(),
+  usePromptDetail: vi.fn(),
 }));
 vi.mock("@/features/insights/hooks/use-insights", () => hooks);
 vi.mock("@/features/insights/components/reveal-report", () => ({
-  RevealReport: ({ judgeStatus }: { judgeStatus: string }) => <p>reveal report: {judgeStatus}</p>,
+  RevealReport: ({
+    judgeStatus,
+    onOpenPrompt,
+  }: {
+    judgeStatus: string;
+    onOpenPrompt: (name: string) => void;
+  }) => (
+    <>
+      <p>reveal report: {judgeStatus}</p>
+      <button onClick={() => onOpenPrompt("Evaluate_Scope")}>open prompt</button>
+    </>
+  ),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
@@ -29,6 +41,7 @@ describe("ReportInsightsContent in override_gate mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     hooks.useInsightsConfig.mockReturnValue({ isLoading: false, data: { mode: "override_gate" } });
+    hooks.usePromptDetail.mockReturnValue({ isLoading: false, isError: false, data: undefined });
   });
 
   it("shows the locked panel with a link to the Assessment Report on a 409", () => {
@@ -60,5 +73,23 @@ describe("ReportInsightsContent in override_gate mode", () => {
     expect(screen.getByRole("link", { name: "← All runs" })).toHaveAttribute("href", "/insights");
     // The polled judge status wins over the one stored with the report.
     expect(screen.getByText("reveal report: complete")).toBeInTheDocument();
+  });
+
+  it("fetches a prompt's detail only after that prompt is opened", () => {
+    const reveal = {
+      teamName: "Team Kiwi",
+      courseCode: "CS480",
+      sprintId: "S2",
+      judgeStatus: "pending",
+      dimensions: [],
+    };
+    hooks.useReveal.mockReturnValue({ isLoading: false, isSuccess: true, error: null, data: reveal });
+    hooks.useJudgeStatus.mockReturnValue({ data: undefined });
+    hooks.useTrace.mockReturnValue({ data: undefined });
+    render(<ReportInsightsContent reportId="r-1" />);
+    expect(hooks.usePromptDetail).toHaveBeenLastCalledWith("r-1", "", false);
+
+    fireEvent.click(screen.getByRole("button", { name: "open prompt" }));
+    expect(hooks.usePromptDetail).toHaveBeenLastCalledWith("r-1", "Evaluate_Scope", true);
   });
 });
