@@ -138,6 +138,7 @@ export function setSession(session: Session) {
 export function signOut() {
   if (typeof window === "undefined") return;
   safeRemove(window.localStorage, SESSION_STORAGE_KEY);
+  safeRemove(window.localStorage, "sprintsight-active-assessment-job");
   removeLegacyKeys();
   notify();
 }

@@ -310,6 +310,7 @@ export function useAssessmentReport() {
       if (isAbortError(error)) return;
       const message = getErrorMessage(error, "Assessment generation failed.");
       if (!/Could not monitor/.test(message)) setAssessmentError(message);
+      await loadLatestReport();
     }
     clearActiveAssessmentJob();
     setIsGenerating(false);
