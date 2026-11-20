@@ -302,3 +302,189 @@ the earlier chart output. However, that response's `2026-11-02` to
 dates. For a realistic live-sprint demo, import the issues as unfinished, then
 start the Jira sprint and move issues to Done as work is completed; only Jira's
 actual transitions produce native changelog history.
+
+## AI Insights and MLflow
+
+The AI engine records how every grade was produced in MLflow (see
+[`ai-engine/README.md`](../ai-engine/README.md#mlflow-in-sprintsight)). The backend turns that
+record into the **AI Insights** pages for instructors and admins: judge checks, flagged citations, a
+trace timeline, prompt versions, and a comparison of the AI's scores with the instructor's. It also
+copies instructor overrides back into MLflow as human feedback. Everything lives under
+`/api/v1/insights` and `app/services/insightsService/`.
+
+Four rules shape the design:
+
+1. **Postgres is the index; MLflow is read by explicit trace ID only.** The backend never searches
+   MLflow from user input. Each report stores its own `trace_id`, and that is the only key used.
+2. **MLflow is optional at runtime.** If it is down, lists and scores still load from Postgres and the
+   trace and judge panels show a notice. Writes to MLflow are queued and retried.
+3. **Nothing sensitive leaves MLflow.** Prompts, model outputs and student code are stripped; only a
+   small allow-list of numbers and timings is returned.
+4. **Judge results never reveal themselves early.** One gate decides when an instructor may see them.
+
+### How a report is linked to MLflow
+
+```text
+ai-engine response (trace_id)
+  -> assessmentService.convert_ai_result_to_assessment_report   stores trace_id on the report
+  -> assessment_reports.trace_id          the join key to the MLflow trace
+  -> assessment_reports.ai_rubric_scores_original   the AI's own scores, written once
+```
+
+`ai_rubric_scores_original` is a snapshot taken when the report is created. The save query keeps the
+existing value if the report is written again, so an instructor override can never change the
+baseline that "adjustment" and the override statistics are measured from.
+
+### Code map
+
+| File | Responsibility |
+| --- | --- |
+| `app/services/insightsService/mlflow_gateway.py` | The only module that talks to MLflow. `RealMlflowGateway` reads a trace, writes and updates human feedback, lists prompt versions, and reports health. Calls time out after `MLFLOW_HTTP_REQUEST_TIMEOUT` seconds with no retries, and trace summaries are cached briefly (at most 256) |
+| `app/services/insightsService/trace_summary.py` | Reduces an MLflow trace to the safe shape the UI shows: span names and timings, prompt versions, and an allow-list of judge assessments. Raw LLM calls (`AsyncCompletions`) are counted, never shown |
+| `app/services/insightsService/judge.py` | Derives the judge status, builds the result tiles, and decides the "citation flagged" chip |
+| `app/services/insightsService/citations.py` | The citations the judge did not fully accept. Prefers the structured verdicts the AI engine attaches as metadata (`sprintsight.citation_verdicts`, with a truncated flag) and falls back to parsing the rationale text for older traces |
+| `app/services/insightsService/blind.py` | `authorize_score_view`, the single gate for AI scores and judge results; also the mode switch |
+| `app/services/insightsService/overrides.py` | `record_override`, called after the Assessment Report editor saves |
+| `app/services/insightsService/override_stats.py` | Override rate, mean adjustment and direction. Pure maths with no database access |
+| `app/services/insightsService/label_sync.py` | The background worker that copies labels and overrides to MLflow and refreshes open judge statuses |
+| `app/services/insightsService/service.py` | The use cases behind the routes (runs list, reveal, trace view, prompt views, health) |
+| `app/services/insightsService/fake_gateway.py` | In-memory stand-in for MLflow, used by the tests |
+| `app/repositories/insights.py` | Postgres and in-memory repositories and the idempotent schema |
+| `app/dependencies/insights.py` | Access rules: the faculty-only guard and the per-report scope check |
+| `app/api/v1/endpoints/insights.py` | The `/insights` routes |
+
+### What is stored in Postgres
+
+The tables are created at startup by `ensure_insights_schema` (every statement is idempotent) and
+mirrored at the end of `init.sql`. They are all additive.
+
+| Where | What |
+| --- | --- |
+| `assessment_reports.trace_id` | MLflow trace of the grading run |
+| `assessment_reports.ai_rubric_scores_original` | The AI's original scores |
+| `assessment_reports.judge_status`, `judge_checked_at`, `judge_summary` | Cached judge state and numbers, so lists never call MLflow |
+| `report_overrides` | One row per report and dimension: the AI score, the instructor's score, whether it changed, and its MLflow sync state (`pending`, `synced`, `failed`, `no_trace`, `not_needed`) |
+| `instructor_labels`, `report_view_log` | Used only by the blind-label mode: the labels, and when an instructor first saw AI results |
+
+### The two modes
+
+`INSIGHTS_MODE` selects how judge results unlock. It is read when the backend starts.
+
+| Mode | Behaviour |
+| --- | --- |
+| `override_gate` (used in `docker-compose.yml`) | The AI score is always visible. Judge checks, flagged citations and the trace unlock for a report after an instructor saves an override on the Assessment Report page. Until then the Insights API returns `409`. Blind labelling is switched off |
+| `blind_label` (the default in code) | The instructor scores all six dimensions before the AI results are revealed. The server enforces it and records whether labels were written before exposure |
+
+Admins always see everything. The override data is recorded in both modes, so switching mode needs
+no migration.
+
+### Flows
+
+**Judge status.** The AI engine judges a trace after grading, so a report starts as `pending`. The
+sync worker re-checks open reports every `INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS`, reads the trace, and
+stores the status and a small summary on the report:
+
+| Status | Meaning |
+| --- | --- |
+| `complete` | Both judge markers (`citation_hallucination_rate`, `narrative_contradiction_count`) are present |
+| `failed` | A marker carries an error, or the engine skipped or gave up on the trace |
+| `stale` | Still unfinished after `INSIGHTS_JUDGE_STALE_MINUTES` (default 120) |
+| `pending` | Still running |
+| `no_trace` | The report has no `trace_id`, or MLflow has no such trace |
+
+A `failed`, `stale` or `no_trace` status can be wrong: the engine retries, a re-run replaces failed
+assessments, and a judge or trace export can finish late. So reports that have a `trace_id` and are
+less than 24 hours old are re-checked, at most once every 5 minutes.
+
+**Overrides to MLflow.**
+
+1. `PATCH /assessments/reports/{id}` saves the instructor's scores as before. A call to
+   `record_override` then writes one `report_overrides` row per dimension. A failure there is logged
+   and never fails the save.
+2. Rows with a real change are marked `pending`. Rows with no change are `not_needed`, so a later
+   reversion can still be detected.
+3. The worker writes each pending row to the trace as a HUMAN assessment named
+   `sprintsight.override.<dimension>` (score on a 0-10 scale), with metadata `blind=false`,
+   `ai_score_original`, `changed` and the report ID. The instructor's user ID, never an email, is the
+   source.
+4. Before any first write the worker looks the assessment up by its feedback ID, so a retry after a
+   lost response never creates a duplicate. A later edit updates the same assessment.
+5. Errors keep the row `pending` and are retried; after 10 attempts it becomes `failed`. A report
+   without a trace becomes `no_trace`.
+
+**Reveal.** `GET /insights/reports/{id}/reveal` passes the gate, builds the AI-versus-instructor
+table from the snapshot, then reads the trace for the judge tiles, the citations the judge did not
+fully accept, and the prompt versions used.
+
+**Prompt registry.** Admins can list the seven registered prompts with their `production`,
+`challenger` and latest versions, and open any version with a diff against the previous one.
+Instructors can open only the version their own report's trace recorded. Prompt names are checked
+against a fixed list, so no free-text name ever reaches MLflow.
+
+**Assessment progress.** The assessment job's progress events read the engine's `eval.progress` run
+tag from MLflow (looked up by the job's correlation ID), so the UI can show how many steps are done.
+
+### Routes
+
+All routes sit under `/api/v1/insights`. A student gets `403` on every one, and a report that is
+unknown or outside the caller's courses gets `404`, so report IDs cannot be probed.
+
+| Route | Who | Purpose |
+| --- | --- | --- |
+| `GET /config` | Instructor, admin | Current mode (`override_gate` or `blind_label`) |
+| `GET /my-courses` | Instructor, admin | Courses in scope, with counts |
+| `GET /runs` | Instructor, admin | Graded runs, with filters, the "needs attention" flags and per-report sync status |
+| `GET /reports/{id}/reveal` | Instructor, admin | AI-versus-instructor comparison, judge tiles, flagged citations, prompt versions. Gated |
+| `GET /reports/{id}/trace` | Instructor, admin | Span timeline. Gated |
+| `GET /reports/{id}/judge-status` | Instructor, admin | Status only, no values, so it is safe before unlocking |
+| `GET /reports/{id}/prompts/{name}` | Instructor, admin | The prompt version this report used. Gated |
+| `GET /reports/{id}/evidence` | Instructor, admin | Raw sprint evidence (commits, Jira, documents, peer data), never AI scores. Used by the blind-label flow |
+| `PUT /reports/{id}/labels` | Instructor | Saves blind labels. Returns `409` in `override_gate` |
+| `GET /override-stats` | Instructor, admin | How often and how far overrides changed AI scores. Not an accuracy measure |
+| `GET /health` | Admin | MLflow reachability, client and server version match, telemetry state, items waiting to sync |
+| `GET /prompt-registry`, `GET /prompt-registry/{name}/{version}` | Admin | Prompt versions, aliases and diffs |
+
+### Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MLFLOW_TRACKING_URI` | `http://host.docker.internal:5000` | MLflow server. Fixed in `docker-compose.yml` so a host-side `localhost` value cannot leak in |
+| `MLFLOW_HTTP_REQUEST_TIMEOUT` | `5` | Seconds before an MLflow call gives up, so a stopped server cannot hang a page |
+| `MLFLOW_HTTP_REQUEST_MAX_RETRIES` | `0` | No client retries; the sync worker does the retrying |
+| `MLFLOW_DISABLE_TELEMETRY` | `true` | MLflow usage telemetry off |
+| `INSIGHTS_ENABLED` | `true` | `false` removes the routes (kill switch); restart the backend |
+| `INSIGHTS_MODE` | `blind_label` in code, `override_gate` in compose | See "The two modes" |
+| `INSIGHTS_LABEL_SYNC_INTERVAL_SECONDS` | `30` in code, `10` in compose | How often the worker syncs and refreshes judge status |
+| `INSIGHTS_JUDGE_STALE_MINUTES` | `120` | When an unfinished judge is shown as stale |
+
+The MLflow server, the AI engine's `mlflow` and the backend's `mlflow-skinny` must be the same
+version (3.16.1: `backend/pyproject.toml`, `ai-engine/requirements.txt`,
+`ai-engine/mlflow-server/Dockerfile`). The admin health panel shows whether they match.
+
+### Testing
+
+The tests use `FakeMlflowGateway` and in-memory repositories, so they need no running MLflow:
+
+```bash
+cd backend
+pytest tests/test_insights_*.py
+```
+
+They cover access rules for every route and mode (student 403, out of scope 404, admin 200), the
+override gate, the sync worker (including a lost response and MLflow being down), judge-status
+rules, citation parsing and the structured-metadata path, the override statistics, and that both
+repository implementations provide the same methods.
+
+To fill a local database with demo reports, labels and overrides:
+
+```bash
+docker exec sprintsight-backend python -m scripts.seed_insights_demo
+```
+
+### Turning it off
+
+- Set `INSIGHTS_ENABLED=false` and restart to remove the routes and hide the Insights pages.
+- Set `INSIGHTS_MODE=blind_label` and restart to switch back to blind labelling.
+- The new columns and tables are additive and can stay. Human feedback already written to MLflow is
+  named `sprintsight.override.*` or `sprintsight.instructor.*`, so it can be found and removed
+  without touching the AI engine's own assessments.
