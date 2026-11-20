@@ -67,7 +67,7 @@ services:
 
   db:
     <<: *app-defaults
-    image: pgvector/pgvector:pg16
+    image: postgres:16
     container_name: sprintsight-db
     environment:
       POSTGRES_DB: sprintsight
